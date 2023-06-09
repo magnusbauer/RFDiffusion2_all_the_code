@@ -3,7 +3,6 @@ import torch
 import assertpy
 from collections import defaultdict
 import torch.nn.functional as F
-import ipdb
 import dataclasses
 from icecream import ic
 from assertpy import assert_that
@@ -164,6 +163,7 @@ class RFO:
     msa: torch.Tensor
     pair: torch.Tensor
     state: torch.Tensor
+    quat: torch.Tensor
 
     # dataclass.astuple returns a deepcopy of the dataclass in which
     # gradients of member tensors are detached, so we define a 
@@ -641,8 +641,6 @@ def assert_has_coords(xyz, indep):
         assert not sm_missing_ca.any(), f'sm_missing_ca {sm_missing_ca}'
     except Exception as e:
         print(e)
-        import ipdb
-        ipdb.set_trace()
 
 
 def has_coords(xyz, indep):
@@ -655,8 +653,6 @@ def has_coords(xyz, indep):
         assert not sm_missing_ca.any(), f'sm_missing_ca {sm_missing_ca}'
     except Exception as e:
         print(e)
-        import ipdb
-        ipdb.set_trace()
 
 
 def pad_dim(x, dim, new_l, value=0):

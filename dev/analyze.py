@@ -1,7 +1,7 @@
 import sys
 import os
 sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'RF2-allatom'))
-import ipdb
+# import ipdb
 import glob
 import itertools
 from dataclasses import dataclass
@@ -12,7 +12,7 @@ import torch
 import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
-from tqdm.notebook import trange, tqdm
+# from tqdm.notebook import trange, tqdm
 import numpy as np
 import parsers
 import util

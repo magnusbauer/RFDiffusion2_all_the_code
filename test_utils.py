@@ -1,4 +1,5 @@
 import re
+import torch
 import json
 from icecream import ic
 import os
@@ -204,3 +205,13 @@ def cmp_pretty(got, want, **kwargs):
     except Exception as e:
         ic('failed to pretty print output', e)
         return json.dumps(diff.pop('tensors unequal', ''), indent=4) + '\n' + str(diff)
+
+def where_nan(t):
+    if torch.isnan(t).any():
+        return (torch.isnan(t).nonzero(), torch.isnan(t).float().mean())
+    return None
+
+def assert_no_nan(t):
+    msg = where_nan(t)
+    if msg:
+        raise Exception(msg)
