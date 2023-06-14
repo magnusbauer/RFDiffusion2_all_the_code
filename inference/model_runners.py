@@ -31,10 +31,12 @@ import torch.nn.functional as nn
 import util
 import hydra
 from hydra.core.hydra_config import HydraConfig
+from data import all_atom
+from data import utils as du
+from openfold.utils.rigid_utils import Rigid
 import os
 
 import sys
-sys.path.append('../') # to access RF structure prediction stuff 
 
 # When you import this it causes a circular import due to the changes made in apply masks for self conditioning
 # This import is only used for SeqToStr Sampling though so can be fixed later - NRB
@@ -74,8 +76,6 @@ class Sampler:
             # Load checkpoint, so that we can assemble the config
             self.load_checkpoint()
             assemble_config_from_chk(self._conf, self.ckpt)
-            # Now actually load the model weights into RF
-            self.model = self.load_model()
         else:
             assemble_config_from_chk(self._conf, self.ckpt)
 
@@ -109,9 +109,6 @@ class Sampler:
         self.preprocess_conf = self._conf.preprocess
         self.diffuser = Diffuser(**self._conf.diffuser)
         self.model_adaptor = aa_model.Model(self._conf)
-        # Temporary hack
-        self.model.assert_single_sequence_input = True
-        self.model_adaptor.model = self.model
 
         # TODO: Add symmetrization RMSD check here
         if self._conf.seq_diffuser.seqdiff is None:
@@ -169,6 +166,23 @@ class Sampler:
         # Get recycle schedule    
         recycle_schedule = str(self.inf_conf.recycle_schedule) if self.inf_conf.recycle_schedule is not None else None
         self.recycle_schedule = iu.recycle_schedule(self.T, recycle_schedule, self.inf_conf.num_recycles)
+
+
+        from data import utils as du
+        weights_pkl = du.read_pkl(
+            self._conf.score_model.weights_path, use_torch=True,
+                map_location=self.device)
+
+        # Merge base experiment config with checkpoint config.
+        # self._conf.score_model = OmegaConf.merge(
+        #     self._conf.score_model, weights_pkl['conf'].score_model)
+        # if conf_overrides is not None:
+        #     self._conf = OmegaConf.merge(self._conf, conf_overrides)
+        import experiments.train_se3_diffusion
+        self.experiment = experiments.train_se3_diffusion.Experiment(conf=weights_pkl['conf'])
+        model_weights = weights_pkl['model']
+        self.experiment.model.load_state_dict(model_weights)
+        self.experiment.model.to(self.device)
 
     def process_target(self, pdb_path):
         assert not (self.inf_conf.ppi_design and self.inf_conf.autogenerate_contigs), "target reprocessing not implemented yet for these configuration arguments"
@@ -319,18 +333,20 @@ class Sampler:
         t_list = np.arange(1, self.t_step_input+1)
         atom_mask = None
         seq_one_hot = None
-        fa_stack, aa_masks, xyz_true = self.diffuser.diffuse_pose(
-            indep.xyz,
-            seq_one_hot,
-            atom_mask,
-            indep.is_sm,
-            diffusion_mask=~self.is_diffused,
-            t_list=t_list,
-            diffuse_sidechains=self.preprocess_conf.sidechain_input,
-            include_motif_sidechains=self.preprocess_conf.motif_sidechain_input)
-
-        xT = fa_stack[-1].squeeze()[:,:14,:]
-        xt = torch.clone(xT)
+        from data import utils as du
+        rigids_0 = du.rigid_frames_from_atom_14(indep.xyz)
+        diffuser_out = self.experiment.diffuser.forward_marginal(
+            rigids_0,
+            t=1.0,
+            diffuse_mask=(~self.is_diffused).float(),
+            as_tensor_7=False
+        )
+        xT = all_atom.atom37_from_rigid(diffuser_out['rigids_t'])
+        ic(
+            diffuser_out['rigids_t'].shape,
+            xT.shape,
+           )
+        xt = torch.clone(xT[:,:14])
         indep.xyz = xt
 
         self.denoiser = self.construct_denoiser(len(self.contig_map.ref), visible=~self.is_diffused)
@@ -678,7 +694,6 @@ class NRBStyleSelfCond(Sampler):
             tors_t_1: (L, ?) The updated torsion angles of the next  step.
             plddt: (L, 1) Predicted lDDT of x0.
         '''
-
         rfi = self.model_adaptor.prepro(indep, t, self.is_diffused)
         rf2aa.tensor_util.to_device(rfi, self.device)
         seq_init = torch.nn.functional.one_hot(
@@ -693,6 +708,7 @@ class NRBStyleSelfCond(Sampler):
         self_cond = False
         if ((t < self.diffuser.T) and (t != self.diffuser_conf.partial_T)) and self._conf.inference.str_self_cond:
             self_cond=True
+            raise Exception('not implemented yet')
             rfi = aa_model.self_cond(indep, rfi, rfo)
 
         if self.symmetry is not None:
@@ -706,83 +722,34 @@ class NRBStyleSelfCond(Sampler):
 		# network's ComputeAllAtom requires even atoms to have N and C coords.                
 		# aa_model.assert_has_coords(rfi.xyz[0], indep)
                 assert not rfi.xyz[0,:,:3,:].isnan().any(), f'{t}: {rfi.xyz[0,:,:3,:]}'
-                rfo = self.model_adaptor.forward(
-                                    rfi,
-                                    return_infer=True,
-                                    # **{model_input_logger.LOG_ONLY_KEY: {
-                                    #     't':t,
-                                    #     'output_prefix':self.output_prefix,
-                                    # }}
-                                    )
+                model_out = self.experiment.model.forward_from_rfi(rfi, torch.tensor([t/self._conf.diffuser.T]).to(rfi.xyz.device))
 
-                if self.symmetry is not None and self.inf_conf.symmetric_self_cond:
-                    raise Exception('not implemented')
-                    px0 = self.symmetrise_prev_pred(px0=px0,seq_in=seq_in, alpha=alpha)[:,:,:3]
-
-                # To permit 'recycling' within a timestep, in a manner akin to how this model was trained
-                # Aim is to basically just replace the xyz_t with the model's last px0, and to *not* recycle the state, pair or msa embeddings
-                if rec < self.recycle_schedule[t-1] -1:
-                    raise Exception('not implemented')
-                    zeros = torch.zeros(B,1,L,24,3).float().to(xyz_t.device)
-                    xyz_t = torch.cat((px0.unsqueeze(1),zeros), dim=-2) # [B,T,L,27,3]
-
-                    t2d   = xyz_to_t2d(xyz_t) # [B,T,L,L,44]
-
-                    if self.seq_self_cond:
-                        # Allow this model to also do sequence recycling
-
-                        t1d[:,:,:,:20] = logits[:,None,:,:20]
-                        t1d[:,:,:,20]  = 0 # Setting mask token to zero
-        px0 = rfo.get_xyz()[:,:14]
-        logits = rfo.get_seq_logits()
-        seq_decoded = [rf2aa.chemical.num2aa[s] for s in rfi.seq[0]]
-
-        if self.seq_diffuser is None:
-            # Default method of decoding sequence
-            seq_probs   = torch.nn.Softmax(dim=-1)(logits.squeeze()/self.inf_conf.softmax_T)
-            sampled_seq = torch.multinomial(seq_probs, 1).squeeze() # sample a single value from each position
-
-            pseq_0 = torch.nn.functional.one_hot(
-                sampled_seq, num_classes=rf2aa.chemical.NAATOKENS).to(self.device).float()
-            
-            pseq_0[~self.is_seq_masked] = seq_init[~self.is_seq_masked].to(self.device) # [L,22]
-        else:
-            # Sequence Diffusion
-            pseq_0 = logits.squeeze()
-            pseq_0 = pseq_0[:,:20]
-
-            pseq_0[self.mask_seq.squeeze()] = seq_init[self.mask_seq.squeeze(),:20].to(self.device)
-
-            sampled_seq = torch.argmax(pseq_0, dim=-1)
+        px0 = all_atom.atom37_from_rigid(Rigid.from_tensor_7(model_out['rigids']))
 
         now = datetime.now()
         current_time = now.strftime("%H:%M:%S")
         self._log.info(
-                f'{current_time}: Timestep {t}, current sequence: { rf2aa.chemical.seq2chars(torch.argmax(pseq_0, dim=-1).tolist())}')
+                f'{current_time}: Timestep {t}')
+        
 
-        if t > self._conf.inference.final_step:
-            x_t_1, seq_t_1, tors_t_1, px0 = self.denoiser.get_next_pose(
-                xt=rfi.xyz[0,:,:14].cpu(),
-                px0=px0,
-                t=t,
-                diffusion_mask=~self.is_diffused,
-                seq_diffusion_mask=~self.is_diffused,
-                seq_t=seq_t,
-                pseq0=pseq_0,
-                diffuse_sidechains=self.preprocess_conf.sidechain_input,
-                align_motif=self.inf_conf.align_motif,
-                include_motif_sidechains=self.preprocess_conf.motif_sidechain_input,
-            )
-        else:
-            # Final step.
-            px0 = px0.cpu()
-            px0[~self.is_diffused] = indep.xyz[~self.is_diffused]
-            x_t_1 = torch.clone(px0)
-            seq_t_1 = pseq_0
 
-            # Dummy tors_t_1 prediction. Not used in final output.
-            tors_t_1 = torch.ones((self.is_diffused.shape[-1], 10, 2))
+        rigids_t = du.rigid_frames_from_atom_14(rfi.xyz)
+        rigids_t = self.experiment.diffuser.reverse(
+            rigid_t=rigids_t,
+            rot_score=du.move_to_np(model_out['rot_score'][:,-1]),
+            trans_score=du.move_to_np(model_out['trans_score'][:,-1]),
+            diffuse_mask=du.move_to_np(self.is_diffused.float()[None,...]),
+            t=t/self._conf.diffuser.T,
+            dt=1/self._conf.diffuser.T,
+            center=True,
+            noise_scale=1.0,
+        )
+        x_t_1 = all_atom.atom37_from_rigid(rigids_t)
+        x_t_1 = x_t_1[0,:,:14]
+        seq_t_1 = seq_t
+        tors_t_1 = torch.ones((self.is_diffused.shape[-1], 10, 2))
 
+        px0 = model_out['atom37'][0, -1]
         px0 = px0.cpu()
         x_t_1 = x_t_1.cpu()
         seq_t_1 = seq_t_1.cpu()
