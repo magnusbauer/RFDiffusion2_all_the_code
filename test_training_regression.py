@@ -208,8 +208,12 @@ def run_regression(self, arg_string, golden_name, call_number=1, assert_loss=Fal
     func_sig = signature(RoseTTAFoldModule.forward)
     train = train_multi_deep.make_trainer(*all_args)
     loss_func_sig = signature(train.calc_loss)
-    with mock.patch.object(train, "init_model") as submethod_mocked:
+    # with mock.patch.object(train, "init_model") as submethod_mocked:
+    fake_forward = mock.patch.object(RoseTTAFoldModule, "forward", autospec=True)
+    with fake_forward as mock_forward:
         with mock.patch.object(train, "calc_loss") as calc_loss_mocked:
+
+            
 
             def side_effect(*args, **kwargs):
                 side_effect.call_count += 1
@@ -240,12 +244,14 @@ def run_regression(self, arg_string, golden_name, call_number=1, assert_loss=Fal
                 else:
                     raise CallException('called')
             side_effect.call_count = 0
+            mock_forward.side_effect = side_effect
             mymock_method = mock.MagicMock()
             mymock_method.side_effect = side_effect
             calc_loss_mocked.side_effect = CallException('called calc_loss')
 
-            submethod_mocked.return_value = mymock_method, mock.MagicMock(), mock.MagicMock(), mock.MagicMock(), 0
+            # submethod_mocked.return_value = mymock_method, mock.MagicMock(), mock.MagicMock(), mock.MagicMock(), 0
             train.group_name = golden_name
+
             try:
                 train.run_model_training(torch.cuda.device_count())
             except CallException:
@@ -284,9 +290,12 @@ class Loss(unittest.TestCase):
         all_args = get_args(split_args)
 
         func_sig = signature(RoseTTAFoldModule.forward)
-        train = train_multi_deep.make_trainer(*all_args)
+        conf = train_multi_deep.construct_conf([])
+        train = train_multi_deep.make_trainer(conf, *all_args)
         loss_func_sig = signature(train.calc_loss)
-        with mock.patch.object(train, "init_model") as submethod_mocked:
+        # with mock.patch.object(train, "init_model") as submethod_mocked:
+        fake_forward = mock.patch.object(RoseTTAFoldModule, "__call__", autospec=True)
+        with fake_forward as mock_forward:
             def side_effect(*args, **kwargs):
                 side_effect.call_count += 1
                 if side_effect.call_count < call_number:
@@ -313,19 +322,22 @@ class Loss(unittest.TestCase):
                     lddt = torch.normal(0, 1, (1, 50, L))
                     ic(xyz_allatom.requires_grad)
                     xyz_allatom.requires_grad = True
-                    side_effect.rfo = aa_model.RFO(logits, logits_aa, logits_pae, logits_pde, p_bind, px0_xyz, alpha_s, xyz_allatom, lddt, None, None, None)
+                    quat = torch.normal(0, 1, (1, 40, L, 4))
+                    quat = quat / quat.norm(dim=-1)[...,None]
+                    side_effect.rfo = aa_model.RFO(logits, logits_aa, logits_pae, logits_pde, p_bind, px0_xyz, alpha_s, xyz_allatom, lddt, None, None, None, quat)
                     side_effect.rfo = tensor_util.to_ordered_dict(side_effect.rfo)
                     tensor_util.require_grad(side_effect.rfo)
                     return side_effect.rfo.values()
                 else:
                     raise CallException('called')
             side_effect.call_count = 0
+            mock_forward.side_effect = side_effect
             mymock_method = mock.MagicMock()
             mymock_method.side_effect = side_effect
 
             scaler_mock = mock.MagicMock()
             scaler_mock.scale.side_effect = CallException('called scaler')
-            submethod_mocked.return_value = mymock_method, mock.MagicMock(), mock.MagicMock(), scaler_mock, 0
+            # submethod_mocked.return_value = mymock_method, mock.MagicMock(), mock.MagicMock(), scaler_mock, 0
             train.group_name = golden_name
             try:
                 train.run_model_training(torch.cuda.device_count())

@@ -1675,24 +1675,21 @@ class DistilledDataset(data.Dataset):
             run_inference.seed_all(mask_gen_seed) # Reseed the RNGs for test stability.
             aa_model.centre(indep, is_diffused)
             t = random.randint(1, self.diffuser.T)
-            indep_diffused_tp1_t, t_list = aa_model.diffuse(self.conf, self.diffuser, indep, is_diffused, t)
+            indep_t, diffuser_out = aa_model.diffuse(self.conf, self.diffuser, indep, is_diffused, t)
 
             # Compute all strictly dependent model inputs from the independent inputs.
-            rfi_tp1_t = []
-            for indep_diffused, t in zip(indep_diffused_tp1_t, t_list):
-                if self.preprocess_param['randomize_frames']:
-                    print('randomizing frames')
-                    indep_diffused.xyz = aa_model.randomly_rotate_frames(indep_diffused.xyz)
-                aa_model.mask_indep(indep_diffused, is_masked_seq)
-                rfi = self.model_adaptor.prepro(indep_diffused, t, is_diffused)
-                rfi_tp1_t.append(rfi)
+            if self.preprocess_param['randomize_frames']:
+                print('randomizing frames')
+                indep_t.xyz = aa_model.randomly_rotate_frames(indep_t.xyz)
+            aa_model.mask_indep(indep_t, is_masked_seq)
+            rfi = self.model_adaptor.prepro(indep_t, t, is_diffused)
 
-                # Sanity checks
-                if torch.sum(~is_diffused) > 0:
-                    assert torch.mean(rfi.xyz[:,~is_diffused,1] - indep.xyz[None,~is_diffused,1]) < 0.001
+            # Sanity checks
+            if torch.sum(~is_diffused) > 0:
+                assert torch.mean(rfi.xyz[:,~is_diffused,1] - indep.xyz[None,~is_diffused,1]) < 0.001
 
             run_inference.seed_all(mask_gen_seed) # Reseed the RNGs for test stability.
-            return indep, rfi_tp1_t, chosen_dataset, sel_item, t, is_diffused, task, atomizer, masks_1d, item_context
+            return indep, rfi, chosen_dataset, sel_item, t, is_diffused, task, atomizer, masks_1d, diffuser_out, item_context
 
 
 class DistributedWeightedSampler(data.Sampler):

@@ -1,4 +1,6 @@
 import sys, os
+import wandb
+import hydra
 import shutil
 import collections
 # Insert the se3 transformer version packaged with RF2-allatom before anything else, so it doesn't end up in the python module cache.
@@ -18,6 +20,7 @@ import time
 import torch
 import torch.nn as nn
 from torch.utils import data
+from omegaconf import DictConfig
 
 #rf2_allatom = __import__('RF2-allatom')
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'RF2-allatom'))
@@ -66,8 +69,8 @@ import subprocess
 import torch.distributed as dist
 import torch.multiprocessing as mp
 from torch.nn.parallel import DistributedDataParallel as DDP
-torch.backends.cudnn.benchmark = False
-torch.backends.cudnn.deterministic = True
+#torch.backends.cudnn.benchmark = False
+#torch.backends.cudnn.deterministic = True
 
 #torch.autograd.set_detect_anomaly(True)
 
@@ -152,13 +155,15 @@ def no_batch_collate_fn(data):
     return data[0]
 
 class Trainer():
-    def __init__(self, model_name='BFF', ckpt_load_path=None,
+    def __init__(self, conf=None, model_name='BFF', ckpt_load_path=None,
                  n_epoch=100, lr=1.0e-4, l2_coeff=1.0e-2, port=None, interactive=False,
                  model_param={}, loader_param={}, loss_param={}, batch_size=1, accum_step=1, 
                  maxcycle=4, diffusion_param={}, preprocess_param={}, outdir=None, wandb_prefix='',
                  metrics=None, zero_weights=False, log_inputs=False, n_write_pdb=100,
                  reinitialize_missing_params=False, verbose_checks=False, saves_per_epoch=None, resume=False):
 
+        self.conf=conf
+        self._exp_conf = conf.experiment
         self.model_name = model_name #"BFF"
         self.ckpt_load_path = ckpt_load_path
         self.n_epoch = n_epoch
@@ -176,7 +181,8 @@ class Trainer():
         self.verbose_checks=verbose_checks
         self.resume=resume
 
-        self.outdir = self.outdir or f'./train_session{get_datetime()}'
+        self.outdir = self.outdir or '.'
+        self.outdir = os.path.join(self.outdir, f'./train_session{get_datetime()}')
         ic(self.outdir)
         if os.path.isdir(self.outdir) and not DEBUG:
             sys.exit('EXITING: self.outdir already exists. Dont clobber')
@@ -197,7 +203,14 @@ class Trainer():
         self.wandb_prefix=wandb_prefix
         self.saves_per_epoch=saves_per_epoch
 
+        # Initialize experiment objects
+        from data import se3_diffuser
+        self.diffuser = se3_diffuser.SE3Diffuser(self.conf.diffuser)
+        self.diffuser.T = diffusion_param['diff_T']
+
         # For diffusion
+        self.T = diffusion_param['diff_T']
+        ic(self.T)
         diff_kwargs = {'T'              :diffusion_param['diff_T'],
                        'b_0'            :diffusion_param['diff_b0'],
                        'b_T'            :diffusion_param['diff_bT'],
@@ -211,10 +224,6 @@ class Trainer():
                        'chi_type'       :diffusion_param['diff_chi_type'],
                        'aa_decode_steps':diffusion_param['aa_decode_steps'],
                        'crd_scale'      :diffusion_param['diff_crd_scale']}
-        
-        self.diffuser = Diffuser(**diff_kwargs)
-        self.schedule = self.diffuser.eucl_diffuser.beta_schedule
-        self.alphabar_schedule = self.diffuser.eucl_diffuser.alphabar_schedule
 
         # For Sequence Diffusion
         seq_diff_type = diffusion_param['seqdiff']
@@ -344,7 +353,7 @@ class Trainer():
         }
         torch.save(self.training_arguments, 'tmp.out')
 
-    def calc_loss(self, logit_s, label_s,
+    def calc_loss(self, model_out, diffuser_out, logit_s, label_s,
                   logit_aa_s, label_aa_s, mask_aa_s, logit_exp,
                   pred_in, pred_tors, true, mask_crds, mask_BB, mask_2d, same_chain,
                   pred_lddt, idx, dataset, chosen_task, t, xyz_in, diffusion_mask,
@@ -354,297 +363,193 @@ class Trainer():
                   lj_lin=0.75, use_H=False, w_disp=0.0, w_motif_disp=0.0, w_ax_ang=0.0, w_frame_dist=0.0, eps=1e-6, backprop_non_displacement_on_given=False):
 
 
-        #NB t is 1-indexed
-        t_idx = t-1
- 
-        # dictionary for keeping track of losses 
-        loss_dict = {}
 
-        B, L = true.shape[:2]
-        seq = label_aa_s[:,0].clone()
-        assert (B==1) # fd - code assumes a batch size of 1
 
-        loss_s = list()
-        tot_loss = 0.0
+        # bb_mask = batch['res_mask']
+        # diffuse_mask = 1 - batch['fixed_mask']
+        # loss_mask = is_dif
+        device = model_out['rigids'].device
+        batch_size, _, num_res, _ = model_out['rigids'].shape
+        diffuse_mask = diffusion_mask[None].to(device)
+        loss_mask = diffuse_mask.clone()
+        loss_mask[...] = True
+        batch_loss_mask = diffuse_mask
+        import assertpy
+        assertpy.assert_that(diffusion_mask.ndim) == 2
+        t = torch.tensor([t/self.T]).to(device)
+
+        diffuser_out['rigids_0'] = diffuser_out['rigids_0'].to(device)
+        gt_rot_score = diffuser_out['rot_score'][None].to(device)
+        gt_trans_score = diffuser_out['trans_score'][None].to(device)
+        rot_score_scaling = torch.tensor(diffuser_out['rot_score_scaling'])[None].to(device)
+        trans_score_scaling = torch.tensor(diffuser_out['trans_score_scaling'])[None].to(device)
+        # batch_loss_mask = torch.any(bb_mask, dim=-1)
+
+        pred_rot_score = model_out['rot_score'] * diffuse_mask[..., None]
+        pred_trans_score = model_out['trans_score'] * diffuse_mask[..., None]
+
+        # Translation score loss
+        trans_score_mse = (gt_trans_score - pred_trans_score)**2 * loss_mask[..., None]
+        trans_score_loss = torch.sum(
+            trans_score_mse / trans_score_scaling[:, None, None]**2,
+            dim=(-1, -2)
+        ) / (loss_mask.sum(dim=-1) + 1e-10)
+
+        # Translation x0 loss
+        gt_trans_x0 = diffuser_out['rigids_0'][..., 4:] * self._exp_conf.coordinate_scaling
+        pred_trans_x0 = model_out['rigids'][..., 4:] * self._exp_conf.coordinate_scaling
+        trans_x0_loss = torch.sum(
+            (gt_trans_x0 - pred_trans_x0)**2 * loss_mask[..., None],
+            dim=(-1, -2)
+        ) / (loss_mask.sum(dim=-1) + 1e-10)
+
+        trans_loss = (
+            trans_score_loss * (t > self._exp_conf.trans_x0_threshold)
+            + trans_x0_loss * (t <= self._exp_conf.trans_x0_threshold)
+        )
+        trans_loss *= self._exp_conf.trans_loss_weight
+        trans_loss *= int(self.conf.diffuser.diffuse_trans)
+
+        # Rotation loss
+        rot_mse = (gt_rot_score - pred_rot_score)**2 * loss_mask[..., None]
+        rot_loss = torch.sum(
+            rot_mse / rot_score_scaling[:, None, None]**2,
+            dim=(-1, -2)
+        ) / (loss_mask.sum(dim=-1) + 1e-10)
+        rot_loss *= self._exp_conf.rot_loss_weight
+        rot_loss *= int(self.conf.diffuser.diffuse_rot)
+
+        # Backbone atom loss
+        from rf_diffusion import test_utils
+        from openfold.utils import rigid_utils as ru
+        from data import all_atom
+
+        pred_atom37 = model_out['atom37'][...,:self.conf.experiment.n_bb,:]
+        test_utils.assert_no_nan(pred_atom37)
+        gt_rigids = ru.Rigid.from_tensor_7(diffuser_out['rigids_0'].type(torch.float32))
+        # gt_psi = diffuser_out['torsion_angles_sin_cos'][..., 2, :][None]
+        gt_psi = torch.rand(gt_rigids.shape+(2,))
+        gt_atom37, atom37_mask, _, _ = all_atom.compute_backbone(
+            gt_rigids, gt_psi)
+        gt_atom37 = gt_atom37[:, :, :self.conf.experiment.n_bb]
+        atom37_mask = atom37_mask[:, :, :self.conf.experiment.n_bb]
+
+        gt_atom37 = gt_atom37.to(pred_atom37.device)
+        atom37_mask = atom37_mask.to(pred_atom37.device)
+        bb_atom_loss_mask = atom37_mask * loss_mask[..., None]
+        bb_atom_loss = torch.sum(
+            (pred_atom37 - gt_atom37)**2 * bb_atom_loss_mask[..., None],
+            dim=(-1, -2, -3)
+        ) / (bb_atom_loss_mask.sum(dim=(-1, -2)) + 1e-10)
+        bb_atom_loss *= self._exp_conf.bb_atom_loss_weight
+        bb_atom_loss *= t < self._exp_conf.bb_atom_loss_t_filter
+        bb_atom_loss *= self._exp_conf.aux_loss_weight
+
+        # Pairwise distance loss
+        gt_flat_atoms = gt_atom37.reshape([batch_size, num_res*self.conf.experiment.n_bb, 3])
+        gt_pair_dists = torch.linalg.norm(
+            gt_flat_atoms[:, :, None, :] - gt_flat_atoms[:, None, :, :], dim=-1)
+        # Insert iteration dimension if not present
+        pred_flat_atoms = torch.flatten(pred_atom37, start_dim=-3, end_dim=-2)
+        # ic(test_utils.where_nan(pred_flat_atoms))
+        pred_pair_dists = torch.linalg.norm(
+            pred_flat_atoms[..., None, :] - pred_flat_atoms[..., None, :, :], dim=-1)
+
+        flat_loss_mask = torch.tile(loss_mask[:, :, None], (1, 1, 1, self.conf.experiment.n_bb))
+        flat_loss_mask = flat_loss_mask.reshape([batch_size, num_res*self.conf.experiment.n_bb])
+        flat_res_mask = torch.tile(loss_mask[:, :, None], (1, 1, 1, self.conf.experiment.n_bb))
+        flat_res_mask = flat_res_mask.reshape([batch_size, num_res*self.conf.experiment.n_bb])
+
+        gt_pair_dists = gt_pair_dists * flat_loss_mask[..., None]
+        pred_pair_dists = pred_pair_dists * flat_loss_mask[..., None]
+        pair_dist_mask = flat_loss_mask[..., None] * flat_res_mask[:, None, :]
+
+        # No loss on anything >6A
+        proximity_mask = gt_pair_dists < 6
+        pair_dist_mask  = pair_dist_mask * proximity_mask
+        # assert not torch.isnan(pair_dist_mask).any(), torch.isnan(pair_dist_mask).nonzero()
+        # assert not torch.isnan(pred_pair_dists).any(), torch.isnan(pred_pair_dists).nonzero()
+        # assert not torch.isnan(gt_pair_dists).any(), torch.isnan(gt_pair_dists).nonzero()
+
+        dist_mat_loss = torch.sum(
+            (gt_pair_dists - pred_pair_dists)**2 * pair_dist_mask,
+            dim=(-2, -1))
+        dist_mat_loss /= (torch.sum(pair_dist_mask, dim=(1, 2)) - num_res)
+        dist_mat_loss *= self._exp_conf.dist_mat_loss_weight
+        dist_mat_loss *= t < self._exp_conf.dist_mat_loss_t_filter
+        dist_mat_loss *= self._exp_conf.aux_loss_weight
+
+        def normalize_loss(x):
+
+            # Exponential decay
+            if x.ndim == 2:
+                B, I = x.shape
+                device = x.device
+                w_loss = torch.pow(torch.full((I,), self.conf.experiment.gamma, device=device), torch.arange(I, device=device))
+                w_loss = torch.flip(w_loss, (0,))
+                w_loss = w_loss / w_loss.sum()
+                # ic(w_loss) # confirmed ascending
+                x = torch.sum(x * w_loss, dim=-1)
+            return x.sum() /  (batch_loss_mask.sum() + 1e-10)
         
-        # get tscales
-        c6d_tscale = self.loss_schedules.get('c6d',[1]*(t))[t_idx]
-        aa_tscale = self.loss_schedules.get('aa_cce',[1]*(t))[t_idx]
-        disp_tscale = self.loss_schedules.get('displacement',[1]*(t))[t_idx]
-        lddt_loss_tscale = self.loss_schedules.get('lddt_loss',[1]*(t))[t_idx]
-        bang_tscale = self.loss_schedules.get('bang',[1]*(t))[t_idx]
-        blen_tscale = self.loss_schedules.get('blen',[1]*(t))[t_idx]
-        exp_tscale = self.loss_schedules.get('exp',[1]*(t))[t_idx]
-        lj_tscale = self.loss_schedules.get('lj',[1]*(t))[t_idx]
-        hb_tscale = self.loss_schedules.get('lj',[1]*(t))[t_idx]
-        str_tscale = self.loss_schedules.get('w_str',[1]*(t))[t_idx]
-        w_all_tscale = self.loss_schedules.get('w_all',[1]*(t))[t_idx]
+        # # dictionary for keeping track of losses 
+        # loss_weights = {
+        #     'rot': self._exp_conf.rot_loss_weight,
+        #     'trans': self._exp_conf.trans_loss_weight,
+        #     'bb_atom': self._exp_conf.bb_atom_loss_weight * (t < self._exp_conf.bb_atom_loss_t_filter),
+        #     'dist_mat': self._exp_conf.dist_mat_loss_weight * (t < self._exp_conf.dist_mat_loss_t_filter),
+        # }
+        # for k, loss in loss_dict.items():
+        #     weight = loss_weights[k]
+        #     tot_loss += loss*weight
+        
+        # loss_dict['total_loss'] = float(tot_loss.detach())
 
-        # tot_loss += (1.0-w_all)*w_str*tot_str
-        loss_weights = {
-            'displacement': w_disp*disp_tscale,
-            'motif_displacement': w_motif_disp*disp_tscale,
-            'aa_cce': w_aa*aa_tscale,
-            'frame_sqL2': w_frame_dist*disp_tscale,
-            'axis_angle': w_ax_ang*disp_tscale,
-            'tot_str': (1.0 - w_all*w_all_tscale)*w_str,
+        # loss_dict = rf2aa.tensor_util.cpu(loss_dict)
+        final_loss = (
+            rot_loss
+            + trans_loss
+            + bb_atom_loss
+            + dist_mat_loss
+        )
+        def normalize_loss(x):
+
+            # Exponential decay
+            if x.ndim == 2:
+                B, I = x.shape
+                device = x.device
+                w_loss = torch.pow(torch.full((I,), self.conf.experiment.gamma, device=device), torch.arange(I, device=device))
+                w_loss = torch.flip(w_loss, (0,))
+                w_loss = w_loss / w_loss.sum()
+                # ic(w_loss) # confirmed ascending
+                x = torch.sum(x * w_loss, dim=-1)
+            return x.sum() /  (batch_loss_mask.sum() + 1e-10)
+
+        aux_data = {
+            # 'batch_train_loss': final_loss,
+            # 'batch_rot_loss': rot_loss,
+            # 'batch_trans_loss': trans_loss,
+            # 'batch_bb_atom_loss': bb_atom_loss,
+            # 'batch_dist_mat_loss': dist_mat_loss,
+            'total_loss': normalize_loss(final_loss),
+            'rot_loss': normalize_loss(rot_loss),
+            'trans_loss': normalize_loss(trans_loss),
+            'bb_atom_loss': normalize_loss(bb_atom_loss),
+            'dist_mat_loss': normalize_loss(dist_mat_loss),
+            'examples_per_step': torch.tensor(batch_size),
         }
-        for i in range(4):
-            loss_weights[f'c6d_{i}'] = w_dist*c6d_tscale
 
-        # Displacement prediction loss between xyz prev and xyz_true
-        if unclamp:
-            disp_loss = calc_displacement_loss(pred_in, true, gamma=0.99, d_clamp=None)
-        else:
-            disp_loss = calc_displacement_loss(pred_in, true, gamma=0.99, d_clamp=10.0)
- 
-        loss_dict['displacement'] = disp_loss
- 
-        # Displacement prediction loss between xyz prev and xyz_true for only motif region.
-        if diffusion_mask.any():
-            motif_disp_loss = calc_displacement_loss(pred_in[:,:,diffusion_mask], true[:,diffusion_mask], gamma=0.99, d_clamp=None)
-            loss_dict['motif_displacement'] = motif_disp_loss
+        # # Maintain a history of the past N number of steps.
+        # # Helpful for debugging.
+        # self._aux_data_history.append({
+        #     'aux_data': aux_data,
+        #     'model_out': model_out,
+        #     'batch': batch
+        # })
 
-
- 
-        if backprop_non_displacement_on_given:
-            pred = pred_in
-        else:
-            pred = torch.clone(pred_in)
-            pred[:,:,diffusion_mask] = pred_in[:,:,diffusion_mask].detach()
-
-        # c6d loss
-        for i in range(4):
-            # schedule factor for c6d 
-            # syntax is if it's not in the scheduling dict, loss has full weight (i.e., 1x)
-
-            loss = self.loss_fn(logit_s[i], label_s[...,i]) # (B, L, L)
-            loss = (mask_2d*loss).sum() / (mask_2d.sum() + eps)
-            loss_s.append(loss[None].detach())
-
-            loss_dict[f'c6d_{i}'] = loss.clone()
-        
-        if not self.seq_diffuser is None:
-            raise Exception('not implemented')
-            if self.seq_diffuser.continuous_seq():
-                # Continuous Analog Bit Diffusion
-                # Leave the shape of logit_aa_s as [L,21] so the model can learn to predict zero at 21st entry
-                logit_aa_s = logit_aa_s.squeeze() # [L,21]
-                logit_aa_s = logit_aa_s.transpose(0,1) # [L,21]
-
-                label_aa_s = label_aa_s.squeeze() # [L]
-
-                loss = self.seq_diffuser.loss(seq_true=label_aa_s, seq_pred=logit_aa_s, diffusion_mask=~seq_diffusion_mask)
-                tot_loss += w_aa*loss # Not scaling loss by timestep
-            else:
-                # Discrete Diffusion 
-
-                # Reshape logit_aa_s from [B,21,L] to [B,L,20]. 20 aa since seq diffusion cannot handle gap character
-                p_logit_aa_s = logit_aa_s[:,:20].transpose(1,2) # [B,L,21]
-
-                intseq_t = torch.argmax(seq_t, dim=-1)
-                loss, loss_aux, loss_vb = self.seq_diffuser.loss(x_t=intseq_t, x_0=seq, p_logit_x_0=p_logit_aa_s, t=t, diffusion_mask=seq_diffusion_mask)
-                tot_loss += w_aa*loss # Not scaling loss by timestep
-                
-                loss_dict['loss_aux'] = float(loss_aux.detach())
-                loss_dict['loss_vb']  = float(loss_vb.detach())
-        else:
-            # Classic Autoregressive Sequence Prediction
-            loss = self.loss_fn(logit_aa_s, label_aa_s.reshape(B, -1))
-            loss = loss * mask_aa_s.reshape(B, -1)
-            loss = loss.sum() / (mask_aa_s.sum() + 1e-8)
-
-        loss_s.append(loss[None].detach())
-
-        loss_dict['aa_cce'] = loss.clone()
-
-        ######################################
-        #### squared L2 loss on rotations ####
-        ###################################### 
-        I,B,L = pred.shape[:3]
-        N_pred, Ca_pred, C_pred = pred[:,:,:,0], pred[:,:,:,1], pred[:,:,:,2]
-        N_true, Ca_true, C_true = true[:,:,0], true[:,:,1], true[:,:,2]
-        
-        # get predicted frames 
-        R_pred,_ = rigid_from_3_points(N_pred.reshape(I*B,L,3), 
-                                     Ca_pred.reshape(I*B,L,3), 
-                                     C_pred.reshape(I*B,L,3))
-        R_pred = R_pred.reshape(I,B,L,3,3)
-        # get true frames 
-        R_true,_ = rigid_from_3_points(N_true, Ca_true, C_true)
-
-        # calculate frame distance loss 
-        loss_frame_dist = loss_aa.frame_distance_loss(R_pred, R_true.squeeze(), is_sm) # NOTE: loss calc assumes batch size 1 due to squeeze 
-        loss_dict['frame_sqL2'] = loss_frame_dist.clone()
-
-
-        # convert to axis angle representation and calculate axis-angle loss 
-        axis_angle_pred = rot_conv.matrix_to_axis_angle(R_pred)
-        axis_angle_true = rot_conv.matrix_to_axis_angle(R_true)
-        ax_ang_loss = axis_angle_loss(axis_angle_pred, axis_angle_true)
-        
-        # append to dictionary  
-        loss_dict['axis_angle'] = ax_ang_loss
-
-        
-        # Calculate displacement on xt-1 backcalculated from px0 and x0.
-        # Currently not backpropable
-        
-        # xt1_squared_disp, xt1_disp = track_xt1_displacement(true, pred, xyz_in,
-        #         t, diffusion_mask, self.schedule, self.alphabar_schedule)
-
-        # loss_dict['xt1_displacement'] = xt1_disp
-        # loss_dict['xt1_squared_displacement'] = xt1_squared_disp
-
-        # Structural loss
-        tot_str, str_loss = calc_str_loss(pred, true, mask_2d, same_chain, negative=negative,
-                                              A=10.0, d_clamp=None if unclamp else 10.0, gamma=1.0)
-        
-        # dj - str loss timestep scheduling: 
-        # scale w_all to keep the contributions of BB/ALLatom fape summing to 1.0
-        loss_s.append(str_loss)
-        
-        loss_dict['tot_str'] = tot_str
-
-
-        for k, loss in loss_dict.items():
-            weight = loss_weights[k]
-            tot_loss += loss*weight
-
-
-        # tot_loss += 0.0 * (pred_tors.mean() + pred_lddt.mean())
-
-        # # AllAtom loss
-        # # get ground-truth torsion angles
-        # true_tors, true_tors_alt, tors_mask, tors_planar = util.get_torsions(true, seq, self.ti_dev, self.ti_flip, self.ang_ref, mask_in=mask_crds)
-        # # masking missing residues as well
-        # tors_mask *= mask_BB[...,None] # (B, L, 10)
-
-        # # get alternative coordinates for ground-truth
-        # true_alt = torch.zeros_like(true)
-        # true_alt.scatter_(2, self.l2a[seq,:,None].repeat(1,1,1,3), true)
-        
-        # natRs_all, _n0 = self.compute_allatom_coords(seq, true[...,:3,:], true_tors)
-        # natRs_all_alt, _n1 = self.compute_allatom_coords(seq, true_alt[...,:3,:], true_tors_alt)
-        # predTs = pred[-1,...]
-        # predRs_all, pred_all = self.compute_allatom_coords(seq, predTs, pred_tors[-1]) 
-
-        # #  - resolve symmetry
-        # xs_mask = self.aamask[seq] # (B, L, 27)
-        # xs_mask[0,:,14:]=False # (ignore hydrogens except lj loss)
-        # xs_mask *= mask_crds # mask missing atoms & residues as well
-        # natRs_all_symm, nat_symm = resolve_symmetry(pred_all[0], natRs_all[0], true[0], natRs_all_alt[0], true_alt[0], xs_mask[0])
-        # #frame_mask = torch.cat( [torch.ones((L,1),dtype=torch.bool,device=tors_mask.device), tors_mask[0]], dim=-1 )
-        # frame_mask = torch.cat( [mask_BB[0][:,None], tors_mask[0,:,:8]], dim=-1 ) # only first 8 torsions have unique frames
-
-        # # allatom fape and torsion angle loss
-        # if negative: # inter-chain fapes should be ignored for negative cases
-        #     L1 = same_chain[0,0,:].sum()
-        #     frame_maskA = frame_mask.clone()
-        #     frame_maskA[L1:] = False
-        #     xs_maskA = xs_mask.clone()
-        #     xs_maskA[0, L1:] = False
-        #     l_fape_A = compute_FAPE(
-        #         predRs_all[0,frame_maskA][...,:3,:3], 
-        #         predRs_all[0,frame_maskA][...,:3,3], 
-        #         pred_all[xs_maskA][...,:3], 
-        #         natRs_all_symm[frame_maskA][...,:3,:3], 
-        #         natRs_all_symm[frame_maskA][...,:3,3], 
-        #         nat_symm[xs_maskA[0]][...,:3],
-        #         eps=1e-4)
-        #     frame_maskB = frame_mask.clone()
-        #     frame_maskB[:L1] = False
-        #     xs_maskB = xs_mask.clone()
-        #     xs_maskB[0,:L1] = False
-        #     l_fape_B = compute_FAPE(
-        #         predRs_all[0,frame_maskB][...,:3,:3], 
-        #         predRs_all[0,frame_maskB][...,:3,3], 
-        #         pred_all[xs_maskB][...,:3], 
-        #         natRs_all_symm[frame_maskB][...,:3,:3], 
-        #         natRs_all_symm[frame_maskB][...,:3,3], 
-        #         nat_symm[xs_maskB[0]][...,:3],
-        #         eps=1e-4)
-        #     fracA = float(L1)/len(same_chain[0,0])
-        #     l_fape = fracA*l_fape_A + (1.0-fracA)*l_fape_B
-        # else:
-        #     l_fape = compute_FAPE(
-        #         predRs_all[0,frame_mask][...,:3,:3], 
-        #         predRs_all[0,frame_mask][...,:3,3], 
-        #         pred_all[xs_mask][...,:3], 
-        #         natRs_all_symm[frame_mask][...,:3,:3], 
-        #         natRs_all_symm[frame_mask][...,:3,3], 
-        #         nat_symm[xs_mask[0]][...,:3],
-        #         eps=1e-4)
-        # l_tors = torsionAngleLoss(
-        #     pred_tors,
-        #     true_tors,
-        #     true_tors_alt,
-        #     tors_mask,
-        #     tors_planar,
-        #     eps = 1e-10)
-        
-        # # torsion timestep scheduling taken care of by w_all scheduling 
-        # tot_loss += w_all*w_str*(l_fape+l_tors)
-        # loss_s.append(l_fape[None].detach())
-        # loss_s.append(l_tors[None].detach())
-
-        # loss_dict['fape'] = float(l_fape.detach())
-        # loss_dict['tors'] = float(l_tors.detach())
-
-        # predicted lddt loss
-
-        # lddt_loss, ca_lddt = calc_lddt_loss(pred[:,:,:,1].detach(), true[:,:,1], pred_lddt, idx, mask_BB, mask_2d, same_chain, negative=negative)
-        # tot_loss += w_lddt*lddt_loss*lddt_loss_tscale
-        # loss_s.append(lddt_loss.detach()[None])
-        # loss_s.append(ca_lddt.detach())
-    
-        # loss_dict['ca_lddt'] = float(ca_lddt[-1].detach())
-        # loss_dict['lddt_loss'] = float(lddt_loss.detach())
-        
-        # # allatom lddt loss
-        # true_lddt = calc_allatom_lddt(pred_all[0,...,:14,:3], nat_symm[...,:14,:3], xs_mask[0,...,:14], idx[0], same_chain[0], negative=negative)
-        # loss_s.append(true_lddt[None].detach())
-        # loss_dict['allatom_lddt'] = float(true_lddt.detach())
-        # #loss_s.append(true_lddt.mean()[None].detach())
-        
-        # # bond geometry
-
-        # blen_loss, bang_loss = calc_BB_bond_geom(pred[-1], true, mask_BB)
-        # if w_blen > 0.0:
-        #     tot_loss += w_blen*blen_loss*blen_tscale
-        # if w_bang > 0.0:
-        #     tot_loss += w_bang*bang_loss*bang_tscale
-
-        # loss_dict['blen'] = float(blen_loss.detach())
-        # loss_dict['bang'] = float(bang_loss.detach())
-
-        # # lj potential
-        # lj_loss = calc_lj(
-        #     seq[0], pred_all[0,...,:3], 
-        #     self.aamask, same_chain[0], 
-        #     self.ljlk_parameters, self.lj_correction_parameters, self.num_bonds,
-        #     lj_lin=lj_lin, use_H=use_H, negative=negative)
-
-        # if w_lj > 0.0:
-        #     tot_loss += w_lj*lj_loss*lj_tscale
-
-        # loss_dict['lj'] = float(lj_loss.detach())
-
-        # # hbond [use all atoms not just those in native]
-        # hb_loss = calc_hb(
-        #     seq[0], pred_all[0,...,:3], 
-        #     self.aamask, self.hbtypes, self.hbbaseatoms, self.hbpolys)
-        # if w_hb > 0.0:
-        #     tot_loss += w_hb*hb_loss*hb_tscale
-
-        # loss_s.append(torch.stack((blen_loss, bang_loss, lj_loss, hb_loss)).detach())
-
-        # loss_dict['hb'] = float(hb_loss.detach())
-        
-        loss_dict['total_loss'] = float(tot_loss.detach())
-
-        loss_dict = rf2aa.tensor_util.cpu(loss_dict)
-        return tot_loss, loss_dict, loss_weights
+        # assert batch_loss_mask.shape == (batch_size,)
+        return normalize_loss(final_loss), aux_data
+        # return tot_loss, loss_dict, loss_weights
 
     def calc_acc(self, prob, dist, idx_pdb, mask_2d, return_cnt=False):
         B = idx_pdb.shape[0]
@@ -709,6 +614,7 @@ class Trainer():
             (model.module.shadow, checkpoint['model_state_dict']),
         ]:
             if self.reinitialize_missing_params:
+                raise Exception('stop')
                 model_state = m.state_dict()
                 if cautious:
                     new_chk = {}
@@ -726,9 +632,11 @@ class Trainer():
 
                 else:
                     new_chk = weight_state
+                
                 m.load_state_dict(new_chk, strict=False)
             else:
-                m.load_state_dict(weight_state, strict=True)
+                new_chk = {f'model.{k}':v for k,v in weight_state.items()}
+                m.load_state_dict(new_chk, strict=True)
 
         if resume_train and (not rename_model):
             print (' ... loading optimization params')
@@ -742,6 +650,8 @@ class Trainer():
                 scheduler.last_epoch = loaded_epoch + 1
             #if 'best_loss' in checkpoint:
             #    best_valid_loss = checkpoint['best_loss']
+        
+        
         return loaded_epoch, best_valid_loss
 
     def checkpoint_fn(self, model_name, description):
@@ -762,6 +672,11 @@ class Trainer():
         if ('MASTER_PORT' not in os.environ):
             os.environ['MASTER_PORT'] = '%d'%self.port
 
+        ic(
+            os.environ.get("SLURM_PROCID"),
+            os.environ.get("SLURM_NTASKS"),
+            self.interactive
+        )
         if (not self.interactive and "SLURM_NTASKS" in os.environ and "SLURM_PROCID" in os.environ):
             world_size = int(os.environ["SLURM_NTASKS"])
             rank = int (os.environ["SLURM_PROCID"])
@@ -954,28 +869,13 @@ class Trainer():
                     'scheduler_state_dict': scheduler.state_dict(),
                     'scaler_state_dict': scaler.state_dict(),
                     'config_dict':self.config_dict,
+                    'experiment_conf':self.conf,
                     'training_arguments': self.training_arguments},
                     model_path)
 
     def init_model(self, device):
-        model = RoseTTAFoldModule(
-            symmetrize_repeats=None, 
-            repeat_length=None,
-            symmsub_k=None,
-            sym_method=None,
-            main_block=None,
-            copy_main_block_template=None,
-            **self.model_param,
-            aamask=self.aamask,
-            atom_type_index=self.atom_type_index,
-            ljlk_parameters=self.ljlk_parameters,
-            lj_correction_parameters=self.lj_correction_parameters,
-            num_bonds=self.num_bonds,
-            cb_len = self.cb_len,
-            cb_ang = self.cb_ang,
-            cb_tor = self.cb_tor,
-            lj_lin=self.loss_param['lj_lin']
-            ).to(device)
+        from rf_score.model import RFScore
+        model = RFScore(self.conf.rf.model, self.diffuser, device).to(device)
         if self.log_inputs:
             pickle_dir, self.pickle_counter = pickle_function_call(model, 'forward', 'training', minifier=aa_model.minifier)
             print(f'pickle_dir: {pickle_dir}')
@@ -1023,16 +923,17 @@ class Trainer():
         optimizer.zero_grad()
 
         start_time = time.time()
+        from pytimer import Timer
+        timer = Timer()
         
         counter = 0
         
         print('About to enter train loader loop')
         for loader_out in train_loader:
-            indep, rfi_tp1_t, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, item_context = loader_out
+            timer.checkpoint('data loading')
+            indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context = loader_out
             context_msg = f'rank: {rank}: {item_context}'
             with error.context(context_msg):
-                rfi_tp1, rfi_t = rfi_tp1_t
-
                 N_cycle = np.random.randint(1, self.maxcycle+1) # number of recycling
 
                 # Defensive assertions
@@ -1049,15 +950,15 @@ class Trainer():
                     continue
 
                 # Save trues for writing pdbs later.
-                xyz_prev_orig = rfi_tp1.xyz[0]
+                xyz_prev_orig = rfi.xyz[0]
                 seq_unmasked = indep.seq[None]
 
                 # for saving pdbs
                 seq_original = torch.clone(indep.seq)
 
                 # transfer inputs to device
-                B, _, L, _ = rfi_t.msa_latent.shape
-                rf2aa.tensor_util.to_device(rfi_t, gpu)
+                B, _, L, _ = rfi.msa_latent.shape
+                rf2aa.tensor_util.to_device(rfi, gpu)
 
                 counter += 1 
 
@@ -1070,9 +971,10 @@ class Trainer():
                 # Some percentage of the time, provide the model with the model's prediction of x_0 | x_t+1
                 # When little_t == T should not unroll as we cannot go back further in time.
                 step_back = not (little_t == self.config_dict['diffuser']['T']) and (torch.tensor(self.preprocess_param['prob_self_cond']) > torch.rand(1))
+                timer.checkpoint('device loading')
                 if step_back:
                     unroll_performed = True
-                    rf2aa.tensor_util.to_device(rfi_tp1, gpu)
+                    rf2aa.tensor_util.to_device(rfi, gpu)
 
                     # Take 1 step back in time to get the training example to feed to the model
                     # For this model evaluation msa_prev, pair_prev, and state_prev are all None and i_cycle is
@@ -1080,25 +982,30 @@ class Trainer():
                     with torch.no_grad():
                         with ddp_model.no_sync():
                             with torch.cuda.amp.autocast(enabled=USE_AMP):
-                                rfo = aa_model.forward(
-                                        ddp_model,
-                                        rfi_tp1,
-                                        use_checkpoint=False,
-                                        return_raw=False
+                                model_out = ddp_model.forward(
+                                        rfi,
+                                        torch.tensor([little_t/self.T]),
+                                        use_checkpoint=True,
+                                        # return_raw=False
                                         )
-                                rfi_t = aa_model.self_cond(indep, rfi_t, rfo)
-                                xyz_prev_orig = rfi_t.xyz[0,:,:14].clone()
+                                rfo = model_out['rfo']
+                                rfi = aa_model.self_cond(indep, rfi, rfo)
+                                xyz_prev_orig = rfi.xyz[0,:,:14].clone()
+
+                timer.checkpoint('self-conditioning')
 
                 with ExitStack() as stack:
                     if counter%self.ACCUM_STEP != 0:
                         stack.enter_context(ddp_model.no_sync())
                     with torch.cuda.amp.autocast(enabled=USE_AMP):
-                        rfo = aa_model.forward(
-                                        ddp_model,
-                                        rfi_t,
-                                        use_checkpoint=True,
-                                        **({model_input_logger.LOG_ONLY_KEY: {'t':int(little_t), 'item': item}} if self.log_inputs else {}))
-                        logit_s, logit_aa_s, logits_pae, logits_pde, p_bind, pred_crds, alphas, px0_allatom, pred_lddts, _, _, _ = rfo.unsafe_astuple()
+                        model_out = ddp_model.forward(
+                                        rfi,
+                                        torch.tensor([little_t/self.T]),
+                                        use_checkpoint=True)
+
+                        timer.checkpoint('model forward')
+                        # logit_s, logit_aa_s, logits_pae, logits_pde, p_bind, pred_crds, alphas, px0_allatom, pred_lddts, _, _, _ = rfo.unsafe_astuple()
+                        logit_s, logit_aa_s, logits_pae, logits_pde, p_bind, pred_crds, alphas, px0_allatom, pred_lddts, _, _, _, _ = model_out['rfo'].unsafe_astuple()
 
                         is_diffused = is_diffused.to(gpu)
                         indep.seq = indep.seq.to(gpu)
@@ -1124,7 +1031,7 @@ class Trainer():
                         same_chain = indep.same_chain[None]
                         seq_diffusion_mask = torch.ones(L).bool()
                         seq_t = torch.nn.functional.one_hot(indep.seq, 80)[None].float()
-                        xyz_t = rfi_t.xyz[None]
+                        xyz_t = rfi.xyz[None]
                         unclamp = torch.tensor([False])
 
                         # Useful logging
@@ -1139,7 +1046,7 @@ class Trainer():
                         true_crds[:,:,14:] = 0
                         xyz_t[:] = 0
                         seq_t[:] = 0
-                        loss, loss_dict, loss_weights = self.calc_loss(logit_s, c6d,
+                        loss, loss_dict = self.calc_loss(model_out, diffuser_out, logit_s, c6d,
                                 logit_aa_s, label_aa_s, mask_aa_s, None,
                                 pred_crds, alphas, true_crds, mask_crds,
                                 mask_BB, mask_2d, same_chain,
@@ -1147,11 +1054,20 @@ class Trainer():
                                 seq_diffusion_mask=seq_diffusion_mask, seq_t=seq_t, xyz_in=xyz_t, is_sm=indep.is_sm, unclamp=unclamp,
                                 negative=negative, t=int(little_t), **self.loss_param)
                         # Force all model parameters to participate in loss. Truly a cursed workaround.
-                        loss += 0.0 * (logits_pae.mean() + logits_pde.mean() + alphas.mean() + pred_lddts.mean() + p_bind.mean())
+                        loss += 0.0 * (
+                            logits_pae.mean() +
+                            logits_pde.mean() +
+                            alphas.mean() +
+                            pred_lddts.mean() +
+                            p_bind.mean() +
+                            logit_aa_s.mean() +
+                            sum(l.mean() for l in logit_s)
+                        )
                     loss = loss / self.ACCUM_STEP
+                    timer.checkpoint('loss calculation')
 
-                    if gpu != 'cpu':
-                        print(f'DEBUG: {rank=} {gpu=} {counter=} size: {indep.xyz.shape[0]} {torch.cuda.max_memory_reserved(gpu) / 1024**3:.2f} GB reserved {torch.cuda.max_memory_allocated(gpu) / 1024**3:.2f} GB allocated {torch.cuda.get_device_properties(gpu).total_memory / 1024**3:.2f} GB total')
+                    # if gpu != 'cpu':
+                    #     print(f'DEBUG: {rank=} {gpu=} {counter=} size: {indep.xyz.shape[0]} {torch.cuda.max_memory_reserved(gpu) / 1024**3:.2f} GB reserved {torch.cuda.max_memory_allocated(gpu) / 1024**3:.2f} GB allocated {torch.cuda.get_device_properties(gpu).total_memory / 1024**3:.2f} GB total')
                     if not torch.isnan(loss):
                         scaler.scale(loss).backward()
                     else:
@@ -1160,7 +1076,9 @@ class Trainer():
                             print(msg)
                         else:
                             raise Exception(msg)
+                    timer.checkpoint('loss backwards')
                     if counter%self.ACCUM_STEP == 0:
+                        ic('ACCUMULATING')
                         # gradient clipping
                         scaler.unscale_(optimizer)
                         torch.nn.utils.clip_grad_norm_(ddp_model.parameters(), 0.2)
@@ -1171,7 +1089,9 @@ class Trainer():
                         optimizer.zero_grad()
                         if not skip_lr_sched:
                             scheduler.step()
+                        timer.checkpoint('scaling')
                         ddp_model.module.update() # apply EMA
+                        timer.checkpoint('ddp update')
                 
                 ## check parameters with no grad
                 #if rank == 0:
@@ -1217,13 +1137,14 @@ class Trainer():
                                 # negative=negative, t=int(little_t), **self.loss_param)
                                 # **self.loss_param))
                         loss_dict['metrics'] = metrics
-                        loss_dict['loss_weights'] = loss_weights
+                        # loss_dict['loss_weights'] = loss_weights
                         if WANDB:
                             wandb.log(loss_dict)
                     sys.stdout.flush()
                 
-                torch.cuda.reset_peak_memory_stats()
-                torch.cuda.empty_cache()
+                if torch.cuda.is_available():
+                    torch.cuda.reset_peak_memory_stats()
+                    torch.cuda.empty_cache()
 		# TODO: Use these when writing output PDBs
                 # logits_argsort = torch.argsort(logit_aa_s, dim=1, descending=True)
                 # top1_sequence = (logits_argsort[:, :1])
@@ -1275,12 +1196,14 @@ class Trainer():
 
                 # Expected epoch time logging
                 if rank == 0:
-                    elapsed_time = time.time() - start_time
+                    now = time.time()
+                    elapsed_time = now - start_time
                     mean_rate = n_processed / elapsed_time
                     expected_epoch_time = int(self.n_train / mean_rate)
                     m, s = divmod(expected_epoch_time, 60)
                     h, m = divmod(m, 60)
                     print(f'Expected time per epoch of size ({self.n_train}) (h:m:s) based off {n_processed} measured pseudo batch times: {h:d}:{m:02d}:{s:.0f}')
+
                 if self.saves_per_epoch and rank==0:
                     n_processed_next = self.batch_size*world_size * (counter+1)
                     n_fractionals = np.arange(1, self.saves_per_epoch) / self.saves_per_epoch
@@ -1289,6 +1212,10 @@ class Trainer():
                         if n_processed <= save_before_n and n_processed_next > save_before_n:
                             self.save_model(f'{epoch - 1 + fraction:.2f}', ddp_model, optimizer, scheduler, scaler)
                             break
+                timer.checkpoint('logging')
+                timer.restart()
+                if rank == 0:
+                    timer.summary()
 
         # TODO(fix or delete)
         # write total train loss
@@ -1316,7 +1243,7 @@ class Trainer():
         return train_tot, train_loss, train_acc
 
 
-def make_trainer(args, model_param, loader_param, loss_param, diffusion_param, preprocess_param):
+def make_trainer(conf, args, model_param, loader_param, loss_param, diffusion_param, preprocess_param):
     
     global N_EXAMPLE_PER_EPOCH
     global DEBUG 
@@ -1360,7 +1287,9 @@ def make_trainer(args, model_param, loader_param, loss_param, diffusion_param, p
     #np.random.seed(args.seed)
 
     mp.freeze_support()
-    train = Trainer(model_name=args.model_name,
+    train = Trainer(
+                    conf=conf,
+                    model_name=args.model_name,
                     ckpt_load_path=args.ckpt_load_path,
                     interactive=args.interactive,
                     n_epoch=args.num_epochs, lr=args.lr, l2_coeff=1.0e-2,
@@ -1383,10 +1312,28 @@ def make_trainer(args, model_param, loader_param, loss_param, diffusion_param, p
                     resume=args.resume)
     return train
 
-if __name__ == "__main__":
+
+# @hydra.main(version_base=None, config_path="rf_diffusion/config/training", config_name="base")
+# def run(conf: DictConfig):
+import yaml
+def run():
     from arguments import get_args
     all_args = get_args()
+    # ic(all_args)
+    # print(yaml.dump(all_args, default_flow_style=False))
+    # raise Exception('stop')
+    conf = construct_conf([])
+    ic(conf)
     if not all_args[0].debug:
         import wandb
-    train = make_trainer(*all_args)
+    train = make_trainer(conf, *all_args)
     train.run_model_training(torch.cuda.device_count())
+
+from hydra import compose, initialize
+def construct_conf(overrides, config_name='train_rf.yaml'):
+    initialize(version_base=None, config_path="config/training", job_name="test_app")
+    conf = compose(config_name=config_name, overrides=overrides, return_hydra_config=True)
+    return conf
+
+if __name__ == "__main__":
+    run()

@@ -24,11 +24,14 @@ import rf2aa.chemical
 import util
 import inference.utils
 import networkx as nx
+nx.from_numpy_matrix = nx.from_numpy_array
 import itertools
 import random
 import guide_posts as gp
 import rotation_conversions
 import atomize
+from data import utils as du
+from data import all_atom
 
 
 NINDEL=1
@@ -765,87 +768,19 @@ def centre(indep, is_diffused):
 
 
 def diffuse(conf, diffuser, indep, is_diffused, t):
+    indep = copy.deepcopy(indep)
     indep.xyz = add_fake_frame_legs(indep.xyz, indep.is_sm)
-
-    if t == diffuser.T: 
-        t_list = [t,t]
-    else: 
-        t_list = [t+1,t]
-    indep_diffused_t = copy.deepcopy(indep)
-    indep_diffused_tplus1 = copy.deepcopy(indep)
-    kwargs = {
-        'xyz'                     :indep.xyz,
-        'seq'                     :indep.seq,
-        'atom_mask'               :None,
-        'diffusion_mask'          :~is_diffused,
-        't_list'                  :t_list,
-        'diffuse_sidechains'      :conf['preprocess']['sidechain_input'],
-        'include_motif_sidechains':conf['preprocess']['motif_sidechain_input'],
-        'is_sm': indep.is_sm
-    }
-    diffused_fullatoms, aa_masks, true_crds = diffuser.diffuse_pose(**kwargs)
-
-    ############################################
-    ########### New Self Conditioning ##########
-    ############################################
-
-    # JW noticed that the frames returned from the diffuser are not from a single noising trajectory
-    # So we are going to take a denoising step from x_t+1 to get x_t and have their trajectories agree
-
-    # Only want to do this process when we are actually using self conditioning training
-    from diffusion import get_beta_schedule
-    from inference.utils import get_next_ca, get_next_frames
-    if conf['preprocess']['new_self_cond'] and t < 200: # Only can get t+1 if we are at t < 200
-
-        tmp_x_t_plus1 = diffused_fullatoms[0]
-
-        beta_schedule, _, alphabar_schedule = get_beta_schedule(
-                                    T=conf['diffuser']['T'],
-                                    b0=conf['diffuser']['b_0'],
-                                    bT=conf['diffuser']['b_T'],
-                                    schedule_type=conf['diffuser']['schedule_type'],
-                                    inference=False)
-
-        _, ca_deltas = get_next_ca(
-                                    xt=tmp_x_t_plus1,
-                                    px0=true_crds,
-                                    t=t+1,
-                                    diffusion_mask=~is_diffused,
-                                    crd_scale=conf['diffuser']['crd_scale'],
-                                    beta_schedule=beta_schedule,
-                                    alphabar_schedule=alphabar_schedule,
-                                    noise_scale=1)
-
-        # Noise scale ca hard coded for now. Maybe can eventually be piped down from inference configs? - NRB
-        assert not torch.isnan(ca_deltas).any()
-        assert not torch.isnan(true_crds[:,1,:]).any()
-        assert not torch.isnan(tmp_x_t_plus1[is_diffused,1,0]).any()
-        assert not torch.isnan(tmp_x_t_plus1[:,1,0]).any()
-        frames_next = get_next_frames(
-                                    xt=tmp_x_t_plus1,
-                                    px0=true_crds,
-                                    t=t+1,
-                                    diffuser=diffuser,
-                                    so3_type=conf['diffuser']['so3_type'],
-                                    diffusion_mask=~is_diffused,
-                                    noise_scale=1) # Noise scale frame hard coded for now - NRB
-
-        frames_next = torch.from_numpy(frames_next) + ca_deltas[:,None,:]  # translate
-        
-        tmp_x_t = torch.zeros_like(tmp_x_t_plus1)
-        tmp_x_t[:,:3] = frames_next
-        
-        if conf['preprocess']['motif_sidechain_input']:
-            tmp_x_t[~is_diffused,:] = tmp_x_t_plus1[~is_diffused]
-        
-        assert not torch.isnan(tmp_x_t[~is_diffused,1,0]).any()
-        assert not torch.isnan(tmp_x_t[is_diffused,1,0]).any()
-        assert not torch.isnan(tmp_x_t[:,1,0]).any()
-        diffused_fullatoms[1] = tmp_x_t
-
-    indep_diffused_tplus1.xyz = diffused_fullatoms[0, :, :14]
-    indep_diffused_t.xyz = diffused_fullatoms[1, :, :14]
-    return (indep_diffused_tplus1, indep_diffused_t), t_list
+    rigids_0 = du.rigid_frames_from_atom_14(indep.xyz)
+    diffuser_out = diffuser.forward_marginal(
+        rigids_0,
+        t=t/conf.diffuser.T,
+        diffuse_mask=is_diffused.float(),
+        as_tensor_7=False
+    )
+    diffuser_out['rigids_0'] = rigids_0.to_tensor_7()[None]
+    xT = all_atom.atom37_from_rigid(diffuser_out['rigids_t'])
+    indep.xyz = xT[:,:14]
+    return indep, diffuser_out
 
 def forward(model, rfi, **kwargs):
     rfi_dict = dataclasses.asdict(rfi)
@@ -1120,7 +1055,7 @@ class AtomizeResidues:
         L_base = L - N_atomized_atoms # length of non-atomized region in atomized features
         L_new = L_base + N_atomized_res # length of deatomized features
 
-        idx_nonatomized = np.setdiff1d(np.arange(L_new), self.atomized_res_idx)
+        idx_nonatomized = np.setdiff1d(np.arange(L_new), torch.tensor(self.atomized_res_idx))
         # map residue indices in atomized features to indices in deatomized features
         return dict(zip(idx_nonatomized, np.arange(L_base)))
 
@@ -1144,7 +1079,7 @@ class AtomizeResidues:
         L_new = L_base + N_atomized_res # length of deatomized features
 
         # indices of non-atomized positions in deatomized features
-        idx_nonatomized = np.setdiff1d(np.arange(L_new), self.atomized_res_idx)
+        idx_nonatomized = np.setdiff1d(np.arange(L_new), torch.tensor(self.atomized_res_idx))
         assert(len(idx_nonatomized)==L_base)
 
         # deatomize the previously atomized residues
@@ -1206,7 +1141,7 @@ class AtomizeResidues:
         same_chain = torch.zeros((L_new, L_new)).long()
 
         # indices of non-atomized positions in deatomized features
-        idx_nonatomized = np.setdiff1d(np.arange(L_new), self.atomized_res_idx)
+        idx_nonatomized = np.setdiff1d(np.arange(L_new), torch.tensor(self.atomized_res_idx))
         assert(len(idx_nonatomized)==L_base)
 
         # map residue indices in atomized features to indices in deatomized features

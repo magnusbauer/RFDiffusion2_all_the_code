@@ -172,6 +172,13 @@ class Sampler:
         weights_pkl = du.read_pkl(
             self._conf.score_model.weights_path, use_torch=True,
                 map_location=self.device)
+        
+        # weights_conf = weights_pkl['conf']
+        # TODO: remove and uncomment above once confs are saved.
+        conf_pkl = du.read_pkl(
+            self._conf.score_model.conf_pkl_path, use_torch=True,
+                map_location=self.device)
+        weights_conf = conf_pkl['conf']
 
         # Merge base experiment config with checkpoint config.
         # self._conf.score_model = OmegaConf.merge(
@@ -179,8 +186,12 @@ class Sampler:
         # if conf_overrides is not None:
         #     self._conf = OmegaConf.merge(self._conf, conf_overrides)
         import experiments.train_se3_diffusion
-        self.experiment = experiments.train_se3_diffusion.Experiment(conf=weights_pkl['conf'])
-        model_weights = weights_pkl['model']
+        self.experiment = experiments.train_se3_diffusion.Experiment(conf=weights_conf)
+        if 'final_state_dict' in weights_pkl:
+            model_weights = weights_pkl['final_state_dict']
+        else:
+            model_weights = weights_pkl['model']
+
         self.experiment.model.load_state_dict(model_weights)
         self.experiment.model.to(self.device)
 
@@ -338,7 +349,7 @@ class Sampler:
         diffuser_out = self.experiment.diffuser.forward_marginal(
             rigids_0,
             t=1.0,
-            diffuse_mask=(~self.is_diffused).float(),
+            diffuse_mask=self.is_diffused.float(),
             as_tensor_7=False
         )
         xT = all_atom.atom37_from_rigid(diffuser_out['rigids_t'])

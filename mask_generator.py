@@ -8,6 +8,7 @@ import numpy as np
 from icecream import ic
 import rf2aa.util
 import networkx as nx
+nx.from_numpy_matrix = nx.from_numpy_array
 from functools import wraps
 import assertpy
 
@@ -203,7 +204,7 @@ def get_closest_tip_atoms(indep, atom_mask,
     candidate_indices = is_sampled_het.nonzero().flatten()
 
     n_sample = min(n_sample, len(candidate_indices))
-    print(f'choosing {n_sample} out of {len(candidate_indices)}')
+    # print(f'choosing {n_sample} out of {len(candidate_indices)}')
     indices = np.random.choice(candidate_indices, n_sample, replace=False)
 
     # Verification for debugging
