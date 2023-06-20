@@ -33,6 +33,7 @@ from rf2aa.tensor_util import assert_equal
 from rf2aa.util_module import XYZConverter
 from rf2aa.RoseTTAFoldModel import RoseTTAFoldModule
 import loss_aa
+import metrics
 import run_inference
 import aa_model
 import atomize
@@ -50,6 +51,9 @@ import util
 from scheduler import get_stepwise_decay_schedule_with_warmup
 
 import rotation_conversions as rot_conv
+from rf_diffusion import test_utils
+from openfold.utils import rigid_utils as ru
+from data import all_atom
 
 #added for inpainting training
 from icecream import ic
@@ -71,7 +75,6 @@ import torch.multiprocessing as mp
 from torch.nn.parallel import DistributedDataParallel as DDP
 #torch.backends.cudnn.benchmark = False
 #torch.backends.cudnn.deterministic = True
-
 #torch.autograd.set_detect_anomaly(True)
 
 global N_EXAMPLE_PER_EPOCH
@@ -81,10 +84,6 @@ USE_AMP = False
 
 N_PRINT_TRAIN = 1 
 #BATCH_SIZE = 1 * torch.cuda.device_count()
-
-# num structs per epoch
-# must be divisible by #GPUs
-#N_EXAMPLE_PER_EPOCH = 25600*2
 
 
 def add_weight_decay(model, l2_coeff):
@@ -155,203 +154,35 @@ def no_batch_collate_fn(data):
     return data[0]
 
 class Trainer():
-    def __init__(self, conf=None, model_name='BFF', ckpt_load_path=None,
-                 n_epoch=100, lr=1.0e-4, l2_coeff=1.0e-2, port=None, interactive=False,
-                 model_param={}, loader_param={}, loss_param={}, batch_size=1, accum_step=1, 
-                 maxcycle=4, diffusion_param={}, preprocess_param={}, outdir=None, wandb_prefix='',
-                 metrics=None, zero_weights=False, log_inputs=False, n_write_pdb=100,
-                 reinitialize_missing_params=False, verbose_checks=False, saves_per_epoch=None, resume=False):
-
+    def __init__(self, conf=None):
         self.conf=conf
         self._exp_conf = conf.experiment
-        self.model_name = model_name #"BFF"
-        self.ckpt_load_path = ckpt_load_path
-        self.n_epoch = n_epoch
-        self.init_lr = lr
-        self.l2_coeff = l2_coeff
-        self.port = port
-        self.interactive = interactive
-        self.outdir = outdir
-        self.zero_weights=zero_weights
-        self.metrics=metrics or []
-        self.log_inputs=log_inputs
-        self.n_write_pdb = n_write_pdb
-        self.reinitialize_missing_params = reinitialize_missing_params
-        self.rate_deque = collections.deque(maxlen=200)
-        self.verbose_checks=verbose_checks
-        self.resume=resume
-
-        self.outdir = self.outdir or '.'
+        self.metrics=[getattr(metrics, k) for k in conf.metrics]
+        self.outdir = self.conf.outdir or '.'
         self.outdir = os.path.join(self.outdir, f'./train_session{get_datetime()}')
         ic(self.outdir)
         if os.path.isdir(self.outdir) and not DEBUG:
             sys.exit('EXITING: self.outdir already exists. Dont clobber')
         os.makedirs(self.outdir, exist_ok=True)
-        #
-        self.model_param = model_param
-        self.loader_param = loader_param
-        self.valid_param = deepcopy(loader_param)
-        self.valid_param['MINTPLT'] = 1
-        self.valid_param['SEQID'] = 150.0
-        self.loss_param = loss_param
-        ic(self.loss_param)
-        self.ACCUM_STEP = accum_step
-        self.batch_size = batch_size
-
-        self.diffusion_param = diffusion_param
-        self.preprocess_param = preprocess_param
-        self.wandb_prefix=wandb_prefix
-        self.saves_per_epoch=saves_per_epoch
 
         # Initialize experiment objects
         from data import se3_diffuser
         self.diffuser = se3_diffuser.SE3Diffuser(self.conf.diffuser)
-        self.diffuser.T = diffusion_param['diff_T']
-
-        # For diffusion
-        self.T = diffusion_param['diff_T']
-        ic(self.T)
-        diff_kwargs = {'T'              :diffusion_param['diff_T'],
-                       'b_0'            :diffusion_param['diff_b0'],
-                       'b_T'            :diffusion_param['diff_bT'],
-                       'min_b'          :diffusion_param['diff_min_b'],
-                       'max_b'          :diffusion_param['diff_max_b'],
-                       'min_sigma'      :diffusion_param['diff_min_sigma'],
-                       'max_sigma'      :diffusion_param['diff_max_sigma'],
-                       'schedule_type'  :diffusion_param['diff_schedule_type'],
-                       'so3_schedule_type' : diffusion_param['diff_so3_schedule_type'],
-                       'so3_type'       :diffusion_param['diff_so3_type'],
-                       'chi_type'       :diffusion_param['diff_chi_type'],
-                       'aa_decode_steps':diffusion_param['aa_decode_steps'],
-                       'crd_scale'      :diffusion_param['diff_crd_scale']}
-
-        # For Sequence Diffusion
-        seq_diff_type = diffusion_param['seqdiff']
-        self.seq_diff_type = seq_diff_type
-        seqdiff_kwargs = {'T'              : diffusion_param['diff_T'], # Use same T as for str diff
-                          's_b0'           : diffusion_param['seqdiff_b0'],
-                          's_bT'           : diffusion_param['seqdiff_bT'],
-                          'schedule_type'  : diffusion_param['seqdiff_schedule_type'],
-                          'loss_type'      : diffusion_param['seqdiff_loss_type']
-                         }
-
-        if not seq_diff_type:
-            print('Training with autoregressive sequence decoding')
-            self.seq_diffuser = None
-
-        elif seq_diff_type == 'uniform':
-            print('Training with discrete sequence diffusion')
-            seqdiff_kwargs['rate_matrix'] = 'uniform'
-            seqdiff_kwargs['lamda'] = diffusion_param['seqdiff_lambda']
-
-            self.seq_diffuser = DiscreteSeqDiffuser(**seqdiff_kwargs)
-
-        elif seq_diff_type == 'continuous':
-            print('Training with continuous sequence diffusion')
-
-            self.seq_diffuser = ContinuousSeqDiffuser(**seqdiff_kwargs)
-
-        else: 
-            print(f'Sequence diffusion with type {seq_diff_type} is not implemented')
-            raise NotImplementedError()
+        self.diffuser.T = conf.diffuser.T
 
         # for all-atom str loss
         self.ti_dev = rf2aa.util.torsion_indices
         self.ti_flip = rf2aa.util.torsion_can_flip
         self.ang_ref = rf2aa.util.reference_angles
         self.l2a = rf2aa.util.long2alt
-        self.aamask = rf2aa.util.allatom_mask
-        self.num_bonds = rf2aa.util.num_bonds
-        self.ljlk_parameters = rf2aa.util.ljlk_parameters
-        self.lj_correction_parameters = rf2aa.util.lj_correction_parameters
-        
-        # create a loss schedule - sigmoid (default) if use tschedule, else empty dict
-        constant_schedule = not loss_param['use_tschedule']
-        loss_names = loss_param['scheduled_losses']
-        schedule_type = loss_param['scheduled_types']
-        schedule_params = loss_param['scheduled_params']
-        self.loss_schedules = loss.get_loss_schedules(diff_kwargs['T'], loss_names=loss_names, schedule_types=schedule_type, schedule_params=schedule_params, constant=constant_schedule)
-        self.loss_param.pop('use_tschedule')
-        self.loss_param.pop('scheduled_losses')
-        self.loss_param.pop('scheduled_types')
-        self.loss_param.pop('scheduled_params')
-        print('These are the loss names which have t_scheduling activated')
-        print(self.loss_schedules.keys())
 
         self.hbtypes = rf2aa.util.hbtypes
         self.hbbaseatoms = rf2aa.util.hbbaseatoms
         self.hbpolys = rf2aa.util.hbpolys
 
-        # module torsion -> allatom
-        # self.compute_allatom_coords = ComputeAllAtomCoords()
-
-        #self.diffuser.get_allatom = self.compute_allatom_coords
-
         # loss & final activation function
         self.loss_fn = nn.CrossEntropyLoss(reduction='none')
         self.active_fn = nn.Softmax(dim=1)
-
-        self.maxcycle = maxcycle
-        
-        print (model_param, loader_param, loss_param)
-        
-        # Assemble "Config" for inference
-        self.diff_kwargs = diff_kwargs
-        self.seqdiff_kwargs = seqdiff_kwargs
-        self.assemble_config()
-        ic(self.config_dict) 
-
-        self.assemble_train_args()
-
-    def assemble_config(self) -> None:
-        config_dict = {}
-        config_dict['model'] = self.model_param
-        
-        #rename diffusion params to match config
-        #infer_names=dict(zip([i for i in self.diffusion_param.keys()],[i[5:] if i[:5] == 'diff_' else i for i in self.diffusion_param.keys()]))
-        #config_dict['diffuser'] = {infer_names[k]: v for k, v in self.diffusion_param.items()}
-        config_dict['diffuser'] = self.diff_kwargs
-        config_dict['seq_diffuser'] = self.seqdiff_kwargs
-        # Add seq_diff_type
-        config_dict['seq_diffuser']['seqdiff'] = self.seq_diff_type
-        config_dict['preprocess'] = self.preprocess_param
-        self.config_dict = config_dict
-
-    def assemble_train_args(self) -> None:
-
-        # preprocess and model param are saved in config dict
-        # and so are not saved here
-
-        # Hack to pickle wrapped functions
-        loader_param_pickle_safe = copy.deepcopy(self.loader_param)
-        loader_param_pickle_safe['DIFF_MASK_PROBS'] = {k.__name__:v for k,v in loader_param_pickle_safe['DIFF_MASK_PROBS'].items()}
-        diffusion_param_pickle_safe = copy.deepcopy(self.diffusion_param)
-        diffusion_param_pickle_safe['diff_mask_probs'] = {k.__name__:v for k,v in diffusion_param_pickle_safe['diff_mask_probs'].items()}
-        # ic(pickle_safe)
-        self.training_arguments = {
-
-            'ckpt_load_path': self.ckpt_load_path,
-            'interactive': self.interactive,
-            'n_epoch': self.n_epoch,
-            'learning_rate': self.init_lr,
-            'l2_coeff': self.l2_coeff,
-            'port': self.port,
-
-            'epoch_size': N_EXAMPLE_PER_EPOCH,
-            'batch_size': self.batch_size,
-            'accum_step': self.ACCUM_STEP,
-            'maxcycle': self.maxcycle,
-            'wandb_prefix': self.wandb_prefix,
-            'metrics': self.metrics,
-            'zero_weights': self.zero_weights,
-            'log_inputs': self.log_inputs,
-
-            'diffusion_param': diffusion_param_pickle_safe,
-            'loader_param': loader_param_pickle_safe,
-            'loss_param': self.loss_param
-
-        }
-        torch.save(self.training_arguments, 'tmp.out')
 
     def calc_loss(self, model_out, diffuser_out, logit_s, label_s,
                   logit_aa_s, label_aa_s, mask_aa_s, logit_exp,
@@ -362,12 +193,6 @@ class Trainer():
                   w_lddt=1.0, w_blen=1.0, w_bang=1.0, w_lj=0.0, w_hb=0.0,
                   lj_lin=0.75, use_H=False, w_disp=0.0, w_motif_disp=0.0, w_ax_ang=0.0, w_frame_dist=0.0, eps=1e-6, backprop_non_displacement_on_given=False):
 
-
-
-
-        # bb_mask = batch['res_mask']
-        # diffuse_mask = 1 - batch['fixed_mask']
-        # loss_mask = is_dif
         device = model_out['rigids'].device
         batch_size, _, num_res, _ = model_out['rigids'].shape
         diffuse_mask = diffusion_mask[None].to(device)
@@ -376,7 +201,7 @@ class Trainer():
         batch_loss_mask = diffuse_mask
         import assertpy
         assertpy.assert_that(diffusion_mask.ndim) == 2
-        t = torch.tensor([t/self.T]).to(device)
+        t = torch.tensor([t/self.conf.diffuser.T]).to(device)
 
         diffuser_out['rigids_0'] = diffuser_out['rigids_0'].to(device)
         gt_rot_score = diffuser_out['rot_score'][None].to(device)
@@ -396,8 +221,8 @@ class Trainer():
         ) / (loss_mask.sum(dim=-1) + 1e-10)
 
         # Translation x0 loss
-        gt_trans_x0 = diffuser_out['rigids_0'][..., 4:] * self._exp_conf.coordinate_scaling
-        pred_trans_x0 = model_out['rigids'][..., 4:] * self._exp_conf.coordinate_scaling
+        gt_trans_x0 = diffuser_out['rigids_0'][..., 4:] * self.conf.diffuser.r3.coordinate_scaling
+        pred_trans_x0 = model_out['rigids'][..., 4:] * self.conf.diffuser.r3.coordinate_scaling
         trans_x0_loss = torch.sum(
             (gt_trans_x0 - pred_trans_x0)**2 * loss_mask[..., None],
             dim=(-1, -2)
@@ -420,9 +245,6 @@ class Trainer():
         rot_loss *= int(self.conf.diffuser.diffuse_rot)
 
         # Backbone atom loss
-        from rf_diffusion import test_utils
-        from openfold.utils import rigid_utils as ru
-        from data import all_atom
 
         pred_atom37 = model_out['atom37'][...,:self.conf.experiment.n_bb,:]
         test_utils.assert_no_nan(pred_atom37)
@@ -586,13 +408,11 @@ class Trainer():
 
     def load_model(self, model, optimizer, scheduler, scaler, model_name, rank, suffix='last', resume_train=False):
 
-        #chk_fn = "models/%s_%s.pt"%(model_name, suffix)
-        #assert not (self.ckpt_load_path is None )
-        chk_fn = self.ckpt_load_path
+        chk_fn = self.conf.ckpt_load_path
 
         loaded_epoch = 0
         best_valid_loss = 999999.9
-        if self.zero_weights:
+        if self.conf.zero_weights:
             return 0, best_valid_loss
         if not os.path.exists(chk_fn):
             raise Exception(f'no model found at path: {chk_fn}, pass -zero_weights if you intend to train the model with no initialization and no starting weights')
@@ -613,7 +433,7 @@ class Trainer():
             (model.module.model, checkpoint['final_state_dict']),
             (model.module.shadow, checkpoint['model_state_dict']),
         ]:
-            if self.reinitialize_missing_params:
+            if self.conf.reinitialize_missing_params:
                 raise Exception('stop')
                 model_state = m.state_dict()
                 if cautious:
@@ -675,9 +495,9 @@ class Trainer():
         ic(
             os.environ.get("SLURM_PROCID"),
             os.environ.get("SLURM_NTASKS"),
-            self.interactive
+            self.conf.interactive
         )
-        if (not self.interactive and "SLURM_NTASKS" in os.environ and "SLURM_PROCID" in os.environ):
+        if (not self.conf.interactive and "SLURM_NTASKS" in os.environ and "SLURM_PROCID" in os.environ):
             world_size = int(os.environ["SLURM_NTASKS"])
             rank = int (os.environ["SLURM_PROCID"])
             print ("Launched from slurm", rank, world_size)
@@ -692,6 +512,9 @@ class Trainer():
                 mp.spawn(self.train_model, args=(world_size,), nprocs=world_size, join=True)
 
     def train_model(self, rank, world_size, return_setup=False):
+
+        self.accum_step = self.conf.pseudobatch / world_size
+        ic(self.accum_step)
         #print ("running ddp on rank %d, world_size %d"%(rank, world_size))
         
         # save git diff from most recent commit
@@ -703,11 +526,11 @@ class Trainer():
         if WANDB and rank == 0:
             print('initializing wandb')
             resume = None
-            name='_'.join([self.wandb_prefix, self.outdir.replace('./','')])
+            name='_'.join([self.conf.wandb_prefix, self.outdir.replace('./','')])
             id = None
-            if self.resume:
+            if self.conf.resume:
                 name=None
-                id=self.resume
+                id=self.conf.resume
                 resume='must'
             wandb.init(
                     project="fancy-pants ",
@@ -717,14 +540,8 @@ class Trainer():
                     resume=resume)
             print(f'{wandb.run.id=}')
 
-            all_param = {}
-            all_param.update(self.loader_param)
-            all_param.update(self.model_param)
-            all_param.update(self.loss_param)
-            all_param.update(self.diffusion_param)
-
             # wandb.config.update(all_param)
-            wandb.config = all_param
+            wandb.config = self.conf
             wandb.save(os.path.join(os.getcwd(), self.outdir, 'git_diff.txt'))
         ic(os.environ['MASTER_ADDR'], rank, world_size, torch.cuda.device_count())
         print(f'{rank=} {world_size=} initializing process group')
@@ -739,119 +556,46 @@ class Trainer():
         self.n_train = N_EXAMPLE_PER_EPOCH
 
 
-        dataset_configs, homo = default_dataset_configs(self.loader_param, debug=DEBUG)
+        dataset_configs, homo = default_dataset_configs(self.conf.dataloader, debug=DEBUG)
         
         print('Making train sets')
-        train_set = DistilledDataset(dataset_configs, 
-                                     self.loader_param, self.diffuser, self.seq_diffuser, self.ti_dev, self.ti_flip, self.ang_ref,
-                                     self.diffusion_param, self.preprocess_param, self.model_param, self.config_dict, homo)
-        #get proportion of seq2str examples
-        if 'seq2str' in self.loader_param['TASK_NAMES']:
-            p_seq2str = self.loader_param['TASK_P'][self.loader_param['TASK_NAMES'].index('seq2str')]
-        else:
-            p_seq2str = 0
+        train_set = DistilledDataset(dataset_configs,
+                                     self.conf.dataloader, self.diffuser, self.ti_dev, self.ti_flip, self.ang_ref,
+                                     self.conf.preprocess, self.conf, homo)
+        # #get proportion of seq2str examples
+        # if 'seq2str' in self.loader_param['TASK_NAMES']:
+        #     p_seq2str = self.loader_param['TASK_P'][self.loader_param['TASK_NAMES'].index('seq2str')]
+        # else:
+        #     p_seq2str = 0
 
         train_sampler = DistributedWeightedSampler(dataset_configs,
-                                                   dataset_options=self.loader_param['DATASETS'],
-                                                   dataset_prob=self.loader_param['DATASET_PROB'],
+                                                   dataset_options=self.conf.dataloader['DATASETS'],
+                                                   dataset_prob=self.conf.dataloader['DATASET_PROB'],
                                                    num_example_per_epoch=N_EXAMPLE_PER_EPOCH,
                                                    num_replicas=world_size, rank=rank, replacement=True)
         
         print('THIS IS LOAD PARAM GOING INTO DataLoader inits')
         print(LOAD_PARAM)
 
-        train_loader = data.DataLoader(train_set, sampler=train_sampler, batch_size=self.batch_size, collate_fn=no_batch_collate_fn, **LOAD_PARAM)
+        train_loader = data.DataLoader(train_set, sampler=train_sampler, batch_size=self.conf.batch_size, collate_fn=no_batch_collate_fn, **LOAD_PARAM)
 
         # move some global data to cuda device
         self.ti_dev = self.ti_dev.to(gpu)
         self.ti_flip = self.ti_flip.to(gpu)
         self.ang_ref = self.ang_ref.to(gpu)
-        self.l2a = self.l2a.to(gpu)
-        self.aamask = self.aamask.to(gpu)
-        #self.compute_allatom_coords = self.compute_allatom_coords.to(gpu)
-
-        self.num_bonds = self.num_bonds.to(gpu)
-        self.ljlk_parameters = self.ljlk_parameters.to(gpu)
-        self.lj_correction_parameters = self.lj_correction_parameters.to(gpu)
-        self.hbtypes = self.hbtypes.to(gpu)
-        self.hbbaseatoms = self.hbbaseatoms.to(gpu)
-        self.hbpolys = self.hbpolys.to(gpu)
-
-        
-        #self.diffuser.get_allatom = self.compute_allatom_coords 
-        
-        ## JW I have changed this so we always just put Lx22 sequence into the embedding
-        #print(f'Using onehot sequence (Lx22) input for model')
-        #self.model_param['input_seq_onehot'] = True
-        
+       
         # define model
         print('Making model...')
-        ic(self.model_param)
-        # Set to zero in rf_diffusion
-        # model_param.pop('d_time_emb')
-        # model_param.pop('d_time_emb_proj')
-        # Unused
-        # model_param.pop('use_motif_timestep')
-
-        # for all-atom str loss
-        self.ti_dev = rf2aa.util.torsion_indices
-        self.ti_flip = rf2aa.util.torsion_can_flip
-        self.ang_ref = rf2aa.util.reference_angles
-        self.fi_dev = rf2aa.util.frame_indices
-        self.l2a = rf2aa.util.long2alt
-        self.aamask = rf2aa.util.allatom_mask
-        self.num_bonds = rf2aa.util.num_bonds
-        self.atom_type_index = rf2aa.util.atom_type_index
-        self.ljlk_parameters = rf2aa.util.ljlk_parameters
-        self.lj_correction_parameters = rf2aa.util.lj_correction_parameters
-        self.hbtypes = rf2aa.util.hbtypes
-        self.hbbaseatoms = rf2aa.util.hbbaseatoms
-        self.hbpolys = rf2aa.util.hbpolys
-        self.cb_len = rf2aa.util.cb_length_t
-        self.cb_ang = rf2aa.util.cb_angle_t
-        self.cb_tor = rf2aa.util.cb_torsion_t
-
-        # model_param.
-        self.ti_dev = self.ti_dev.to(gpu)
-        self.ti_flip = self.ti_flip.to(gpu)
-        self.ang_ref = self.ang_ref.to(gpu)
-        self.fi_dev = self.fi_dev.to(gpu)
-        self.l2a = self.l2a.to(gpu)
-        self.aamask = self.aamask.to(gpu)
-        #self.compute_allatom_coords = self.compute_allatom_coords.to(gpu)
-        self.num_bonds = self.num_bonds.to(gpu)
-        self.atom_type_index = self.atom_type_index.to(gpu)
-        self.ljlk_parameters = self.ljlk_parameters.to(gpu)
-        self.lj_correction_parameters = self.lj_correction_parameters.to(gpu)
-        self.hbtypes = self.hbtypes.to(gpu)
-        self.hbbaseatoms = self.hbbaseatoms.to(gpu)
-        self.hbpolys = self.hbpolys.to(gpu)
-        self.cb_len = self.cb_len.to(gpu)
-        self.cb_ang = self.cb_ang.to(gpu)
-        self.cb_tor = self.cb_tor.to(gpu)
-
         ddp_model, optimizer, scheduler, scaler, loaded_epoch = self.init_model(gpu)
 
         if return_setup:
             return ddp_model, train_loader, optimizer, scheduler, scaler
         
-        #valid_pdb_sampler.set_epoch(0)
-        #valid_homo_sampler.set_epoch(0)
-        #valid_compl_sampler.set_epoch(0)
-        #valid_neg_sampler.set_epoch(0)
-        #valid_tot, valid_loss, valid_acc = self.valid_pdb_cycle(ddp_model, valid_pdb_loader, rank, gpu, world_size, loaded_epoch)
-        #_, _, _ = self.valid_pdb_cycle(ddp_model, valid_homo_loader, rank, gpu, world_size, loaded_epoch, header="Homo")
-        #_, _, _ = self.valid_ppi_cycle(ddp_model, valid_compl_loader, valid_neg_loader, rank, gpu, world_size, loaded_epoch)
-        for epoch in range(loaded_epoch+1, self.n_epoch+1):
+        for epoch in range(loaded_epoch+1, self.conf.n_epoch+1):
             train_sampler.set_epoch(epoch)
             
             print('Just before calling train cycle...')
             train_tot, train_loss, train_acc = self.train_cycle(ddp_model, train_loader, optimizer, scheduler, scaler, rank, gpu, world_size, epoch)
-            #valid_tot, valid_loss, valid_acc = self.valid_pdb_cycle(ddp_model, valid_pdb_loader, rank, gpu, world_size, epoch)
-            #_, _, _ = self.valid_pdb_cycle(ddp_model, valid_homo_loader, rank, gpu, world_size, epoch, header="Homo")
-            #_, _, _ = self.valid_ppi_cycle(ddp_model, valid_compl_loader, valid_neg_loader, rank, gpu, world_size, epoch)
-            
-            #valid_tot, valid_loss, valid_acc = self.valid_cycle(ddp_model, valid_loader, rank, gpu, world_size, epoch)
             if rank == 0: # save model
                 self.save_model(epoch, ddp_model, optimizer, scheduler, scaler)
 
@@ -859,27 +603,28 @@ class Trainer():
 
     def save_model(self, suffix, ddp_model, optimizer, scheduler, scaler):
         #save every epoch     
-        model_path = self.checkpoint_fn(self.model_name, str(suffix))
+        model_path = self.checkpoint_fn(self.conf.model_name, str(suffix))
         print(f'saving model to {model_path}')
-        torch.save({'epoch': suffix,
+        torch.save({
+                    'model': ddp_model.module.model.__class__,
+                    'epoch': suffix,
                     #'model_state_dict': ddp_model.state_dict(),
                     'model_state_dict': ddp_model.module.shadow.state_dict(),
                     'final_state_dict': ddp_model.module.model.state_dict(),
                     'optimizer_state_dict': optimizer.state_dict(),
                     'scheduler_state_dict': scheduler.state_dict(),
                     'scaler_state_dict': scaler.state_dict(),
-                    'config_dict':self.config_dict,
-                    'experiment_conf':self.conf,
-                    'training_arguments': self.training_arguments},
+                    'conf':self.conf,
+                    },
                     model_path)
 
     def init_model(self, device):
         from rf_score.model import RFScore
         model = RFScore(self.conf.rf.model, self.diffuser, device).to(device)
-        if self.log_inputs:
-            pickle_dir, self.pickle_counter = pickle_function_call(model, 'forward', 'training', minifier=aa_model.minifier)
-            print(f'pickle_dir: {pickle_dir}')
-        if self.verbose_checks:
+        # if self.log_inputs:
+        #     pickle_dir, self.pickle_counter = pickle_function_call(model, 'forward', 'training', minifier=aa_model.minifier)
+        #     print(f'pickle_dir: {pickle_dir}')
+        if self.conf.verbose_checks:
             model.verbose_checks = True
         model = EMA(model, 0.999)
         print('Instantiating DDP')
@@ -892,18 +637,15 @@ class Trainer():
         #     print ("# of parameters:", count_parameters(ddp_model))
         
         # define optimizer and scheduler
-        opt_params = add_weight_decay(ddp_model, self.l2_coeff)
-        #optimizer = torch.optim.Adam(opt_params, lr=self.init_lr)
-        optimizer = torch.optim.AdamW(opt_params, lr=self.init_lr)
-        #scheduler = get_stepwise_decay_schedule_with_warmup(optimizer, 1000, 10000, 0.95) # For initial round of training
-        #scheduler = get_stepwise_decay_schedule_with_warmup(optimizer, 100, 10000, 0.95) # Trialled using this in diffusion training
+        opt_params = add_weight_decay(ddp_model, self.conf.l2_coeff)
+        optimizer = torch.optim.AdamW(opt_params, lr=self.conf.lr)
         scheduler = get_stepwise_decay_schedule_with_warmup(optimizer, 0, 10000, 0.95) # for fine-tuning
         scaler = torch.cuda.amp.GradScaler(enabled=USE_AMP)
        
         # load model
         print('About to load model...')
         loaded_epoch, best_valid_loss = self.load_model(ddp_model, optimizer, scheduler, scaler, 
-                                                       self.model_name, device, resume_train=False)
+                                                       self.conf.model_name, device, resume_train=False)
 
         print('Done loading model')
 
@@ -934,15 +676,15 @@ class Trainer():
             indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context = loader_out
             context_msg = f'rank: {rank}: {item_context}'
             with error.context(context_msg):
-                N_cycle = np.random.randint(1, self.maxcycle+1) # number of recycling
+                N_cycle = np.random.randint(1, self.conf.maxcycle+1) # number of recycling
 
                 # Defensive assertions
                 assert little_t > 0
                 assert N_cycle == 1, 'cycling not implemented'
                 i_cycle = N_cycle-1
-                assert(( self.preprocess_param['prob_self_cond'] == 0 ) ^ \
-                    ( self.preprocess_param['str_self_cond'] or self.preprocess_param['seq_self_cond'] )), \
-                    'prob_self_cond must be > 0 for str_self_cond or seq_self_cond to be active'
+                assert(( self.conf['prob_self_cond'] == 0 ) ^ \
+                    ( self.conf.inference['str_self_cond'] )), \
+                    'prob_self_cond must be > 0 for str_self_cond to be active'
 
                 # Checking whether this example was of poor quality and the dataloader just returned None - NRB
                 if indep.seq.shape[0] == 0:
@@ -970,7 +712,7 @@ class Trainer():
 
                 # Some percentage of the time, provide the model with the model's prediction of x_0 | x_t+1
                 # When little_t == T should not unroll as we cannot go back further in time.
-                step_back = not (little_t == self.config_dict['diffuser']['T']) and (torch.tensor(self.preprocess_param['prob_self_cond']) > torch.rand(1))
+                step_back = not (little_t == self.conf.diffuser.T) and (torch.tensor(self.conf['prob_self_cond']) > torch.rand(1))
                 timer.checkpoint('device loading')
                 if step_back:
                     unroll_performed = True
@@ -984,7 +726,7 @@ class Trainer():
                             with torch.cuda.amp.autocast(enabled=USE_AMP):
                                 model_out = ddp_model.forward(
                                         rfi,
-                                        torch.tensor([little_t/self.T]),
+                                        torch.tensor([little_t/self.conf.diffuser.T]),
                                         use_checkpoint=True,
                                         # return_raw=False
                                         )
@@ -995,16 +737,15 @@ class Trainer():
                 timer.checkpoint('self-conditioning')
 
                 with ExitStack() as stack:
-                    if counter%self.ACCUM_STEP != 0:
+                    if counter%self.accum_step != 0:
                         stack.enter_context(ddp_model.no_sync())
                     with torch.cuda.amp.autocast(enabled=USE_AMP):
                         model_out = ddp_model.forward(
                                         rfi,
-                                        torch.tensor([little_t/self.T]),
+                                        torch.tensor([little_t/self.conf.diffuser.T]),
                                         use_checkpoint=True)
 
                         timer.checkpoint('model forward')
-                        # logit_s, logit_aa_s, logits_pae, logits_pde, p_bind, pred_crds, alphas, px0_allatom, pred_lddts, _, _, _ = rfo.unsafe_astuple()
                         logit_s, logit_aa_s, logits_pae, logits_pde, p_bind, pred_crds, alphas, px0_allatom, pred_lddts, _, _, _, _ = model_out['rfo'].unsafe_astuple()
 
                         is_diffused = is_diffused.to(gpu)
@@ -1052,7 +793,7 @@ class Trainer():
                                 mask_BB, mask_2d, same_chain,
                                 pred_lddts, indep.idx[None], chosen_dataset, chosen_task, diffusion_mask=diffusion_mask,
                                 seq_diffusion_mask=seq_diffusion_mask, seq_t=seq_t, xyz_in=xyz_t, is_sm=indep.is_sm, unclamp=unclamp,
-                                negative=negative, t=int(little_t), **self.loss_param)
+                                negative=negative, t=int(little_t))
                         # Force all model parameters to participate in loss. Truly a cursed workaround.
                         loss += 0.0 * (
                             logits_pae.mean() +
@@ -1063,7 +804,7 @@ class Trainer():
                             logit_aa_s.mean() +
                             sum(l.mean() for l in logit_s)
                         )
-                    loss = loss / self.ACCUM_STEP
+                    loss = loss / self.accum_step
                     timer.checkpoint('loss calculation')
 
                     # if gpu != 'cpu':
@@ -1077,8 +818,9 @@ class Trainer():
                         else:
                             raise Exception(msg)
                     timer.checkpoint('loss backwards')
-                    if counter%self.ACCUM_STEP == 0:
-                        ic('ACCUMULATING')
+                    if counter%self.accum_step == 0:
+                        if rank == 0:
+                            ic('ACCUMULATING')
                         # gradient clipping
                         scaler.unscale_(optimizer)
                         torch.nn.utils.clip_grad_norm_(ddp_model.parameters(), 0.2)
@@ -1111,7 +853,7 @@ class Trainer():
                     else:
                         task_str = chosen_task
                     
-                    outstr = f"Local {task_str} | {chosen_dataset[0]}: [{epoch}/{self.n_epoch}] Batch: [{counter*self.batch_size*world_size}/{self.n_train}] Time: {train_time} Loss dict: "
+                    outstr = f"Local {task_str} | {chosen_dataset[0]}: [{epoch}/{self.conf.n_epoch}] Batch: [{counter*self.conf.batch_size*world_size}/{self.n_train}] Time: {train_time} Loss dict: "
 
                     str_stack = []
                     for k in sorted(list(loss_dict.keys())):
@@ -1153,8 +895,8 @@ class Trainer():
                 # if self.diffusion_param['seqdiff'] == 'continuous':
                 #     top1_sequence = torch.argmax(logit_aa_s[:,:20,:], dim=1)
 
-                n_processed = self.batch_size*world_size * counter
-                save_pdb = np.random.randint(0,self.n_write_pdb) == 0
+                n_processed = self.conf.batch_size*world_size * counter
+                save_pdb = np.random.randint(0,self.conf.n_write_pdb) == 0
                 if save_pdb:
                     (L,) = indep.seq.shape
                     pdb_dir = os.path.join(self.outdir, 'training_pdbs')
@@ -1190,7 +932,7 @@ class Trainer():
                             'is_sm': indep_true.is_sm,
                         }, fh)
 
-                    if self.log_inputs:
+                    if self.conf.log_inputs:
                         shutil.copy(self.pickle_counter.last_pickle, f'{prefix}_input_pickle.pkl')
                     print(f'writing training PDBs with prefix: {prefix}')
 
@@ -1204,9 +946,9 @@ class Trainer():
                     h, m = divmod(m, 60)
                     print(f'Expected time per epoch of size ({self.n_train}) (h:m:s) based off {n_processed} measured pseudo batch times: {h:d}:{m:02d}:{s:.0f}')
 
-                if self.saves_per_epoch and rank==0:
-                    n_processed_next = self.batch_size*world_size * (counter+1)
-                    n_fractionals = np.arange(1, self.saves_per_epoch) / self.saves_per_epoch
+                if self.conf.saves_per_epoch and rank==0:
+                    n_processed_next = self.conf.batch_size*world_size * (counter+1)
+                    n_fractionals = np.arange(1, self.conf.saves_per_epoch) / self.conf.saves_per_epoch
                     for fraction in n_fractionals:
                         save_before_n = fraction * self.n_train
                         if n_processed <= save_before_n and n_processed_next > save_before_n:
@@ -1214,7 +956,7 @@ class Trainer():
                             break
                 timer.checkpoint('logging')
                 timer.restart()
-                if rank == 0:
+                if rank == 0 and (counter % self.conf.timing_summary_every) == 0:
                     timer.summary()
 
         # TODO(fix or delete)
@@ -1235,7 +977,7 @@ class Trainer():
             
             train_time = time.time() - start_time
             sys.stdout.write("Train: [%04d/%04d] Batch: [%05d/%05d] Time: %16.1f | total_loss: %8.4f \n"%(\
-                    epoch, self.n_epoch, self.n_train, self.n_train, train_time, train_tot, \
+                    epoch, self.conf.n_epoch, self.n_train, self.n_train, train_time, train_tot, \
                     ))
             sys.stdout.flush()
 
@@ -1243,7 +985,7 @@ class Trainer():
         return train_tot, train_loss, train_acc
 
 
-def make_trainer(conf, args, model_param, loader_param, loss_param, diffusion_param, preprocess_param):
+def make_trainer(conf):
     
     global N_EXAMPLE_PER_EPOCH
     global DEBUG 
@@ -1251,11 +993,11 @@ def make_trainer(conf, args, model_param, loader_param, loss_param, diffusion_pa
     global LOAD_PARAM
     global LOAD_PARAM2
     # set epoch size 
-    N_EXAMPLE_PER_EPOCH = args.epoch_size 
+    N_EXAMPLE_PER_EPOCH = conf.epoch_size 
     ic(N_EXAMPLE_PER_EPOCH)
 
     # set global debug and wandb params 
-    if args.debug:
+    if conf.debug:
         DEBUG = True 
         WANDB = False 
         # loader_param['DATAPKL'] = 'subsampled_dataset.pkl'
@@ -1265,14 +1007,14 @@ def make_trainer(conf, args, model_param, loader_param, loss_param, diffusion_pa
     else:
         DEBUG = False 
         WANDB = True 
-    if not args.wandb:
+    if not conf.wandb:
         WANDB = False
     
     # set load params based on debug
     global LOAD_PARAM
     global LOAD_PARAM2
 
-    max_workers = 8 if preprocess_param['prob_self_cond'] == 0 else 0
+    max_workers = 8 if conf.prob_self_cond == 0 else 0
 
     LOAD_PARAM = {'shuffle': False,
               'num_workers': max_workers if not DEBUG else 0,
@@ -1283,57 +1025,17 @@ def make_trainer(conf, args, model_param, loader_param, loss_param, diffusion_pa
 
 
     # set random seed
-    run_inference.seed_all(args.seed)
-    #np.random.seed(args.seed)
+    run_inference.seed_all(conf.seed)
 
     mp.freeze_support()
     train = Trainer(
-                    conf=conf,
-                    model_name=args.model_name,
-                    ckpt_load_path=args.ckpt_load_path,
-                    interactive=args.interactive,
-                    n_epoch=args.num_epochs, lr=args.lr, l2_coeff=1.0e-2,
-                    port=args.port, model_param=model_param, loader_param=loader_param, 
-                    loss_param=loss_param, 
-                    batch_size=args.batch_size,
-                    accum_step=args.accum,
-                    maxcycle=args.maxcycle,
-                    diffusion_param=diffusion_param,
-                    preprocess_param=preprocess_param,
-                    wandb_prefix=args.wandb_prefix,
-                    metrics=args.metric,
-                    zero_weights=args.zero_weights,
-                    log_inputs=args.log_inputs,
-                    n_write_pdb=args.n_write_pdb,
-                    reinitialize_missing_params=args.reinitialize_missing_params,
-                    verbose_checks=args.verbose_checks,
-                    saves_per_epoch=args.saves_per_epoch,
-                    outdir=args.out_dir,
-                    resume=args.resume)
+                    conf=conf)
     return train
 
-
-# @hydra.main(version_base=None, config_path="rf_diffusion/config/training", config_name="base")
-# def run(conf: DictConfig):
-import yaml
-def run():
-    from arguments import get_args
-    all_args = get_args()
-    # ic(all_args)
-    # print(yaml.dump(all_args, default_flow_style=False))
-    # raise Exception('stop')
-    conf = construct_conf([])
-    ic(conf)
-    if not all_args[0].debug:
-        import wandb
-    train = make_trainer(conf, *all_args)
+@hydra.main(version_base=None, config_path="config/training", config_name="base")
+def run(conf: DictConfig) -> None:
+    train = make_trainer(conf=conf)
     train.run_model_training(torch.cuda.device_count())
-
-from hydra import compose, initialize
-def construct_conf(overrides, config_name='train_rf.yaml'):
-    initialize(version_base=None, config_path="config/training", job_name="test_app")
-    conf = compose(config_name=config_name, overrides=overrides, return_hydra_config=True)
-    return conf
 
 if __name__ == "__main__":
     run()

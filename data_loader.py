@@ -1392,7 +1392,7 @@ def default_dataset_configs(loader_param, debug=False):
     train_ID_dict, _, weights_dict, train_dict, _, homo, chid2hash, chid2taxid = \
             rf2aa.data_loader.get_train_valid_set({**rf2aa.data_loader.default_dataloader_params, \
             **dataloader_params},
-            no_match_okay=debug, diffusion_training=True)
+            no_match_okay=debug, diffusion_training=True, add_negatives=False)
 
     #all the pdb sets use the default rf2aa loader_pdb, but the fixbb adaptor will not be applied to the seq2str task
     pdb_config = WeightedDataset(train_ID_dict["pdb"], train_dict["pdb"], {
@@ -1504,39 +1504,32 @@ class DistilledDataset(data.Dataset):
                  dataset_configs,
                  params,
                  diffuser,
-                 seq_diffuser,
                  ti_dev,
                  ti_flip,
                  ang_ref,
-                 diffusion_param,
                  preprocess_param,
-                 model_param,
                  conf,
                  homo=None,
                  p_homo_cut=0.5):
         
         self.homo = homo if homo is not None else pd.DataFrame()
         self.params = params
-        self.p_task = params['TASK_P']
-        self.task_names = params['TASK_NAMES']
+        self.p_task = [1.0]
+        self.task_names = ['diff']
         self.unclamp_cut = 0.9
         self.p_homo_cut = p_homo_cut
         self.dataset_configs = dataset_configs
 
         # initialise diffusion class
         self.diffuser     = diffuser
-        self.seq_diffuser = seq_diffuser
 
         # get torsion variables
         self.ti_dev = ti_dev
         self.ti_flip = ti_flip
         self.ang_ref = ang_ref
 
-        self.diffusion_param = diffusion_param
         self.preprocess_param = preprocess_param
-        self.model_param = model_param
 
-        conf = OmegaConf.create(conf)
         self.conf = conf
         self.model_adaptor = aa_model.Model(conf)
         self.last_idx = None

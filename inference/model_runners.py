@@ -34,6 +34,8 @@ from hydra.core.hydra_config import HydraConfig
 from data import all_atom
 from data import utils as du
 from openfold.utils.rigid_utils import Rigid
+import rf_score.model
+from data import se3_diffuser
 import os
 
 import sys
@@ -69,16 +71,6 @@ class Sampler:
         # Assign config to Sampler
         self._conf = conf
 
-        # Initialize inference only helper objects to Sampler
-        self.ckpt_path = conf.inference.ckpt_path
-
-        if needs_model_reload:
-            # Load checkpoint, so that we can assemble the config
-            self.load_checkpoint()
-            assemble_config_from_chk(self._conf, self.ckpt)
-        else:
-            assemble_config_from_chk(self._conf, self.ckpt)
-
         # self.initialize_sampler(conf)
         self.initialized=True
 
@@ -99,6 +91,36 @@ class Sampler:
         print(" ")
         print("-"*100)
         print(" ")
+
+        from data import utils as du
+        weights_pkl = du.read_pkl(
+            self._conf.score_model.weights_path, use_torch=True,
+                map_location=self.device)
+        
+        weights_conf = weights_pkl['conf']
+        # WIP: if the conf must be read from a different checkpoint for backwards compatibility
+        # conf_pkl = du.read_pkl(
+        #     self._conf.score_model.conf_pkl_path, use_torch=True,
+        #         map_location=self.device)
+
+        # Merge base experiment config with checkpoint config.
+        OmegaConf.set_struct(self._conf, False)
+        OmegaConf.set_struct(weights_pkl['conf'], False)
+        self._conf = OmegaConf.merge(
+            weights_pkl['conf'], self._conf)
+
+        self.diffuser = se3_diffuser.SE3Diffuser(self._conf.diffuser)
+        self.model = rf_score.model.RFScore(
+            self._conf.rf.model, self.diffuser, self.device)
+        
+        if 'final_state_dict' in weights_pkl:
+            model_weights = weights_pkl['final_state_dict']
+        else:
+            model_weights = weights_pkl['model']
+
+        self.model.load_state_dict(model_weights)
+        self.model.to(self.device)
+
         # Initialize helper objects
         self.inf_conf = self._conf.inference
         self.contig_conf = self._conf.contigmap
@@ -107,7 +129,6 @@ class Sampler:
         self.potential_conf = self._conf.potentials
         self.diffuser_conf = self._conf.diffuser
         self.preprocess_conf = self._conf.preprocess
-        self.diffuser = Diffuser(**self._conf.diffuser)
         self.model_adaptor = aa_model.Model(self._conf)
 
         # TODO: Add symmetrization RMSD check here
@@ -168,32 +189,7 @@ class Sampler:
         self.recycle_schedule = iu.recycle_schedule(self.T, recycle_schedule, self.inf_conf.num_recycles)
 
 
-        from data import utils as du
-        weights_pkl = du.read_pkl(
-            self._conf.score_model.weights_path, use_torch=True,
-                map_location=self.device)
         
-        # weights_conf = weights_pkl['conf']
-        # TODO: remove and uncomment above once confs are saved.
-        conf_pkl = du.read_pkl(
-            self._conf.score_model.conf_pkl_path, use_torch=True,
-                map_location=self.device)
-        weights_conf = conf_pkl['conf']
-
-        # Merge base experiment config with checkpoint config.
-        # self._conf.score_model = OmegaConf.merge(
-        #     self._conf.score_model, weights_pkl['conf'].score_model)
-        # if conf_overrides is not None:
-        #     self._conf = OmegaConf.merge(self._conf, conf_overrides)
-        import experiments.train_se3_diffusion
-        self.experiment = experiments.train_se3_diffusion.Experiment(conf=weights_conf)
-        if 'final_state_dict' in weights_pkl:
-            model_weights = weights_pkl['final_state_dict']
-        else:
-            model_weights = weights_pkl['model']
-
-        self.experiment.model.load_state_dict(model_weights)
-        self.experiment.model.to(self.device)
 
     def process_target(self, pdb_path):
         assert not (self.inf_conf.ppi_design and self.inf_conf.autogenerate_contigs), "target reprocessing not implemented yet for these configuration arguments"
@@ -346,7 +342,7 @@ class Sampler:
         seq_one_hot = None
         from data import utils as du
         rigids_0 = du.rigid_frames_from_atom_14(indep.xyz)
-        diffuser_out = self.experiment.diffuser.forward_marginal(
+        diffuser_out = self.diffuser.forward_marginal(
             rigids_0,
             t=1.0,
             diffuse_mask=self.is_diffused.float(),
@@ -360,7 +356,7 @@ class Sampler:
         xt = torch.clone(xT[:,:14])
         indep.xyz = xt
 
-        self.denoiser = self.construct_denoiser(len(self.contig_map.ref), visible=~self.is_diffused)
+        # self.denoiser = self.construct_denoiser(len(self.contig_map.ref), visible=~self.is_diffused)
         if self.symmetry is not None:
             raise Exception('not implemented')
             xt, seq_t = self.symmetry.apply_symmetry(xt, seq_t)
@@ -717,7 +713,7 @@ class NRBStyleSelfCond(Sampler):
         ######## Str Self Cond ###########
         ##################################
         self_cond = False
-        if ((t < self.diffuser.T) and (t != self.diffuser_conf.partial_T)) and self._conf.inference.str_self_cond:
+        if ((t < self._conf.diffuser.T) and (t != self._conf.diffuser.partial_T)) and self._conf.inference.str_self_cond:
             self_cond=True
             raise Exception('not implemented yet')
             rfi = aa_model.self_cond(indep, rfi, rfo)
@@ -733,7 +729,7 @@ class NRBStyleSelfCond(Sampler):
 		# network's ComputeAllAtom requires even atoms to have N and C coords.                
 		# aa_model.assert_has_coords(rfi.xyz[0], indep)
                 assert not rfi.xyz[0,:,:3,:].isnan().any(), f'{t}: {rfi.xyz[0,:,:3,:]}'
-                model_out = self.experiment.model.forward_from_rfi(rfi, torch.tensor([t/self._conf.diffuser.T]).to(rfi.xyz.device))
+                model_out = self.model.forward_from_rfi(rfi, torch.tensor([t/self._conf.diffuser.T]).to(rfi.xyz.device))
 
         px0 = all_atom.atom37_from_rigid(Rigid.from_tensor_7(model_out['rigids']))
 
@@ -745,7 +741,7 @@ class NRBStyleSelfCond(Sampler):
 
 
         rigids_t = du.rigid_frames_from_atom_14(rfi.xyz)
-        rigids_t = self.experiment.diffuser.reverse(
+        rigids_t = self.diffuser.reverse(
             rigid_t=rigids_t,
             rot_score=du.move_to_np(model_out['rot_score'][:,-1]),
             trans_score=du.move_to_np(model_out['trans_score'][:,-1]),

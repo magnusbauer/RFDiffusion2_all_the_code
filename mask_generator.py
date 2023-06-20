@@ -11,6 +11,7 @@ import networkx as nx
 nx.from_numpy_matrix = nx.from_numpy_array
 from functools import wraps
 import assertpy
+from collections import OrderedDict
 
 
 #####################################
@@ -690,13 +691,18 @@ def generate_masks(indep, task, loader_params, chosen_dataset, full_chain=None, 
         """
         Hal task but created for the diffusion-based training. 
         """ 
+        thismodule = sys.modules[__name__]
+        mask_probs = OrderedDict()
+        for k, v in loader_params['DIFF_MASK_PROBS'].items():
+            mask_probs[getattr(thismodule, k)] = float(v)
+    
         diffusion_mask, is_atom_motif = get_diffusion_mask(
             indep,
             atom_mask,
             low_prop=loader_params['MASK_MIN_PROPORTION'],
             high_prop=loader_params['MASK_MAX_PROPORTION'],
             broken_prop=loader_params['MASK_BROKEN_PROPORTION'],
-            diff_mask_probs=loader_params['DIFF_MASK_PROBS'],
+            diff_mask_probs=mask_probs,
             ) 
         # ic(is_atom_motif, torch.nonzero(diffusion_mask), diffusion_mask.sum())
         input_str_mask = diffusion_mask.clone()

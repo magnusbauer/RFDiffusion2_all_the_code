@@ -1,0 +1,19 @@
+# Configuration for inference on SE(3) diffusion experiments.
+defaults:
+  - base_wip
+
+data:
+  samples_per_eval_length: 1
+  num_eval_lengths: 1
+  num_t: 100
+
+experiment:
+  batch_size: 1
+  # Used only by ScoreNetwork
+  warm_start: null
+  gamma: 0.95
+  n_bb: 3
+
+model:
+  embed:
+    embed_self_conditioning: False

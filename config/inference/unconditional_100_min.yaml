@@ -1,0 +1,16 @@
+defaults:
+    - aa
+
+inference:
+  model_runner: NRBStyleSelfCond
+  design_startnum: -1
+  num_designs: 1
+  output_prefix: debug/unconditional_l100
+  input_pdb: /home/ahern/projects/rf_diffusion/benchmark/input/5kax.pdb
+
+thing:
+  good
+
+contigmap:
+  contigs: ['100']
+
