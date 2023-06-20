@@ -349,10 +349,6 @@ class Sampler:
             as_tensor_7=False
         )
         xT = all_atom.atom37_from_rigid(diffuser_out['rigids_t'])
-        ic(
-            diffuser_out['rigids_t'].shape,
-            xT.shape,
-           )
         xt = torch.clone(xT[:,:14])
         indep.xyz = xt
 
@@ -761,7 +757,7 @@ class NRBStyleSelfCond(Sampler):
         if self.symmetry is not None:
             x_t_1, seq_t_1 = self.symmetry.apply_symmetry(x_t_1, seq_t_1)
 
-        return px0, x_t_1, seq_t_1, tors_t_1, None, rfo
+        return px0, x_t_1, seq_t_1, tors_t_1, None, model_out['rfo']
 
 def sampler_selector(conf: DictConfig):
     if conf.inference.model_runner == 'default':
