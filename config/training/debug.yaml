@@ -1,0 +1,69 @@
+# Configuration for inference on SE(3) diffusion experiments.
+defaults:
+  - base
+
+zero_weights: True
+debug: True
+prob_self_cond: 0
+inference:
+  str_self_cond: False
+
+dataloader:
+  DATAPKL_AA: test_fake_allatom_dataset.pkl
+  DATASETS: pdb_aa,sm_complex
+  DATASET_PROB: 0.0,1.0
+
+spoof_item: >
+  {
+    'chosen_dataset': 'sm_complex',                                                                                                          
+    'mask_gen_seed': 65682867,                                                                                                               
+    'sel_item': {   'ASSEMBLY': 1,                                                                                                           
+                    'CHAINID': '5neg_A',                                                                                                     
+                    'CLUSTER': 22021,
+                    'COVALENT': [],
+                    'DEPOSITION': '2017-03-10',          
+                    'HASH': '030830',        
+                    'LEN_EXIST': 109,                                                                                                        
+                    'LIGAND': [('C', '201', '8VK')],        
+                    'LIGATOMS': 52,            
+                    'LIGATOMS_RESOLVED': 52,
+                    'LIGXF': [('C', 2)],
+                    'PARTNERS': [   (   'A',
+                                        0,
+                                        264, 
+                                        2.5206124782562256,
+                                        'polypeptide(L)'),
+                                    (   [('E', '203', 'NO3')],
+                                        [('E', 4)],
+                                        0,
+                                        8.707673072814941,
+                                        'nonpoly'),
+                                    (   'B',
+                                        1,
+                                        0,
+                                        10.479164123535156,
+                                        'polypeptide(L)'),
+                                    (   [('G', '205', 'NO3')],
+                                        [('G', 6)],
+                                        0,
+                                        16.69165802001953,                                                                                   
+                                        'nonpoly'),
+                                    (   [('D', '202', 'NO3')],
+                                        [('D', 3)],
+                                        0, 
+                                        17.07767105102539,
+                                        'nonpoly'),                                                                                          
+                                    (   [('F', '204', 'NO3')],
+                                        [('F', 5)],
+                                        0,
+                                        20.71928596496582,
+                                        'nonpoly'),
+                                    (   [('I', '202', 'NO3')],
+                                        [('I', 8)],
+                                        0,
+                                        27.311317443847656,
+                                        'nonpoly')],
+                    'RESOLUTION': 1.29,        
+                    'SEQUENCE': 'GSMSEQSICQARAAVMVYDDANKKWVPAGGSTGFSRVHIYHHTGNNTFRVVGRKIQDHQVVINCAIPKGLKYNQATQTFHQWRDARQVYGLNFGSKEDANVFASAMMHALEVL'},
+    'task': 'diff'
+  }
