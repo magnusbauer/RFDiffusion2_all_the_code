@@ -712,10 +712,7 @@ class NRBStyleSelfCond(Sampler):
         ##################################
         ######## Str Self Cond ###########
         ##################################
-        self_cond = False
         if ((t < self._conf.diffuser.T) and (t != self._conf.diffuser.partial_T)) and self._conf.inference.str_self_cond:
-            self_cond=True
-            raise Exception('not implemented yet')
             rfi = aa_model.self_cond(indep, rfi, rfo)
 
         if self.symmetry is not None:
@@ -725,9 +722,9 @@ class NRBStyleSelfCond(Sampler):
             if self.recycle_schedule[t-1] > 1:
                 raise Exception('not implemented')
             for rec in range(self.recycle_schedule[t-1]):
-		# This is the assertion we should be able to use, but the
-		# network's ComputeAllAtom requires even atoms to have N and C coords.                
-		# aa_model.assert_has_coords(rfi.xyz[0], indep)
+                # This is the assertion we should be able to use, but the
+                # network's ComputeAllAtom requires even atoms to have N and C coords.
+                # aa_model.assert_has_coords(rfi.xyz[0], indep)
                 assert not rfi.xyz[0,:,:3,:].isnan().any(), f'{t}: {rfi.xyz[0,:,:3,:]}'
                 model_out = self.model.forward_from_rfi(rfi, torch.tensor([t/self._conf.diffuser.T]).to(rfi.xyz.device))
 
