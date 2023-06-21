@@ -16,6 +16,7 @@ from copy import deepcopy
 from collections import OrderedDict
 from datetime import date
 from contextlib import ExitStack
+import assertpy
 import time 
 import torch
 import torch.nn as nn
@@ -187,7 +188,7 @@ class Trainer():
     def calc_loss(self, model_out, diffuser_out, logit_s, label_s,
                   logit_aa_s, label_aa_s, mask_aa_s, logit_exp,
                   pred_in, pred_tors, true, mask_crds, mask_BB, mask_2d, same_chain,
-                  pred_lddt, idx, dataset, chosen_task, t, xyz_in, diffusion_mask,
+                  pred_lddt, idx, dataset, chosen_task, t, xyz_in, is_diffused,
                   seq_diffusion_mask, seq_t, is_sm, unclamp=False, negative=False,
                   w_dist=1.0, w_aa=1.0, w_str=1.0, w_all=0.5, w_exp=1.0,
                   w_lddt=1.0, w_blen=1.0, w_bang=1.0, w_lj=0.0, w_hb=0.0,
@@ -195,12 +196,12 @@ class Trainer():
 
         device = model_out['rigids'].device
         batch_size, _, num_res, _ = model_out['rigids'].shape
-        diffuse_mask = diffusion_mask[None].to(device)
-        loss_mask = diffuse_mask.clone()
+        is_diffused = is_diffused[None].to(device)
+        loss_mask = is_diffused.clone()
         loss_mask[...] = True
-        batch_loss_mask = diffuse_mask
-        import assertpy
-        assertpy.assert_that(diffusion_mask.ndim) == 2
+        is_sm = is_sm[None]
+        assertpy.assert_that(is_diffused.ndim) == 2
+        assertpy.assert_that(is_sm.ndim) == 2
         t = torch.tensor([t/self.conf.diffuser.T]).to(device)
 
         diffuser_out['rigids_0'] = diffuser_out['rigids_0'].to(device)
@@ -208,10 +209,23 @@ class Trainer():
         gt_trans_score = diffuser_out['trans_score'][None].to(device)
         rot_score_scaling = torch.tensor(diffuser_out['rot_score_scaling'])[None].to(device)
         trans_score_scaling = torch.tensor(diffuser_out['trans_score_scaling'])[None].to(device)
-        # batch_loss_mask = torch.any(bb_mask, dim=-1)
 
-        pred_rot_score = model_out['rot_score'] * diffuse_mask[..., None]
-        pred_trans_score = model_out['trans_score'] * diffuse_mask[..., None]
+        # Dictionary for keeping track of losses 
+        loss_dict = {}
+        loss_weights = {
+            'trans_score': self._exp_conf.trans_loss_weight,
+            'trans_x0':  self._exp_conf.trans_loss_weight,
+            'rot_score': self._exp_conf.rot_loss_weight,
+            'bb_atom': self._exp_conf.bb_atom_loss_weight * self._exp_conf.aux_loss_weight,
+            'dist_mat': self._exp_conf.dist_mat_loss_weight * self._exp_conf.aux_loss_weight,
+            'c6d_dist': self._exp_conf.c6d_loss_weight,
+            'c6d_phi': self._exp_conf.c6d_loss_weight,
+            'c6d_theta': self._exp_conf.c6d_loss_weight,
+            'c6d_omega': self._exp_conf.c6d_loss_weight,
+        }
+
+        pred_rot_score = model_out['rot_score']
+        pred_trans_score = model_out['trans_score']
 
         # Translation score loss
         trans_score_mse = (gt_trans_score - pred_trans_score)**2 * loss_mask[..., None]
@@ -220,32 +234,30 @@ class Trainer():
             dim=(-1, -2)
         ) / (loss_mask.sum(dim=-1) + 1e-10)
 
+
         # Translation x0 loss
         gt_trans_x0 = diffuser_out['rigids_0'][..., 4:] * self.conf.diffuser.r3.coordinate_scaling
         pred_trans_x0 = model_out['rigids'][..., 4:] * self.conf.diffuser.r3.coordinate_scaling
         trans_x0_loss = torch.sum(
-            (gt_trans_x0 - pred_trans_x0)**2 * loss_mask[..., None],
+            (gt_trans_x0 - pred_trans_x0)**2 * loss_mask[:,...,:,None],
             dim=(-1, -2)
         ) / (loss_mask.sum(dim=-1) + 1e-10)
 
-        trans_loss = (
-            trans_score_loss * (t > self._exp_conf.trans_x0_threshold)
-            + trans_x0_loss * (t <= self._exp_conf.trans_x0_threshold)
-        )
-        trans_loss *= self._exp_conf.trans_loss_weight
-        trans_loss *= int(self.conf.diffuser.diffuse_trans)
+        loss_dict['trans_score'] = trans_score_loss * (t > self._exp_conf.trans_x0_threshold) * int(self.conf.diffuser.diffuse_trans)
+        loss_dict['trans_x0'] = trans_x0_loss * (t <= self._exp_conf.trans_x0_threshold) * int(self.conf.diffuser.diffuse_trans)
+
 
         # Rotation loss
-        rot_mse = (gt_rot_score - pred_rot_score)**2 * loss_mask[..., None]
+        has_rot_loss = is_diffused * ~is_sm
+        rot_mse = (gt_rot_score - pred_rot_score)**2 * has_rot_loss[:,:,None]
         rot_loss = torch.sum(
             rot_mse / rot_score_scaling[:, None, None]**2,
             dim=(-1, -2)
-        ) / (loss_mask.sum(dim=-1) + 1e-10)
-        rot_loss *= self._exp_conf.rot_loss_weight
+        ) / (has_rot_loss.sum(dim=-1) + 1e-10)
         rot_loss *= int(self.conf.diffuser.diffuse_rot)
+        loss_dict['rot_score'] = rot_loss
 
         # Backbone atom loss
-
         pred_atom37 = model_out['atom37'][...,:self.conf.experiment.n_bb,:]
         test_utils.assert_no_nan(pred_atom37)
         gt_rigids = ru.Rigid.from_tensor_7(diffuser_out['rigids_0'].type(torch.float32))
@@ -263,9 +275,9 @@ class Trainer():
             (pred_atom37 - gt_atom37)**2 * bb_atom_loss_mask[..., None],
             dim=(-1, -2, -3)
         ) / (bb_atom_loss_mask.sum(dim=(-1, -2)) + 1e-10)
-        bb_atom_loss *= self._exp_conf.bb_atom_loss_weight
         bb_atom_loss *= t < self._exp_conf.bb_atom_loss_t_filter
-        bb_atom_loss *= self._exp_conf.aux_loss_weight
+        loss_dict['bb_atom'] = bb_atom_loss
+
 
         # Pairwise distance loss
         gt_flat_atoms = gt_atom37.reshape([batch_size, num_res*self.conf.experiment.n_bb, 3])
@@ -273,105 +285,72 @@ class Trainer():
             gt_flat_atoms[:, :, None, :] - gt_flat_atoms[:, None, :, :], dim=-1)
         # Insert iteration dimension if not present
         pred_flat_atoms = torch.flatten(pred_atom37, start_dim=-3, end_dim=-2)
-        # ic(test_utils.where_nan(pred_flat_atoms))
         pred_pair_dists = torch.linalg.norm(
             pred_flat_atoms[..., None, :] - pred_flat_atoms[..., None, :, :], dim=-1)
 
-        flat_loss_mask = torch.tile(loss_mask[:, :, None], (1, 1, 1, self.conf.experiment.n_bb))
+        only_c_alpha = torch.zeros(self.conf.experiment.n_bb).bool().to(device)
+        only_c_alpha[1] = True
+        has_atom_mask = (~is_sm[...,None] + only_c_alpha)
+        flat_loss_mask = torch.tile(has_atom_mask, (1, 1, 1, 1)) # unsqueeze
         flat_loss_mask = flat_loss_mask.reshape([batch_size, num_res*self.conf.experiment.n_bb])
-        flat_res_mask = torch.tile(loss_mask[:, :, None], (1, 1, 1, self.conf.experiment.n_bb))
-        flat_res_mask = flat_res_mask.reshape([batch_size, num_res*self.conf.experiment.n_bb])
 
         gt_pair_dists = gt_pair_dists * flat_loss_mask[..., None]
         pred_pair_dists = pred_pair_dists * flat_loss_mask[..., None]
-        pair_dist_mask = flat_loss_mask[..., None] * flat_res_mask[:, None, :]
+        pair_dist_mask = flat_loss_mask[..., None] * flat_loss_mask[:, None, :]
 
         # No loss on anything >6A
         proximity_mask = gt_pair_dists < 6
         pair_dist_mask  = pair_dist_mask * proximity_mask
-        # assert not torch.isnan(pair_dist_mask).any(), torch.isnan(pair_dist_mask).nonzero()
-        # assert not torch.isnan(pred_pair_dists).any(), torch.isnan(pred_pair_dists).nonzero()
-        # assert not torch.isnan(gt_pair_dists).any(), torch.isnan(gt_pair_dists).nonzero()
 
         dist_mat_loss = torch.sum(
             (gt_pair_dists - pred_pair_dists)**2 * pair_dist_mask,
             dim=(-2, -1))
         dist_mat_loss /= (torch.sum(pair_dist_mask, dim=(1, 2)) - num_res)
-        dist_mat_loss *= self._exp_conf.dist_mat_loss_weight
         dist_mat_loss *= t < self._exp_conf.dist_mat_loss_t_filter
-        dist_mat_loss *= self._exp_conf.aux_loss_weight
+        loss_dict['dist_mat'] = dist_mat_loss
+
+
+        # C6D loss
+        for i, label in enumerate(['dist', 'omega', 'theta', 'phi']):
+            loss = self.loss_fn(logit_s[i], label_s[...,i]) # (B, L, L)
+            loss = (mask_2d*loss).sum() / (mask_2d.sum() + eps)
+            loss_dict[f'c6d_{label}'] = loss.clone()
 
         def normalize_loss(x):
 
             # Exponential decay
-            if x.ndim == 2:
-                B, I = x.shape
-                device = x.device
-                w_loss = torch.pow(torch.full((I,), self.conf.experiment.gamma, device=device), torch.arange(I, device=device))
-                w_loss = torch.flip(w_loss, (0,))
-                w_loss = w_loss / w_loss.sum()
-                # ic(w_loss) # confirmed ascending
-                x = torch.sum(x * w_loss, dim=-1)
-            return x.sum() /  (batch_loss_mask.sum() + 1e-10)
+            if x.ndim != 1:
+                return x
+            I, = x.shape
+            device = x.device
+            w_loss = torch.pow(torch.full((I,), self.conf.experiment.gamma, device=device), torch.arange(I, device=device))
+            w_loss = torch.flip(w_loss, (0,))
+            w_loss = w_loss / w_loss.sum()
+            # ic(w_loss) # confirmed ascending
+            return torch.sum(x * w_loss, dim=-1)
         
-        # # dictionary for keeping track of losses 
-        # loss_weights = {
-        #     'rot': self._exp_conf.rot_loss_weight,
-        #     'trans': self._exp_conf.trans_loss_weight,
-        #     'bb_atom': self._exp_conf.bb_atom_loss_weight * (t < self._exp_conf.bb_atom_loss_t_filter),
-        #     'dist_mat': self._exp_conf.dist_mat_loss_weight * (t < self._exp_conf.dist_mat_loss_t_filter),
-        # }
-        # for k, loss in loss_dict.items():
-        #     weight = loss_weights[k]
-        #     tot_loss += loss*weight
+        # Average over batches
+        for k, loss in loss_dict.items():
+            loss_dict[k] = loss.sum(dim=0)
         
-        # loss_dict['total_loss'] = float(tot_loss.detach())
+        tot_loss = 0
+        aux_data = {}
+        for k, loss in loss_dict.items():
+            mean_block_loss = normalize_loss(loss)
+            aux_data[f'mean_block.{k}'] = mean_block_loss
+            last_block_loss = loss
+            if last_block_loss.ndim == 1:
+                assert last_block_loss.shape == (40,)
+                last_block_loss = last_block_loss[-1]
+            aux_data[f'last_block.{k}'] = last_block_loss
+            weight = loss_weights[k]
+            aux_data[f'weight.{k}'] = weight
+            weighted_loss = mean_block_loss*weight
+            aux_data[f'weighted.{k}'] = weighted_loss
 
-        # loss_dict = rf2aa.tensor_util.cpu(loss_dict)
-        final_loss = (
-            rot_loss
-            + trans_loss
-            + bb_atom_loss
-            + dist_mat_loss
-        )
-        def normalize_loss(x):
-
-            # Exponential decay
-            if x.ndim == 2:
-                B, I = x.shape
-                device = x.device
-                w_loss = torch.pow(torch.full((I,), self.conf.experiment.gamma, device=device), torch.arange(I, device=device))
-                w_loss = torch.flip(w_loss, (0,))
-                w_loss = w_loss / w_loss.sum()
-                # ic(w_loss) # confirmed ascending
-                x = torch.sum(x * w_loss, dim=-1)
-            return x.sum() /  (batch_loss_mask.sum() + 1e-10)
-
-        aux_data = {
-            # 'batch_train_loss': final_loss,
-            # 'batch_rot_loss': rot_loss,
-            # 'batch_trans_loss': trans_loss,
-            # 'batch_bb_atom_loss': bb_atom_loss,
-            # 'batch_dist_mat_loss': dist_mat_loss,
-            'total_loss': normalize_loss(final_loss),
-            'rot_loss': normalize_loss(rot_loss),
-            'trans_loss': normalize_loss(trans_loss),
-            'bb_atom_loss': normalize_loss(bb_atom_loss),
-            'dist_mat_loss': normalize_loss(dist_mat_loss),
-            'examples_per_step': torch.tensor(batch_size),
-        }
-
-        # # Maintain a history of the past N number of steps.
-        # # Helpful for debugging.
-        # self._aux_data_history.append({
-        #     'aux_data': aux_data,
-        #     'model_out': model_out,
-        #     'batch': batch
-        # })
-
-        # assert batch_loss_mask.shape == (batch_size,)
-        return normalize_loss(final_loss), aux_data
-        # return tot_loss, loss_dict, loss_weights
+            tot_loss += weighted_loss
+        
+        return tot_loss, aux_data
 
     def calc_acc(self, prob, dist, idx_pdb, mask_2d, return_cnt=False):
         B = idx_pdb.shape[0]
@@ -419,7 +398,6 @@ class Trainer():
         print('*** FOUND MODEL CHECKPOINT ***')
         print('Located at ',chk_fn)
 
-        ic(rank)
         if isinstance(rank, str):
             # For CPU debugging
             map_location = {"cuda:%d"%0: "cpu"}
@@ -490,13 +468,9 @@ class Trainer():
             ic('setting master_addr')
             os.environ['MASTER_ADDR'] = 'localhost' # multinode requires this set in submit script
         if ('MASTER_PORT' not in os.environ):
-            os.environ['MASTER_PORT'] = '%d'%self.port
+            assertpy.assert_that(world_size).is_less_than(2)
+            os.environ['MASTER_PORT'] = f'{random.randint(12000, 12200)}'
 
-        ic(
-            os.environ.get("SLURM_PROCID"),
-            os.environ.get("SLURM_NTASKS"),
-            self.conf.interactive
-        )
         if (not self.conf.interactive and "SLURM_NTASKS" in os.environ and "SLURM_PROCID" in os.environ):
             world_size = int(os.environ["SLURM_NTASKS"])
             rank = int (os.environ["SLURM_PROCID"])
@@ -505,7 +479,6 @@ class Trainer():
         else:
             print ("Launched from interactive")
             world_size = torch.cuda.device_count()
-            ic(world_size)
             if world_size <= 1:
                 self.train_model(0, 1)
             else:
@@ -633,6 +606,7 @@ class Trainer():
             ddp_model = DDP(model, device_ids=[device], find_unused_parameters=False, broadcast_buffers=False)
         else:
             ddp_model = DDP(model, find_unused_parameters=False)
+        print('Initializing optimizer')
         # if rank == 0:
         #     print ("# of parameters:", count_parameters(ddp_model))
         
@@ -791,7 +765,7 @@ class Trainer():
                                 logit_aa_s, label_aa_s, mask_aa_s, None,
                                 pred_crds, alphas, true_crds, mask_crds,
                                 mask_BB, mask_2d, same_chain,
-                                pred_lddts, indep.idx[None], chosen_dataset, chosen_task, diffusion_mask=diffusion_mask,
+                                pred_lddts, indep.idx[None], chosen_dataset, chosen_task, is_diffused=is_diffused,
                                 seq_diffusion_mask=seq_diffusion_mask, seq_t=seq_t, xyz_in=xyz_t, is_sm=indep.is_sm, unclamp=unclamp,
                                 negative=negative, t=int(little_t))
                         # Force all model parameters to participate in loss. Truly a cursed workaround.

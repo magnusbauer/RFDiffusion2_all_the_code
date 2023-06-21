@@ -13,6 +13,11 @@ dataloader:
   DATASETS: pdb_aa,sm_complex
   DATASET_PROB: 0.0,1.0
 
+experiment:
+  c6d_loss_weight: 0.0
+
+outdir: /net/scratch/ahern/se3_diffusion/training/debug
+
 spoof_item: >
   {
     'chosen_dataset': 'sm_complex',                                                                                                          
