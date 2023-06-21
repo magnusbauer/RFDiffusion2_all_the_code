@@ -1,4 +1,5 @@
 import sys, os
+import master_addr
 import wandb
 import hydra
 import shutil
@@ -466,7 +467,10 @@ class Trainer():
     def run_model_training(self, world_size):
         if ('MASTER_ADDR' not in os.environ or os.environ['MASTER_ADDR'] == ''):
             ic('setting master_addr')
-            os.environ['MASTER_ADDR'] = 'localhost' # multinode requires this set in submit script
+            if world_size <= 1:
+                os.environ['MASTER_ADDR'] = 'localhost'
+            else:
+                os.environ['MASTER_ADDR'] = master_addr.get()
         if ('MASTER_PORT' not in os.environ):
             assertpy.assert_that(world_size).is_less_than(2)
             os.environ['MASTER_PORT'] = f'{random.randint(12000, 12200)}'
