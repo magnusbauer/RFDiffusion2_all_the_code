@@ -28,6 +28,9 @@ sys.path.insert(0,script_dir+'/../')
 sys.path.insert(0,script_dir+'/../RF2-allatom/')
 
 sys.path.insert(0,'/software/mlfold/') # common path on digs
+# Shim for deprecated numpy type aliases used by alphafold.
+np.int = np.int32
+np.object = object
 from alphafold.common import protein
 from alphafold.data import pipeline
 from alphafold.data import templates

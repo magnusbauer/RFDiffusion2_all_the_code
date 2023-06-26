@@ -98,6 +98,7 @@ l2_coeff: 0.01
 model_name: RFD
 ckpt_load_path: /home/rohith/rf2a-fd3/models/rf2a_25c_414.pt
 resume: null
+resume_scheduler: True
 reinitialize_missing_params: False
 zero_weights: false
 n_epoch: 30
@@ -107,7 +108,7 @@ pseudobatch: 32
 log_inputs: False
 metrics:
 - atom_bonds
-n_write_pdb: 10
+n_write_pdb: 30
 saves_per_epoch: 2
 preprocess:
   randomize_frames: false
@@ -174,3 +175,4 @@ data:
   samples_per_eval_length: 1
   num_eval_lengths: 1
   num_t: 100
+master_port: null

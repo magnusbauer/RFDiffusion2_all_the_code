@@ -4,6 +4,7 @@ defaults:
 
 zero_weights: True
 debug: True
+wandb: False
 prob_self_cond: 0
 inference:
   str_self_cond: False
@@ -12,11 +13,12 @@ dataloader:
   DATAPKL_AA: test_fake_allatom_dataset.pkl
   DATASETS: pdb_aa,sm_complex
   DATASET_PROB: 0.0,1.0
+  CROP: 60
 
 experiment:
   c6d_loss_weight: 0.0
 
-outdir: /net/scratch/ahern/se3_diffusion/training/debug
+outdir: /tmp/ahern_se3_debug
 
 spoof_item: >
   {

@@ -1,4 +1,5 @@
 import sys, os
+import tree
 import master_addr
 import wandb
 import hydra
@@ -45,6 +46,9 @@ from data_loader import (
     DistilledDataset, DistributedWeightedSampler
 )
 import error
+import pytimer.timer
+pytimer.timer.default_logger.propagate = False
+
 
 from kinematics import xyz_to_c6d, c6d_to_bins2, xyz_to_t2d, xyz_to_bbtor, get_init_xyz
 import loss 
@@ -87,6 +91,17 @@ USE_AMP = False
 N_PRINT_TRAIN = 1 
 #BATCH_SIZE = 1 * torch.cuda.device_count()
 
+class ReturnTrueOnFirstInvocation:
+    def __init__(self):
+        self.called = False
+    
+    def __call__(self):
+        if self.called:
+            return False
+        self.called = True
+        return True
+
+firstLog = ReturnTrueOnFirstInvocation()
 
 def add_weight_decay(model, l2_coeff):
     decay, no_decay = [], []
@@ -186,7 +201,7 @@ class Trainer():
         self.loss_fn = nn.CrossEntropyLoss(reduction='none')
         self.active_fn = nn.Softmax(dim=1)
 
-    def calc_loss(self, model_out, diffuser_out, logit_s, label_s,
+    def calc_loss(self, loss_weights, model_out, diffuser_out, logit_s, label_s,
                   logit_aa_s, label_aa_s, mask_aa_s, logit_exp,
                   pred_in, pred_tors, true, mask_crds, mask_BB, mask_2d, same_chain,
                   pred_lddt, idx, dataset, chosen_task, t, xyz_in, is_diffused,
@@ -195,6 +210,20 @@ class Trainer():
                   w_lddt=1.0, w_blen=1.0, w_bang=1.0, w_lj=0.0, w_hb=0.0,
                   lj_lin=0.75, use_H=False, w_disp=0.0, w_motif_disp=0.0, w_ax_ang=0.0, w_frame_dist=0.0, eps=1e-6, backprop_non_displacement_on_given=False):
 
+        aux_data = {}
+
+        def normalize_loss(x):
+
+            # Exponential decay
+            if x.ndim != 1:
+                return x
+            I, = x.shape
+            device = x.device
+            w_loss = torch.pow(torch.full((I,), self.conf.experiment.gamma, device=device), torch.arange(I, device=device))
+            w_loss = torch.flip(w_loss, (0,))
+            w_loss = w_loss / w_loss.sum()
+            # ic(w_loss) # confirmed ascending
+            return torch.sum(x * w_loss, dim=-1)
         device = model_out['rigids'].device
         batch_size, _, num_res, _ = model_out['rigids'].shape
         is_diffused = is_diffused[None].to(device)
@@ -213,17 +242,6 @@ class Trainer():
 
         # Dictionary for keeping track of losses 
         loss_dict = {}
-        loss_weights = {
-            'trans_score': self._exp_conf.trans_loss_weight,
-            'trans_x0':  self._exp_conf.trans_loss_weight,
-            'rot_score': self._exp_conf.rot_loss_weight,
-            'bb_atom': self._exp_conf.bb_atom_loss_weight * self._exp_conf.aux_loss_weight,
-            'dist_mat': self._exp_conf.dist_mat_loss_weight * self._exp_conf.aux_loss_weight,
-            'c6d_dist': self._exp_conf.c6d_loss_weight,
-            'c6d_phi': self._exp_conf.c6d_loss_weight,
-            'c6d_theta': self._exp_conf.c6d_loss_weight,
-            'c6d_omega': self._exp_conf.c6d_loss_weight,
-        }
 
         pred_rot_score = model_out['rot_score']
         pred_trans_score = model_out['trans_score']
@@ -247,14 +265,21 @@ class Trainer():
         loss_dict['trans_score'] = trans_score_loss * (t > self._exp_conf.trans_x0_threshold) * int(self.conf.diffuser.diffuse_trans)
         loss_dict['trans_x0'] = trans_x0_loss * (t <= self._exp_conf.trans_x0_threshold) * int(self.conf.diffuser.diffuse_trans)
 
-
         # Rotation loss
         has_rot_loss = is_diffused * ~is_sm
         rot_mse = (gt_rot_score - pred_rot_score)**2 * has_rot_loss[:,:,None]
         rot_loss = torch.sum(
-            rot_mse / rot_score_scaling[:, None, None]**2,
+            rot_mse,
             dim=(-1, -2)
-        ) / (has_rot_loss.sum(dim=-1) + 1e-10)
+        ) / (has_rot_loss.sum(dim=-1) + 1e-10) # [B, I]
+
+        # logging rot scores
+        unscaled_mean_rot_loss = normalize_loss(rot_loss.sum(dim=0))
+        aux_data['unscaled_rot_score_mean'] = torch.clone(unscaled_mean_rot_loss.detach())
+        unscaled_rot_loss = rot_loss.sum(dim=0)
+        aux_data['unscaled_rot_score_over_i'] = torch.clone(unscaled_rot_loss.detach())
+
+        rot_loss /= rot_score_scaling[:, None]**2
         rot_loss *= int(self.conf.diffuser.diffuse_rot)
         loss_dict['rot_score'] = rot_loss
 
@@ -262,12 +287,16 @@ class Trainer():
         pred_atom37 = model_out['atom37'][...,:self.conf.experiment.n_bb,:]
         test_utils.assert_no_nan(pred_atom37)
         gt_rigids = ru.Rigid.from_tensor_7(diffuser_out['rigids_0'].type(torch.float32))
-        # gt_psi = diffuser_out['torsion_angles_sin_cos'][..., 2, :][None]
+        # gt_psi = diffuser_out['torsion_angles_sin_cos'][..., 2, :][None] <-- ignored since n_bb is 3
         gt_psi = torch.rand(gt_rigids.shape+(2,))
         gt_atom37, atom37_mask, _, _ = all_atom.compute_backbone(
             gt_rigids, gt_psi)
         gt_atom37 = gt_atom37[:, :, :self.conf.experiment.n_bb]
         atom37_mask = atom37_mask[:, :, :self.conf.experiment.n_bb]
+        only_c_alpha = torch.zeros(self.conf.experiment.n_bb).bool().to(device)
+        only_c_alpha[1] = True
+        has_atom_mask = (~is_sm[...,None] + only_c_alpha)
+        atom37_mask = has_atom_mask
 
         gt_atom37 = gt_atom37.to(pred_atom37.device)
         atom37_mask = atom37_mask.to(pred_atom37.device)
@@ -288,10 +317,6 @@ class Trainer():
         pred_flat_atoms = torch.flatten(pred_atom37, start_dim=-3, end_dim=-2)
         pred_pair_dists = torch.linalg.norm(
             pred_flat_atoms[..., None, :] - pred_flat_atoms[..., None, :, :], dim=-1)
-
-        only_c_alpha = torch.zeros(self.conf.experiment.n_bb).bool().to(device)
-        only_c_alpha[1] = True
-        has_atom_mask = (~is_sm[...,None] + only_c_alpha)
         flat_loss_mask = torch.tile(has_atom_mask, (1, 1, 1, 1)) # unsqueeze
         flat_loss_mask = flat_loss_mask.reshape([batch_size, num_res*self.conf.experiment.n_bb])
 
@@ -317,25 +342,12 @@ class Trainer():
             loss = (mask_2d*loss).sum() / (mask_2d.sum() + eps)
             loss_dict[f'c6d_{label}'] = loss.clone()
 
-        def normalize_loss(x):
-
-            # Exponential decay
-            if x.ndim != 1:
-                return x
-            I, = x.shape
-            device = x.device
-            w_loss = torch.pow(torch.full((I,), self.conf.experiment.gamma, device=device), torch.arange(I, device=device))
-            w_loss = torch.flip(w_loss, (0,))
-            w_loss = w_loss / w_loss.sum()
-            # ic(w_loss) # confirmed ascending
-            return torch.sum(x * w_loss, dim=-1)
         
         # Average over batches
         for k, loss in loss_dict.items():
             loss_dict[k] = loss.sum(dim=0)
         
         tot_loss = 0
-        aux_data = {}
         for k, loss in loss_dict.items():
             mean_block_loss = normalize_loss(loss)
             aux_data[f'mean_block.{k}'] = mean_block_loss
@@ -404,6 +416,7 @@ class Trainer():
             map_location = {"cuda:%d"%0: "cpu"}
         else:
             map_location = {"cuda:%d"%0: "cuda:%d"%rank}
+            ic(f'loading model onto {"cuda:%d"%rank}')
         checkpoint = torch.load(chk_fn, map_location=map_location)
         rename_model = False
         # Set to false for faster loading when debugging
@@ -434,12 +447,16 @@ class Trainer():
                 
                 m.load_state_dict(new_chk, strict=False)
             else:
-                new_chk = {f'model.{k}':v for k,v in weight_state.items()}
-                m.load_state_dict(new_chk, strict=True)
+                # Handle loading from structure prediction model.
+                model_name = getattr(checkpoint.get('model'), '__name__', '')
+                if model_name != 'RFScore':
+                    weight_state = {f'model.{k}':v for k,v in weight_state.items()}
+                m.load_state_dict(weight_state, strict=True)
 
         if resume_train and (not rename_model):
             print (' ... loading optimization params')
             loaded_epoch = checkpoint['epoch']
+            
             optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
             scaler.load_state_dict(checkpoint['scaler_state_dict'])
             if 'scheduler_state_dict' in checkpoint:
@@ -471,6 +488,8 @@ class Trainer():
                 os.environ['MASTER_ADDR'] = 'localhost'
             else:
                 os.environ['MASTER_ADDR'] = master_addr.get()
+        if self.conf.master_port:
+            os.environ['MASTER_PORT'] = f'{self.conf.master_port}'
         if ('MASTER_PORT' not in os.environ):
             assertpy.assert_that(world_size).is_less_than(2)
             os.environ['MASTER_PORT'] = f'{random.randint(12000, 12200)}'
@@ -568,13 +587,13 @@ class Trainer():
         if return_setup:
             return ddp_model, train_loader, optimizer, scheduler, scaler
         
-        for epoch in range(loaded_epoch+1, self.conf.n_epoch+1):
+        for epoch in range(loaded_epoch, self.conf.n_epoch):
             train_sampler.set_epoch(epoch)
             
             print('Just before calling train cycle...')
             train_tot, train_loss, train_acc = self.train_cycle(ddp_model, train_loader, optimizer, scheduler, scaler, rank, gpu, world_size, epoch)
             if rank == 0: # save model
-                self.save_model(epoch, ddp_model, optimizer, scheduler, scaler)
+                self.save_model(epoch+1, ddp_model, optimizer, scheduler, scaler)
 
         dist.destroy_process_group()
 
@@ -623,7 +642,7 @@ class Trainer():
         # load model
         print('About to load model...')
         loaded_epoch, best_valid_loss = self.load_model(ddp_model, optimizer, scheduler, scaler, 
-                                                       self.conf.model_name, device, resume_train=False)
+                                                       self.conf.model_name, device, resume_train=self.conf.resume or self.conf.resume_scheduler)
 
         print('Done loading model')
 
@@ -634,6 +653,18 @@ class Trainer():
             return
 
     def train_cycle(self, ddp_model, train_loader, optimizer, scheduler, scaler, rank, gpu, world_size, epoch):
+
+        loss_weights = {
+            'trans_score': self._exp_conf.trans_loss_weight,
+            'trans_x0':  self._exp_conf.trans_loss_weight,
+            'rot_score': self._exp_conf.rot_loss_weight,
+            'bb_atom': self._exp_conf.bb_atom_loss_weight * self._exp_conf.aux_loss_weight,
+            'dist_mat': self._exp_conf.dist_mat_loss_weight * self._exp_conf.aux_loss_weight,
+            'c6d_dist': self._exp_conf.c6d_loss_weight,
+            'c6d_phi': self._exp_conf.c6d_loss_weight,
+            'c6d_theta': self._exp_conf.c6d_loss_weight,
+            'c6d_omega': self._exp_conf.c6d_loss_weight,
+        }
 
         print('Entering self.train_cycle')
         # Turn on training mode
@@ -690,9 +721,9 @@ class Trainer():
 
                 # Some percentage of the time, provide the model with the model's prediction of x_0 | x_t+1
                 # When little_t == T should not unroll as we cannot go back further in time.
-                step_back = not (little_t == self.conf.diffuser.T) and (torch.tensor(self.conf['prob_self_cond']) > torch.rand(1))
+                self_cond = not (little_t == self.conf.diffuser.T) and (torch.tensor(self.conf['prob_self_cond']) > torch.rand(1))
                 timer.checkpoint('device loading')
-                if step_back:
+                if self_cond:
                     unroll_performed = True
                     rf2aa.tensor_util.to_device(rfi, gpu)
 
@@ -765,7 +796,7 @@ class Trainer():
                         true_crds[:,:,14:] = 0
                         xyz_t[:] = 0
                         seq_t[:] = 0
-                        loss, loss_dict = self.calc_loss(model_out, diffuser_out, logit_s, c6d,
+                        loss, loss_dict = self.calc_loss(loss_weights, model_out, diffuser_out, logit_s, c6d,
                                 logit_aa_s, label_aa_s, mask_aa_s, None,
                                 pred_crds, alphas, true_crds, mask_crds,
                                 mask_BB, mask_2d, same_chain,
@@ -831,16 +862,32 @@ class Trainer():
                     else:
                         task_str = chosen_task
                     
-                    outstr = f"Local {task_str} | {chosen_dataset[0]}: [{epoch}/{self.conf.n_epoch}] Batch: [{counter*self.conf.batch_size*world_size}/{self.n_train}] Time: {train_time} Loss dict: "
+                    outstr = f"Task: {task_str} | Dataset: {chosen_dataset : >12} | Epoch:[{epoch:02}/{self.conf.n_epoch}] | Batch: [{counter*self.conf.batch_size*world_size:05}/{self.n_train}] | Time: {train_time:.2f}"
 
+                    outstr += (f' | Loss: {round( float(loss), 4)} = \u03A3 ')
                     str_stack = []
-                    for k in sorted(list(loss_dict.keys())):
-                        str_stack.append(f'{k}--{round( float(loss_dict[k]), 4)}')
+                    for k, weight in list(loss_weights.items()):
+                        if weight == 0:
+                            continue
+                        weighted = loss_dict[f'weighted.{k}']
+                        str_stack.append(f'{k}: {float(weighted):4.2f}')
+                        # Hack to not log these to wandb
+                        if weighted == 0:
+                            loss_dict[f'weighted.{k}'] = float('nan')
+                            loss_dict[f'mean_block.{k}'] = float('nan')
+                            loss_dict[f'last_block.{k}'] = float('nan')
                     outstr += '  '.join(str_stack)
                     sys.stdout.write(outstr+'\n')
                     
                     if rank == 0:
-                        loss_dict.update({'t':little_t, 'total_examples':epoch*self.n_train+counter*world_size, 'dataset':chosen_dataset[0], 'task':chosen_task[0]})
+                        loss_dict.update({
+                            'training_start': firstLog(),
+                            't':little_t,
+                            'total_examples':epoch*self.n_train+counter*world_size,
+                            'dataset':chosen_dataset,
+                            'task':chosen_task,
+                            'self_cond': self_cond,
+                            'loss':loss.detach()})
                         metrics = {}
                         for m in self.metrics:
                             with torch.no_grad():
@@ -902,12 +949,15 @@ class Trainer():
                         indep_true = atomize.deatomize(atomizer, indep_true)
                         motif_deatomized = atomize.convert_atomized_mask(atomizer, ~is_diffused)
 
+                    
                     with open(f'{prefix}_info.pkl', 'wb') as fh:
                         pickle.dump({
                             'motif': motif_deatomized,
                             'masks_1d': masks_1d,
                             'idx': indep_true.idx,
                             'is_sm': indep_true.is_sm,
+                            'loss_dict': tree.map_structure(
+                                lambda x: x.cpu() if hasattr(x, 'cpu') else x, loss_dict)
                         }, fh)
 
                     if self.conf.log_inputs:
@@ -930,7 +980,7 @@ class Trainer():
                     for fraction in n_fractionals:
                         save_before_n = fraction * self.n_train
                         if n_processed <= save_before_n and n_processed_next > save_before_n:
-                            self.save_model(f'{epoch - 1 + fraction:.2f}', ddp_model, optimizer, scheduler, scaler)
+                            self.save_model(f'{epoch + fraction:.2f}', ddp_model, optimizer, scheduler, scaler)
                             break
                 timer.checkpoint('logging')
                 timer.restart()
@@ -972,22 +1022,18 @@ def make_trainer(conf):
     global LOAD_PARAM2
     # set epoch size 
     N_EXAMPLE_PER_EPOCH = conf.epoch_size 
-    ic(N_EXAMPLE_PER_EPOCH)
 
     # set global debug and wandb params 
+    WANDB = conf.wandb
     if conf.debug:
         DEBUG = True 
-        WANDB = False 
         # loader_param['DATAPKL'] = 'subsampled_dataset.pkl'
         # loader_param['DATAPKL_AA'] = 'subsampled_all-atom-dataset.pkl'
         os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
         ic.configureOutput(includeContext=True)
     else:
         DEBUG = False 
-        WANDB = True 
-    if not conf.wandb:
-        WANDB = False
-    
+
     # set load params based on debug
     global LOAD_PARAM
     global LOAD_PARAM2
