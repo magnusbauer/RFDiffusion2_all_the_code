@@ -42,6 +42,7 @@ import aa_model
 import guide_posts as gp
 import copy
 import atomize
+import dev.idealize_backbone
 # ic.configureOutput(includeContext=True)
 
 def make_deterministic(seed=0):
@@ -238,7 +239,7 @@ def save_outputs(sampler, out_prefix, indep, denoised_xyz_stack, px0_xyz_stack, 
     # replace mask and unknown tokens in the final seq with alanine
     final_seq = torch.where((final_seq == 20) | (final_seq==21), 0, final_seq)
     seq_design = final_seq.clone()
-    xyz_design = denoised_xyz_stack[0].clone()
+    xyz_design = px0_xyz_stack[0].clone()
     gp_contig_mappings = {}
     # If using guideposts, infer their placement from the final pX0 prediction.
     if sampler._conf.inference.contig_as_guidepost:
@@ -273,16 +274,19 @@ def save_outputs(sampler, out_prefix, indep, denoised_xyz_stack, px0_xyz_stack, 
         xyz_design = xyz_design[~is_gp]
         seq_design = seq_design[~is_gp]
 
-    # Save outputs 
-    os.makedirs(os.path.dirname(out_prefix), exist_ok=True)
+    # Save outputs
+    out_head, out_tail = os.path.split(out_prefix)
+    os.makedirs(os.path.dirname(out_head), exist_ok=True)
 
     # determine lengths of protein and ligand for correct chain labeling in output pdb
     chain_Ls = rf2aa.util.Ls_from_same_chain_2d(indep.same_chain)
 
     # pX0 last step
-    out = f'{out_prefix}.pdb'
-    aa_model.write_traj(out, xyz_design[None,...], seq_design, indep.bond_feats, chain_Ls=chain_Ls, lig_name=sampler._conf.inference.ligand, idx_pdb=indep.idx)
-    des_path = os.path.abspath(out)
+    out_unidealized = os.path.join(out_head, 'unidealized', f'{out_prefix}.pdb')
+    aa_model.write_traj(out_unidealized, xyz_design[None,...], seq_design, indep.bond_feats, chain_Ls=chain_Ls, lig_name=sampler._conf.inference.ligand, idx_pdb=indep.idx)
+    out_idealized = f'{out_prefix}.pdb'
+    dev.idealize_backbone.rewrite(out_unidealized, out_idealized)
+    des_path = os.path.abspath(out_idealized)
 
     # trajectory pdbs
     traj_prefix = os.path.dirname(out_prefix)+'/traj/'+os.path.basename(out_prefix)

@@ -10,6 +10,16 @@ from icecream import ic
 from tqdm import tqdm
 import assertpy
 
+def flatten_dictionary(dictionary, parent_key='', separator='.'):
+    flattened_dict = {}
+    for key, value in dictionary.items():
+        new_key = f"{parent_key}{separator}{key}" if parent_key else key
+        if isinstance(value, dict):
+            flattened_dict.update(flatten_dictionary(value, new_key, separator))
+        else:
+            flattened_dict[new_key] = value
+    return flattened_dict
+
 def main():
     ic.configureOutput(includeContext=True)
     parser = argparse.ArgumentParser()
@@ -42,9 +52,8 @@ def main():
         if 'sampled_mask' in trb:
             record['sampled_mask'] = trb['sampled_mask']
         if 'config' in trb:
-            for k,vdict in trb['config'].items():
-                for k2,v in vdict.items():
-                    record[k+'.'+k2] = v
+            flat = flatten_dictionary(trb['config'])
+            record.update(flat)
         records.append(record)
 
     df_base = pd.DataFrame.from_records(records)

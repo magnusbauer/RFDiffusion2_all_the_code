@@ -32,7 +32,7 @@ inference:
   final_step: 1
   feed_true_xt: False
   annotate_termini: True
-  deterministic: False
+  deterministic: True
   zero_weights: False
   ligand: null
   ema: True
