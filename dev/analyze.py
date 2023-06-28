@@ -584,10 +584,10 @@ def make_row_from_traj(traj_prefix):
         
     synth_row['mpnn'] = True
     trb = get_trb(synth_row)
-    # synth_row.update(trb['config'])
-    for k,vdict in trb['config'].items():
-        for k2,v in vdict.items():
-            synth_row[k+'.'+k2] = v
+    synth_row.update(trb['config'])
+    # for k,vdict in trb['config'].items():
+    #     for k2,v in vdict.items():
+    #         synth_row[k+'.'+k2] = v
     return synth_row
     #show_motif(synth_row, 'synth_row_2', show_af2=False)
 

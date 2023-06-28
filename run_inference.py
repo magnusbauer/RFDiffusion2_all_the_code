@@ -242,7 +242,7 @@ def save_outputs(sampler, out_prefix, indep, denoised_xyz_stack, px0_xyz_stack, 
     xyz_design = px0_xyz_stack[0].clone()
     gp_contig_mappings = {}
     # If using guideposts, infer their placement from the final pX0 prediction.
-    if sampler._conf.inference.contig_as_guidepost:
+    if sampler._conf.dataloader.USE_GUIDE_POSTS:
         gp_to_contig_idx0 = sampler.contig_map.gp_to_ptn_idx0  # map from gp_idx0 to the ptn_idx0 in the contig string.
         is_gp = torch.zeros_like(indep.seq, dtype=bool)
         is_gp[list(gp_to_contig_idx0.keys())] = True
@@ -276,13 +276,15 @@ def save_outputs(sampler, out_prefix, indep, denoised_xyz_stack, px0_xyz_stack, 
 
     # Save outputs
     out_head, out_tail = os.path.split(out_prefix)
-    os.makedirs(os.path.dirname(out_head), exist_ok=True)
+    unidealized_dir = os.path.join(out_head, 'unidealized')
+    os.makedirs(out_head, exist_ok=True)
+    os.makedirs(unidealized_dir, exist_ok=True)
 
     # determine lengths of protein and ligand for correct chain labeling in output pdb
     chain_Ls = rf2aa.util.Ls_from_same_chain_2d(indep.same_chain)
 
     # pX0 last step
-    out_unidealized = os.path.join(out_head, 'unidealized', f'{out_prefix}.pdb')
+    out_unidealized = os.path.join(unidealized_dir, f'{out_tail}.pdb')
     aa_model.write_traj(out_unidealized, xyz_design[None,...], seq_design, indep.bond_feats, chain_Ls=chain_Ls, lig_name=sampler._conf.inference.ligand, idx_pdb=indep.idx)
     out_idealized = f'{out_prefix}.pdb'
     dev.idealize_backbone.rewrite(out_unidealized, out_idealized)
@@ -315,7 +317,7 @@ def save_outputs(sampler, out_prefix, indep, denoised_xyz_stack, px0_xyz_stack, 
     if sampler.model_adaptor.atomizer:
         motif_deatomized = atomize.convert_atomized_mask(sampler.model_adaptor.atomizer, ~sampler.is_diffused)
         trb['motif'] = motif_deatomized
-    if sampler._conf.inference.contig_as_guidepost:
+    if sampler._conf.dataloader.USE_GUIDE_POSTS:
         # Store the literal location of the guide post residues
         for k in ['con_hal_pdb_idx', 'con_hal_idx0', 'sampled_mask']:
             trb[k+'_literal'] = copy.deepcopy(trb[k])

@@ -114,6 +114,7 @@ seq_diffuser:
   seqdiff: null
 
 denoiser:
+  noise_scale: 1
   noise_scale_ca: 1
   noise_scale_frame: 1
   noise_scale_torsion: 1

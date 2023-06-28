@@ -75,23 +75,6 @@ class Sampler:
         self.initialized=True
 
         # Assemble config from the checkpoint
-        print(' ')
-        print('-'*100)
-        print(' ')
-        print("WARNING: The following options are not currently implemented at inference. Decide if this matters.")
-        print("Delete these in inference/model_runners.py once they are implemented/once you decide they are not required for inference -- JW")
-        print(" -predict_previous")
-        print(" -prob_self_cond")
-        print(" -seqdiff_b0")
-        print(" -seqdiff_bT")
-        print(" -seqdiff_schedule_type")
-        print(" -seqdiff")
-        print(" -freeze_track_motif")
-        print(" -use_motif_timestep")
-        print(" ")
-        print("-"*100)
-        print(" ")
-
         from data import utils as du
         weights_pkl = du.read_pkl(
             self._conf.score_model.weights_path, use_torch=True,
@@ -708,7 +691,8 @@ class NRBStyleSelfCond(Sampler):
         ##################################
         ######## Str Self Cond ###########
         ##################################
-        if ((t < self._conf.diffuser.T) and (t != self._conf.diffuser.partial_T)) and self._conf.inference.str_self_cond:
+        do_self_cond = ((t < self._conf.diffuser.T) and (t != self._conf.diffuser.partial_T)) and self._conf.inference.str_self_cond
+        if do_self_cond:
             rfi = aa_model.self_cond(indep, rfi, rfo)
 
         if self.symmetry is not None:
@@ -734,6 +718,7 @@ class NRBStyleSelfCond(Sampler):
 
 
         rigids_t = du.rigid_frames_from_atom_14(rfi.xyz)
+        ic(self._conf.denoiser.noise_scale, do_self_cond)
         rigids_t = self.diffuser.reverse(
             rigid_t=rigids_t,
             rot_score=du.move_to_np(model_out['rot_score'][:,-1]),
@@ -742,7 +727,7 @@ class NRBStyleSelfCond(Sampler):
             t=t/self._conf.diffuser.T,
             dt=1/self._conf.diffuser.T,
             center=True,
-            noise_scale=1.0,
+            noise_scale=self._conf.denoiser.noise_scale,
         )
         x_t_1 = all_atom.atom37_from_rigid(rigids_t)
         x_t_1 = x_t_1[0,:,:14]

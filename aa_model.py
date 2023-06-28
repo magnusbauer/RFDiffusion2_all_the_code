@@ -48,6 +48,8 @@ MSAMASKED_C_TERM = 2*NAATOKENS + 2*NINDEL + 1
 N_TERMINUS = 1
 C_TERMINUS = 2
 
+UNIQUE_LIGAND="__UNIQUE_LIGAND"
+
 @dataclass
 class Indep:
     seq: torch.Tensor # [L]
@@ -180,13 +182,38 @@ class RFO:
     def get_xyz(self):
         return self.xyz_allatom[0]
 
+def get_ligands(pdb_lines):
+    ligands = set()
+    for l in pdb_lines:
+        if 'HETATM' not in l:
+            continue
+        curr_ligand = l[17:17+4].strip()
+        ligands.add(curr_ligand)
+    return ligands
+
+def get_only_ligand_or_none(pdb_lines):
+    ligands = get_ligands(pdb_lines)
+    assertpy.assert_that(len(ligands), description=ligands).is_less_than_or_equal_to(1)
+    if len(ligands) == 0:
+        return None
+    ligand = list(ligands)[0]
+    return ligand
+
+def get_only_ligand(pdb_lines):
+    ligands = get_ligands(pdb_lines)
+    assertpy.assert_that(len(ligands), description=ligands).is_equal_to(1)
+    ligand = list(ligands)[0]
+    return ligand
+
+
 def filter_het(pdb_lines, ligand):
     lines = []
     hetatm_ids = []
     for l in pdb_lines:
         if 'HETATM' not in l:
             continue
-        if l[17:17+4].strip() != ligand:
+        curr_ligand = l[17:17+4].strip()
+        if curr_ligand != ligand:
             continue
         lines.append(l)
         hetatm_ids.append(int(l[7:7+5].strip()))
@@ -206,7 +233,7 @@ def filter_het(pdb_lines, ligand):
         raise Exception('\n'.join(violations))
     return lines
 
-def make_indep(pdb, ligand=None):
+def make_indep(pdb, ligand=None, center=True):
     # self.target_feats = iu.process_target(self.inf_conf.input_pdb, parse_hetatom=True, center=False)
     # init_protein_tmpl=False, init_ligand_tmpl=False, init_protein_xyz=False, init_ligand_xyz=False,
     #     parse_hetatm=False, n_cycle=10, random_noise=5.0)
@@ -228,6 +255,8 @@ def make_indep(pdb, ligand=None):
     if ligand:
         with open(pdb, 'r') as fh:
             stream = [l for l in fh if "HETATM" in l or "CONECT" in l]
+        if ligand == UNIQUE_LIGAND:
+            ligand = get_only_ligand(pdb_lines)
         stream = filter_het(stream, ligand)
         if not len(stream):
             raise Exception(f'ligand {ligand} not found in pdb: {pdb}')
@@ -278,7 +307,8 @@ def make_indep(pdb, ligand=None):
     terminus_type[0] = N_TERMINUS
     terminus_type[Ls[0]-1] = C_TERMINUS
 
-    xyz = get_init_xyz(xyz[None, None], is_sm).squeeze()
+    if center:
+        xyz = get_init_xyz(xyz[None, None], is_sm).squeeze()
     ###TODO: currently network needs values at 0,2 indices of tensor, need to remove this reliance
     xyz[is_sm, 0] = 0
     xyz[is_sm, 2] = 0
@@ -374,7 +404,7 @@ class Model:
         if is_atom_str_shown:
             is_diffused[list(is_atom_str_shown.keys())] = True
         is_res_str_shown = ~is_diffused
-        use_guideposts = 'inference' in self.conf and self.conf.inference.contig_as_guidepost
+        use_guideposts = self.conf.dataloader.USE_GUIDE_POSTS
         o, is_diffused, is_seq_masked, self.atomizer, contig_map.gp_to_ptn_idx0 = transform_indep(o, is_res_str_shown, is_atom_str_shown, use_guideposts, 'anywhere')
 
         # HACK.  ComputeAllAtom in the network requires N and C coords even for atomized residues,
@@ -597,13 +627,12 @@ class Model:
         dist_matrix = rf2aa.data_loader.get_bond_distances(indep.bond_feats)
 
         # minor tweaks to rfi to match gp training
-        if ('inference' in self.conf) and (self.conf.inference.get('contig_as_guidepost', False)):
-            '''Manually inspecting the pickled features passed to RF during training, 
-            I did not see markers for the N and C termini. This is to more accurately 
-            replicate the features seen during training at inference.'''
-            # Erase N/C termini markers
-            msa_masked[...,-2:] = 0
-            msa_full[...,-2:] = 0
+        '''Manually inspecting the pickled features passed to RF during training, 
+        I did not see markers for the N and C termini. This is to more accurately 
+        replicate the features seen during training at inference.'''
+        # Erase N/C termini markers
+        msa_masked[...,-2:] = 0
+        msa_full[...,-2:] = 0
         
         t1d = torch.tile(t1d, (1,2,1,1))
         t1d[0,1,:,-1] = -1
@@ -668,6 +697,7 @@ def write_traj(path, xyz_stack, seq, bond_feats, natoms=23, **kwargs):
     xyz23 = pad_dim(xyz_stack, 2, natoms)
     if bond_feats is not None:
         bond_feats = bond_feats[None]
+    ic(kwargs)
     with open(path, 'w') as fh:
         for i, xyz in enumerate(xyz23):
             rf2aa.util.writepdb_file(fh, xyz, seq, bond_feats=bond_feats, modelnum=i, **kwargs)
