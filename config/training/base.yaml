@@ -1,3 +1,4 @@
+ddp_backend: 'gloo'
 inference:
   str_self_cond: true
   contig_as_guidepost: true

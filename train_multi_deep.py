@@ -540,12 +540,13 @@ class Trainer():
             wandb.config = self.conf
             wandb.save(os.path.join(os.getcwd(), self.outdir, 'git_diff.txt'))
         ic(os.environ['MASTER_ADDR'], rank, world_size, torch.cuda.device_count())
-        print(f'{rank=} {world_size=} initializing process group')
-        dist.init_process_group(backend="gloo", world_size=world_size, rank=rank)
+        print(f'{rank=} {world_size=} {self.conf.ddp_backend=} initializing process group')
+        dist.init_process_group(backend=self.conf.ddp_backend, world_size=world_size, rank=rank)
         print(f'{rank=} {world_size=} initialized process group')
         if torch.cuda.device_count():
             gpu = rank % torch.cuda.device_count()
             torch.cuda.set_device("cuda:%d"%gpu)
+            ic(rank, torch.cuda.get_device_name(f'cuda:{gpu}'))
         else:
             gpu = 'cpu'
         
@@ -625,8 +626,9 @@ class Trainer():
         model = EMA(model, 0.999)
         print('Instantiating DDP')
         ddp_model = model
+        ic(device)
         if torch.cuda.device_count():
-            ddp_model = DDP(model, device_ids=[device], find_unused_parameters=False, broadcast_buffers=False)
+            ddp_model = DDP(model, device_ids=[f'cuda:{device}'], find_unused_parameters=False, broadcast_buffers=False)
         else:
             ddp_model = DDP(model, find_unused_parameters=False)
         print('Initializing optimizer')
