@@ -557,13 +557,8 @@ class Trainer():
         
         print('Making train sets')
         train_set = DistilledDataset(dataset_configs,
-                                     self.conf.dataloader, self.diffuser, self.ti_dev, self.ti_flip, self.ang_ref,
+                                     self.conf.dataloader, self.diffuser,
                                      self.conf.preprocess, self.conf, homo)
-        # #get proportion of seq2str examples
-        # if 'seq2str' in self.loader_param['TASK_NAMES']:
-        #     p_seq2str = self.loader_param['TASK_P'][self.loader_param['TASK_NAMES'].index('seq2str')]
-        # else:
-        #     p_seq2str = 0
 
         train_sampler = DistributedWeightedSampler(dataset_configs,
                                                    dataset_options=self.conf.dataloader['DATASETS'],

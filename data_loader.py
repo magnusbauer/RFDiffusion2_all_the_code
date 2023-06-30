@@ -1447,7 +1447,10 @@ def default_dataset_configs(loader_param, debug=False):
                                 chid2hash=chid2hash,chid2taxid=chid2taxid)
     sm_compl_config = WeightedDataset(
                 train_ID_dict["sm_compl"], train_dict["sm_compl"], sm_compl_loader_fixbb, weights_dict["sm_compl"])
-
+    
+    sm_compl_covale_config = WeightedDataset(
+                train_ID_dict["sm_compl_covale"], train_dict["sm_compl_covale"], sm_compl_loader_fixbb, weights_dict["sm_compl_covale"])
+    
     return OrderedDict({
         'pdb': pdb_config,
         'complex': compl_config,
@@ -1457,6 +1460,7 @@ def default_dataset_configs(loader_param, debug=False):
         # AA configs
         'pdb_aa': pdb_aa_config,
         'sm_complex': sm_compl_config,
+        'sm_compl_covale': sm_compl_covale_config,
         }), homo
 
 
@@ -1504,9 +1508,6 @@ class DistilledDataset(data.Dataset):
                  dataset_configs,
                  params,
                  diffuser,
-                 ti_dev,
-                 ti_flip,
-                 ang_ref,
                  preprocess_param,
                  conf,
                  homo=None,
@@ -1524,10 +1525,6 @@ class DistilledDataset(data.Dataset):
         self.diffuser     = diffuser
 
         # get torsion variables
-        self.ti_dev = ti_dev
-        self.ti_flip = ti_flip
-        self.ang_ref = ang_ref
-
         self.preprocess_param = preprocess_param
 
         self.conf = conf
@@ -1634,7 +1631,7 @@ class DistilledDataset(data.Dataset):
                     out = chosen_loader(sel_item, self.params, unclamp=True, fixbb=fixbb)
                 else:
                     out = chosen_loader(sel_item, self.params, unclamp=False,fixbb=fixbb)
-            elif chosen_dataset == 'sm_complex':
+            elif chosen_dataset in {'sm_complex', 'sm_compl_covale'}:
                 try:
                     out = dataset_config.task_loaders(
                         sel_item,
@@ -1714,9 +1711,7 @@ class DistributedWeightedSampler(data.Sampler):
         if dataset_prob is None:
             dataset_prob = [1.0/num_datasets]*num_datasets
         else:
-            dataset_prob = [float(i) for i in dataset_prob.split(",")]
             assert math.isclose(sum(dataset_prob), 1.0)
-
             assert len(dataset_prob) == len(dataset_options)
         for idx,dset in enumerate(dataset_options):
             if not idx == num_datasets-1:

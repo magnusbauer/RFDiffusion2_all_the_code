@@ -130,7 +130,7 @@ dataloader:
   DATAPKL: ./dataset.pkl
   DATAPKL_AA: aa_dataset_256.pkl
   DATASETS: pdb_aa,sm_complex
-  DATASET_PROB: 0.5,0.5
+  DATASET_PROB: [0.5,0.5]
   DATCUT: 2020-Apr-30
   DIFF_MASK_HIGH: 999
   DIFF_MASK_LOW: 20
