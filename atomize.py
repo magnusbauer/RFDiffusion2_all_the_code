@@ -121,6 +121,15 @@ def convert_atomized_mask(atomizer, mask):
             raise Exception(f'{atomized_i} not found')
     return o
 
+def atomized_indices_from_preatomized_res_indices(atomizer, res_indices):
+    res_idx_atom_name_by_atomized_idx = get_res_atom_name_by_atomized_idx(atomizer)
+    ic(res_idx_atom_name_by_atomized_idx)
+    o = []
+    for atomized_i, (res_i, atom_name) in res_idx_atom_name_by_atomized_idx.items():
+        if res_i in res_indices:
+            o.append(atomized_i)
+
+    return torch.tensor(o)
 
 def atom_indices(atomizer, res_mask, atom_names_by_res):
     res_i = atomized_indices_res(atomizer, res_mask)

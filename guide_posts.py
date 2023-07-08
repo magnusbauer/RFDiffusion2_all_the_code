@@ -136,7 +136,9 @@ def convert_motif_to_guide_posts(gp_to_ptn_idx0: dict,
 
     # Add large idx jumps between guide post frames. Unsure if necesary.
     idx_last_non_gp = indep.idx[-n_gp - 1]
-    idx_gp = rf2aa.chemical.CHAIN_GAP * torch.arange(1, n_gp + 1) + idx_last_non_gp
+    # idx_gp = rf2aa.chemical.CHAIN_GAP * torch.arange(1, n_gp + 1) + idx_last_non_gp
+    CHAIN_GAP = 33
+    idx_gp = CHAIN_GAP * torch.arange(1, n_gp + 1) + idx_last_non_gp
     indep.idx[-n_gp:] = idx_gp
 
     # Add in the guide bonds
@@ -150,7 +152,7 @@ def convert_motif_to_guide_posts(gp_to_ptn_idx0: dict,
     )
    
     # Make each guide post their own chain
-    indep.same_chain = add_guide_post_same_chain(indep.same_chain[:-n_gp, :-n_gp], n_gp)
+    # indep.same_chain = add_guide_post_same_chain(indep.same_chain[:-n_gp, :-n_gp], n_gp)
 
     # Note which residues should diffuse
     is_diffused = torch.ones_like(indep.is_sm, dtype=bool)
