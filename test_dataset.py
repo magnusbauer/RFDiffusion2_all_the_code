@@ -146,7 +146,7 @@ class Dataloader(unittest.TestCase):
         indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context = loader_out
 
         print(item_context)
-        ic(indep.chains())
+        # ic(indep.chains())
         ic(indep.is_sm)
         ic(indep.is_sm.sum())
         sm_bond_feats = indep.bond_feats[indep.is_sm]
@@ -162,22 +162,23 @@ class Dataloader(unittest.TestCase):
         
         golden_name = f'indep_{dataset}-{mask}'
         cmp_ = partial(tensor_util.cmp, atol=1e-20, rtol=1e-5)
-        def cmp(got, want):
-            atomized_i = np.arange(256-7-6, 256-7)
-            is_atomized = torch.zeros((want.length(),)).bool()
-            is_atomized[atomized_i] = True
-            want_b = aa_model.slice_indep(want, is_atomized)
-            want_a = aa_model.slice_indep(want, ~is_atomized)
-            want = aa_model.cat_indeps_same_chain([want_a, want_b])
-            ic(
-                list(zip(
-                    got.human_readable_seq(),
-                    want.human_readable_seq()))
-            )
-            got.xyz = got.xyz[:,:14]
-            return cmp_(got, want)
+        # def cmp(got, want):
+        #     atomized_i = np.arange(256-7-6, 256-7)
+        #     is_atomized = torch.zeros((want.length(),)).bool()
+        #     is_atomized[atomized_i] = True
+        #     want_b = aa_model.slice_indep(want, is_atomized)
+        #     want_a = aa_model.slice_indep(want, ~is_atomized)
+        #     want = aa_model.cat_indeps_same_chain([want_a, want_b])
+        #     ic(
+        #         list(zip(
+        #             got.human_readable_seq(),
+        #             want.human_readable_seq()))
+        #     )
+        #     got.xyz = got.xyz[:,:14]
+        #     return cmp_(got, want)
         show(indep, atomizer)
-        test_utils.assert_matches_golden(self, golden_name, indep, rewrite=REWRITE, custom_comparator=cmp)
+        indep.metadata = None
+        test_utils.assert_matches_golden(self, golden_name, indep, rewrite=REWRITE, custom_comparator=cmp_)
 
     def test_simple_mask(self):
         dataset = 'pdb_aa'
