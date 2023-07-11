@@ -1655,7 +1655,7 @@ class DistilledDataset(data.Dataset):
 
             # Mask the independent inputs.
             run_inference.seed_all(mask_gen_seed) # Reseed the RNGs for test stability.
-            masks_1d = mask_generator.generate_masks(indep, task, self.params, chosen_dataset, None, atom_mask=atom_mask[:, :rf2aa.chemical.NHEAVYPROT])
+            masks_1d = mask_generator.generate_masks(indep, task, self.params, chosen_dataset, None, atom_mask=atom_mask[:, :rf2aa.chemical.NHEAVYPROT], metadata=metadata)
             # masks_1d = mask_generator.generate_masks(indep, task, self.params, chosen_dataset, None, atom_mask=atom_mask[:, :rf2aa.chemical.NHEAVYPROT],metadata=metadata)
 
             is_res_str_shown = masks_1d['input_str_mask']

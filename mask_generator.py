@@ -1,5 +1,6 @@
 import random
 import sys
+import copy
 
 import torch
 import scipy.stats
@@ -12,7 +13,33 @@ nx.from_numpy_matrix = nx.from_numpy_array
 from functools import wraps
 import assertpy
 from collections import OrderedDict
+import aa_model
 
+
+def make_covale_compatible(get_mask):
+    @wraps(get_mask)
+    def out_get_mask(indep, atom_mask, *args, **kwargs):
+        # diffusion_mask = get_mask(indep.xyz[~indep.is_sm], *args, **kwargs)
+        L = indep.length()
+        # diffusion_mask == is_motif
+        diffusion_mask = torch.ones(L).bool()
+        
+        indep_no_cov = copy.deepcopy(indep)
+        is_atomized_covale = (indep.metadata['type'] == aa_model.TYPE_ATOMIZED_COV)
+        atom_mask = atom_mask[~is_atomized_covale]
+        aa_model.pop_mask(indep_no_cov, ~is_atomized_covale)
+        is_motif, is_atom_motif = get_mask(indep_no_cov, atom_mask, *args, **kwargs)
+        diffusion_mask_prot = is_motif
+        diffusion_mask[~is_atomized_covale] = diffusion_mask_prot
+        covalently_modified_res = np.array(list(indep.metadata['covale_correspondence'].keys()))
+        motif_idx = diffusion_mask.nonzero()[:,0].numpy()
+        covalently_modified_res_motif = set(motif_idx).intersection(set(covalently_modified_res))
+        covalently_modified_res_motif_atom_idx = []
+        for res_idx0 in covalently_modified_res_motif:
+            covalently_modified_res_motif_atom_idx.extend(indep.metadata['covale_correspondence'][res_idx0]['connected_idx0'])
+        diffusion_mask[covalently_modified_res_motif_atom_idx] = True
+        return diffusion_mask, None
+    return out_get_mask
 
 #####################################
 # Misc functions for mask generation
@@ -162,6 +189,8 @@ def get_sm_contacts(
 def get_triple_contact_atomize(*args, **kwargs):
     raise Exception('not implemented')
 
+# TODO: fix
+# @make_covale_compatible
 def get_closest_tip_atoms(indep, atom_mask,
     d_beyond_closest = 1.0,
     n_beyond_closest = 1,
@@ -352,6 +381,17 @@ def _get_diffusion_mask_simple(xyz, low_prop, high_prop, broken_prop):
         diffusion_mask[-(mask_length-split):] = False
     return diffusion_mask
 
+def _get_diffusion_mask_islands(xyz, island_min=1, island_max=15, n_islands_min=1, n_islands_max=4):
+    L = xyz.shape[0]
+    is_motif = torch.ones(L).bool()
+    n_islands = np.random.randint(n_islands, n_islands_max)
+    for _ in range(n_islands):
+        mask_length = np.random.randint(island_min, island_max)
+        high_start = L - mask_length
+        start = random.randint(0, high_start)
+        is_motif[start:start+mask_length] = True
+    return is_motif
+
 def _get_unconditional_diffusion_mask(xyz, *args, **kwargs):
     """
     unconditional generation of proteins, if a small molecule is present it will be given as context
@@ -359,7 +399,6 @@ def _get_unconditional_diffusion_mask(xyz, *args, **kwargs):
     L = xyz.shape[0]
     is_motif = torch.zeros(L).bool()
     return is_motif
-
 
 def make_sm_compatible(get_mask):
     @wraps(get_mask)
@@ -389,7 +428,8 @@ def make_atomized(get_mask, min_atomized_residues=1, max_atomized_residues=5):
         return is_motif, is_atom_motif
     return out_get_mask
 
-get_diffusion_mask_simple = make_sm_compatible(_get_diffusion_mask_simple)
+get_diffusion_mask_simple = make_covale_compatible(make_sm_compatible(_get_diffusion_mask_simple))
+get_diffusion_mask_islands = make_covale_compatible(make_sm_compatible(_get_diffusion_mask_islands))
 get_triple_contact = make_sm_compatible(_get_triple_contact)
 get_double_contact = make_sm_compatible(_get_double_contact)
 atomize_get_triple_contact = make_atomized(get_triple_contact)
@@ -412,7 +452,7 @@ def get_diffusion_mask(
     # Use fallback mask if no small molecule present.
     if not indep.is_sm.any():
         get_mask = sm_mask_fallback.get(get_mask, get_mask)
-    
+
     return get_mask(indep, atom_mask, low_prop=low_prop, high_prop=high_prop, broken_prop=broken_prop)
 
 
@@ -638,7 +678,7 @@ def get_nearby_contigs(indep, atom_mask, low_prop, high_prop, broken_prop):
 # Main mask generator function
 #####################################
 
-def generate_masks(indep, task, loader_params, chosen_dataset, full_chain=None, atom_mask=None): #full_chain is for complexes, to signify which chain is complete
+def generate_masks(indep, task, loader_params, chosen_dataset, full_chain=None, atom_mask=None, metadata=None): #full_chain is for complexes, to signify which chain is complete
     '''
     Slimmed down function that outputs 1D masks for inputs and loss calculations.
     Input masks are defined as True=(unmasked)/False=masked (except for input_t1dconf, which is a scalar value, and seq2str_mask which is the msa mask for the seq2str task)
@@ -695,6 +735,8 @@ def generate_masks(indep, task, loader_params, chosen_dataset, full_chain=None, 
         mask_probs = OrderedDict()
         for k, v in loader_params['DIFF_MASK_PROBS'].items():
             mask_probs[getattr(thismodule, k)] = float(v)
+        # Plumbing hack
+        indep.metadata = metadata
     
         diffusion_mask, is_atom_motif = get_diffusion_mask(
             indep,
