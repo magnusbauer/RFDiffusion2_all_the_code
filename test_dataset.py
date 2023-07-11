@@ -221,6 +221,7 @@ class Dataloader(unittest.TestCase):
         
         loader_out = self.indep_for_dataset(dataset, mask, overrides=['dataloader.CROP=60'])
         indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context = loader_outindep = loader_out
+        ic(indep.length())
 
 
         

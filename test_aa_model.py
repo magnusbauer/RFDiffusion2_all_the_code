@@ -5,6 +5,7 @@ import sys
 import torch
 import assertpy
 import unittest
+import numpy as np
 from icecream import ic
 
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'RF2-allatom'))
@@ -12,7 +13,75 @@ import rf2aa
 import aa_model
 from aa_model import AtomizeResidues, Indep, Model, make_indep
 import atomize
+import test_utils
 ic.configureOutput(includeContext=True)
+
+class TestRearrange(unittest.TestCase):
+
+    def test_swap(self):
+        indep = make_indep('benchmark/input/gaa.pdb', 'LG1')
+        L = indep.length()
+        input_copy = copy.deepcopy(indep)
+        i = torch.arange(L)
+        i[L-1] = L -2
+        i[L-2] = L -1
+        aa_model.rearrange_indep(indep, i)
+        aa_model.rearrange_indep(indep, i)
+ 
+        diff = test_utils.cmp_pretty(indep, input_copy)
+        if diff:
+            print(diff)
+            self.fail(f'{diff=}')
+
+
+    def test_all(self):
+        indep = make_indep('benchmark/input/gaa.pdb', 'LG1')
+        L = indep.length()
+        input_copy = copy.deepcopy(indep)
+        i = torch.randperm(L)
+        i_inv = torch.argsort(i)
+        aa_model.rearrange_indep(indep, i)
+        aa_model.rearrange_indep(indep, i_inv)
+
+
+        diff = test_utils.cmp_pretty(indep, input_copy)
+        if diff:
+            print(diff)
+            self.fail(f'{diff=}')
+
+
+    def test_move_sm(self):
+        indep = make_indep('benchmark/input/gaa.pdb', 'LG1')
+        L = indep.length()
+        input_copy = copy.deepcopy(indep)
+        i = np.arange(L)
+        i = np.concatenate((i[indep.is_sm], i[~indep.is_sm]))
+        aa_model.rearrange_indep(indep, i)
+
+        diff = test_utils.cmp_pretty(indep.atom_frames, input_copy.atom_frames)
+        if diff:
+            print(diff)
+            self.fail(f'{diff=}')
+    
+
+    def test_rearrange_sm(self):
+        indep = make_indep('benchmark/input/gaa.pdb', 'LG1')
+        L = indep.length()
+        input_copy = copy.deepcopy(indep)
+        i = np.arange(L)
+        i = np.concatenate((i[indep.is_sm][-1:], i[indep.is_sm][:-1], i[~indep.is_sm]))
+        aa_model.rearrange_indep(indep, i)
+
+        ic(
+            input_copy.length(),
+            input_copy.is_sm.sum(),
+            input_copy.atom_frames[:,:,0],
+            indep.atom_frames[:,:,0],
+        )
+        frame_has_0 = (indep.atom_frames[:,:,0] == 0).any(dim=1)
+        ic(frame_has_0)
+        assertpy.assert_that(frame_has_0.all()).is_true()
+
 
 class AAModelTestCase(unittest.TestCase):
 

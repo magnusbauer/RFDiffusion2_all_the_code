@@ -12,7 +12,7 @@ inference:
 dataloader:
   DATAPKL_AA: test_fake_allatom_dataset.pkl
   DATASETS: pdb_aa,sm_complex
-  DATASET_PROB: 0.0,1.0
+  DATASET_PROB: [0.0,1.0]
   CROP: 60
 
 experiment:

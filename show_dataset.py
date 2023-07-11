@@ -74,6 +74,9 @@ def no_batch_collate_fn(data):
 
 @hydra.main(version_base=None, config_path="config/training", config_name="base")
 def run(conf: DictConfig) -> None:
+
+    if conf.debug:
+        ic.configureOutput(includeContext=True)
     diffuser = se3_diffuser.SE3Diffuser(conf.diffuser)
     diffuser.T = conf.diffuser.T
     dataset_configs, homo = default_dataset_configs(conf.dataloader, debug=conf.debug)
@@ -110,10 +113,9 @@ def run(conf: DictConfig) -> None:
             indep = atomize.deatomize(atomizer, indep)
         pdb = f'/tmp/{counter}_{chosen_dataset}_true.pdb'
         ic(
-            item,
             pdb,
-            indep.xyz[0, 1]
         )
+        print(item_context)
 
         indep.write_pdb(pdb)
 
@@ -128,6 +130,9 @@ def run(conf: DictConfig) -> None:
         cmd.show_as('cartoon', name)
         cmd.show('licorice', f'hetatm and {name}')
         cmd.color('orange', f'hetatm and elem c and {name}')
+
+        ic(indep.same_chain)
+        ic(indep.same_chain[0])
 
         # if input('press q to stop') == 'q':
         #     break

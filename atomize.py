@@ -59,6 +59,14 @@ def atomized_indices_atoms(atomizer, atom_names_by_res):
         named_i.extend(atom_i.tolist())
     return named_i
 
+def atomized_indices_res_i(atomizer, idx):
+    atomized_res_idx = []
+    atomized_res_idx_from_res = atomizer.get_atomized_res_idx_from_res()
+    for i in idx:
+        atomized_res_idx.append(atomized_res_idx_from_res[i.item()])
+    return atomized_res_idx
+
+
 def atomized_indices_res(atomizer, mask):
     atomized_res_idx_from_res = atomizer.get_atomized_res_idx_from_res()
     atomized_res_idx = []
