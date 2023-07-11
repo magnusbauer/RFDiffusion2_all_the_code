@@ -32,7 +32,6 @@ import mask_generator
 from icecream import ic
 import pickle
 import random
-from apply_masks import mask_inputs
 import util
 import math
 from functools import partial

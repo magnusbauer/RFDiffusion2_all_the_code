@@ -104,7 +104,7 @@ resume: null
 resume_scheduler: True
 reinitialize_missing_params: False
 zero_weights: false
-n_epoch: 30
+n_epoch: 500
 maxcycle: 1
 timing_summary_every: 1
 pseudobatch: 32
