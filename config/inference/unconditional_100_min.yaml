@@ -1,6 +1,7 @@
 defaults:
     - aa
 
+guidepost_bonds: True
 inference:
   model_runner: NRBStyleSelfCond
   design_startnum: -1

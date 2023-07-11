@@ -453,7 +453,7 @@ class Model:
             is_diffused[list(is_atom_str_shown.keys())] = True
         is_res_str_shown = ~is_diffused
         use_guideposts = self.conf.dataloader.USE_GUIDE_POSTS
-        o, is_diffused, is_seq_masked, self.atomizer, contig_map.gp_to_ptn_idx0 = transform_indep(o, is_res_str_shown, is_atom_str_shown, use_guideposts, 'anywhere')
+        o, is_diffused, is_seq_masked, self.atomizer, contig_map.gp_to_ptn_idx0 = transform_indep(o, is_res_str_shown, is_atom_str_shown, use_guideposts, 'anywhere', self.conf.guidepost_bonds, metadata=defaultdict(dict))
 
         # HACK.  ComputeAllAtom in the network requires N and C coords even for atomized residues,
 	    # However, these have no semantic value.  TODO: Remove the network's reliance on these coordinates.
@@ -958,7 +958,7 @@ def adaptor_fix_bb_indep(conf, out):
         )
     metadata['covale_bonds'] = bonds
 
-    pop_mask(indep, ~is_corresponding)
+    pop_mask(indep, ~is_corresponding, break_chirals=True)
     atom_mask = atom_mask[~is_corresponding]
 
     new_i_from_old_i = (~is_corresponding).cumsum(dim=0) - 1
@@ -988,7 +988,7 @@ def pop_unoccupied(indep, atom_mask):
     atom_mask           = atom_mask[pop]
     return atom_mask
 
-def pop_mask(indep, pop):
+def pop_mask(indep, pop, break_chirals=False):
     n_atoms = indep.is_sm.sum()
     assertpy.assert_that(len(indep.atom_frames)).is_equal_to(n_atoms)
 
@@ -1014,7 +1014,8 @@ def pop_mask(indep, pop):
     # assertpy.assert_that(cmp_pretty(any_chi))
     any_is_chiral_popped = torch.any(is_chiral_popped, dim=1)
     all_is_chiral_popped = torch.all(is_chiral_popped, dim=1)
-    assertpy.assert_that((any_is_chiral_popped == all_is_chiral_popped).all()).is_true()
+    if not break_chirals:
+        assertpy.assert_that((any_is_chiral_popped == all_is_chiral_popped).all()).is_true()
     indep.chirals = indep.chirals[all_is_chiral_popped]
 
     if indep.chirals.numel():
