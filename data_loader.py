@@ -1662,8 +1662,12 @@ class DistilledDataset(data.Dataset):
 
             # Cast to non-tensor
             is_atom_str_shown = is_atom_str_shown or {}
+            def maybe_item(i):
+                if hasattr(i, 'item'):
+                    return i.item()
+                return i
             if is_atom_str_shown:
-                is_atom_str_shown = {res_i.item():v for res_i, v in is_atom_str_shown.items()}
+                is_atom_str_shown = {maybe_item(res_i):v for res_i, v in is_atom_str_shown.items()}
 
             indep, is_diffused, is_masked_seq, atomizer, _ = aa_model.transform_indep(indep, is_res_str_shown, is_atom_str_shown, self.params['USE_GUIDE_POSTS'], guidepost_bonds=self.conf.guidepost_bonds, metadata=metadata)
 

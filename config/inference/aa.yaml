@@ -3,6 +3,8 @@ defaults:
   - base
 
 inference:
-  ckpt_path: /home/rohith/rf2a-fd3/models/BFF_10_remapped.pt
   align_motif: False
   str_self_cond: True
+
+score_model:
+  weights_path: /net/scratch/ahern/se3_diffusion/training/from_scratch_4_resume_ep16/train_session2023-06-29_1688072531.6048305/models/RFD_30.pt

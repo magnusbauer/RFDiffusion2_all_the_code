@@ -170,6 +170,13 @@ class Indep:
         return metadata['type']
     
 
+    def get_connected(self, i):
+        G = nx.from_numpy_matrix(self.bond_feats.detach().cpu().numpy())
+        ic(G.nodes, i)
+        connected_idx0 = fetch_connected_nodes(G, i)
+        return torch.tensor(list(connected_idx0))
+    
+
 def human_readable_seq(seq):
     return [rf2aa.chemical.num2aa[s] for s in seq]
 
@@ -963,8 +970,12 @@ def adaptor_fix_bb_indep(conf, out):
 
     new_i_from_old_i = (~is_corresponding).cumsum(dim=0) - 1
     for i, (a, b, bond_type) in enumerate(metadata['covale_bonds']):
-        new_b = new_i_from_old_i[b]
+        new_b = new_i_from_old_i[b].item()
         metadata['covale_bonds'][i] = (a, new_b, bond_type)
+    
+    metadata = {
+        'covale_bonds': metadata['covale_bonds'],
+    }
 
     return indep, atom_mask, dataset_name, metadata
 
@@ -1558,11 +1569,6 @@ def transform_indep(indep, is_res_str_shown, is_atom_str_shown, use_guideposts, 
     atomizer = None
     gp_to_ptn_idx0 = None
 
-
-    cov_resis = np.array(list(metadata['covale_correspondence'].keys()))
-    for i in cov_resis:
-        is_atom_str_shown[i] = ['N', 'CA', 'C', 'O', 'CB', 'SG']
-
     if use_guideposts:
         mask_gp = is_res_str_shown.clone()
         mask_gp[indep.is_sm] = False
@@ -1579,7 +1585,7 @@ def transform_indep(indep, is_res_str_shown, is_atom_str_shown, use_guideposts, 
             is_atom_str_shown = {gp_from_ptn_idx0[k]: v for k,v in is_atom_str_shown.items()}
             # Remove redundancy
             is_diffused[list(is_atom_str_shown.keys())] = True
-            cov_resis = [gp_from_ptn_idx0[i] for i in cov_resis]
+            cov_resis = [gp_from_ptn_idx0[res_i] for (res_i, _), _, _ in metadata['covale_bonds']]
             for i, (a, b, t) in enumerate(metadata['covale_bonds']):
                 res_i, atom_name = a
                 assertpy.assert_that(gp_from_ptn_idx0).described_as('residues participating in covalent bonds to small molecules must be made into guideposts').contains(res_i)
@@ -1745,3 +1751,8 @@ def standardize_frames(atom_frames):
         o[i, 0, 0] = atom_frames[i, 2, 0]
         o[i, 2, 0] = atom_frames[i, 0, 0]
     return o
+
+def make_mask(i, L):
+    mask = torch.zeros((L,)).bool()
+    mask[i] = True
+    return mask

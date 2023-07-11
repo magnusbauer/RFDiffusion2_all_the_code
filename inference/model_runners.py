@@ -718,7 +718,7 @@ class NRBStyleSelfCond(Sampler):
 
 
         rigids_t = du.rigid_frames_from_atom_14(rfi.xyz)
-        ic(self._conf.denoiser.noise_scale, do_self_cond)
+        # ic(self._conf.denoiser.noise_scale, do_self_cond)
         rigids_t = self.diffuser.reverse(
             rigid_t=rigids_t,
             rot_score=du.move_to_np(model_out['rot_score'][:,-1]),

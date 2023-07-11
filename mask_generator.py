@@ -19,26 +19,18 @@ import aa_model
 def make_covale_compatible(get_mask):
     @wraps(get_mask)
     def out_get_mask(indep, atom_mask, *args, **kwargs):
-        # diffusion_mask = get_mask(indep.xyz[~indep.is_sm], *args, **kwargs)
-        L = indep.length()
-        # diffusion_mask == is_motif
-        diffusion_mask = torch.ones(L).bool()
-        
-        indep_no_cov = copy.deepcopy(indep)
-        is_atomized_covale = (indep.metadata['type'] == aa_model.TYPE_ATOMIZED_COV)
-        atom_mask = atom_mask[~is_atomized_covale]
-        aa_model.pop_mask(indep_no_cov, ~is_atomized_covale)
-        is_motif, is_atom_motif = get_mask(indep_no_cov, atom_mask, *args, **kwargs)
-        diffusion_mask_prot = is_motif
-        diffusion_mask[~is_atomized_covale] = diffusion_mask_prot
-        covalently_modified_res = np.array(list(indep.metadata['covale_correspondence'].keys()))
-        motif_idx = diffusion_mask.nonzero()[:,0].numpy()
-        covalently_modified_res_motif = set(motif_idx).intersection(set(covalently_modified_res))
-        covalently_modified_res_motif_atom_idx = []
-        for res_idx0 in covalently_modified_res_motif:
-            covalently_modified_res_motif_atom_idx.extend(indep.metadata['covale_correspondence'][res_idx0]['connected_idx0'])
-        diffusion_mask[covalently_modified_res_motif_atom_idx] = True
-        return diffusion_mask, None
+        is_motif, is_atom_motif = get_mask(indep, atom_mask, *args, **kwargs)
+        covale_res_i = torch.tensor([res_i for (res_i, atom_name), lig_i, _ in indep.metadata['covale_bonds']])
+        is_atom_motif = {res_i.item(): [] for res_i in covale_res_i}
+        motif_idx = is_motif.nonzero()[:,0].numpy()
+        covalently_modified_res_motif = set(motif_idx).intersection(set(covale_res_i))
+        for res_i in covalently_modified_res_motif:
+            seq = indep.seq[res_i]
+            atom_names = np.array(rf2aa.chemical.aa2long[seq], dtype=np.str_)
+            atom_mask_i = atom_mask[res_i]
+            atom_names = atom_names[atom_mask_i]
+            is_atom_motif[res_i] = atom_names
+        return is_motif, is_atom_motif
     return out_get_mask
 
 #####################################
@@ -433,7 +425,7 @@ get_triple_contact = make_sm_compatible(_get_triple_contact)
 get_double_contact = make_sm_compatible(_get_double_contact)
 atomize_get_triple_contact = make_atomized(get_triple_contact)
 atomize_get_double_contact = make_atomized(get_double_contact)
-get_unconditional_diffusion_mask = make_sm_compatible(_get_unconditional_diffusion_mask)
+get_unconditional_diffusion_mask = make_covale_compatible(make_sm_compatible(_get_unconditional_diffusion_mask))
 
 sm_mask_fallback = {
     get_closest_tip_atoms: get_tip_gaussian_mask
