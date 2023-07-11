@@ -1583,10 +1583,10 @@ class DistilledDataset(data.Dataset):
         fixbb = task != "seq2str"
         
         # For reproducibility.
-        if self.params['SPOOF_ITEM']:
+        if self.conf['spoof_item']:
             if hasattr(self, 'spoofed'):
                 raise Exception('stopping after succesful spoofing of one item')
-            spoof = eval(self.params['SPOOF_ITEM'])
+            spoof = eval(self.conf['spoof_item'])
             mask_gen_seed = spoof['mask_gen_seed']
             sel_item = spoof['sel_item']
             task = spoof['task']
@@ -1639,6 +1639,8 @@ class DistilledDataset(data.Dataset):
                         fixbb=fixbb,
                     )
                 except Exception as e:
+                    if self.conf.debug:
+                        raise e
                     print(f'WARNING: hit exception {str(e)} on item {item_context}')
                     out = self.fallback_out()
             else:
@@ -1648,19 +1650,25 @@ class DistilledDataset(data.Dataset):
             assert chosen_dataset != 'complex', f'complex requires passing same_chain to mask_generators, and this is not implemented'
 
             # Convert template-based modeling inputs to a description of a single structure (the query structure).
-            indep, atom_mask, dataset_name = aa_model.adaptor_fix_bb_indep(out)
+            indep, atom_mask, dataset_name, metadata = aa_model.adaptor_fix_bb_indep(self.conf, out)
             atom_mask = aa_model.pop_unoccupied(indep, atom_mask)
 
             # Mask the independent inputs.
             run_inference.seed_all(mask_gen_seed) # Reseed the RNGs for test stability.
             masks_1d = mask_generator.generate_masks(indep, task, self.params, chosen_dataset, None, atom_mask=atom_mask[:, :rf2aa.chemical.NHEAVYPROT])
+            # masks_1d = mask_generator.generate_masks(indep, task, self.params, chosen_dataset, None, atom_mask=atom_mask[:, :rf2aa.chemical.NHEAVYPROT],metadata=metadata)
 
             is_res_str_shown = masks_1d['input_str_mask']
             is_atom_str_shown = masks_1d['is_atom_motif']
+
             # Cast to non-tensor
+            is_atom_str_shown = is_atom_str_shown or {}
             if is_atom_str_shown:
                 is_atom_str_shown = {res_i.item():v for res_i, v in is_atom_str_shown.items()}
-            indep, is_diffused, is_masked_seq, atomizer, _ = aa_model.transform_indep(indep, is_res_str_shown, is_atom_str_shown, self.params['USE_GUIDE_POSTS'])
+
+            # show(indep, None, 'pre_transform')
+            indep, is_diffused, is_masked_seq, atomizer, _ = aa_model.transform_indep(indep, is_res_str_shown, is_atom_str_shown, self.params['USE_GUIDE_POSTS'], metadata=metadata)
+            # show(indep, None, 'post_transform')
 
             run_inference.seed_all(mask_gen_seed) # Reseed the RNGs for test stability.
             aa_model.centre(indep, is_diffused)

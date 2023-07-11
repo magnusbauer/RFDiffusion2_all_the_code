@@ -711,7 +711,7 @@ def minifier(argument_map):
     argument_map['t2d'] = None
 
 
-def adaptor_fix_bb_indep(out):
+def adaptor_fix_bb_indep(conf ,out):
     """
     adapts the outputs of RF2-allatom phase 3 dataloaders into fixed bb outputs
     takes in a tuple with 22 items representing the RF2-allatom data outputs and returns an Indep dataclass.
@@ -752,7 +752,7 @@ def adaptor_fix_bb_indep(out):
         same_chain,
         rf2aa.tensor_util.assert_squeeze(is_sm),
         terminus_type)
-    return indep, atom_mask, dataset_name
+    return indep, atom_mask, dataset_name, {}
 
 def pop_unoccupied(indep, atom_mask):
     """
@@ -1248,7 +1248,7 @@ class AtomizeResidues:
         return self.indep, self.input_str_mask, self.input_seq_mask
 
 GP_BOND = 7
-def transform_indep(indep, is_res_str_shown, is_atom_str_shown, use_guideposts, guidepost_placement='anywhere'):
+def transform_indep(indep, is_res_str_shown, is_atom_str_shown, use_guideposts, guidepost_placement='anywhere', metadata={}):
     indep = copy.deepcopy(indep)
     use_atomize = is_atom_str_shown is not None and len(is_atom_str_shown) > 0
     is_diffused = is_masked_seq = ~is_res_str_shown
