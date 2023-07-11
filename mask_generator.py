@@ -403,7 +403,6 @@ def _get_unconditional_diffusion_mask(xyz, *args, **kwargs):
 def make_sm_compatible(get_mask):
     @wraps(get_mask)
     def out_get_mask(indep, atom_mask, *args, **kwargs):
-        diffusion_mask = get_mask(indep.xyz[~indep.is_sm], *args, **kwargs)
         L = indep.length()
         diffusion_mask = torch.ones(L).bool()
         diffusion_mask_prot = get_mask(indep.xyz[~indep.is_sm], *args, **kwargs)
