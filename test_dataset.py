@@ -109,8 +109,6 @@ class Dataloader(unittest.TestCase):
         loader_out = self.indep_for_dataset(dataset, mask, overrides=['dataloader.CROP=60'])
         indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context = loader_outindep = loader_out
 
-
-        
         golden_name = f'indep_{dataset}-{mask}'
         cmp = partial(tensor_util.cmp, atol=1e-20, rtol=1e-5)
         test_utils.assert_matches_golden(self, golden_name, indep, rewrite=REWRITE, custom_comparator=cmp)
@@ -122,93 +120,23 @@ class Dataloader(unittest.TestCase):
         loader_out = self.indep_for_dataset(dataset, mask, overrides=['dataloader.CROP=60'])
         indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context = loader_outindep = loader_out
 
-
-        
         golden_name = f'indep_{dataset}-{mask}'
         cmp = partial(tensor_util.cmp, atol=1e-20, rtol=1e-5)
         test_utils.assert_matches_golden(self, golden_name, indep, rewrite=REWRITE, custom_comparator=cmp)
 
     
-    # @pytest.mark.parametrize("test_input,expected", [("3+5", 8), ("2+4", 6), ("6*9", 42)])
     def test_sm_compl_covale_uncond(self):
         dataset = 'sm_compl_covale'
         mask = 'get_unconditional_diffusion_mask'
-        loader_out = self.indep_for_dataset(dataset, mask)
+        loader_out = self.indep_for_dataset(dataset, mask, overrides=['guidepost_bonds=false'])
         indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context = loader_out
         indep.metadata = None
-
-        print(item_context)
-        ic(indep.is_sm)
-        ic(indep.is_sm.sum())
-        sm_bond_feats = indep.bond_feats[indep.is_sm]
-        inter_bond_feats = sm_bond_feats[:, ~indep.is_sm]
-        ic(inter_bond_feats)
-        ic(inter_bond_feats.nonzero())
-        for i in inter_bond_feats.nonzero():
-            print(i, inter_bond_feats[i[0], i[1]])
-        ic(inter_bond_feats.any())
-        ic(~is_diffused)
         
         golden_name = f'indep_{dataset}-{mask}'
         cmp_ = partial(tensor_util.cmp, atol=1e-3, rtol=1e-5)
         def cmp(got, want):
-            # i = np.arange(want.length())
-            # i = np.concatenate((i[:-13], i[-7:], i[-13:-7]))
-            # aa_model.rearrange_indep(want, i)
-            # want.bond_feats *= want.bond_feats != 6
-            # got.xyz = got.xyz[:,:14]
-            # want.xyz[want.is_sm, 0] = 0
-            # want.xyz[want.is_sm, 2:] = 0
-            # got.xyz[want.is_sm, 0] = 0
-            # got.xyz[want.is_sm, 2:] = 0
-            # ic(
-            #     list(zip(
-            #         np.arange(13),
-            #         np.arange(got.length())[-13:],
-            #         aa_model.human_readable_seq(got.seq[-13:]),
-            #     )),
-            #     # list(zip(got.atom_frames, want.atom_frames)),
-            #     list(zip(
-            #         got.bond_feats[-13:,-13:].nonzero(),
-            #         want.bond_feats[-13:,-13:].nonzero(),
-            #     )),
-            # )
-
-            # def standardize_frames(atom_frames):
-            #     o = atom_frames.clone()
-            #     for i, f in enumerate(atom_frames):
-            #         if f[0,0] < f[2,0]:
-            #             continue
-            #         o[i, 0, 0] = atom_frames[i, 2, 0]
-            #         o[i, 2, 0] = atom_frames[i, 0, 0]
-            #     return o
-            
-            # got.atom_frames = standardize_frames(got.atom_frames)
-            # want.atom_frames = standardize_frames(want.atom_frames)
-
-            # for got_f, want_f in zip(
-            #         got.human_readable_atom_frames(),
-            #         want.human_readable_atom_frames(),
-            #     ):
-            #     if got_f == want_f:
-            #         print('MATCH')
-            #     else:
-            #         print(f'got:  ', got_f)
-            #         print(f'want: ', want_f)
-
-            # got.atom_frames = None
-            # want.atom_frames = None
-            # got.idx[-13:] = -1
-            # want.idx[-13:] = -1
-
-            # ic(
-            #     list(zip(
-            #         want.human_readable_seq(),
-            #         want.idx,
-            #         got.idx,
-            #     ))
-            # )
-
+            got.idx[-13:] = -1
+            want.idx[-13:] = -1
             return cmp_(got, want)
         show(indep, atomizer)
         cmd.show('licorice', 'resi 491')
@@ -221,9 +149,6 @@ class Dataloader(unittest.TestCase):
         
         loader_out = self.indep_for_dataset(dataset, mask, overrides=['dataloader.CROP=60'])
         indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context = loader_outindep = loader_out
-        ic(indep.length())
-
-
         
         golden_name = f'indep_{dataset}-{mask}'
         cmp = partial(tensor_util.cmp, atol=1e-20, rtol=1e-5)
@@ -284,11 +209,11 @@ class Dataloader(unittest.TestCase):
 
 from dev import analyze, show_tip_pa
 cmd = analyze.cmd
-def show(indep, atomizer):
+def show(indep, atomizer, name='true'):
 
     if atomizer:
         indep = atomize.deatomize(atomizer, indep)
-    pdb = f'/tmp/true.pdb'
+    pdb = f'/tmp/{name}.pdb'
     indep.write_pdb(pdb)
 
     cmd.load(pdb)

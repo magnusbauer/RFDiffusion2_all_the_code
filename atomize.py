@@ -131,7 +131,6 @@ def convert_atomized_mask(atomizer, mask):
 
 def atomized_indices_from_preatomized_res_indices(atomizer, res_indices):
     res_idx_atom_name_by_atomized_idx = get_res_atom_name_by_atomized_idx(atomizer)
-    ic(res_idx_atom_name_by_atomized_idx)
     o = []
     for atomized_i, (res_i, atom_name) in res_idx_atom_name_by_atomized_idx.items():
         if res_i in res_indices:

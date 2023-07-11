@@ -1,7 +1,8 @@
 import functools
 import torch
+from functools import wraps
 import assertpy
-from collections import defaultdict
+from collections import defaultdict, OrderedDict
 import torch.nn.functional as F
 import dataclasses
 from icecream import ic
@@ -18,9 +19,10 @@ import torch
 import copy
 import numpy as np
 from kinematics import get_init_xyz
-import chemical
+# import chemical
 from rf2aa.chemical import MASKINDEX
 import rf2aa.chemical
+from rf2aa import chemical
 import util
 import inference.utils
 import networkx as nx
@@ -50,6 +52,19 @@ C_TERMINUS = 2
 
 UNIQUE_LIGAND="__UNIQUE_LIGAND"
 
+
+def chain_letters_from_same_chain(same_chain):
+    L = same_chain.shape[0]
+    G = nx.from_numpy_array(same_chain.numpy())
+    cc = list(nx.connected_components(G))
+    cc.sort(key=min)
+    chain_letters = np.chararray((L,), unicode=True)
+
+    for ch_i, ch_name in zip(cc, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'):
+        chain_letters[list(ch_i)] = ch_name
+
+    return chain_letters
+
 @dataclass
 class Indep:
     seq: torch.Tensor # [L]
@@ -64,26 +79,30 @@ class Indep:
     is_sm: torch.Tensor
     terminus_type: torch.Tensor
 
+    def chains(self):
+        return chain_letters_from_same_chain(self.same_chain)
+
     def write_pdb(self, path, **kwargs):
         seq = self.seq
         seq = torch.where(seq == 20, 0, seq)
         seq = torch.where(seq == 21, 0, seq)
-        # This is a hacky way of specifying same_chain.
-        # TODO: convert same_chain from a 2D input to a 1D input
-        chain_Ls = []
-        G = nx.from_numpy_array(self.same_chain.numpy())
-        connected_components = list(nx.connected_components(G))
-        longest_connected_component = list(connected_components.pop(connected_components.index(max(connected_components, key=len))))
-        # other_component = list(functools.reduce(lambda a,b: a.update(b), connected_components))
-        other_component = []
-        for cc in connected_components:
-            other_component.extend(list(cc))
-        # chain_letters = np.zeros((self.length(),), dtype='string_')
-        chain_letters = np.chararray((self.length(),), unicode=True)
-        chain_letters[longest_connected_component] = 'A'
-        chain_letters[other_component] = 'B'
+        # # This is a hacky way of specifying same_chain.
+        # # TODO: convert same_chain from a 2D input to a 1D input
+        # chain_Ls = []
+        # G = nx.from_numpy_array(self.same_chain.numpy())
+        # connected_components = list(nx.connected_components(G))
+        # longest_connected_component = list(connected_components.pop(connected_components.index(max(connected_components, key=len))))
+        # # other_component = list(functools.reduce(lambda a,b: a.update(b), connected_components))
+        # other_component = []
+        # for cc in connected_components:
+        #     other_component.extend(list(cc))
+        # # chain_letters = np.zeros((self.length(),), dtype='string_')
+        # chain_letters = np.chararray((self.length(),), unicode=True)
+        # chain_letters[longest_connected_component] = 'A'
+        # chain_letters[other_component] = 'B'
+        chain_letters = self.chains()
         rf2aa.util.writepdb(path,
-            torch.nan_to_num(self.xyz[:,:14]), seq, idx_pdb=self.idx, chain_letters=chain_letters, **kwargs)
+            torch.nan_to_num(self.xyz[:,:14]), seq, idx_pdb=self.idx, chain_letters=chain_letters, bond_feats=self.bond_feats[None], **kwargs)
 
     def ca_dists(self):
         xyz_ca = self.xyz[:,1]
@@ -121,6 +140,35 @@ class Indep:
     
     def is_valid_for_atomization(self, atom_mask):
         return self.has_c_terminal_residue() * self.has_n_terminal_residue() * self.has_heavy_atoms_and_seq(atom_mask)
+
+    def human_readable_atom_frames(self):
+        atom_frames_absolute = self.atom_frames[:,:,0].clone()
+        atom_frames_absolute += (torch.arange(self.length())[self.is_sm])[:,None]
+        o = []
+
+        def atom_label(i):
+            return (i, rf2aa.chemical.num2aa[self.seq[i]])
+        for a,b,c in atom_frames_absolute.tolist():
+            o.append(
+                (atom_label(a), atom_label(b), atom_label(c))
+            )
+        return o
+    
+    def type(indep):
+        chains = indep.chains()
+        chains_with_prot = np.unique(chains[~indep.is_sm])
+        is_on_same_chain_as_prot = np.isin(chains, chains_with_prot)
+
+        is_atomized_cov = indep.is_sm * is_on_same_chain_as_prot
+        is_ligand = indep.is_sm * ~is_on_same_chain_as_prot
+        metadata = {}
+        metadata['type'] = torch.zeros((indep.length()))
+        metadata['type'][:] = -1
+        metadata['type'][~indep.is_sm] = TYPE_PROT
+        metadata['type'][is_ligand] = TYPE_LIGAND
+        metadata['type'][is_atomized_cov] = TYPE_ATOMIZED_COV
+        return metadata['type']
+    
 
 def human_readable_seq(seq):
     return [rf2aa.chemical.num2aa[s] for s in seq]
@@ -710,11 +758,91 @@ def minifier(argument_map):
     argument_map['out_5'] = None
     argument_map['t2d'] = None
 
+TYPE_PROT = 0
+TYPE_LIGAND = 1
+TYPE_ATOMIZED_COV = 2
 
-def adaptor_fix_bb_indep(conf ,out):
+import os
+from dev import analyze, show_tip_pa
+cmd = analyze.cmd
+
+def show_backbone_spheres(selection):
+    cmd.hide('everything', selection)
+    cmd.alter(f'name CA and {selection}', 'vdw=2.0')
+    cmd.set('sphere_transparency', 0.1)
+    cmd.show('spheres', f'name CA and {selection}')
+    cmd.show('licorice', f'{selection} and (name CA or name C or name N)')
+
+def show(indep, atomizer, name):
+    if atomizer:
+        indep = atomize.deatomize(atomizer, indep)
+    pdb = f'/tmp/{name}.pdb'
+    indep.write_pdb(pdb)
+    cmd.load(pdb)
+    name = os.path.basename(pdb[:-4])
+    cmd.show_as('cartoon', name)
+    show_backbone_spheres('not hetatm')
+    cmd.show('licorice', f'hetatm and {name}')
+    cmd.color('orange', f'hetatm and elem c and {name}')
+
+@dataclass
+class Bond:
+    a: str
+    b: str
+    order: int
+    aromatic: bool
+
+
+@dataclass
+class Atom:
+    element: int
+
+def get_obmol(xyz_sm, seq_sm, bond_feats_sm):
+    atomnumbyatomtype = {v:k for k,v in chemical.atomnum2atomtype.items()}
+    akeys = []
+    atoms = []
+    bonds = []
+    for i, (_, seq) in enumerate(zip(xyz_sm, seq_sm)):
+        atom_name = chemical.num2aa[seq]
+        atomnum = atomnumbyatomtype[atom_name]
+        # xyz.append(xyz_i)
+        atoms.append(Atom(atomnum))
+        akeys.append(i)
+
+    for i, j in bond_feats_sm.nonzero():
+        if i > j:
+            continue
+        bonds.append(
+            Bond(i, j, bond_feats_sm[i,j].item(), False)
+        )
+
+    mol, bond_feats = rf2aa.util.cif_ligand_to_obmol(xyz_sm, akeys, atoms, bonds)
+    return mol, bond_feats
+
+def adaptor_fix_bb_indep(conf, out):
     """
-    adapts the outputs of RF2-allatom phase 3 dataloaders into fixed bb outputs
-    takes in a tuple with 22 items representing the RF2-allatom data outputs and returns an Indep dataclass.
+    Adapts the outputs of RF2-allatom phase 3 dataloaders into fixed bb outputs
+
+
+    '''
+    Paramters:
+        conf: Hydra.ConfigDict
+        out: RF2-allatom phase 3 dataloader outputs
+    Returns:
+        indep: Indep
+        atom_mask: torch.Tensor
+        dataset_name: string
+        metadata:
+        {
+            type: [](Protein|Ligand|AtomizedCov) length L
+            cov_correspondence: {
+                atom_names: ['CN', 'CA', ...]
+                idx0: [atomized_idx0_CN, atomized_idx0_CA, ...]
+                connected_idx0: idx0 + [covalent_ligand_idx0_0, covalent_ligand_idx0_1, ...]
+            }
+            covale_bonds: [((res_idx0, atom_name), lig_idx0, bond_type),...]
+        }
+
     """
     assert len(out) == 24, f"found {len(out)} elements in RF2-allatom output"
     (seq, msa, msa_masked, msa_full, mask_msa, true_crds, atom_mask, idx_pdb, xyz_t, t1d, mask_t, xyz_prev,
@@ -752,7 +880,102 @@ def adaptor_fix_bb_indep(conf ,out):
         same_chain,
         rf2aa.tensor_util.assert_squeeze(is_sm),
         terminus_type)
-    return indep, atom_mask, dataset_name, {}
+    
+    # Clear out peptide bonds from covale atomizations
+    is_peptide_bond = indep.bond_feats == 6
+    indep.bond_feats = indep.bond_feats * ~is_peptide_bond
+    
+    metadata = {}
+    metadata['type'] = indep.type()
+    assertpy.assert_that(metadata['type']).does_not_contain(-1)
+
+    ca = indep.xyz[:,1]
+    L = indep.length()
+    ca_dist = torch.cdist(ca[None,...], ca[None,...], p=2.0)[0]
+    is_res_to_atomized_ca = (ca_dist < 1e-4) * \
+        (metadata['type'] == TYPE_PROT)[: None] * \
+        (metadata['type'] == TYPE_ATOMIZED_COV)[None, :]
+    is_ca_close = ca_dist < 1e-4
+
+    is_res_to_atomized_ca =  ((metadata['type'] == TYPE_PROT)[:,None]) * ((metadata['type'] == TYPE_ATOMIZED_COV)[None, :])
+    is_ca_close.fill_diagonal_(0)
+
+    metadata['covale_correspondence'] = {}
+    is_res_to_atomized_ca_correspondence = is_res_to_atomized_ca * is_ca_close
+    for res_idx0, atomized_ca_idx0 in is_res_to_atomized_ca_correspondence.nonzero():
+        original_aa = indep.seq[res_idx0]
+        atom_names = rf2aa.chemical.aa2long[original_aa]
+        a = indep.xyz[res_idx0][None,...]
+        b = indep.xyz[(metadata['type'] == TYPE_ATOMIZED_COV), 1][None,...]
+        dist = torch.cdist(a,b)
+        dist = dist[0]
+        covale_idx0_by_local = torch.arange(L)[(metadata['type'] == TYPE_ATOMIZED_COV)]
+        corresponding_atom_names = []
+        corresponding_idx0 = []
+        for res_local, covale_local in (dist < 1e-4).nonzero():
+            corresponding_atom_names.append(atom_names[res_local])
+            corresponding_idx0.append(covale_idx0_by_local[covale_local])
+        corresponding_idx0 = np.array(corresponding_idx0)
+
+        G = nx.from_numpy_matrix(indep.bond_feats.detach().cpu().numpy())
+        connected_idx0 = fetch_connected_nodes(G, corresponding_idx0[0])
+        # for idx in nx.connected_components(G):
+        metadata['covale_correspondence'][res_idx0.item()] = {
+            'atom_names': corresponding_atom_names,
+            'idx0': corresponding_idx0,
+            'connected_idx0': np.array(list(connected_idx0))
+        }
+    
+    # Detect cross bonds
+    # i.e. bond features between atomized and covalent ligand
+    resi_atom_name_by_atomized_idx = {}
+    for res_idx0, d in metadata['covale_correspondence'].items():
+        for atom_name, atomized_idx0 in zip(d['atom_names'], d['idx0']):
+            resi_atom_name_by_atomized_idx[atomized_idx0] = (res_idx0, atom_name)
+
+    atom_identifiers = [] # TODO
+    for i in range(indep.length()):
+        if i in resi_atom_name_by_atomized_idx:
+            atom_identifiers.append(resi_atom_name_by_atomized_idx[i])
+            continue
+        atom_identifiers.append(i)
+    
+    # HACK: assumes all is_sm is covale, and only one covale
+    all_corresponding = [np.array([])]
+    for v in metadata['covale_correspondence'].values():
+        all_corresponding.append(v['idx0'])
+    all_corresponding = np.concatenate(all_corresponding)
+    is_corresponding = torch.zeros(indep.length()).bool()
+    is_corresponding[all_corresponding] = True
+    is_covale_sm = (metadata['type'] == TYPE_ATOMIZED_COV) * ~is_corresponding
+    is_covale_bond = is_corresponding[...,None] * is_covale_sm[None, ...]
+    covale_bonds = indep.bond_feats * is_covale_bond
+    bonds = []
+    for atomized_i, covale_i in covale_bonds.nonzero():
+        bond_type = covale_bonds[atomized_i, covale_i]
+        bonds.append(
+            (atom_identifiers[atomized_i], atom_identifiers[covale_i], bond_type)
+        )
+    metadata['covale_bonds'] = bonds
+
+    pop_mask(indep, ~is_corresponding)
+    atom_mask = atom_mask[~is_corresponding]
+
+    new_i_from_old_i = (~is_corresponding).cumsum(dim=0) - 1
+    for i, (a, b, bond_type) in enumerate(metadata['covale_bonds']):
+        new_b = new_i_from_old_i[b]
+        metadata['covale_bonds'][i] = (a, new_b, bond_type)
+
+    return indep, atom_mask, dataset_name, metadata
+
+def fetch_connected_nodes(G, node, seen = None):
+    if seen == None:
+        seen = set([node])
+    for neighbor in G.neighbors(node):
+        if neighbor not in seen:
+            seen.add(neighbor)
+            fetch_connected_nodes(G, neighbor, seen)
+    return seen
 
 def pop_unoccupied(indep, atom_mask):
     """
@@ -769,6 +992,11 @@ def pop_mask(indep, pop):
     n_atoms = indep.is_sm.sum()
     assertpy.assert_that(len(indep.atom_frames)).is_equal_to(n_atoms)
 
+    pop_sm = pop[indep.is_sm]
+    # ASSERT REFERENCES CHECK OUT
+    indep.atom_frames = indep.atom_frames[pop_sm]
+
+
     N     = pop.sum()
     pop2d = pop[None,:] * pop[:,None]
 
@@ -780,12 +1008,86 @@ def pop_mask(indep, pop):
     indep.is_sm         = indep.is_sm[pop]
     indep.terminus_type = indep.terminus_type[pop]
 
+    pop_i = pop.nonzero()
+    is_chiral_popped = torch.isin(indep.chirals[:,:-1].type(torch.DoubleTensor), pop_i)
+    
+    # assertpy.assert_that(cmp_pretty(any_chi))
+    any_is_chiral_popped = torch.any(is_chiral_popped, dim=1)
+    all_is_chiral_popped = torch.all(is_chiral_popped, dim=1)
+    assertpy.assert_that((any_is_chiral_popped == all_is_chiral_popped).all()).is_true()
+    indep.chirals = indep.chirals[all_is_chiral_popped]
+
     if indep.chirals.numel():
         n_shift = (~pop).cumsum(dim=0)
         chiral_indices = indep.chirals[:,:-1]
         chiral_shift = n_shift[chiral_indices.long()]
         indep.chirals[:,:-1] = chiral_indices - chiral_shift
 
+def slice_indep(indep, pop):
+    indep = copy.deepcopy(indep)
+    cross_bonds = indep.bond_feats[pop][:, ~pop]
+    # ic(cross_bonds)
+    # assert_that(cross_bonds.sum()).is_equal_to(0)
+    pop_mask(indep, pop)
+    return indep, cross_bonds
+ 
+def cat_indeps(indeps, same_chain):
+    indep = Indep(None, None, None, None, None, None, None, None, None)
+    indep.seq = torch.cat([i.seq for i in indeps])
+    indep.xyz = torch.cat([i.xyz for i in indeps])
+    indep.idx = torch.cat([i.idx for i in indeps])
+    indep.bond_feats = torch.block_diag(*(i.bond_feats for i in indeps))
+    indep.same_chain = same_chain
+    indep.is_sm = torch.cat([i.is_sm for i in indeps])
+    indep.terminus_type = torch.cat([i.terminus_type for i in indeps])
+    L = 0
+    all_chirals = []
+    for i in indeps:
+        chirals = i.chirals.clone()
+        chirals[:,:-1] += L
+        all_chirals.append(chirals.clone())
+        L += i.length()
+    indep.chirals = torch.cat(all_chirals)
+    indep.atom_frames = torch.cat([i.atom_frames for i in indeps])
+    return indep
+
+def cat_indeps_same_chain(indeps):
+    L = sum(i.length() for i in indeps)
+    same_chain = torch.ones((L,L)).bool()
+    return cat_indeps(indeps, same_chain)
+
+def rearrange_indep(indep, from_i):
+    from_i = torch.tensor(from_i)
+    assert_that(sorted(from_i.tolist())).is_equal_to(list(range(indep.length())))
+    to_i = torch.argsort(from_i)
+    indep.seq = indep.seq[from_i]
+    indep.xyz = indep.xyz[from_i]
+    indep.idx = indep.idx[from_i]
+    indep.bond_feats = indep.bond_feats[from_i,:][:, from_i]
+    indep.same_chain = indep.same_chain[from_i, :][:, from_i]
+    indep.terminus_type = indep.terminus_type[from_i]
+    indep.chirals[:,:-1] = indep.chirals[:,:-1].type(torch.LongTensor).apply_(lambda i: to_i[i])
+    is_sm_new = indep.is_sm[from_i]
+    is_sm_old = indep.is_sm
+    sm_i_old = is_sm_old.nonzero()[:, 0]
+    sm_i_new = is_sm_new.nonzero()[:, 0]
+    n_sm = is_sm_old.sum()
+    sm_i_relative = torch.arange(n_sm)
+    a = torch.zeros(indep.length()).type(torch.LongTensor)
+    a[:] = 9999
+    a[is_sm_old] = sm_i_relative
+    from_i_sm_relative = a[from_i[is_sm_new]]
+
+    # to_i_sm = is_sm_new.nonzero()[:,0]
+    atom_frames_relative_i = indep.atom_frames[:, :, 0]
+    atom_frames_absolute_i = atom_frames_relative_i + sm_i_old[:, None]
+    atom_frames_absolute_i_new = atom_frames_absolute_i.apply_(lambda i: to_i[i])
+    atom_frames_absolute_i_new = atom_frames_absolute_i_new[from_i_sm_relative]
+    atom_frames_relative_i_new = atom_frames_absolute_i_new - sm_i_new[:, None]
+    indep.atom_frames[:,:,0] = atom_frames_relative_i_new
+    indep.is_sm = is_sm_new
+
+    
 def centre(indep, is_diffused):
     xyz = indep.xyz
     #Centre unmasked structure at origin, as in training (to prevent information leak)
@@ -960,7 +1262,6 @@ class AtomizeResidues:
 
             seq_atomize, _, xyz_atomize, _, frames_atomize, bond_feats_atomize, C_index, chirals_atomize = \
                             rf2aa.util.atomize_protein(res_idx, self.indep.seq[None], xyz, atom_mask, n_res_atomize=1)
-            
             natoms = seq_atomize.shape[0]
             # update the chirals to be after all the other residues
             chirals_atomize[:, :-1] += L
@@ -1046,7 +1347,7 @@ class AtomizeResidues:
         # handle sm specific features- atom_frames, chirals
         self.indep.atom_frames = torch.cat(frames_atomize_all)
         self.indep.chirals = torch.cat(chirals_atomize_all)
-        self.indep.terminus_type = torch.cat((self.indep.terminus_type, torch.zeros(atomize_L)))
+        self.indep.terminus_type = torch.cat((self.indep.terminus_type, torch.zeros(atomize_L).long()))
         return total_L
 
     def pop_protein_feats(self, res_idx_atomize_all, total_L):
@@ -1248,12 +1549,18 @@ class AtomizeResidues:
         return self.indep, self.input_str_mask, self.input_seq_mask
 
 GP_BOND = 7
-def transform_indep(indep, is_res_str_shown, is_atom_str_shown, use_guideposts, guidepost_placement='anywhere', metadata={}):
+def transform_indep(indep, is_res_str_shown, is_atom_str_shown, use_guideposts, guidepost_placement='anywhere', guidepost_bonds=True, metadata=None):
     indep = copy.deepcopy(indep)
-    use_atomize = is_atom_str_shown is not None and len(is_atom_str_shown) > 0
+    use_atomize = is_atom_str_shown is not None
+    # use_atomize = is_atom_str_shown is not None and len(is_atom_str_shown) > 0
     is_diffused = is_masked_seq = ~is_res_str_shown
     atomizer = None
     gp_to_ptn_idx0 = None
+
+
+    cov_resis = np.array(list(metadata['covale_correspondence'].keys()))
+    for i in cov_resis:
+        is_atom_str_shown[i] = ['N', 'CA', 'C', 'O', 'CB', 'SG']
 
     if use_guideposts:
         mask_gp = is_res_str_shown.clone()
@@ -1265,24 +1572,29 @@ def transform_indep(indep, is_res_str_shown, is_atom_str_shown, use_guideposts, 
             return indep, is_diffused, is_masked_seq, atomizer, {}
 
 
-        indep_length_pre_gp = indep.length()
         indep, is_diffused, gp_to_ptn_idx0 = gp.make_guideposts(indep, mask_gp)
-        L_added_gp = indep.length() - indep_length_pre_gp
         if use_atomize:
             gp_from_ptn_idx0 = {v:k for k,v in gp_to_ptn_idx0.items()}
             is_atom_str_shown = {gp_from_ptn_idx0[k]: v for k,v in is_atom_str_shown.items()}
             # Remove redundancy
             is_diffused[list(is_atom_str_shown.keys())] = True
+            cov_resis = [gp_from_ptn_idx0[i] for i in cov_resis]
+            for i, (a, b, t) in enumerate(metadata['covale_bonds']):
+                res_i, atom_name = a
+                assertpy.assert_that(gp_from_ptn_idx0).described_as('residues participating in covalent bonds to small molecules must be made into guideposts').contains(res_i)
+                res_i = gp_from_ptn_idx0[res_i]
+                metadata['covale_bonds'][i] = ((res_i, atom_name), b, t)
+
         is_masked_seq = is_diffused.clone()
     if use_atomize:
+        is_covale_ligand = indep.type() == TYPE_ATOMIZED_COV
         is_ligand = indep.is_sm
         is_diffused[indep.is_sm] = False
-        indep_length_pre_atomized = indep.length()
-        to_atomize_seq = indep.seq[list(is_atom_str_shown.keys())]
         is_atom_str_shown = {k.item() if hasattr(k, 'item') else k :v for k,v in is_atom_str_shown.items()}
         indep, is_diffused, is_masked_seq, atomizer = atomize.atomize_and_mask(indep, ~is_diffused, is_atom_str_shown)
         assertpy.assert_that(indep.is_sm.sum()).is_equal_to(indep.atom_frames.shape[0])
         ligand_idx = atomize.atomized_indices_res(atomizer, is_ligand)
+        covale_ligand_idx = atomize.atomized_indices_res(atomizer, is_covale_ligand)
         if use_guideposts:
             # HACK: use is_masked_seq as gp_idx0.
             is_gp = ~is_masked_seq
@@ -1291,6 +1603,65 @@ def transform_indep(indep, is_res_str_shown, is_atom_str_shown, use_guideposts, 
             is_inter_gp[:,ligand_idx] = False
             indep.bond_feats[is_inter_gp] = GP_BOND
 
+    # Find the indices of atomized covalent residues
+    for_join = []
+    for i in cov_resis:
+        cov_atomized_idx0 = atomize.atomized_indices_from_preatomized_res_indices(atomizer, [i])
+        for_join.append(cov_atomized_idx0)
+    for_join.append(covale_ligand_idx)
+    
+    is_covale = torch.zeros(indep.length()).bool()
+    for idx0 in for_join:
+        is_covale[idx0] = True
+    
+
+    # Clear out guidepost bond annotations for now, TODO: retain these
+    if is_covale.any() and guidepost_bonds:
+        raise Exception('not implemented')
+    
+    if not guidepost_bonds:
+        is_peptide_bond = indep.bond_feats == 7
+        indep.bond_feats = indep.bond_feats * ~is_peptide_bond
+    
+    # ADD BACK IN BOND FEATS
+    atom_names_by_res = OrderedDict()
+    for a, _, _ in metadata['covale_bonds']:
+        res_i, atom_name = a
+        if res_i not in atom_names_by_res:
+            atom_names_by_res[res_i] = []
+        atom_names_by_res[res_i].append(atom_name)
+    atomized_i = atomize.atomized_indices_atoms(atomizer, atom_names_by_res)
+    ligand_bond_recipient = torch.tensor([b for _, b, _ in metadata['covale_bonds']])
+    ligand_bond_recipient = atomize.atomized_indices_res_i(atomizer, ligand_bond_recipient)
+    ligand_bond_type = [c for _, _, c in metadata['covale_bonds']]
+    for atom_i, ligand_i, bond_type in zip(atomized_i, ligand_bond_recipient, ligand_bond_type):
+        # ic(
+        #     'debug',
+        #     atom_i, ligand_i,
+        #     human_readable_seq(indep.seq[atom_i:atom_i+1]),
+        #     human_readable_seq(indep.seq[ligand_i:ligand_i+1]),
+        # )
+        indep.bond_feats[atom_i, ligand_i] = bond_type
+        indep.bond_feats[ligand_i, atom_i] = bond_type
+
+    # Pop indep for covalent sm
+    # TODO( 7-10-23): Make function that splits an indep into multiple pieces but retains the information
+    # to put it back together (i.e. cross-same_chain, cross-bond_feats)
+    covale, cross_bonds = slice_indep(indep, is_covale)
+    indep, _ = slice_indep(indep, ~is_covale)
+    
+    # Get obmol of combined atomized residues and covalent sm
+    obmol, _ = get_obmol(covale.xyz[:,1], covale.seq, covale.bond_feats)
+    # Create indep from obmol, add to base indep
+    G = rf2aa.util.get_nxgraph(obmol)
+    covale.atom_frames = rf2aa.util.get_atom_frames(covale.seq, G)
+    covale.chirals = rf2aa.kinematics.get_chirals(obmol, covale.xyz[:, 1])
+
+    
+    # TODO: Think about how to handle this for multichain.
+    L_cat = indep.length() + covale.length()
+    same_chain = torch.ones((L_cat, L_cat)).long()
+    indep = cat_indeps([indep, covale], same_chain)
     return indep, is_diffused, is_masked_seq, atomizer, gp_to_ptn_idx0
 
 
@@ -1350,3 +1721,26 @@ def randomly_rotate_frames(xyz):
     rotated = torch.einsum('lab,lib->...lia', R_rand, xyz_centered)
     rotated += frame_origins
     return rotated
+
+
+def functionalize(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        # Create deep copies of the arguments to prevent modification
+        args_copy = copy.deepcopy(args)
+        kwargs_copy = copy.deepcopy(kwargs)
+
+        # Call the original function with the copied arguments
+        return func(*args_copy, **kwargs_copy)
+
+    return wrapper
+
+
+def standardize_frames(atom_frames):
+    o = atom_frames.clone()
+    for i, f in enumerate(atom_frames):
+        if f[0,0] < f[2,0]:
+            continue
+        o[i, 0, 0] = atom_frames[i, 2, 0]
+        o[i, 2, 0] = atom_frames[i, 0, 0]
+    return o

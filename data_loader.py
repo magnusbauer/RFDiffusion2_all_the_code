@@ -1666,9 +1666,7 @@ class DistilledDataset(data.Dataset):
             if is_atom_str_shown:
                 is_atom_str_shown = {res_i.item():v for res_i, v in is_atom_str_shown.items()}
 
-            # show(indep, None, 'pre_transform')
-            indep, is_diffused, is_masked_seq, atomizer, _ = aa_model.transform_indep(indep, is_res_str_shown, is_atom_str_shown, self.params['USE_GUIDE_POSTS'], metadata=metadata)
-            # show(indep, None, 'post_transform')
+            indep, is_diffused, is_masked_seq, atomizer, _ = aa_model.transform_indep(indep, is_res_str_shown, is_atom_str_shown, self.params['USE_GUIDE_POSTS'], guidepost_bonds=self.conf.guidepost_bonds, metadata=metadata)
 
             run_inference.seed_all(mask_gen_seed) # Reseed the RNGs for test stability.
             aa_model.centre(indep, is_diffused)
