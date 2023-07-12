@@ -900,7 +900,7 @@ def deatomize_covales(indep, atom_mask):
         covale_idx0_by_local = torch.arange(L)[(metadata['type'] == TYPE_ATOMIZED_COV)]
         corresponding_atom_names = []
         corresponding_idx0 = []
-        for res_local, covale_local in (dist < 1e-4).nonzero():
+        for res_local, covale_local in (dist < 1e-1).nonzero():
             corresponding_atom_names.append(atom_names[res_local])
             corresponding_idx0.append(covale_idx0_by_local[covale_local])
         corresponding_idx0 = np.array(corresponding_idx0)
@@ -928,7 +928,7 @@ def deatomize_covales(indep, atom_mask):
             continue
         atom_identifiers.append(i)
     
-    # HACK: assumes all is_sm is covale, and only one covale
+    # HACK: assumes only one covalent ligand
     all_corresponding = [np.array([])]
     for v in metadata['covale_correspondence'].values():
         all_corresponding.append(v['idx0'])

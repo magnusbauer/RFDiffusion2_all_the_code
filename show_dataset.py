@@ -19,6 +19,7 @@ from data_loader import (
     DistilledDataset, DistributedWeightedSampler
 )
 from data import se3_diffuser
+import test_utils
 
 cmd = analyze.cmd
 
@@ -96,21 +97,30 @@ def run(conf: DictConfig) -> None:
     # mp.cpu_count()-1
     LOAD_PARAM = {
         'shuffle': False,
-        'num_workers': 0,
+        'num_workers': test_utils.available_cpu_count() - 2,
         'pin_memory': True
     }
-    n_validate=10
+    n_validate=300
     train_loader = data.DataLoader(train_set, sampler=train_sampler, batch_size=conf.batch_size, collate_fn=no_batch_collate_fn, **LOAD_PARAM)
     counter = 0
 
     show_tip_pa.clear()
     cmd.set('grid_mode', 1)
-    for loader_out in itertools.islice(tqdm(train_loader), n_validate):
+    for loader_out in tqdm(itertools.islice(train_loader, n_validate), total=n_validate):
         counter += 1
         indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context = loader_out
+        bonds = indep.metadata['covale_bonds']
+        if len(bonds) < 2:
+            continue
+        for bond in bonds:
+            print(f'{bond=}')
+        print(item_context)
         name = f'{chosen_dataset}_true_{show.get_counter()}'
-        show.one(indep, atomizer, name)
-        ic('-------------------------------------------------------------------------------')
+        print(f'{name=}')
+        show.one(indep, None, name)
+        show.one(indep, atomizer, name+'_deatomized')
+        print('-------------------------------------------------------------------------------')
+        break
 
         # ic(indep.same_chain)
         # ic(indep.same_chain[0])

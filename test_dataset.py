@@ -4,6 +4,7 @@ import sys
 from functools import partial
 import unittest
 
+import assertpy
 from icecream import ic
 import copy
 import hydra
@@ -30,6 +31,106 @@ import aa_model
 import show
 
 cmd = analyze.cmd
+
+
+weird_item = """{
+    'chosen_dataset': 'sm_compl_covale',
+    'mask_gen_seed': 79592293,
+    'sel_item': {   'ASSEMBLY': 1,
+                    'CHAINID': '6ndp_B',
+                    'CLUSTER': 25998,
+                    'COVALENT': [   (   ('B', '19', 'CYS', 'SG'),
+                                        ('D', '900', 'BLA', 'CBC'))],
+                    'DEPOSITION': '2018-12-14',
+                    'HASH': '062428',
+                    'LEN_EXIST': 602,
+                    'LIGAND': [('D', '900', 'BLA')],
+                    'LIGATOMS': 43,
+                    'LIGATOMS_RESOLVED': 43,
+                    'LIGXF': [('D', 3)],
+                    'PARTNERS': [   (   'B',
+                                        1,
+                                        498,
+                                        1.8329198360443115,
+                                        'polypeptide(L)'),
+                                    (   'A',
+                                        0,
+                                        0,
+                                        13.859391212463379,
+                                        'polypeptide(L)')],
+                    'RESOLUTION': 3.89,
+                    'SEQUENCE': 'MHHHHHHSTATNPLDLDVCAREPIHIPGLIQPYGVLLVIDPADGRIVQASTTAADLLGVPMAALLGMPYTQVLTLPEAQPFAVDDQPQHLMHAEVRFPQRATPPASAWVAAWHLYPQQWLVEMEPRDARLLDVTLREAMPLLRSVERDPGIAEAAVRVAKGLRSLIGFDRVMIYRFDEEWNGDIIAEARKPELEAYLGQHYPASDIPAQARALYLRNRVRQIADVGYQPSPIQPTVHPQLGTPVDLSDVSLRSVSPVHLEYLANMGVTATLVASIVVNDALWGLISCHHYSPHFTNHAMRDVTDAVARTLAGRIGALQAVARARLESVLLTVREKLITDFNDAEHMTVELLDDMAPDLMDVVDADGVAIFHGNDISRHGTTPDVAALRRIRDHIESEHHEALREDAVGALHVDAIGEVFPELADLAPLAAGFIFVPLMPQSRSALLWTRREQIQQIKWAGNPQLAKLEDIPNSRLSPRKSFDLWQQTVRGRARRWSPLHLESARSLRVLIELMERKRFQQDFTLLEASLSRLRDGVAIIERGTANAAHRLLFVNTAFADVCGSDVAELIGRELQTLYASDAPRANVELLQDALRNGRAAYVTLPLQVSDGAPVYRQFHLEPLPSPSGVTAHWLLQLRDPE',
+                    'SUBSET': 'covale'},
+    'task': 'diff',
+}"""
+
+bridge_item = """{
+    'chosen_dataset': 'sm_compl_covale',
+    'mask_gen_seed': 78231548,
+    'sel_item': {   'ASSEMBLY': 2,
+                    'CHAINID': '5fvb_P',
+                    'CLUSTER': 2189,
+                    'COVALENT': [   (   ('P', '48', 'CYS', 'SG'),
+                                        ('SB', '203', 'PEB', 'CAA')),
+                                    (   ('P', '59', 'CYS', 'SG'),
+                                        ('SB', '203', 'PEB', 'CAD'))],
+                    'DEPOSITION': '2016-02-05',
+                    'HASH': '067414',
+                    'LEN_EXIST': 183,
+                    'LIGAND': [('SB', '203', 'PEB')],
+                    'LIGATOMS': 43,
+                    'LIGATOMS_RESOLVED': 43,
+                    'LIGXF': [('SB', 40)],
+                    'PARTNERS': [   (   'P',
+                                        9,
+                                        446,
+                                        1.8050484657287598,
+                                        'polypeptide(L)'),
+                                    (   [('NA', '201', 'PEB')],
+                                        [('NA', 27)],
+                                        0,
+                                        7.117906093597412,
+                                        'nonpoly'),
+                                    (   'F',
+                                        5,
+                                        0,
+                                        7.5266852378845215,
+                                        'polypeptide(L)'),
+                                    (   'A',
+                                        0,
+                                        0,
+                                        7.633793354034424,
+                                        'polypeptide(L)'),
+                                    (   [('RB', '202', 'PEB')],
+                                        [('RB', 39)],
+                                        0,
+                                        12.504525184631348,
+                                        'nonpoly'),
+                                    (   'D',
+                                        3,
+                                        0,
+                                        12.61732292175293,
+                                        'polypeptide(L)'),
+                                    (   [('QB', '201', 'PEB')],
+                                        [('QB', 38)],
+                                        0,
+                                        12.873053550720215,
+                                        'nonpoly'),
+                                    (   [('Z', '202', 'PEB')],
+                                        [('Z', 13)],
+                                        0,
+                                        15.891844749450684,
+                                        'nonpoly'),
+                                    (   'R',
+                                        11,
+                                        0,
+                                        20.833248138427734,
+                                        'polypeptide(L)')],
+                    'RESOLUTION': 1.93,
+                    'SEQUENCE': 'MLDAFSRAVVQADASTSVVADMGALKQFIAEGNRRLDAVNAIASNASCMVSDAVAGMICENQGLIQAGGXCYPNRRMAACLRDAEIILRYVTYALLAGDASVLDDRCLNGLKETYAALGVPTTSTVRAVQIMKAQAAAHIKDTPSEARAGGKLRKMGSPVVEDRCASLVAEASSYFDRVISALS',
+                    'SUBSET': 'covale'},
+    'task': 'diff',
+}"""
 
 def no_batch_collate_fn(data):
     assert len(data) == 1
@@ -98,8 +199,8 @@ class Dataloader(unittest.TestCase):
         ] + overrides, config_name='debug')
         dataloader = get_dataloader(conf, epoch)
         for loader_out in dataloader:
-            indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context = loader_out
-            indep.metadata = None
+            # indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context = loader_out
+            # indep.metadata = None
             return loader_out
         
     
@@ -109,6 +210,7 @@ class Dataloader(unittest.TestCase):
         
         loader_out = self.indep_for_dataset(dataset, mask, overrides=['dataloader.CROP=60'])
         indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context = loader_outindep = loader_out
+        indep.metadata = None
 
         golden_name = f'indep_{dataset}-{mask}'
         cmp = partial(tensor_util.cmp, atol=1e-20, rtol=1e-5)
@@ -120,6 +222,7 @@ class Dataloader(unittest.TestCase):
         
         loader_out = self.indep_for_dataset(dataset, mask, overrides=['dataloader.CROP=60'])
         indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context = loader_outindep = loader_out
+        indep.metadata = None
 
         golden_name = f'indep_{dataset}-{mask}'
         cmp = partial(tensor_util.cmp, atol=1e-20, rtol=1e-5)
@@ -150,11 +253,59 @@ class Dataloader(unittest.TestCase):
         
         loader_out = self.indep_for_dataset(dataset, mask, overrides=['dataloader.CROP=60'])
         indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context = loader_outindep = loader_out
+        indep.metadata = None
         
         golden_name = f'indep_{dataset}-{mask}'
         cmp = partial(tensor_util.cmp, atol=1e-20, rtol=1e-5)
         test_utils.assert_matches_golden(self, golden_name, indep, rewrite=REWRITE, custom_comparator=cmp)
     
+    def test_covale_uncond_weird_covale_bonds(self):
+        '''
+        The atomized C and the residue C have a distance of 0.03A.
+        Currently we are handling this by having the identity cutoff be <0.1A,
+        But this begs further investigation, as this makes no sense: atomized coordinates should be exact copies.
+
+        dist = torch.cdist...
+        is_weird_distance = (dist > 1e-4) * (dist < 1e-1)
+        '''
+        dataset = 'sm_compl_covale'
+        mask = 'get_unconditional_diffusion_mask'
+        loader_out = self.indep_for_dataset(dataset, mask, overrides=['guidepost_bonds=false', f'spoof_item="{weird_item}"'])
+        indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context = loader_out
+        bonds = indep.metadata['covale_bonds']
+        assertpy.assert_that(len(bonds)).is_equal_to(1)
+
+        golden_name = f'indep_{dataset}-{mask}-weird'
+        show.one(indep, None, golden_name)
+        show.one(indep, atomizer, golden_name+'_deatomized')
+        cmp = partial(tensor_util.cmp, atol=1e-20, rtol=1e-5)
+        test_utils.assert_matches_golden(self, golden_name, indep, rewrite=REWRITE, custom_comparator=cmp)
+        
+    def test_covale_uncond_bridge(self):
+        '''
+        The atomized C and the residue C have a distance of 0.03A.
+        Currently we are handling this by having the identity cutoff be <0.1A,
+        But this begs further investigation, as this makes no sense: atomized coordinates should be exact copies.
+
+        dist = torch.cdist...
+        is_weird_distance = (dist > 1e-4) * (dist < 1e-1)
+        '''
+        dataset = 'sm_compl_covale'
+        mask = 'get_unconditional_diffusion_mask'
+        
+        loader_out = self.indep_for_dataset(dataset, mask, overrides=['guidepost_bonds=false', f'spoof_item="{bridge_item}"'])
+        indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context = loader_out
+        bonds = indep.metadata['covale_bonds']
+        assertpy.assert_that(len(bonds)).is_equal_to(2)
+
+        golden_name = f'indep_{dataset}-{mask}-bridge'
+        show.one(indep, None, golden_name)
+        show.one(indep, atomizer, golden_name+'_deatomized')
+        cmp = partial(tensor_util.cmp, atol=1e-20, rtol=1e-5)
+        test_utils.assert_matches_golden(self, golden_name, indep, rewrite=REWRITE, custom_comparator=cmp)
+
+
+
     # def test_covale_simple_mask_0(self):
     #     dataset = 'sm_compl_covale'
     #     mask = 'get_diffusion_mask_simple'
