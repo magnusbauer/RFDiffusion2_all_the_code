@@ -8,6 +8,7 @@ import hydra
 from omegaconf import DictConfig
 from torch.utils import data
 from tqdm import tqdm
+import show
 
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'RF2-allatom'))
 import atomize
@@ -107,32 +108,12 @@ def run(conf: DictConfig) -> None:
     for loader_out in itertools.islice(tqdm(train_loader), n_validate):
         counter += 1
         indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context = loader_out
-        # indep_write = copy.deepcopy(indep)
-        # indep_write.xyz[:,:14] = xyz[:,:14]
-        if atomizer:
-            indep = atomize.deatomize(atomizer, indep)
-        pdb = f'/tmp/{counter}_{chosen_dataset}_true.pdb'
-        ic(
-            pdb,
-        )
-        print(item_context)
+        name = f'{chosen_dataset}_true_{show.get_counter()}'
+        show.one(indep, atomizer, name)
+        ic('-------------------------------------------------------------------------------')
 
-        indep.write_pdb(pdb)
-
-
-        # motif_deatomized = None
-        # if atomizer:
-        #     indep_true = atomize.deatomize(atomizer, indep_true)
-        #     motif_deatomized = atomize.convert_atomized_mask(atomizer, ~is_diffused)
-
-        cmd.load(pdb)
-        name = os.path.basename(pdb[:-4])
-        cmd.show_as('cartoon', name)
-        cmd.show('licorice', f'hetatm and {name}')
-        cmd.color('orange', f'hetatm and elem c and {name}')
-
-        ic(indep.same_chain)
-        ic(indep.same_chain[0])
+        # ic(indep.same_chain)
+        # ic(indep.same_chain[0])
 
         # if input('press q to stop') == 'q':
         #     break

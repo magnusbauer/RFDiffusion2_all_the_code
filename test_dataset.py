@@ -27,6 +27,7 @@ import test_utils
 from rf2aa import tensor_util
 import run_inference
 import aa_model
+import show
 
 cmd = analyze.cmd
 
@@ -138,7 +139,7 @@ class Dataloader(unittest.TestCase):
             got.idx[-13:] = -1
             want.idx[-13:] = -1
             return cmp_(got, want)
-        show(indep, atomizer)
+        show.one(indep, atomizer)
         cmd.show('licorice', 'resi 491')
         
         test_utils.assert_matches_golden(self, golden_name, indep, rewrite=REWRITE, custom_comparator=cmp)
@@ -206,30 +207,6 @@ class Dataloader(unittest.TestCase):
     #     show(indep, atomizer)
     #     show_diffused(indep, is_diffused, 'true')
     #     test_utils.assert_matches_golden(self, golden_name, indep, rewrite=REWRITE, custom_comparator=cmp)
-
-from dev import analyze, show_tip_pa
-cmd = analyze.cmd
-def show(indep, atomizer, name='true'):
-
-    if atomizer:
-        indep = atomize.deatomize(atomizer, indep)
-    pdb = f'/tmp/{name}.pdb'
-    indep.write_pdb(pdb)
-
-    cmd.load(pdb)
-    name = os.path.basename(pdb[:-4])
-    cmd.show_as('cartoon', name)
-    cmd.show('licorice', f'hetatm and {name}')
-    cmd.color('orange', f'hetatm and elem c and {name}')
-
-def show_diffused(indep, is_diffused, name):
-
-    indep_motif = copy.deepcopy(indep)
-    indep_diffused = copy.deepcopy(indep)
-    aa_model.pop_mask(indep_motif, ~is_diffused)
-    aa_model.pop_mask(indep_diffused, is_diffused)
-    aa_model.show(indep_motif, None, f'{name}_motif')
-    aa_model.show(indep_diffused, None, f'{name}_diffused')
 
 if __name__ == '__main__':
         unittest.main()

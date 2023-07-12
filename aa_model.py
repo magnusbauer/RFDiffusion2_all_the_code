@@ -34,6 +34,7 @@ import rotation_conversions
 import atomize
 from data import utils as du
 from data import all_atom
+import show
 
 
 NINDEL=1
@@ -769,28 +770,6 @@ TYPE_PROT = 0
 TYPE_LIGAND = 1
 TYPE_ATOMIZED_COV = 2
 
-import os
-from dev import analyze, show_tip_pa
-cmd = analyze.cmd
-
-def show_backbone_spheres(selection):
-    cmd.hide('everything', selection)
-    cmd.alter(f'name CA and {selection}', 'vdw=2.0')
-    cmd.set('sphere_transparency', 0.1)
-    cmd.show('spheres', f'name CA and {selection}')
-    cmd.show('licorice', f'{selection} and (name CA or name C or name N)')
-
-def show(indep, atomizer, name):
-    if atomizer:
-        indep = atomize.deatomize(atomizer, indep)
-    pdb = f'/tmp/{name}.pdb'
-    indep.write_pdb(pdb)
-    cmd.load(pdb)
-    name = os.path.basename(pdb[:-4])
-    cmd.show_as('cartoon', name)
-    show_backbone_spheres('not hetatm')
-    cmd.show('licorice', f'hetatm and {name}')
-    cmd.color('orange', f'hetatm and elem c and {name}')
 
 @dataclass
 class Bond:
@@ -826,30 +805,15 @@ def get_obmol(xyz_sm, seq_sm, bond_feats_sm):
     mol, bond_feats = rf2aa.util.cif_ligand_to_obmol(xyz_sm, akeys, atoms, bonds)
     return mol, bond_feats
 
-def adaptor_fix_bb_indep(conf, out):
+def adaptor_fix_bb_indep(out):
     """
     Adapts the outputs of RF2-allatom phase 3 dataloaders into fixed bb outputs
 
-
-    '''
     Paramters:
-        conf: Hydra.ConfigDict
         out: RF2-allatom phase 3 dataloader outputs
     Returns:
         indep: Indep
         atom_mask: torch.Tensor
-        dataset_name: string
-        metadata:
-        {
-            type: [](Protein|Ligand|AtomizedCov) length L
-            cov_correspondence: {
-                atom_names: ['CN', 'CA', ...]
-                idx0: [atomized_idx0_CN, atomized_idx0_CA, ...]
-                connected_idx0: idx0 + [covalent_ligand_idx0_0, covalent_ligand_idx0_1, ...]
-            }
-            covale_bonds: [((res_idx0, atom_name), lig_idx0, bond_type),...]
-        }
-
     """
     assert len(out) == 24, f"found {len(out)} elements in RF2-allatom output"
     (seq, msa, msa_masked, msa_full, mask_msa, true_crds, atom_mask, idx_pdb, xyz_t, t1d, mask_t, xyz_prev,
@@ -887,7 +851,24 @@ def adaptor_fix_bb_indep(conf, out):
         same_chain,
         rf2aa.tensor_util.assert_squeeze(is_sm),
         terminus_type)
-    
+    return indep, atom_mask
+
+def deatomize_covales(indep, atom_mask):
+    """
+    Removes atomized sidechains created in the structure prediction dataloader and
+    parses the small-molecule:residue-atom bonds out into the metadata dictionary.
+
+    Paramters:
+        indep: Indep
+        atom_mask: torch.Tensor
+    Returns:
+        indep: Indep
+        atom_mask: torch.Tensor
+        metadata:
+            {
+                covale_bonds: [((res_idx0, atom_name), lig_idx0, bond_type),...]
+            }
+    """
     # Clear out peptide bonds from covale atomizations
     is_peptide_bond = indep.bond_feats == 6
     indep.bond_feats = indep.bond_feats * ~is_peptide_bond
@@ -977,7 +958,17 @@ def adaptor_fix_bb_indep(conf, out):
         'covale_bonds': metadata['covale_bonds'],
     }
 
-    return indep, atom_mask, dataset_name, metadata
+    return indep, atom_mask, metadata
+
+def missing_atom_names(indep, atom_mask, res_i):
+    seq = indep.seq[res_i]
+    all_atom_mask = rf2aa.util.allatom_mask[seq]
+    all_atom_names = np.array(rf2aa.chemical.aa2long[seq][:rf2aa.chemical.NHEAVYPROT], dtype=np.str_)
+    all_atom_names = all_atom_names[all_atom_mask[:rf2aa.chemical.NHEAVYPROT]]
+    have_atom_mask = atom_mask[res_i]
+    have_atom_names = np.array(rf2aa.chemical.aa2long[seq][:rf2aa.chemical.NHEAVYPROT], dtype=np.str_)
+    have_atom_names = have_atom_names[have_atom_mask[:rf2aa.chemical.NHEAVYPROT]]
+    return [a for a in all_atom_names if a not in have_atom_names]
 
 def fetch_connected_nodes(G, node, seen = None):
     if seen == None:
@@ -988,16 +979,14 @@ def fetch_connected_nodes(G, node, seen = None):
             fetch_connected_nodes(G, neighbor, seen)
     return seen
 
-def pop_unoccupied(indep, atom_mask):
+def is_occupied(indep, atom_mask):
     """
-    Inplace operation.
-    Removes ligand atoms which are not present in the atom mask.
-    Removes residues which do not have N,C,Ca in the atom mask.
+    Returns a boolean mask which is:
+        False for ligand atoms which are not present in the atom mask.
+        False for residues which do not have N,C,Ca in the atom mask.
     """
     pop = rf2aa.util.get_prot_sm_mask(atom_mask, indep.seq)
-    pop_mask(indep, pop)
-    atom_mask           = atom_mask[pop]
-    return atom_mask
+    return pop
 
 def pop_mask(indep, pop, break_chirals=False):
     n_atoms = indep.is_sm.sum()

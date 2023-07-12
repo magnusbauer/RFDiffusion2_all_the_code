@@ -1649,13 +1649,17 @@ class DistilledDataset(data.Dataset):
             assert chosen_dataset != 'complex', f'complex requires passing same_chain to mask_generators, and this is not implemented'
 
             # Convert template-based modeling inputs to a description of a single structure (the query structure).
-            indep, atom_mask, dataset_name, metadata = aa_model.adaptor_fix_bb_indep(self.conf, out)
-            atom_mask = aa_model.pop_unoccupied(indep, atom_mask)
+            indep, atom_mask = aa_model.adaptor_fix_bb_indep(out)
+
+            pop = aa_model.is_occupied(indep, atom_mask)
+            aa_model.pop_mask(indep, pop)
+            atom_mask = atom_mask[pop]
+
+            indep, atom_mask, metadata = aa_model.deatomize_covales(indep, atom_mask)
 
             # Mask the independent inputs.
             run_inference.seed_all(mask_gen_seed) # Reseed the RNGs for test stability.
             masks_1d = mask_generator.generate_masks(indep, task, self.params, chosen_dataset, None, atom_mask=atom_mask[:, :rf2aa.chemical.NHEAVYPROT], metadata=metadata)
-            # masks_1d = mask_generator.generate_masks(indep, task, self.params, chosen_dataset, None, atom_mask=atom_mask[:, :rf2aa.chemical.NHEAVYPROT],metadata=metadata)
 
             is_res_str_shown = masks_1d['input_str_mask']
             is_atom_str_shown = masks_1d['is_atom_motif']
