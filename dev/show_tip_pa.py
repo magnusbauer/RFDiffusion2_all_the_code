@@ -79,8 +79,7 @@ def load_pdbs(pdbs, name_by_pdb):
 # row=analyze.make_row_from_traj(pdb_prefix)
 
 def clear():
-    analyze.clear(cmd)
-    cmd.do('@~/.pymolrc')
+    analyze.clear()
 
 import random
 def show(row, structs = {'X0'}, af2=False, des=True, des_color=None):
