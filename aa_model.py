@@ -1615,14 +1615,8 @@ def transform_indep(indep, is_res_str_shown, is_atom_str_shown, use_guideposts, 
     for idx0 in for_join:
         is_covale[idx0] = True
     
-
-    # Clear out guidepost bond annotations for now, TODO: retain these
-    if is_covale.any() and guidepost_bonds:
-        raise Exception('not implemented')
-    
     if not guidepost_bonds:
-        is_peptide_bond = indep.bond_feats == 7
-        indep.bond_feats = indep.bond_feats * ~is_peptide_bond
+        indep.bond_feats = indep.bond_feats * ~(indep.bond_feats == GP_BOND)
     
     # Add back in bond feats
     atom_names_by_res = OrderedDict()
@@ -1636,6 +1630,7 @@ def transform_indep(indep, is_res_str_shown, is_atom_str_shown, use_guideposts, 
     ligand_bond_recipient = atomize.atomized_indices_res_i(atomizer, ligand_bond_recipient)
     ligand_bond_type = [c for _, _, c in metadata['covale_bonds']]
     for atom_i, ligand_i, bond_type in zip(atomized_i, ligand_bond_recipient, ligand_bond_type):
+        # Uncomment to view the covale bond added here.
         # ic(
         #     'debug',
         #     atom_i, ligand_i,

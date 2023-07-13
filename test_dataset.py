@@ -273,12 +273,7 @@ class Dataloader(unittest.TestCase):
         
     def test_covale_uncond_bridge(self):
         '''
-        The atomized C and the residue C have a distance of 0.03A.
-        Currently we are handling this by having the identity cutoff be <0.1A,
-        But this begs further investigation, as this makes no sense: atomized coordinates should be exact copies.
-
-        dist = torch.cdist...
-        is_weird_distance = (dist > 1e-4) * (dist < 1e-1)
+        Covale which is bonded to 2 residues.
         '''
         dataset = 'sm_compl_covale'
         mask = 'get_unconditional_diffusion_mask'
@@ -289,6 +284,23 @@ class Dataloader(unittest.TestCase):
         assertpy.assert_that(len(bonds)).is_equal_to(2)
 
         golden_name = f'indep_{dataset}-{mask}-bridge'
+        show.one(indep, None, golden_name)
+        show.one(indep, atomizer, golden_name+'_deatomized')
+        test_utils.assert_matches_golden(self, golden_name, indep, rewrite=REWRITE, custom_comparator=self.cmp)
+
+    def test_covale_uncond_bridge_gpbonds(self):
+        '''
+        Covale which is bonded to 2 residues.
+        '''
+        dataset = 'sm_compl_covale'
+        mask = 'get_unconditional_diffusion_mask'
+        
+        loader_out = self.indep_for_dataset(dataset, mask, overrides=[f'spoof_item="{bridge_item}"'])
+        indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context = loader_out
+        bonds = indep.metadata['covale_bonds']
+        assertpy.assert_that(len(bonds)).is_equal_to(2)
+
+        golden_name = f'indep_{dataset}-{mask}-bridge-gpbonds'
         show.one(indep, None, golden_name)
         show.one(indep, atomizer, golden_name+'_deatomized')
         test_utils.assert_matches_golden(self, golden_name, indep, rewrite=REWRITE, custom_comparator=self.cmp)
