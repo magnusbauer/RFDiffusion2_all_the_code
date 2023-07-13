@@ -1,5 +1,6 @@
 import functools
 import torch
+import contextlib
 from functools import wraps
 import assertpy
 from collections import defaultdict, OrderedDict
@@ -177,6 +178,9 @@ class Indep:
         connected_idx0 = fetch_connected_nodes(G, i)
         return torch.tensor(list(connected_idx0))
     
+    def assert_types(indep):
+        assertpy.assert_that(indep.same_chain.dtype).is_equal_to(torch.bool)
+    
 
 def human_readable_seq(seq):
     return [rf2aa.chemical.num2aa[s] for s in seq]
@@ -293,7 +297,7 @@ def make_indep(pdb, ligand=None, center=True):
     # self.target_feats = iu.process_target(self.inf_conf.input_pdb, parse_hetatom=True, center=False)
     # init_protein_tmpl=False, init_ligand_tmpl=False, init_protein_xyz=False, init_ligand_xyz=False,
     #     parse_hetatm=False, n_cycle=10, random_noise=5.0)
-    chirals = torch.Tensor()
+    chirals = torch.zeros((0, 5))
     atom_frames = torch.zeros((0,3,2))
 
     xyz_prot, mask_prot, idx_prot, seq_prot = parsers.parse_pdb(pdb, seq=True)
@@ -353,9 +357,9 @@ def make_indep(pdb, ligand=None, center=True):
         bond_feats[Ls[0]:, Ls[0]:] = rf2aa.util.get_bond_feats(mol)
 
 
-    same_chain = torch.zeros((sum(Ls), sum(Ls))).long()
-    same_chain[:Ls[0], :Ls[0]] = 1
-    same_chain[Ls[0]:, Ls[0]:] = 1
+    same_chain = torch.zeros((sum(Ls), sum(Ls))).bool()
+    same_chain[:Ls[0], :Ls[0]] = True
+    same_chain[Ls[0]:, Ls[0]:] = True
     is_sm = torch.zeros(sum(Ls)).bool()
     is_sm[Ls[0]:] = True
     assert len(Ls) <= 2, 'multi chain inference not implemented yet'
@@ -848,7 +852,7 @@ def adaptor_fix_bb_indep(out):
         bond_feats,
         chirals,
         atom_frames,
-        same_chain,
+        same_chain.bool(),
         rf2aa.tensor_util.assert_squeeze(is_sm),
         terminus_type)
     return indep, atom_mask
@@ -870,6 +874,7 @@ def deatomize_covales(indep, atom_mask):
             }
     """
     # Clear out peptide bonds from covale atomizations
+    indep.assert_types()
     is_peptide_bond = indep.bond_feats == 6
     indep.bond_feats = indep.bond_feats * ~is_peptide_bond
     
@@ -1619,7 +1624,7 @@ def transform_indep(indep, is_res_str_shown, is_atom_str_shown, use_guideposts, 
         is_peptide_bond = indep.bond_feats == 7
         indep.bond_feats = indep.bond_feats * ~is_peptide_bond
     
-    # ADD BACK IN BOND FEATS
+    # Add back in bond feats
     atom_names_by_res = OrderedDict()
     for a, _, _ in metadata['covale_bonds']:
         res_i, atom_name = a
@@ -1640,24 +1645,13 @@ def transform_indep(indep, is_res_str_shown, is_atom_str_shown, use_guideposts, 
         indep.bond_feats[atom_i, ligand_i] = bond_type
         indep.bond_feats[ligand_i, atom_i] = bond_type
 
-    # Pop indep for covalent sm
-    # TODO( 7-10-23): Make function that splits an indep into multiple pieces but retains the information
-    # to put it back together (i.e. cross-same_chain, cross-bond_feats)
-    covale, cross_bonds = slice_indep(indep, is_covale)
-    indep, _ = slice_indep(indep, ~is_covale)
-    
-    # Get obmol of combined atomized residues and covalent sm
-    obmol, _ = get_obmol(covale.xyz[:,1], covale.seq, covale.bond_feats)
-    # Create indep from obmol, add to base indep
-    G = rf2aa.util.get_nxgraph(obmol)
-    covale.atom_frames = rf2aa.util.get_atom_frames(covale.seq, G)
-    covale.chirals = rf2aa.kinematics.get_chirals(obmol, covale.xyz[:, 1])
+    with open_indep(indep, is_covale) as covale:
+        # Get obmol of combined atomized residues and covalent sm
+        obmol, _ = get_obmol(covale.xyz[:,1], covale.seq, covale.bond_feats)
+        G = rf2aa.util.get_nxgraph(obmol)
+        covale.atom_frames = rf2aa.util.get_atom_frames(covale.seq, G)
+        covale.chirals = rf2aa.kinematics.get_chirals(obmol, covale.xyz[:, 1])
 
-    
-    # TODO: Think about how to handle this for multichain.
-    L_cat = indep.length() + covale.length()
-    same_chain = torch.ones((L_cat, L_cat)).long()
-    indep = cat_indeps([indep, covale], same_chain)
     return indep, is_diffused, is_masked_seq, atomizer, gp_to_ptn_idx0
 
 
@@ -1745,3 +1739,20 @@ def make_mask(i, L):
     mask = torch.zeros((L,)).bool()
     mask[i] = True
     return mask
+
+@contextlib.contextmanager
+def open_indep(indep, is_open):
+    assertpy.assert_that(indep.length()).is_equal_to(len(is_open))
+    indep_closed, _ = slice_indep(indep, ~is_open)
+    indep_open, _ = slice_indep(indep, is_open)
+    yield indep_open
+    i = torch.arange(len(is_open))
+    i_r = torch.cat([i[~is_open], i[is_open]])
+    i_inv = torch.argsort(i_r)
+    indep_cat = cat_indeps_same_chain((indep_closed, indep_open))
+    rearrange_indep(indep_cat, i_inv)
+    is_cross_term = ~(is_open[:, None] == is_open[None, :])
+    indep_cat.bond_feats[is_cross_term] = indep.bond_feats[is_cross_term]
+    indep_cat.same_chain[is_cross_term] = indep.same_chain[is_cross_term]
+    for key, value in dataclasses.asdict(indep_cat).items():
+        setattr(indep, key, value)

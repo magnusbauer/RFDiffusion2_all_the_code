@@ -179,5 +179,6 @@ def atomize_and_mask(indep, is_res_str_shown, is_atom_str_shown):
         is_atomized[k] = True
 
     indep, atomizer = atomize(indep, is_atomized)
+    indep.same_chain = indep.same_chain.bool()
     is_diffused, is_masked_seq = create_masks(atomizer, is_res_str_shown, is_atom_str_shown)
     return indep, is_diffused, is_masked_seq, atomizer

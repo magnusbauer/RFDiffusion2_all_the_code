@@ -8,6 +8,7 @@ from pathlib import Path
 import yaml
 import unittest
 import pickle
+from hydra import compose, initialize
 
 from rf2aa import tensor_util
 golden_dir = 'goldens'
@@ -215,3 +216,9 @@ def assert_no_nan(t):
     msg = where_nan(t)
     if msg:
         raise Exception(msg)
+    
+def construct_conf(overrides=None, config_name='debug'):
+    overrides = overrides or []
+    initialize(version_base=None, config_path="config/training", job_name="test_app")
+    conf = compose(config_name=f'{config_name}.yaml', overrides=overrides, return_hydra_config=True)
+    return conf

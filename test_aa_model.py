@@ -14,6 +14,10 @@ import aa_model
 from aa_model import AtomizeResidues, Indep, Model, make_indep
 import atomize
 import test_utils
+from aa_model import Model, make_indep
+import inference.utils
+import contigs
+import pytest
 ic.configureOutput(includeContext=True)
 
 class TestRearrange(unittest.TestCase):
@@ -82,6 +86,52 @@ class TestRearrange(unittest.TestCase):
         ic(frame_has_0)
         assertpy.assert_that(frame_has_0.all()).is_true()
 
+class TestOpenIndep(unittest.TestCase):
+    def test_open_table(self):
+        for l, is_open in [
+            (6, torch.arange(6) < 2),
+            (50, torch.arange(50) > 20),
+            (50, torch.arange(50) < 20),
+            (6, (torch.arange(6)%2).bool()),
+        ]:
+            with self.subTest(l=l, is_open=is_open):
+                indep = make_indep('benchmark/input/gaa.pdb')
+                L = indep.length()
+                i = torch.arange(L)
+                ic(indep.chirals.shape)
+                indep, _ = aa_model.slice_indep(indep, i < l)
+                indep.idx = torch.arange(indep.length())
+                indep.assert_types()
+                input_copy = copy.deepcopy(indep)
+                L = indep.length()
+                with aa_model.open_indep(indep, is_open) as indep_open:
+                    pass
+                
+                
+                diff = test_utils.cmp_pretty(indep, input_copy)
+                ic(
+                    indep.idx,
+                    input_copy.idx
+                )
+                if diff:
+                    print(diff)
+                    assert(False)
+
+
+    def test_open_sm(self):
+        indep = make_indep('benchmark/input/gaa.pdb', 'LG1')
+        indep.assert_types()
+        input_copy = copy.deepcopy(indep)
+        with aa_model.open_indep(indep, indep.is_sm) as indep_open:
+            indep_open.bond_feats[0,1] = 4
+            ic(indep_open.bond_feats[0,1])
+            ic(indep_open.bond_feats[1,0])
+            indep_open.bond_feats[0,1] = 1
+            indep_open.bond_feats[1,0] = 1
+        
+        bond_feats_diff = (indep.bond_feats != input_copy.bond_feats).nonzero()
+        ic(bond_feats_diff)
+        assertpy.assert_that(bond_feats_diff.shape).is_equal_to((2,2))
 
 class AAModelTestCase(unittest.TestCase):
 

@@ -136,16 +136,6 @@ def no_batch_collate_fn(data):
     assert len(data) == 1
     return data[0]
 
-
-def construct_conf(overrides, config_name='debug'):
-    # overrides = overrides + ['inference.cautious=False', 'inference.design_startnum=0']
-    initialize(version_base=None, config_path="config/training", job_name="test_app")
-    conf = compose(config_name=f'{config_name}.yaml', overrides=overrides, return_hydra_config=True)
-    # This is necessary so that when the model_runner is picking up the overrides, it finds them set on HydraConfig.
-    # HydraConfig.instance().set_config(conf)
-    # conf = compose(config_name='aa_small.yaml', overrides=overrides)
-    return conf
-
 def get_dataloader(conf: DictConfig, epoch=0) -> None:
 
     if conf.debug:
@@ -180,6 +170,10 @@ REWRITE=False
 # REWRITE=True
 class Dataloader(unittest.TestCase):
 
+    def cmp(self, a, b):
+        cmp = partial(tensor_util.cmp, atol=1e-20, rtol=1e-5)
+        return cmp(a, b)
+
     def tearDown(self) -> None:
         hydra.core.global_hydra.GlobalHydra().clear()
         return super().tearDown()
@@ -188,7 +182,7 @@ class Dataloader(unittest.TestCase):
 
         show_tip_pa.clear()
         cmd.set('grid_mode', 1)
-        conf = construct_conf([
+        conf = test_utils.construct_conf([
             'dataloader.DATAPKL_AA=aa_dataset_256_subsampled_10.pkl',
             'dataloader.CROP=256',
             f'dataloader.DATASETS={dataset}',
@@ -213,8 +207,7 @@ class Dataloader(unittest.TestCase):
         indep.metadata = None
 
         golden_name = f'indep_{dataset}-{mask}'
-        cmp = partial(tensor_util.cmp, atol=1e-20, rtol=1e-5)
-        test_utils.assert_matches_golden(self, golden_name, indep, rewrite=REWRITE, custom_comparator=cmp)
+        test_utils.assert_matches_golden(self, golden_name, indep, rewrite=REWRITE, custom_comparator=self.cmp)
 
     def test_atomized_sm(self):
         dataset = 'sm_complex'
@@ -225,8 +218,7 @@ class Dataloader(unittest.TestCase):
         indep.metadata = None
 
         golden_name = f'indep_{dataset}-{mask}'
-        cmp = partial(tensor_util.cmp, atol=1e-20, rtol=1e-5)
-        test_utils.assert_matches_golden(self, golden_name, indep, rewrite=REWRITE, custom_comparator=cmp)
+        test_utils.assert_matches_golden(self, golden_name, indep, rewrite=REWRITE, custom_comparator=self.cmp)
 
     
     def test_sm_compl_covale_uncond(self):
@@ -241,7 +233,7 @@ class Dataloader(unittest.TestCase):
         def cmp(got, want):
             got.idx[-13:] = -1
             want.idx[-13:] = -1
-            return cmp_(got, want)
+            return self.cmp(got, want)
         show.one(indep, atomizer)
         cmd.show('licorice', 'resi 491')
         
@@ -256,8 +248,7 @@ class Dataloader(unittest.TestCase):
         indep.metadata = None
         
         golden_name = f'indep_{dataset}-{mask}'
-        cmp = partial(tensor_util.cmp, atol=1e-20, rtol=1e-5)
-        test_utils.assert_matches_golden(self, golden_name, indep, rewrite=REWRITE, custom_comparator=cmp)
+        test_utils.assert_matches_golden(self, golden_name, indep, rewrite=REWRITE, custom_comparator=self.cmp)
     
     def test_covale_uncond_weird_covale_bonds(self):
         '''
@@ -278,8 +269,7 @@ class Dataloader(unittest.TestCase):
         golden_name = f'indep_{dataset}-{mask}-weird'
         show.one(indep, None, golden_name)
         show.one(indep, atomizer, golden_name+'_deatomized')
-        cmp = partial(tensor_util.cmp, atol=1e-20, rtol=1e-5)
-        test_utils.assert_matches_golden(self, golden_name, indep, rewrite=REWRITE, custom_comparator=cmp)
+        test_utils.assert_matches_golden(self, golden_name, indep, rewrite=REWRITE, custom_comparator=self.cmp)
         
     def test_covale_uncond_bridge(self):
         '''
@@ -301,8 +291,7 @@ class Dataloader(unittest.TestCase):
         golden_name = f'indep_{dataset}-{mask}-bridge'
         show.one(indep, None, golden_name)
         show.one(indep, atomizer, golden_name+'_deatomized')
-        cmp = partial(tensor_util.cmp, atol=1e-20, rtol=1e-5)
-        test_utils.assert_matches_golden(self, golden_name, indep, rewrite=REWRITE, custom_comparator=cmp)
+        test_utils.assert_matches_golden(self, golden_name, indep, rewrite=REWRITE, custom_comparator=self.cmp)
 
 
 
