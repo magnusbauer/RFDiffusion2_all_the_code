@@ -18,9 +18,11 @@ import parsers
 import util
 
 import sys
-sys.path.append('/home/ahern/projects/pagan')
-from swiss_army_knife import protein as sak
-cmd = sak.get_cmd()
+
+def get_cmd(pymol_url='http://calathea.dhcp.ipd:9123'):
+    return xmlrpclib.ServerProxy(pymol_url)
+
+cmd = get_cmd()
 #
 import estimate_likelihood as el
 from inference import utils
@@ -517,7 +519,7 @@ def get_spread(bench_des, key='contig_rmsd_af2'):
     return rows
 
 def show_spread(bench_des, key='contig_rmsd_af2'):
-    sak.clear(cmd)
+    clear(cmd)
     rows = get_spread(bench_des, key=key)
     # rows = rows[:2]
     for row in rows:
@@ -849,7 +851,7 @@ def get_registered_ligand(row, af2=False):
     native, het = get_native(row)
     motif_des = des[motif_idx]
     motif_native = native[native_motif_idx]
-    T = sak.register_full_atom(motif_des[:,1:2,:], motif_native[:,1:2,:])
+    T = register_full_atom(motif_des[:,1:2,:], motif_native[:,1:2,:])
     des = T(des)
     return des, native, het
 
@@ -1184,10 +1186,105 @@ def show_df(data, cols=['af2_pae_mean', 'rmsd_af2_des'], traj_types=None, n=999)
     return all_structures
 
 def set_remote_cmd(remote_ip):
-    cmd = sak.get_cmd(f'http://{remote_ip}:9123')
-    sak.make_network_cmd(cmd)
+    cmd = get_cmd(f'http://{remote_ip}:9123')
+    make_network_cmd(cmd)
     return cmd
 
 def clear():
-    sak.clear(cmd)
+    cmd.reinitialize('everything')
+    cmd.delete('all')
     cmd.do('@~/.pymolrc')
+
+def register_full_atom(pred, true, log=False, gamma=0.95):
+    '''
+    Calculate coordinate RMSD
+    Input:
+        - pred: predicted coordinates (L, n_atom, 3)
+        - true: true coordinates (L, n_atom, 3)
+    Output: RMSD after superposition
+    '''
+    #ic(pred.shape, true.shape)
+    for name, xyz in (('pred', pred), ('true', true)):
+        m = f'wrong shape for {name}: {xyz.shape}'
+        assert len(xyz.shape) == 3, m
+        assert xyz.shape[2] == 3, m
+    assert pred.shape == true.shape, f'{pred.shape} != {true.shape}'
+    pred = pred[None, None]
+    true = true[None]
+
+    def rmsd(V, W, eps=1e-6):
+        L = V.shape[1]
+        return torch.sqrt(torch.sum((V - W) * (V - W), dim=(1, 2)) / L + eps)
+
+    def centroid(X):
+        return X.mean(dim=-2, keepdim=True)
+
+    orig_pred = pred.clone()
+    orig_true = true.clone()
+    pred = pred[:, :, :, :3, :].contiguous()
+    true = true[:, :, :3, :].contiguous()
+    I, B, L, n_atom = pred.shape[:4]
+
+    # center to centroid
+    pred_centroid = centroid(pred.view(I, B, n_atom * L,
+                                       3)).view(I, B, 1, 1, 3)
+    true_centroid = centroid(true.view(B, n_atom * L, 3)).view(B, 1, 1, 3)
+    pred = pred - pred_centroid
+    true = true - true_centroid
+
+    # reshape true crds to match the shape to pred crds
+    true = true.unsqueeze(0).expand(I, -1, -1, -1, -1)
+    pred = pred.view(I * B, L * n_atom, 3)
+    true = true.view(I * B, L * n_atom, 3)
+
+    # Computation of the covariance matrix
+    C = torch.matmul(pred.permute(0, 2, 1), true)
+
+    # Compute optimal rotation matrix using SVD
+    V, S, W = torch.svd(C)
+
+    # get sign to ensure right-handedness
+    d = torch.ones([I * B, 3, 3], device=pred.device)
+    d[:, :, -1] = torch.sign(torch.det(V) * torch.det(W)).unsqueeze(1)
+
+    # Rotation matrix U
+    U = torch.matmul(d * V, W.permute(0, 2, 1))  # (IB, 3, 3)
+
+    # Rotate pred
+    rP = torch.matmul(pred, U)  # (IB, L*3, 3)
+    pred, true = rP[0, ...] + true_centroid, true[0, ...] + true_centroid
+
+    ## On FA coords.
+    def T(crds):
+        L, n_atom, _ = crds.shape
+        #         ic(L, n_atom)
+        crds = crds[None, None]
+        I, B = 1, 1
+
+        crds = crds - pred_centroid
+
+        # reshape true crds to match the shape to pred crds
+        crds = crds.view(I * B, L * n_atom, 3)
+
+        # Rotate pred
+        rcrds = torch.matmul(crds, U)  # (IB, L*3, 3)
+        crds = rcrds[0, ...] + true_centroid
+        crds = crds.reshape(L, n_atom, 3)
+        #         return crds[0,0]
+        return crds
+
+    return T
+
+def make_network_cmd(cmd):
+    # old_load = cmd.load
+    def new_load(*args, **kwargs):
+        path = args[0]
+        with open(path) as f:
+            contents = f.read()
+        # args[0] = contents
+        args = (contents,) + args[1:]
+        #print('writing contents')
+        cmd.read_pdbstr(*args, **kwargs)
+    cmd.is_network = True
+    cmd.load = new_load
+

@@ -79,7 +79,7 @@ def load_pdbs(pdbs, name_by_pdb):
 # row=analyze.make_row_from_traj(pdb_prefix)
 
 def clear():
-    analyze.sak.clear(cmd)
+    analyze.clear(cmd)
     cmd.do('@~/.pymolrc')
 
 import random
