@@ -306,9 +306,9 @@ class Dataloader(unittest.TestCase):
         show.one(indep, atomizer, golden_name+'_deatomized')
         test_utils.assert_matches_golden(self, golden_name, indep, rewrite=REWRITE, custom_comparator=self.cmp)
 
-    def test_covale_simple_mask(self):
+    def test_covale_islands_partial_ligand(self):
         dataset = 'sm_compl_covale'
-        mask = 'get_diffusion_mask_islands'
+        mask = 'get_diffusion_mask_islands_partial_ligand'
         loader_out = self.indep_for_dataset(dataset, mask, overrides=['guidepost_bonds=false'])
         indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context = loader_out
         indep.metadata = None

@@ -423,6 +423,29 @@ def make_atomized(get_mask, min_atomized_residues=1, max_atomized_residues=5):
         return is_motif, is_atom_motif
     return out_get_mask
 
+def partially_mask_ligand(get_mask, ligand_mask_low=0.0, ligand_mask_high=1.0):
+    @wraps(get_mask)
+    def out_get_mask(indep, atom_mask, *args, **kwargs):
+        is_motif, is_atom_motif = get_mask(indep, atom_mask, *args, **kwargs)
+        is_motif[indep.is_sm] = True
+        abs_from_sm_i = indep.is_sm.nonzero()[:, 0]
+        G = nx.from_numpy_matrix(indep.bond_feats[indep.is_sm,:][:,indep.is_sm].detach().cpu().numpy())
+        cc = list(nx.connected_components(G))
+        for component in cc:
+            n_atoms = len(component)
+            mask_frac = np.random.uniform(low=ligand_mask_low, high=ligand_mask_high)
+
+            ic(component)
+            to_mask = np.random.choice(list(component), int(np.floor(mask_frac*n_atoms)))
+            ic(to_mask)
+            to_mask_abs = abs_from_sm_i[to_mask]
+            if to_mask_abs.any():
+                assertpy.assert_that(indep.is_sm[to_mask_abs].all()).is_true()
+            is_motif[to_mask_abs] = False
+        ic(is_motif.sum())
+        return is_motif, is_atom_motif
+    return out_get_mask
+
 get_diffusion_mask_simple = make_covale_compatible(make_sm_compatible(_get_diffusion_mask_simple))
 get_diffusion_mask_islands = make_covale_compatible(make_sm_compatible(_get_diffusion_mask_islands))
 get_triple_contact = make_sm_compatible(_get_triple_contact)
@@ -430,6 +453,12 @@ get_double_contact = make_sm_compatible(_get_double_contact)
 atomize_get_triple_contact = make_atomized(get_triple_contact)
 atomize_get_double_contact = make_atomized(get_double_contact)
 get_unconditional_diffusion_mask = make_covale_compatible(make_sm_compatible(_get_unconditional_diffusion_mask))
+
+
+
+get_diffusion_mask_islands_partial_ligand = partially_mask_ligand(get_diffusion_mask_islands)
+get_tip_gaussian_mask_partial_ligand = partially_mask_ligand(get_tip_gaussian_mask)
+get_closest_tip_atoms_mask_partial_ligand = partially_mask_ligand(get_closest_tip_atoms)
 
 sm_mask_fallback = {
     get_closest_tip_atoms: get_tip_gaussian_mask

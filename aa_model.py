@@ -1581,7 +1581,10 @@ def transform_indep(indep, is_res_str_shown, is_atom_str_shown, use_guideposts, 
             return indep, is_diffused, is_masked_seq, atomizer, {}
 
 
-        indep, is_diffused, gp_to_ptn_idx0 = gp.make_guideposts(indep, mask_gp)
+        indep, _, gp_to_ptn_idx0 = gp.make_guideposts(indep, mask_gp)
+        is_diffused[list(gp_to_ptn_idx0.values())] = True
+        n_gp = len(gp_to_ptn_idx0)
+        is_diffused = torch.cat((is_diffused, torch.zeros((n_gp,)).bool()))
         if use_atomize:
             gp_from_ptn_idx0 = {v:k for k,v in gp_to_ptn_idx0.items()}
             is_atom_str_shown = {gp_from_ptn_idx0[k]: v for k,v in is_atom_str_shown.items()}
@@ -1598,9 +1601,12 @@ def transform_indep(indep, is_res_str_shown, is_atom_str_shown, use_guideposts, 
     if use_atomize:
         is_covale_ligand = indep.type() == TYPE_ATOMIZED_COV
         is_ligand = indep.is_sm
-        is_diffused[indep.is_sm] = False
+        # is_diffused[indep.is_sm] = False
+        ic(is_diffused[indep.is_sm])
         is_atom_str_shown = {k.item() if hasattr(k, 'item') else k :v for k,v in is_atom_str_shown.items()}
         indep, is_diffused, is_masked_seq, atomizer = atomize.atomize_and_mask(indep, ~is_diffused, is_atom_str_shown)
+        # TODO: Handle sequence masking more elegantly
+        is_masked_seq[indep.is_sm] = False
         assertpy.assert_that(indep.is_sm.sum()).is_equal_to(indep.atom_frames.shape[0])
         ligand_idx = atomize.atomized_indices_res(atomizer, is_ligand)
         covale_ligand_idx = atomize.atomized_indices_res(atomizer, is_covale_ligand)
