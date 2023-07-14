@@ -101,7 +101,7 @@ def run(conf: DictConfig) -> None:
         # 'num_workers': 0,
         'pin_memory': True
     }
-    n_validate=10
+    n_validate=conf.show_dataset.n
     train_loader = data.DataLoader(train_set, sampler=train_sampler, batch_size=conf.batch_size, collate_fn=no_batch_collate_fn, **LOAD_PARAM)
     counter = 0
 
@@ -110,41 +110,14 @@ def run(conf: DictConfig) -> None:
     for loader_out in tqdm(itertools.islice(train_loader, n_validate), total=n_validate):
         counter += 1
         indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context = loader_out
-        bonds = indep.metadata['covale_bonds']
-        # if len(bonds) < 2:
-        #     continue
-        # print(item_context)
         name = f'{chosen_dataset}_true_{show.get_counter()}'
-        # for bond in bonds:
-        #     print(f'{bond=}')
-        print(f'{name=}')
-        show.color_diffused(indep, is_diffused, name=name)
+        if conf.show_dataset.show:
+            show.color_diffused(indep, is_diffused, name=name)
 
-        # show.one(indep, atomizer, name)
         if atomizer:
             _ = atomize.deatomize(atomizer, indep)
 
-        # name, names = show.one(indep, None, name)
-        # # show.one(indep, atomizer, name+'_deatomized')
-        # show.show_backbone_spheres(f'{name} and not hetatm')
-        # show.color_masks(
-        #     names,
-        #     {
-        #         is_diffused: 'blue',
-        #         ~is_diffused: 'red',
-        #     }
-        # )
-        
-
-        # show.diffused(indep, is_diffused)
-        print('-------------------------------------------------------------------------------')
-        # break
-
-        # ic(indep.same_chain)
-        # ic(indep.same_chain[0])
-
-        # if input('press q to stop') == 'q':
-        #     break
+        # print('-------------------------------------------------------------------------------')
 
 if __name__ == "__main__":
     run()

@@ -180,3 +180,7 @@ data:
   num_t: 100
 master_port: null
 conditionless_freq: 0
+
+show_dataset:
+    show: True
+    n: 10

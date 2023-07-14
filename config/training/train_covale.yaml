@@ -3,7 +3,13 @@ defaults:
   - base
 
 dataloader:
-  DIFF_MASK_PROBS: {get_closest_tip_atoms: 0.3, get_diffusion_mask_islands: 0.4, get_unconditional_diffusion_mask: 0.3}
+  DIFF_MASK_PROBS:
+    get_closest_tip_atoms: 0.15
+    get_diffusion_mask_islands: 0.2
+    get_unconditional_diffusion_mask: 0.15
+    get_closest_tip_atoms_partial_ligand: 0.15
+    get_diffusion_mask_islands_partial_ligand: 0.2
+    get_unconditional_diffusion_mask_partial_ligand: 0.15
   DATASETS: pdb_aa,sm_complex,sm_compl_covale
   DATASET_PROB: [0.4,0.4,0.2]
 

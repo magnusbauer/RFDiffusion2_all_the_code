@@ -437,15 +437,11 @@ def partially_mask_ligand(get_mask, ligand_mask_low=0.0, ligand_mask_high=1.0):
         for component in cc:
             n_atoms = len(component)
             mask_frac = np.random.uniform(low=ligand_mask_low, high=ligand_mask_high)
-
-            ic(component)
             to_mask = np.random.choice(list(component), int(np.floor(mask_frac*n_atoms)))
-            ic(to_mask)
             to_mask_abs = abs_from_sm_i[to_mask]
             if to_mask_abs.any():
                 assertpy.assert_that(indep.is_sm[to_mask_abs].all()).is_true()
             is_motif[to_mask_abs] = False
-        ic(is_motif.sum())
         return is_motif, is_atom_motif
     return out_get_mask
 
@@ -461,10 +457,12 @@ get_unconditional_diffusion_mask = make_covale_compatible(make_sm_compatible(_ge
 
 get_diffusion_mask_islands_partial_ligand = partially_mask_ligand(get_diffusion_mask_islands)
 get_tip_gaussian_mask_partial_ligand = partially_mask_ligand(get_tip_gaussian_mask)
-get_closest_tip_atoms_mask_partial_ligand = partially_mask_ligand(get_closest_tip_atoms)
+get_closest_tip_atoms_partial_ligand = partially_mask_ligand(get_closest_tip_atoms)
+get_unconditional_diffusion_mask_partial_ligand = partially_mask_ligand(get_unconditional_diffusion_mask)
 
 sm_mask_fallback = {
-    get_closest_tip_atoms: get_tip_gaussian_mask
+    get_closest_tip_atoms: get_tip_gaussian_mask,
+    get_closest_tip_atoms_partial_ligand: get_tip_gaussian_mask_partial_ligand,
 }
 
 def get_diffusion_mask(
