@@ -42,15 +42,24 @@ def one(indep, atomizer, name=''):
     cmd.color('orange', f'hetatm and elem c and {name}')
     return name, names
 
+def AND(*names):
+    return show_tip_row.AND(names)
+
 def OR(*names):
     return show_tip_row.OR(names)
 
-def color_masks(names, color_by_mask):
+def color_masks(name, names, color_by_mask):
     for mask, color in color_by_mask.items():
-        selector = OR(*names[mask])
+        index_selectors = names[mask]
+        if len(index_selectors) == 0:
+            continue
+        selector = AND(name, OR(*index_selectors))
         cmd.color(color, selector)
 
-def diffused(indep, is_diffused, name):
+def diffused(indep, is_diffused, name=None):
+
+    if not name:
+        name = f'protein_{get_counter()}'
 
     indep_motif = copy.deepcopy(indep)
     indep_diffused = copy.deepcopy(indep)
@@ -63,6 +72,7 @@ def color_diffused(indep, is_diffused, name=None):
     name, names = one(indep, None, name)
     show_backbone_spheres(f'{name} and (not hetatm)')
     color_masks(
+        name,
         names,
         {
             is_diffused: 'blue',

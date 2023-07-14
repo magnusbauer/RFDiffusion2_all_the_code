@@ -33,6 +33,8 @@ def atomize(indep, is_residue_atomized, atomize_H=False):
     return indep_atomized, atomizer
 
 def deatomize(atomizer, indep_atomized):
+    if len(atomizer.atomized_res)==0:
+        return indep_atomized
     indep = copy.deepcopy(atomizer.indep_initial_copy)
     seq_one_hot = torch.nn.functional.one_hot(indep_atomized.seq, rf2aa.chemical.NAATOKENS)
     deatomized_seq_one_hot, indep.xyz, indep.idx, indep.bond_feats, _ = atomizer.get_deatomized_features(

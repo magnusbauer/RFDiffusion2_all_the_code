@@ -21,7 +21,10 @@ def make_covale_compatible(get_mask):
     def out_get_mask(indep, atom_mask, *args, **kwargs):
         is_motif, is_atom_motif = get_mask(indep, atom_mask, *args, **kwargs)
         covale_res_i = torch.tensor([res_i for (res_i, atom_name), lig_i, _ in indep.metadata['covale_bonds']])
-        is_atom_motif = {res_i.item(): [] for res_i in covale_res_i}
+        is_atom_motif = is_atom_motif or {}
+        for res_i in covale_res_i:
+            if res_i not in is_atom_motif:
+                is_atom_motif[res_i] = []
         motif_idx = is_motif.nonzero()[:,0].numpy()
         covalently_modified_res_motif = set(motif_idx).intersection(set(covale_res_i))
         for res_i in covalently_modified_res_motif:
@@ -182,7 +185,7 @@ def get_triple_contact_atomize(*args, **kwargs):
     raise Exception('not implemented')
 
 # TODO: fix
-# @make_covale_compatible
+@make_covale_compatible
 def get_closest_tip_atoms(indep, atom_mask,
     d_beyond_closest = 1.0,
     n_beyond_closest = 1,

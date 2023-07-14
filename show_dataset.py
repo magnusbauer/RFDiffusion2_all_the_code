@@ -98,10 +98,10 @@ def run(conf: DictConfig) -> None:
     LOAD_PARAM = {
         'shuffle': False,
         # 'num_workers': test_utils.available_cpu_count() - 2,
-        'num_workers': 1,
+        'num_workers': 0,
         'pin_memory': True
     }
-    n_validate=1
+    n_validate=10
     train_loader = data.DataLoader(train_set, sampler=train_sampler, batch_size=conf.batch_size, collate_fn=no_batch_collate_fn, **LOAD_PARAM)
     counter = 0
 
@@ -118,21 +118,27 @@ def run(conf: DictConfig) -> None:
         # print(item_context)
         name = f'{chosen_dataset}_true_{show.get_counter()}'
         print(f'{name=}')
-        name, names = show.one(indep, None, name)
-        # show.one(indep, atomizer, name+'_deatomized')
-        show.show_backbone_spheres(f'{name} and not hetatm')
-        show.color_masks(
-            names,
-            {
-                is_diffused: 'blue',
-                ~is_diffused: 'red',
-            }
-        )
+        show.color_diffused(indep, is_diffused, name=name)
+
+        # show.one(indep, atomizer, name)
+        if atomizer:
+            _ = atomize.deatomize(atomizer, indep)
+
+        # name, names = show.one(indep, None, name)
+        # # show.one(indep, atomizer, name+'_deatomized')
+        # show.show_backbone_spheres(f'{name} and not hetatm')
+        # show.color_masks(
+        #     names,
+        #     {
+        #         is_diffused: 'blue',
+        #         ~is_diffused: 'red',
+        #     }
+        # )
         
 
-        show.diffused(indep, is_diffused)
+        # show.diffused(indep, is_diffused)
         print('-------------------------------------------------------------------------------')
-        break
+        # break
 
         # ic(indep.same_chain)
         # ic(indep.same_chain[0])

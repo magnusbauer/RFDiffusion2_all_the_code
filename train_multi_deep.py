@@ -936,14 +936,14 @@ class Trainer():
                     ]:
                         indep_write = copy.deepcopy(indep)
                         indep_write.xyz[:,:14] = xyz[:,:14]
-                        if atomizer:
-                            indep_write = atomize.deatomize(atomizer, indep_write)
+                        # if atomizer:
+                        #     indep_write = atomize.deatomize(atomizer, indep_write)
                         indep_write.write_pdb(f'{prefix}_{suffix}.pdb')
 
                     indep_true = indep
                     motif_deatomized = None
                     if atomizer:
-                        indep_true = atomize.deatomize(atomizer, indep_true)
+                        # indep_true = atomize.deatomize(atomizer, indep_true)
                         motif_deatomized = atomize.convert_atomized_mask(atomizer, ~is_diffused)
 
                     

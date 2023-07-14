@@ -831,7 +831,7 @@ def adaptor_fix_bb_indep(out):
     
     # our dataloaders return torch.zeros(L...) for atom frames and chirals when there are none, this updates it to use common shape 
     if torch.all(atom_frames == 0):
-        atom_frames = torch.zeros((0,3,2))
+        atom_frames = torch.zeros((0,3,2)).long()
     if torch.all(chirals == 0):
         chirals = torch.zeros((0,5))
 
@@ -1598,11 +1598,12 @@ def transform_indep(indep, is_res_str_shown, is_atom_str_shown, use_guideposts, 
                 metadata['covale_bonds'][i] = ((res_i, atom_name), b, t)
 
         is_masked_seq = is_diffused.clone()
+    if len(metadata['covale_bonds']):
+        assert use_atomize
     if use_atomize:
         is_covale_ligand = indep.type() == TYPE_ATOMIZED_COV
         is_ligand = indep.is_sm
         # is_diffused[indep.is_sm] = False
-        ic(is_diffused[indep.is_sm])
         is_atom_str_shown = {k.item() if hasattr(k, 'item') else k :v for k,v in is_atom_str_shown.items()}
         indep, is_diffused, is_masked_seq, atomizer = atomize.atomize_and_mask(indep, ~is_diffused, is_atom_str_shown)
         # TODO: Handle sequence masking more elegantly
