@@ -1,0 +1,11 @@
+# Configuration for inference on SE(3) diffusion experiments.
+defaults:
+  - base
+
+dataloader:
+  DIFF_MASK_PROBS: {get_closest_tip_atoms: 0.3, get_diffusion_mask_islands: 0.4, get_unconditional_diffusion_mask: 0.3}
+  DATASETS: pdb_aa,sm_complex,sm_compl_covale
+  DATASET_PROB: [0.4,0.4,0.2]
+
+
+
