@@ -1,7 +1,9 @@
 import os
 import copy
 
-from dev import analyze, show_tip_pa
+from icecream import ic
+
+from dev import analyze, show_tip_pa, show_tip_row
 import atomize
 import aa_model
 
@@ -30,7 +32,7 @@ def one(indep, atomizer, name=''):
     if atomizer:
         indep = atomize.deatomize(atomizer, indep)
     pdb = f'/tmp/{name}.pdb'
-    indep.write_pdb(pdb)
+    names = indep.write_pdb(pdb)
 
     cmd.load(pdb)
     name = os.path.basename(pdb[:-4])
@@ -38,6 +40,15 @@ def one(indep, atomizer, name=''):
     # show_backbone_spheres('not hetatm')
     cmd.show('licorice', f'hetatm and {name}')
     cmd.color('orange', f'hetatm and elem c and {name}')
+    return name, names
+
+def OR(*names):
+    return show_tip_row.OR(names)
+
+def color_masks(names, color_by_mask):
+    for mask, color in color_by_mask.items():
+        selector = OR(*names[mask])
+        cmd.color(color, selector)
 
 def diffused(indep, is_diffused, name):
 
@@ -47,3 +58,14 @@ def diffused(indep, is_diffused, name):
     aa_model.pop_mask(indep_diffused, is_diffused)
     one(indep_motif, None, f'{name}_motif')
     one(indep_diffused, None, f'{name}_diffused')
+
+def color_diffused(indep, is_diffused, name=None):
+    name, names = one(indep, None, name)
+    show_backbone_spheres(f'{name} and (not hetatm)')
+    color_masks(
+        names,
+        {
+            is_diffused: 'blue',
+            ~is_diffused: 'red',
+        }
+    )

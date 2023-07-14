@@ -103,7 +103,7 @@ class Indep:
         # chain_letters[longest_connected_component] = 'A'
         # chain_letters[other_component] = 'B'
         chain_letters = self.chains()
-        rf2aa.util.writepdb(path,
+        return rf2aa.util.writepdb(path,
             torch.nan_to_num(self.xyz[:,:14]), seq, idx_pdb=self.idx, chain_letters=chain_letters, bond_feats=self.bond_feats[None], **kwargs)
 
     def ca_dists(self):
@@ -1076,6 +1076,7 @@ def rearrange_indep(indep, from_i):
     is_sm_new = indep.is_sm[from_i]
     is_sm_old = indep.is_sm
     sm_i_old = is_sm_old.nonzero()[:, 0]
+    absolute_from_relative_old = sm_i_old
     sm_i_new = is_sm_new.nonzero()[:, 0]
     n_sm = is_sm_old.sum()
     sm_i_relative = torch.arange(n_sm)
@@ -1083,13 +1084,20 @@ def rearrange_indep(indep, from_i):
     a[:] = 9999
     a[is_sm_old] = sm_i_relative
     from_i_sm_relative = a[from_i[is_sm_new]]
+    relative_from_absolute_new = torch.zeros(indep.length()).type(torch.LongTensor)
+    a[:] = 9999
+    relative_from_absolute_new[is_sm_new] = torch.arange(n_sm)
 
-    # to_i_sm = is_sm_new.nonzero()[:,0]
+
     atom_frames_relative_i = indep.atom_frames[:, :, 0]
-    atom_frames_absolute_i = atom_frames_relative_i + sm_i_old[:, None]
-    atom_frames_absolute_i_new = atom_frames_absolute_i.apply_(lambda i: to_i[i])
-    atom_frames_absolute_i_new = atom_frames_absolute_i_new[from_i_sm_relative]
-    atom_frames_relative_i_new = atom_frames_absolute_i_new - sm_i_new[:, None]
+    atom_frames_sm_absolute = atom_frames_relative_i + torch.arange(n_sm)[:, None]
+    absolute_from_sm = indep.is_sm.nonzero()[:, 0]
+    atom_frames_absolute = atom_frames_sm_absolute.apply_(lambda i: absolute_from_sm[i])
+    atom_frames_absolute = atom_frames_absolute[from_i_sm_relative]
+    atom_frames_absolute_i_new = atom_frames_absolute.apply_(lambda i: to_i[i])
+    atom_frames_sm_absolute = atom_frames_absolute_i_new.apply_(lambda i: relative_from_absolute_new[i])
+    atom_frames_relative_i_new = atom_frames_sm_absolute - torch.arange(n_sm)[:, None]
+
     indep.atom_frames[:,:,0] = atom_frames_relative_i_new
     indep.is_sm = is_sm_new
 
@@ -1646,7 +1654,7 @@ def transform_indep(indep, is_res_str_shown, is_atom_str_shown, use_guideposts, 
         G = rf2aa.util.get_nxgraph(obmol)
         covale.atom_frames = rf2aa.util.get_atom_frames(covale.seq, G)
         covale.chirals = rf2aa.kinematics.get_chirals(obmol, covale.xyz[:, 1])
-
+    assertpy.assert_that(len(is_diffused)).is_equal_to(indep.length())
     return indep, is_diffused, is_masked_seq, atomizer, gp_to_ptn_idx0
 
 

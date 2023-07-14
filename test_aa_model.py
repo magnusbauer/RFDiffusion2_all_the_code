@@ -76,15 +76,29 @@ class TestRearrange(unittest.TestCase):
         i = np.concatenate((i[indep.is_sm][-1:], i[indep.is_sm][:-1], i[~indep.is_sm]))
         aa_model.rearrange_indep(indep, i)
 
-        ic(
-            input_copy.length(),
-            input_copy.is_sm.sum(),
-            input_copy.atom_frames[:,:,0],
-            indep.atom_frames[:,:,0],
-        )
-        frame_has_0 = (indep.atom_frames[:,:,0] == 0).any(dim=1)
-        ic(frame_has_0)
+        frame_has_0 = (input_copy.atom_frames[:,:,0] == 0).any(dim=1)
         assertpy.assert_that(frame_has_0.all()).is_true()
+
+        frame_has_0 = (indep.atom_frames[:,:,0] == 0).any(dim=1)
+        assertpy.assert_that(frame_has_0.all()).is_true()
+
+
+    def test_split_sm(self):
+        indep = make_indep('benchmark/input/gaa.pdb', 'LG1')
+        L = indep.length()
+        input_copy = copy.deepcopy(indep)
+
+        sm_i = indep.is_sm.nonzero()[:,0]
+        sm_i_a = sm_i[:len(sm_i)//2]
+        sm_i_b = sm_i[len(sm_i)//2:]
+        non_sm_i = (~indep.is_sm).nonzero()[:,0]
+        i = np.concatenate((sm_i_a, non_sm_i, sm_i_b))
+        aa_model.rearrange_indep(indep, i)
+
+        diff = test_utils.cmp_pretty(indep.atom_frames, input_copy.atom_frames)
+        if diff:
+            print(diff)
+            self.fail(f'{diff=}')    
 
 class TestOpenIndep(unittest.TestCase):
     def test_open_table(self):

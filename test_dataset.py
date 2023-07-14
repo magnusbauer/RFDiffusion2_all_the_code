@@ -221,7 +221,7 @@ class Dataloader(unittest.TestCase):
         test_utils.assert_matches_golden(self, golden_name, indep, rewrite=REWRITE, custom_comparator=self.cmp)
 
     
-    def test_sm_compl_covale_uncond(self):
+    def test_covale_uncond(self):
         dataset = 'sm_compl_covale'
         mask = 'get_unconditional_diffusion_mask'
         loader_out = self.indep_for_dataset(dataset, mask, overrides=['guidepost_bonds=false'])
@@ -299,12 +299,31 @@ class Dataloader(unittest.TestCase):
         indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context = loader_out
         bonds = indep.metadata['covale_bonds']
         assertpy.assert_that(len(bonds)).is_equal_to(2)
+        assertpy.assert_that(indep.same_chain.all()).is_true()
 
         golden_name = f'indep_{dataset}-{mask}-bridge-gpbonds'
         show.one(indep, None, golden_name)
         show.one(indep, atomizer, golden_name+'_deatomized')
         test_utils.assert_matches_golden(self, golden_name, indep, rewrite=REWRITE, custom_comparator=self.cmp)
 
+    def test_covale_simple_mask(self):
+        dataset = 'sm_compl_covale'
+        mask = 'get_diffusion_mask_islands'
+        loader_out = self.indep_for_dataset(dataset, mask, overrides=['guidepost_bonds=false'])
+        indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context = loader_out
+        indep.metadata = None
+        
+        golden_name = f'indep_{dataset}-{mask}'
+        cmp_ = partial(tensor_util.cmp, atol=1e-3, rtol=1e-5)
+        def cmp(got, want):
+            got.idx[-13:] = -1
+            want.idx[-13:] = -1
+            return self.cmp(got, want)
+        ic((~is_diffused).nonzero()[:,0])
+        ic(np.unique(indep.chains()))
+        show.color_diffused(indep, is_diffused)
+        
+        test_utils.assert_matches_golden(self, golden_name, indep, rewrite=REWRITE, custom_comparator=cmp)
 
 
     # def test_covale_simple_mask_0(self):

@@ -373,15 +373,19 @@ def _get_diffusion_mask_simple(xyz, low_prop, high_prop, broken_prop):
         diffusion_mask[-(mask_length-split):] = False
     return diffusion_mask
 
-def _get_diffusion_mask_islands(xyz, island_min=1, island_max=15, n_islands_min=1, n_islands_max=4):
+def _get_diffusion_mask_islands(xyz, *args, island_len_min=1, island_len_max=15, n_islands_min=1, n_islands_max=4, **kwargs):
     L = xyz.shape[0]
-    is_motif = torch.ones(L).bool()
-    n_islands = np.random.randint(n_islands, n_islands_max)
+    is_motif = torch.zeros(L).bool()
+    n_islands = np.random.randint(n_islands_min, n_islands_max)
     for _ in range(n_islands):
-        mask_length = np.random.randint(island_min, island_max)
+        mask_length = np.random.randint(island_len_min, island_len_max)
         high_start = L - mask_length
         start = random.randint(0, high_start)
         is_motif[start:start+mask_length] = True
+    
+    # Prevents the entire thing from being motif, as this is disallowed.
+    if is_motif.all():
+        is_motif[np.random.randint(L)] = False
     return is_motif
 
 def _get_unconditional_diffusion_mask(xyz, *args, **kwargs):

@@ -97,10 +97,11 @@ def run(conf: DictConfig) -> None:
     # mp.cpu_count()-1
     LOAD_PARAM = {
         'shuffle': False,
-        'num_workers': test_utils.available_cpu_count() - 2,
+        # 'num_workers': test_utils.available_cpu_count() - 2,
+        'num_workers': 1,
         'pin_memory': True
     }
-    n_validate=300
+    n_validate=1
     train_loader = data.DataLoader(train_set, sampler=train_sampler, batch_size=conf.batch_size, collate_fn=no_batch_collate_fn, **LOAD_PARAM)
     counter = 0
 
@@ -110,15 +111,26 @@ def run(conf: DictConfig) -> None:
         counter += 1
         indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context = loader_out
         bonds = indep.metadata['covale_bonds']
-        if len(bonds) < 2:
-            continue
+        # if len(bonds) < 2:
+        #     continue
         for bond in bonds:
             print(f'{bond=}')
-        print(item_context)
+        # print(item_context)
         name = f'{chosen_dataset}_true_{show.get_counter()}'
         print(f'{name=}')
-        show.one(indep, None, name)
-        show.one(indep, atomizer, name+'_deatomized')
+        name, names = show.one(indep, None, name)
+        # show.one(indep, atomizer, name+'_deatomized')
+        show.show_backbone_spheres(f'{name} and not hetatm')
+        show.color_masks(
+            names,
+            {
+                is_diffused: 'blue',
+                ~is_diffused: 'red',
+            }
+        )
+        
+
+        show.diffused(indep, is_diffused)
         print('-------------------------------------------------------------------------------')
         break
 
