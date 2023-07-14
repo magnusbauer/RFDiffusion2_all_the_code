@@ -97,8 +97,8 @@ def run(conf: DictConfig) -> None:
     # mp.cpu_count()-1
     LOAD_PARAM = {
         'shuffle': False,
-        # 'num_workers': test_utils.available_cpu_count() - 2,
-        'num_workers': 0,
+        'num_workers': test_utils.available_cpu_count() - 2,
+        # 'num_workers': 0,
         'pin_memory': True
     }
     n_validate=10
@@ -113,10 +113,10 @@ def run(conf: DictConfig) -> None:
         bonds = indep.metadata['covale_bonds']
         # if len(bonds) < 2:
         #     continue
-        for bond in bonds:
-            print(f'{bond=}')
         # print(item_context)
         name = f'{chosen_dataset}_true_{show.get_counter()}'
+        # for bond in bonds:
+        #     print(f'{bond=}')
         print(f'{name=}')
         show.color_diffused(indep, is_diffused, name=name)
 
