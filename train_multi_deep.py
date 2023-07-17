@@ -175,12 +175,6 @@ class Trainer():
         self.conf=conf
         self._exp_conf = conf.experiment
         self.metrics=[getattr(metrics, k) for k in conf.metrics]
-        self.outdir = self.conf.outdir or '.'
-        self.outdir = os.path.join(self.outdir, f'./train_session{get_datetime()}')
-        ic(self.outdir)
-        if os.path.isdir(self.outdir) and not DEBUG:
-            sys.exit('EXITING: self.outdir already exists. Dont clobber')
-        os.makedirs(self.outdir, exist_ok=True)
 
         # Initialize experiment objects
         from data import se3_diffuser
@@ -200,6 +194,13 @@ class Trainer():
         # loss & final activation function
         self.loss_fn = nn.CrossEntropyLoss(reduction='none')
         self.active_fn = nn.Softmax(dim=1)
+
+        self.wandb_run_id = 'no_wandb'
+    
+    def make_rundir(self):
+        rundir = self.conf.rundir or '.'
+        rundir = os.path.join(rundir, f'{get_datetime()}_{self.wandb_run_id}')
+        return rundir
 
     def calc_loss(self, loss_weights, model_out, diffuser_out, logit_s, label_s,
                   logit_aa_s, label_aa_s, mask_aa_s, logit_exp,
@@ -483,7 +484,6 @@ class Trainer():
     #   - if interactive, launch one job for each GPU on node
     def run_model_training(self, world_size):
         if ('MASTER_ADDR' not in os.environ or os.environ['MASTER_ADDR'] == ''):
-            ic('setting master_addr')
             if world_size <= 1:
                 os.environ['MASTER_ADDR'] = 'localhost'
             else:
@@ -509,20 +509,10 @@ class Trainer():
 
     def train_model(self, rank, world_size, return_setup=False):
 
-        self.accum_step = self.conf.pseudobatch / world_size
-        ic(self.accum_step)
-        #print ("running ddp on rank %d, world_size %d"%(rank, world_size))
-        
-        # save git diff from most recent commit
-        gitdiff_fn = open(f'{self.outdir}/git_diff.txt','w')
-        git_diff = subprocess.Popen(["git diff"], cwd = os.getcwd(), shell = True, stdout = gitdiff_fn, stderr = subprocess.PIPE)
-        print('Saved git diff between current state and last commit')
-
-
         if WANDB and rank == 0:
             print('initializing wandb')
             resume = None
-            name='_'.join([self.conf.wandb_prefix, self.outdir.replace('./','')])
+            name=self.conf.wandb_prefix
             id = None
             if self.conf.resume:
                 name=None
@@ -535,10 +525,18 @@ class Trainer():
                     id=id,
                     resume=resume)
             print(f'{wandb.run.id=}')
+            self.wandb_run_id = wandb.run.id
 
             # wandb.config.update(all_param)
             wandb.config = self.conf
-            wandb.save(os.path.join(os.getcwd(), self.outdir, 'git_diff.txt'))
+        
+        self.rundir = self.make_rundir()
+
+
+        self.accum_step = self.conf.pseudobatch / world_size
+        ic(self.accum_step)
+        #print ("running ddp on rank %d, world_size %d"%(rank, world_size))
+        
         ic(os.environ['MASTER_ADDR'], rank, world_size, torch.cuda.device_count())
         print(f'{rank=} {world_size=} {self.conf.ddp_backend=} initializing process group')
         dist.init_process_group(backend=self.conf.ddp_backend, world_size=world_size, rank=rank)
@@ -549,6 +547,22 @@ class Trainer():
             ic(rank, torch.cuda.get_device_name(f'cuda:{gpu}'))
         else:
             gpu = 'cpu'
+        
+        # obj_list = [self.rundir]
+        obj_list = [self.rundir]
+        dist.broadcast_object_list(obj_list, 0)
+        self.rundir = obj_list[0]
+        self.outdir = os.path.join(self.rundir, f'rank_{rank}')
+        print(f'{rank=} {self.outdir=}')
+        os.makedirs(self.outdir, exist_ok=True)
+        
+        if rank == 0:
+            # save git diff from most recent commit
+            gitdiff_fn = open(f'{self.outdir}/git_diff.txt','w')
+            git_diff = subprocess.Popen(["git diff"], cwd = os.getcwd(), shell = True, stdout = gitdiff_fn, stderr = subprocess.PIPE)
+            print('Saved git diff between current state and last commit')
+            if WANDB:
+                wandb.save(os.path.join(os.getcwd(), self.outdir, 'git_diff.txt'))
         
         self.n_train = N_EXAMPLE_PER_EPOCH
 
@@ -607,6 +621,8 @@ class Trainer():
                     'scheduler_state_dict': scheduler.state_dict(),
                     'scaler_state_dict': scaler.state_dict(),
                     'conf':self.conf,
+                    'wandb_run_id':self.wandb_run_id,
+                    'rundir': self.rundir,
                     },
                     model_path)
 
