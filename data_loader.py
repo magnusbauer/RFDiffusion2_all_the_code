@@ -1652,6 +1652,8 @@ class DistilledDataset(data.Dataset):
             indep, atom_mask = aa_model.adaptor_fix_bb_indep(out)
 
             pop = aa_model.is_occupied(indep, atom_mask)
+            # For now, do not pop unoccupied small molecule atoms.
+            pop += indep.is_sm
             aa_model.pop_mask(indep, pop)
             atom_mask = atom_mask[pop]
 
@@ -1674,6 +1676,7 @@ class DistilledDataset(data.Dataset):
                 is_atom_str_shown = {maybe_item(res_i):v for res_i, v in is_atom_str_shown.items()}
 
             indep, is_diffused, is_masked_seq, atomizer, _ = aa_model.transform_indep(indep, is_res_str_shown, is_atom_str_shown, self.params['USE_GUIDE_POSTS'], guidepost_bonds=self.conf.guidepost_bonds, metadata=metadata)
+            aa_model.assert_valid_seq_mask(indep, is_masked_seq)
 
             run_inference.seed_all(mask_gen_seed) # Reseed the RNGs for test stability.
             aa_model.centre(indep, is_diffused)

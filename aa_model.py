@@ -189,6 +189,15 @@ def is_monotonic(idx):
     idx_pad = torch.concat([idx, torch.tensor([9999])])
     return (idx_pad[1:] - idx_pad[:-1] == 1)
 
+def assert_valid_seq_mask(indep, is_masked_seq):
+    if is_masked_seq[indep.is_sm].any():
+        ic(
+            list(zip(
+                human_readable_seq(indep.seq[indep.is_sm]),
+                is_masked_seq[indep.is_sm],
+            ))
+        )
+        raise Exception('Sequence mask is invalid: atom indices are sequence masked.')
 
 @dataclass
 class RFI:
@@ -1578,6 +1587,7 @@ def transform_indep(indep, is_res_str_shown, is_atom_str_shown, use_guideposts, 
             atomized_residues = list(is_atom_str_shown.keys())
             mask_gp[atomized_residues] = True
         if mask_gp.sum() == 0:
+            is_masked_seq[indep.is_sm] = False
             return indep, is_diffused, is_masked_seq, atomizer, {}
 
 
