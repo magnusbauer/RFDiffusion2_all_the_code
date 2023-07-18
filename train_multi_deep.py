@@ -970,6 +970,7 @@ class Trainer():
                             'idx': indep_true.idx,
                             'is_sm': indep_true.is_sm,
                             'pymol_names': pymol_names,
+                            'dataset': chosen_dataset,
                             'loss_dict': tree.map_structure(
                                 lambda x: x.cpu() if hasattr(x, 'cpu') else x, loss_dict)
                         }, fh)

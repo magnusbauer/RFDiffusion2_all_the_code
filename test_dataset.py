@@ -132,6 +132,47 @@ bridge_item = """{
     'task': 'diff',
 }"""
 
+
+multi_covale = """{
+    'chosen_dataset': 'sm_compl_multi',             
+    'mask_gen_seed': 82644955,            
+    'sel_item': {   'ASSEMBLY': 1,                         
+                    'CHAINID': '1btc_A',           
+                    'CLUSTER': 18655,                         
+                    'COVALENT': [],                
+                    'DEPOSITION': '1993-02-18',
+                    'HASH': '101639',                     
+                    'LEN_EXIST': 491,               
+                    'LIGAND': [   ('B', '1', 'GLC'),          
+                                  ('B', '2', 'GLC'),
+                                  ('B', '3', 'GLC'),
+                                  ('B', '4', 'GLC'),       
+                                  ('B', '5', 'GLC'), 
+                                  ('B', '6', 'GLC')],         
+                    'LIGATOMS': 66,                
+                    'LIGATOMS_RESOLVED': 66,
+                    'LIGXF': [('B', 1)],                   
+                    'PARTNERS': [   (   'A',        
+                                        0,  
+                                        216,                                                                                                                                                                                                                                              
+                                        2.691878318786621,
+                                        'polypeptide(L)'),    
+                                    (   [('F', '504', 'BME')],                                                                                                                                                                                                                            
+                                        [('F', 5)],
+                                        0,                                                                                                                                                                                                                                                
+                                        5.804349899291992,
+                                        'nonpoly'),                                                                                                                                                                                                                                       
+                                    (   [('D', '502', 'BME')],
+                                        [('D', 3)],                                                                                                                                                                                                                                       
+                                        0,                
+                                        6.248571395874023,                                                                                                                                                                                                                                
+                                        'nonpoly')],
+                    'RESOLUTION': 2.0,                                                                                                                                                                                                                                                    
+                    'SEQUENCE': 'SNMLLNYVPVYVMLPLGVVNVDNVFEDPDGLKEQLLQLRAAGVDGVMVDVWWGIIELKGPKQYDWRAYRSLFQLVQECGLTLQAIMSFHQCGGNVGDIVNIPIPQWVLDIGESNHDIFYTNRSGTRNKEYLTVGVDNEPIFHGRTAIEIYSDYMKSFRENMSDFLESGLIIDIEVGLGPAGELRYPSYPQSQGWEFPRIGEFQCYDKYLKADFKAAVARAGHPEWELPDDAGKYNDVPESTGFFKSNGTYVTEKGKFFLTWYSNKLLNHGDQILDEANKAFLGCKVKLAIKVSGIHWWYKVENHAAELTAGYYNLNDRDGYRPIARMLSRHHAILNFTCLEMRDSEQPSDAKSGPQELVQQVLSGGWREDIRVAGENALPRYDATAYNQIILNAKPQGVNNNGPPKLSMFGVTYLRLSDDLLQKSNFNIFKKFVLKMHADQDYCANPQKYNHAITPLKPSAPKIPIEVLLEATKPTLPFPWLPETDMKVDG',                                      
+                    'SUBSET': 'multi'},
+    'task': 'diff',
+}"""
+
 def no_batch_collate_fn(data):
     assert len(data) == 1
     return data[0]
@@ -342,6 +383,25 @@ class Dataloader(unittest.TestCase):
         show.diffused(indep, is_diffused, 'true')
         
         test_utils.assert_matches_golden(self, golden_name, indep, rewrite=REWRITE, custom_comparator=self.cmp)
+
+    # def test_multi_covale(self):
+    #  WIP
+    #     dataset = 'sm_compl_multi'
+    #     mask = 'get_unconditional_diffusion_mask'
+    #     loader_out = self.indep_for_dataset(dataset, mask, overrides=['dataloader.DATAPKL_AA=aa_dataset_256_subsampled_10_2.pkl'])
+    #     indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context = loader_out
+    #     indep.metadata = None
+        
+    #     golden_name = f'indep_{dataset}-{mask}'
+    #     ic((~is_diffused).nonzero()[:,0])
+    #     ic(indep.chains())
+    #     unique_chains = np.unique(indep.chains())
+    #     assertpy.assert_that(len(unique_chains)).is_equal_to(2)
+    #     name, names = show.one(indep, None)
+    #     show.cmd.do('util.cbc')
+    #     show.diffused(indep, is_diffused, 'true')
+        
+    #     test_utils.assert_matches_golden(self, golden_name, indep, rewrite=REWRITE, custom_comparator=self.cmp)
 
     # def test_covale_simple_mask_0(self):
     #     dataset = 'sm_compl_covale'

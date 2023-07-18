@@ -83,6 +83,9 @@ def run(conf: DictConfig) -> None:
     diffuser.T = conf.diffuser.T
     dataset_configs, homo = default_dataset_configs(conf.dataloader, debug=conf.debug)
 
+    for k, dataset_conf in dataset_configs.items():
+        print(f'{k:<20}: {len(dataset_conf.ids)}')
+
     print('Making train sets')
     train_set = DistilledDataset(dataset_configs,
                                     conf.dataloader, diffuser,
@@ -97,8 +100,8 @@ def run(conf: DictConfig) -> None:
     # mp.cpu_count()-1
     LOAD_PARAM = {
         'shuffle': False,
-        'num_workers': test_utils.available_cpu_count() - 2,
-        # 'num_workers': 0,
+        # 'num_workers': test_utils.available_cpu_count() - 2,
+        'num_workers': 0,
         'pin_memory': True
     }
     n_validate=conf.show_dataset.n
@@ -110,7 +113,8 @@ def run(conf: DictConfig) -> None:
     for loader_out in tqdm(itertools.islice(train_loader, n_validate), total=n_validate):
         counter += 1
         indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context = loader_out
-        name = f'{chosen_dataset}_true_{show.get_counter()}'
+        bonds = indep.metadata['covale_bonds']
+        name = f'{chosen_dataset}_true_{len(bonds)}_{show.get_counter()}'
         if conf.show_dataset.show_diffused:
             show.color_diffused(indep, is_diffused, name=name)
         if conf.show_dataset.show:
