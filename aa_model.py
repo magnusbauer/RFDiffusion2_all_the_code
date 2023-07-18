@@ -1596,6 +1596,13 @@ def make_guideposts(indep, is_motif):
     chains_cat =  np.concatenate((chains, motif_chains))
     indep_cat.same_chain = same_chain_from_chain_letters(chains_cat)
     gp_to_ptn_idx0 = {i:j for i,j in zip(gp_i, is_motif.nonzero()[:,0].tolist())}
+
+    is_gp = torch.zeros(indep_cat.length()).bool()
+    is_gp[-n_motif:] = True
+    is_inter_gp = is_gp[None, :] != is_gp[:, None]
+    has_sm = indep_cat.is_sm[None, :] + indep_cat.is_sm[:, None]
+    indep_cat.bond_feats[is_inter_gp * ~has_sm] = GP_BOND
+    ic(is_gp.nonzero())
     return indep_cat, gp_to_ptn_idx0
 
 def transform_indep(indep, is_res_str_shown, is_atom_str_shown, use_guideposts, guidepost_placement='anywhere', guidepost_bonds=True, metadata=None):
