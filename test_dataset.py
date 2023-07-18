@@ -324,7 +324,24 @@ class Dataloader(unittest.TestCase):
         show.color_diffused(indep, is_diffused)
         
         test_utils.assert_matches_golden(self, golden_name, indep, rewrite=REWRITE, custom_comparator=cmp)
-
+    
+    def test_compl_islands(self):
+        dataset = 'compl'
+        mask = 'get_diffusion_mask_islands'
+        loader_out = self.indep_for_dataset(dataset, mask)
+        indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context = loader_out
+        indep.metadata = None
+        
+        golden_name = f'indep_{dataset}-{mask}'
+        ic((~is_diffused).nonzero()[:,0])
+        ic(indep.chains())
+        unique_chains = np.unique(indep.chains())
+        assertpy.assert_that(len(unique_chains)).is_equal_to(2)
+        name, names = show.one(indep, None)
+        show.cmd.do('util.cbc')
+        show.diffused(indep, is_diffused, 'true')
+        
+        test_utils.assert_matches_golden(self, golden_name, indep, rewrite=REWRITE, custom_comparator=self.cmp)
 
     # def test_covale_simple_mask_0(self):
     #     dataset = 'sm_compl_covale'

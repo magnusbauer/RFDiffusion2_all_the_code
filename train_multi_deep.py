@@ -954,7 +954,7 @@ class Trainer():
                         indep_write.xyz[:,:14] = xyz[:,:14]
                         # if atomizer:
                         #     indep_write = atomize.deatomize(atomizer, indep_write)
-                        indep_write.write_pdb(f'{prefix}_{suffix}.pdb')
+                        pymol_names = indep_write.write_pdb(f'{prefix}_{suffix}.pdb')
 
                     indep_true = indep
                     motif_deatomized = None
@@ -969,6 +969,7 @@ class Trainer():
                             'masks_1d': masks_1d,
                             'idx': indep_true.idx,
                             'is_sm': indep_true.is_sm,
+                            'pymol_names': pymol_names,
                             'loss_dict': tree.map_structure(
                                 lambda x: x.cpu() if hasattr(x, 'cpu') else x, loss_dict)
                         }, fh)

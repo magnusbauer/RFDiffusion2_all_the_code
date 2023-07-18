@@ -1071,6 +1071,11 @@ def cat_indeps_same_chain(indeps):
     same_chain = torch.ones((L,L)).bool()
     return cat_indeps(indeps, same_chain)
 
+def cat_indeps_separate_chains(indeps):
+    same_chain = torch.block_diag(*(i.same_chain for i in indeps))
+    return cat_indeps(indeps, same_chain)
+
+
 def rearrange_indep(indep, from_i):
     from_i = torch.tensor(from_i)
     assert_that(sorted(from_i.tolist())).is_equal_to(list(range(indep.length())))
@@ -1631,6 +1636,7 @@ def transform_indep(indep, is_res_str_shown, is_atom_str_shown, use_guideposts, 
 
     # Find the indices of atomized covalent residues
     for_join = []
+    cov_resis = [res_i for (res_i, _), _, _ in metadata['covale_bonds']]
     for i in cov_resis:
         cov_atomized_idx0 = atomize.atomized_indices_from_preatomized_res_indices(atomizer, [i])
         for_join.append(cov_atomized_idx0)
@@ -1769,7 +1775,7 @@ def open_indep(indep, is_open):
     i = torch.arange(len(is_open))
     i_r = torch.cat([i[~is_open], i[is_open]])
     i_inv = torch.argsort(i_r)
-    indep_cat = cat_indeps_same_chain((indep_closed, indep_open))
+    indep_cat = cat_indeps_separate_chains((indep_closed, indep_open))
     rearrange_indep(indep_cat, i_inv)
     is_cross_term = ~(is_open[:, None] == is_open[None, :])
     indep_cat.bond_feats[is_cross_term] = indep.bond_feats[is_cross_term]

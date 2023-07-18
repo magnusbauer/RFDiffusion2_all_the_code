@@ -41,6 +41,7 @@ import run_inference
 import aa_model
 import atomize
 import error
+import show
 
 
 USE_DEFAULT = '__USE_DEFAULT__'
@@ -1450,9 +1451,9 @@ def default_dataset_configs(loader_param, debug=False):
     sm_compl_covale_config = WeightedDataset(
                 train_ID_dict["sm_compl_covale"], train_dict["sm_compl_covale"], sm_compl_loader_fixbb, weights_dict["sm_compl_covale"])
     
-    return OrderedDict({
+    o = OrderedDict({
         'pdb': pdb_config,
-        'complex': compl_config,
+        'compl': compl_config,
         # 'negative': neg_config,
         'fb': fb_config,
         # 'cn': cn_config,
@@ -1460,7 +1461,13 @@ def default_dataset_configs(loader_param, debug=False):
         'pdb_aa': pdb_aa_config,
         'sm_complex': sm_compl_config,
         'sm_compl_covale': sm_compl_covale_config,
-        }), homo
+        })
+    
+    # for k in ['compl']:
+    #     o[k] = WeightedDataset(
+    #         train_ID_dict[k], train_dict[k], sm_compl_loader_fixbb, weights_dict[k])
+
+    return o, homo
 
 
 fallback_spoof = {
@@ -1610,11 +1617,10 @@ class DistilledDataset(data.Dataset):
                 raise NotImplementedError("new aa dataset don't have backwards compatibility with negative set")
                 out = dataset_config.task_loaders(sel_item[0], sel_item[1], sel_item[2], sel_item[3], self.params, negative=True)
 
-            elif chosen_dataset == 'complex':
-                if sel_item["CHAINID"] in self.homo['CHAIN_A'].values: #homooligomer so do seq2str
-                    task='seq2str'
+            elif chosen_dataset == 'compl':
                 chosen_loader = dataset_config.task_loaders[task]
-                out = chosen_loader(sel_item, sel_item[1],sel_item[2], sel_item[3], self.params, negative=False, fixbb=fixbb)
+                out = chosen_loader(sel_item, 
+                    {**rf2aa.data_loader.default_dataloader_params, **self.params}, fixbb=fixbb)
             elif chosen_dataset == 'pdb' or chosen_dataset == 'pdb_aa':
                 chosen_loader = dataset_config.task_loaders[task]
                 # if p_unclamp > self.unclamp_cut:
@@ -1648,55 +1654,75 @@ class DistilledDataset(data.Dataset):
             assert fixbb
             assert chosen_dataset != 'complex', f'complex requires passing same_chain to mask_generators, and this is not implemented'
 
-            # Convert template-based modeling inputs to a description of a single structure (the query structure).
-            indep, atom_mask = aa_model.adaptor_fix_bb_indep(out)
+            def process_out(out):
+                # Convert template-based modeling inputs to a description of a single structure (the query structure).
+                indep, atom_mask = aa_model.adaptor_fix_bb_indep(out)
+                
+                # Uncomment for debugging weird heteroatoms from the rf2aa dataloaders
+                # from dev import analyze
+                # analyze.clear()
+                # show.one(indep, None, 'both')
+                # # analyze.make_network_cmd(show.cmd)
+                # prot, _ = show.one(aa_model.slice_indep(indep, ~indep.is_sm)[0], None, 'prot')
+                # het, _ = show.one(aa_model.slice_indep(indep, indep.is_sm)[0], None, 'het')
 
-            pop = aa_model.is_occupied(indep, atom_mask)
-            # For now, do not pop unoccupied small molecule atoms.
-            pop += indep.is_sm
-            aa_model.pop_mask(indep, pop)
-            atom_mask = atom_mask[pop]
+                pop = aa_model.is_occupied(indep, atom_mask)
+                # For now, do not pop unoccupied small molecule atoms, exit instead, as popping them can lose covale information.
+                unoccupied_sm = (~pop) * indep.is_sm
+                if unoccupied_sm.any():
+                    raise Exception(f'there are small molecule atoms that are unoccupied at indices:  {unoccupied_sm.nonzero()[:,0]}')
+                aa_model.pop_mask(indep, pop)
+                atom_mask = atom_mask[pop]
 
-            indep, atom_mask, metadata = aa_model.deatomize_covales(indep, atom_mask)
+                indep, atom_mask, metadata = aa_model.deatomize_covales(indep, atom_mask)
 
-            # Mask the independent inputs.
-            run_inference.seed_all(mask_gen_seed) # Reseed the RNGs for test stability.
-            masks_1d = mask_generator.generate_masks(indep, task, self.params, chosen_dataset, None, atom_mask=atom_mask[:, :rf2aa.chemical.NHEAVYPROT], metadata=metadata)
+                # Mask the independent inputs.
+                run_inference.seed_all(mask_gen_seed) # Reseed the RNGs for test stability.
+                masks_1d = mask_generator.generate_masks(indep, task, self.params, chosen_dataset, None, atom_mask=atom_mask[:, :rf2aa.chemical.NHEAVYPROT], metadata=metadata)
 
-            is_res_str_shown = masks_1d['input_str_mask']
-            is_atom_str_shown = masks_1d['is_atom_motif']
+                is_res_str_shown = masks_1d['input_str_mask']
+                is_atom_str_shown = masks_1d['is_atom_motif']
 
-            # Cast to non-tensor
-            is_atom_str_shown = is_atom_str_shown or {}
-            def maybe_item(i):
-                if hasattr(i, 'item'):
-                    return i.item()
-                return i
-            if is_atom_str_shown:
-                is_atom_str_shown = {maybe_item(res_i):v for res_i, v in is_atom_str_shown.items()}
+                # Cast to non-tensor
+                is_atom_str_shown = is_atom_str_shown or {}
+                def maybe_item(i):
+                    if hasattr(i, 'item'):
+                        return i.item()
+                    return i
+                if is_atom_str_shown:
+                    is_atom_str_shown = {maybe_item(res_i):v for res_i, v in is_atom_str_shown.items()}
 
-            indep, is_diffused, is_masked_seq, atomizer, _ = aa_model.transform_indep(indep, is_res_str_shown, is_atom_str_shown, self.params['USE_GUIDE_POSTS'], guidepost_bonds=self.conf.guidepost_bonds, metadata=metadata)
-            aa_model.assert_valid_seq_mask(indep, is_masked_seq)
+                indep, is_diffused, is_masked_seq, atomizer, _ = aa_model.transform_indep(indep, is_res_str_shown, is_atom_str_shown, self.params['USE_GUIDE_POSTS'], guidepost_bonds=self.conf.guidepost_bonds, metadata=metadata)
+                aa_model.assert_valid_seq_mask(indep, is_masked_seq)
 
-            run_inference.seed_all(mask_gen_seed) # Reseed the RNGs for test stability.
-            aa_model.centre(indep, is_diffused)
-            t = random.randint(1, self.diffuser.T)
-            indep_t, diffuser_out = aa_model.diffuse(self.conf, self.diffuser, indep, is_diffused, t)
+                run_inference.seed_all(mask_gen_seed) # Reseed the RNGs for test stability.
+                aa_model.centre(indep, is_diffused)
+                t = random.randint(1, self.diffuser.T)
+                indep_t, diffuser_out = aa_model.diffuse(self.conf, self.diffuser, indep, is_diffused, t)
 
-            # Compute all strictly dependent model inputs from the independent inputs.
-            if self.preprocess_param['randomize_frames']:
-                print('randomizing frames')
-                indep_t.xyz = aa_model.randomly_rotate_frames(indep_t.xyz)
-            aa_model.mask_indep(indep_t, is_masked_seq)
-            rfi = self.model_adaptor.prepro(indep_t, t, is_diffused)
+                # Compute all strictly dependent model inputs from the independent inputs.
+                if self.preprocess_param['randomize_frames']:
+                    print('randomizing frames')
+                    indep_t.xyz = aa_model.randomly_rotate_frames(indep_t.xyz)
+                aa_model.mask_indep(indep_t, is_masked_seq)
+                rfi = self.model_adaptor.prepro(indep_t, t, is_diffused)
 
-            # Sanity checks
-            if torch.sum(~is_diffused) > 0:
-                assert torch.mean(rfi.xyz[:,~is_diffused,1] - indep.xyz[None,~is_diffused,1]) < 0.001
+                # Sanity checks
+                if torch.sum(~is_diffused) > 0:
+                    assert torch.mean(rfi.xyz[:,~is_diffused,1] - indep.xyz[None,~is_diffused,1]) < 0.001
 
-            run_inference.seed_all(mask_gen_seed) # Reseed the RNGs for test stability.
-            indep.metadata = metadata
-            return indep, rfi, chosen_dataset, sel_item, t, is_diffused, task, atomizer, masks_1d, diffuser_out, item_context
+                run_inference.seed_all(mask_gen_seed) # Reseed the RNGs for test stability.
+                indep.metadata = metadata
+                return indep, rfi, chosen_dataset, sel_item, t, is_diffused, task, atomizer, masks_1d, diffuser_out, item_context
+            try:
+                processed = process_out(out)
+            except Exception as e:
+                print(f'WARNING: hit exception {str(e)} on item {item_context}')
+                if self.conf.debug:
+                    raise e
+                return process_out(self.fallback_out())
+            return processed
+
 
 
 class DistributedWeightedSampler(data.Sampler):
@@ -1737,7 +1763,7 @@ class DistributedWeightedSampler(data.Sampler):
                 self.dataset_dict[dset] = num_example_per_epoch - sum([val for k, val in self.dataset_dict.items()])
 
         # Temporary until implemented
-        if self.dataset_dict['complex'] > 0:
+        if self.dataset_dict['compl'] > 0:
             print("WARNING: In this branch, the hotspot reside feature has been removed, and you're training on complexes. Be warned")
 
         self.total_size = num_example_per_epoch
