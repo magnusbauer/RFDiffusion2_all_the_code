@@ -1580,6 +1580,24 @@ class AtomizeResidues:
         return self.indep, self.input_str_mask, self.input_seq_mask
 
 GP_BOND = 7
+BACKBONE_BOND = 5
+def make_guideposts(indep, is_motif):
+    pre_gp_len = indep.length()
+    n_motif = is_motif.sum()
+    chains = indep.chains()
+    motif_chains = indep.chains()[is_motif]
+    indep_motif, cross_bonds = slice_indep(indep, is_motif)
+    # Break peptide bonds
+    indep_motif.bond_feats *= (indep_motif.bond_feats != BACKBONE_BOND)
+    gp_i = range(pre_gp_len, pre_gp_len + n_motif)
+    CHAIN_GAP = 33
+    indep_motif.idx = torch.arange(n_motif) * CHAIN_GAP + CHAIN_GAP + indep.idx.max()
+    indep_cat = cat_indeps_separate_chains((indep, indep_motif))
+    chains_cat =  np.concatenate((chains, motif_chains))
+    indep_cat.same_chain = same_chain_from_chain_letters(chains_cat)
+    gp_to_ptn_idx0 = {i:j for i,j in zip(gp_i, is_motif.nonzero()[:,0].tolist())}
+    return indep_cat, gp_to_ptn_idx0
+
 def transform_indep(indep, is_res_str_shown, is_atom_str_shown, use_guideposts, guidepost_placement='anywhere', guidepost_bonds=True, metadata=None):
     indep = copy.deepcopy(indep)
     use_atomize = is_atom_str_shown is not None
@@ -1599,7 +1617,7 @@ def transform_indep(indep, is_res_str_shown, is_atom_str_shown, use_guideposts, 
             return indep, is_diffused, is_masked_seq, atomizer, {}
 
 
-        indep, _, gp_to_ptn_idx0 = gp.make_guideposts(indep, mask_gp)
+        indep, gp_to_ptn_idx0 = make_guideposts(indep, mask_gp)
         is_diffused[list(gp_to_ptn_idx0.values())] = True
         n_gp = len(gp_to_ptn_idx0)
         is_diffused = torch.cat((is_diffused, torch.zeros((n_gp,)).bool()))
