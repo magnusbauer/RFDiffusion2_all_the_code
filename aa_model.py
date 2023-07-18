@@ -1602,7 +1602,6 @@ def make_guideposts(indep, is_motif):
     is_inter_gp = is_gp[None, :] != is_gp[:, None]
     has_sm = indep_cat.is_sm[None, :] + indep_cat.is_sm[:, None]
     indep_cat.bond_feats[is_inter_gp * ~has_sm] = GP_BOND
-    ic(is_gp.nonzero())
     return indep_cat, gp_to_ptn_idx0
 
 def transform_indep(indep, is_res_str_shown, is_atom_str_shown, use_guideposts, guidepost_placement='anywhere', guidepost_bonds=True, metadata=None):
