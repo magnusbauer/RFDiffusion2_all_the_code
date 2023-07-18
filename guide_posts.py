@@ -51,7 +51,7 @@ def make_guideposts(indep: Indep, is_gp: torch.Tensor, placement: str=None) -> T
     indep, gp_to_ptn_idx0 = copy_and_append_indep_features(
         mask=is_gp,
         indep=indep,
-        shuffle=True,  # Unsure if necessary
+        shuffle=False,  # Unsure if necessary
     )
 
     # Make the newly appended frames behave as guide posts instead of a regular (fixed) motif.

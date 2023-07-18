@@ -1463,9 +1463,9 @@ def default_dataset_configs(loader_param, debug=False):
         'sm_compl_covale': sm_compl_covale_config,
         })
     
-    # for k in ['compl']:
-    #     o[k] = WeightedDataset(
-    #         train_ID_dict[k], train_dict[k], sm_compl_loader_fixbb, weights_dict[k])
+    for k in ['sm_compl_asmb', 'sm_compl_multi', 'metal_compl']:
+        o[k] = WeightedDataset(
+            train_ID_dict[k], train_dict[k], sm_compl_loader_fixbb, weights_dict[k])
 
     return o, homo
 
@@ -1636,11 +1636,17 @@ class DistilledDataset(data.Dataset):
                     out = chosen_loader(sel_item, self.params, unclamp=True, fixbb=fixbb)
                 else:
                     out = chosen_loader(sel_item, self.params, unclamp=False,fixbb=fixbb)
-            elif chosen_dataset in {'sm_complex', 'sm_compl_covale'}:
+            elif chosen_dataset in {'sm_complex', 'sm_compl_covale', 'sm_compl_asmb', 'sm_compl_multi', 'metal_compl'}:
                 try:
+                    num_protein_chains = None
+                    num_ligand_chains = None
+                    if chosen_dataset in {'sm_complex', 'sm_compl_covale'}:
+                        num_protein_chains = 1
+                        num_ligand_chains = 1
                     out = dataset_config.task_loaders(
                         sel_item,
-                        {**rf2aa.data_loader.default_dataloader_params, **self.params, "P_ATOMIZE_MODRES": -1}, num_protein_chains=1, num_ligand_chains=1, 
+                        {**rf2aa.data_loader.default_dataloader_params, **self.params, "P_ATOMIZE_MODRES": -1},
+                        num_protein_chains=num_protein_chains, num_ligand_chains=num_ligand_chains,
                         fixbb=fixbb,
                     )
                 except Exception as e:

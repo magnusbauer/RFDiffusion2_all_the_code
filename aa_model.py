@@ -67,6 +67,9 @@ def chain_letters_from_same_chain(same_chain):
 
     return chain_letters
 
+def same_chain_from_chain_letters(chains):
+    return torch.tensor(chains[:, None] == chains[None, :]).bool()
+
 @dataclass
 class Indep:
     seq: torch.Tensor # [L]

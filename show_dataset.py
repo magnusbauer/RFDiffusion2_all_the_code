@@ -111,8 +111,12 @@ def run(conf: DictConfig) -> None:
         counter += 1
         indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context = loader_out
         name = f'{chosen_dataset}_true_{show.get_counter()}'
-        if conf.show_dataset.show:
+        if conf.show_dataset.show_diffused:
             show.color_diffused(indep, is_diffused, name=name)
+        if conf.show_dataset.show:
+            show.one(indep, None, name=name)
+            show.cmd.do(f'util.cbc {name}')
+            show.cmd.color('orange', f'{name} and hetatm and elem C')
 
         if atomizer:
             _ = atomize.deatomize(atomizer, indep)

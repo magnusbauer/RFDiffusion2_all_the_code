@@ -183,4 +183,5 @@ conditionless_freq: 0
 
 show_dataset:
     show: True
+    show_diffused: False
     n: 10
