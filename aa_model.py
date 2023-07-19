@@ -33,6 +33,10 @@ import random
 import guide_posts as gp
 import rotation_conversions
 import atomize
+
+import os, sys
+script_dir = os.path.dirname(os.path.realpath(__file__))
+sys.path.append(os.path.join(script_dir, '..'))
 from data import utils as du
 from data import all_atom
 import show

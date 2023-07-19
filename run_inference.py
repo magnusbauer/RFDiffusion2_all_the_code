@@ -1,4 +1,4 @@
-#!/software/conda/envs/SE3nv/bin/python
+#!/net/software/containers/users/dtischer/shebang_rf_se3_diffusion.sh
 """
 Inference script.
 
@@ -20,6 +20,7 @@ script_dir = os.path.dirname(os.path.realpath(__file__))
 aa_se3_path = os.path.join(script_dir, 'RF2-allatom/rf2aa/SE3Transformer')
 sys.path.insert(0, aa_se3_path)
 sys.path.append(os.path.join(script_dir, 'RF2-allatom'))
+sys.path.append(os.path.join(script_dir, '..'))
 
 import re
 import os, time, pickle

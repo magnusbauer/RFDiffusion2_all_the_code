@@ -1,16 +1,17 @@
 defaults:
-  - debug
+  - aa
+
+guidepost_bonds: True
 
 inference:
-  ckpt_path: /home/rohith/rf_diffusion/BFF_2_gp_test.pt
-  output_prefix: debug/helix_strand
-  input_pdb: 'test_data/1qys.pdb'
-  contig_as_guidepost: True
-  remove_guideposts_from_output: True
-  str_self_cond: True
-  annotate_termini: False
+  model_runner: NRBStyleSelfCond
+  design_startnum: -1
   num_designs: 1
-  state_dict_to_load: final_state_dict
+  output_prefix: debug/guide_posts
+  input_pdb: /home/dtischer/code/rf_se3_diffusion/rf_diffusion/benchmark/input/gaa.pdb
+
+thing:
+  good
 
 contigmap:
   contigs: ['88,A62-68,A88-92']

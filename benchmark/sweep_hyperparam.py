@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/net/software/containers/users/dtischer/shebang_rf_se3_diffusion.sh
 #
 # Generates and slurm array jobs for hyperparameter sweeps on design
 # scripts, optionally submits array job and outputs slurm job ID
@@ -196,7 +196,7 @@ def main():
 
         for istart in np.arange(0, args.num_per_condition, args.num_per_job):
             log_fn = f'{arg_row["inference.output_prefix"]}_{istart}.log'
-            print(f'source activate SE3-nvidia; python {args.command} {extra_args} '\
+            print(f'{args.command} {extra_args} '\
                   f'inference.num_designs={args.num_per_job} inference.design_startnum={istart} >> {log_fn}', file=job_list_file)
 
     if args.submit or args.in_proc:
