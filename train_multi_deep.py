@@ -754,7 +754,7 @@ class Trainer():
                                 model_out = ddp_model.forward(
                                         rfi,
                                         torch.tensor([little_t/self.conf.diffuser.T]),
-                                        use_checkpoint=True,
+                                        use_checkpoint=False, # Checkpointing unnecessary since there are no gradients.
                                         # return_raw=False
                                         )
                                 rfo = model_out['rfo']
