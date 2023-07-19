@@ -42,6 +42,7 @@ import aa_model
 import atomize
 import error
 import show
+import features
 
 
 USE_DEFAULT = '__USE_DEFAULT__'
@@ -1679,6 +1680,8 @@ class DistilledDataset(data.Dataset):
                     raise Exception(f'there are small molecule atoms that are unoccupied at indices:  {unoccupied_sm.nonzero()[:,0]}')
                 aa_model.pop_mask(indep, pop)
                 atom_mask = atom_mask[pop]
+                # name, names = show.one(indep, None, 'before_deatomize_covales')
+                # show.cmd.do(f'util.cbc {name}')
 
                 indep, atom_mask, metadata = aa_model.deatomize_covales(indep, atom_mask)
 
@@ -1698,7 +1701,12 @@ class DistilledDataset(data.Dataset):
                 if is_atom_str_shown:
                     is_atom_str_shown = {maybe_item(res_i):v for res_i, v in is_atom_str_shown.items()}
 
+                pre_transform_length = indep.length()
                 indep, is_diffused, is_masked_seq, atomizer, _ = aa_model.transform_indep(indep, is_res_str_shown, is_atom_str_shown, self.params['USE_GUIDE_POSTS'], guidepost_bonds=self.conf.guidepost_bonds, metadata=metadata)
+                # HACK: gp indices may be lost during atomization, so we assume they are at the end of the protein.
+                is_gp = torch.full((indep.length(),), True)
+                is_gp[:pre_transform_length] = False
+                indep.extra_t1d = features.get_extra_t1d(indep, self.conf.extra_t1d, is_gp=is_gp, **self.conf.extra_t1d_params)
                 aa_model.assert_valid_seq_mask(indep, is_masked_seq)
 
                 run_inference.seed_all(mask_gen_seed) # Reseed the RNGs for test stability.

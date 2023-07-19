@@ -34,7 +34,7 @@ def one(indep, atomizer, name=''):
     pdb = f'/tmp/{name}.pdb'
     names = indep.write_pdb(pdb)
 
-    cmd.load(pdb)
+    cmd.load(pdb, name)
     name = os.path.basename(pdb[:-4])
     cmd.show_as('cartoon', name)
     # show_backbone_spheres('not hetatm')

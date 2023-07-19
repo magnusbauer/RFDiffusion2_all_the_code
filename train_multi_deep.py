@@ -402,6 +402,8 @@ class Trainer():
     def load_model(self, model, optimizer, scheduler, scaler, model_name, rank, suffix='last', resume_train=False):
 
         chk_fn = self.conf.ckpt_load_path
+        # Prevents mistakes in training: this is the config field used for inference.
+        assertpy.assert_that(self.conf.rf.ckpt_path).is_false()
 
         loaded_epoch = 0
         best_valid_loss = 999999.9
@@ -418,6 +420,7 @@ class Trainer():
         else:
             map_location = {"cuda:%d"%0: "cuda:%d"%rank}
             ic(f'loading model onto {"cuda:%d"%rank}')
+        ic(chk_fn)
         checkpoint = torch.load(chk_fn, map_location=map_location)
         rename_model = False
         # Set to false for faster loading when debugging
@@ -454,9 +457,11 @@ class Trainer():
                     weight_state = {f'model.{k}':v for k,v in weight_state.items()}
                 m.load_state_dict(weight_state, strict=True)
 
-        if resume_train and (not rename_model):
-            print (' ... loading optimization params')
+        if resume_train:
             loaded_epoch = checkpoint['epoch']
+        
+        if self.conf.resume_scheduler:
+            print (' ... loading optimization params')
             
             optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
             scaler.load_state_dict(checkpoint['scaler_state_dict'])
@@ -866,7 +871,6 @@ class Trainer():
 
                 log_metrics = (counter % N_PRINT_TRAIN == 0) and (rank == 0)
                 if log_metrics:
-                    max_mem = torch.cuda.max_memory_allocated()/1e9
                     train_time  = time.time() - start_time
                     
 
@@ -900,6 +904,7 @@ class Trainer():
                             'dataset':chosen_dataset,
                             'task':chosen_task,
                             'self_cond': self_cond,
+                            'extra_t1d': indep.extra_t1d.cpu().detach() if hasattr(indep.extra_t1d, 'cpu') else indep.extra_t1d,
                             'loss':loss.detach()})
                         metrics = {}
                         for m in self.metrics:
@@ -968,6 +973,7 @@ class Trainer():
                             'motif': motif_deatomized,
                             'masks_1d': masks_1d,
                             'idx': indep_true.idx,
+                            'extra_t1d': indep_true.extra_t1d,
                             'is_sm': indep_true.is_sm,
                             'pymol_names': pymol_names,
                             'dataset': chosen_dataset,

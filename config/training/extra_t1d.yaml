@@ -1,0 +1,16 @@
+defaults:
+  - train_covale_complex
+  - _self_
+
+rf:
+  ckpt_path: null
+  model:
+    d_t1d: 84
+
+extra_t1d: ['radius_of_gyration', 'relative_sasa']
+extra_t1d_params:
+  radius_of_gyration:
+    std_std: 5
+  relative_sasa:
+    std_std: 0.5
+  

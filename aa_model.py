@@ -36,6 +36,7 @@ import atomize
 from data import utils as du
 from data import all_atom
 import show
+import features
 
 
 NINDEL=1
@@ -83,30 +84,28 @@ class Indep:
     same_chain: torch.Tensor
     is_sm: torch.Tensor
     terminus_type: torch.Tensor
+    extra_t1d: torch.Tensor = dataclasses.field(default_factory=lambda: None)
 
     def chains(self):
         return chain_letters_from_same_chain(self.same_chain)
+    
+    def chain_masks(self):
+        chain_i = []
+        chains =  self.chains()
+        for ch in sorted(np.unique(chains)):
+            chain_i.append(ch == chains)
+        return chain_i
 
     def write_pdb(self, path, **kwargs):
+        with open(path, kwargs.pop('file_mode', 'w')) as fh:
+            return self.write_pdb_file(fh, **kwargs)
+    
+    def write_pdb_file(self, fh, **kwargs):
         seq = self.seq
         seq = torch.where(seq == 20, 0, seq)
         seq = torch.where(seq == 21, 0, seq)
-        # # This is a hacky way of specifying same_chain.
-        # # TODO: convert same_chain from a 2D input to a 1D input
-        # chain_Ls = []
-        # G = nx.from_numpy_array(self.same_chain.numpy())
-        # connected_components = list(nx.connected_components(G))
-        # longest_connected_component = list(connected_components.pop(connected_components.index(max(connected_components, key=len))))
-        # # other_component = list(functools.reduce(lambda a,b: a.update(b), connected_components))
-        # other_component = []
-        # for cc in connected_components:
-        #     other_component.extend(list(cc))
-        # # chain_letters = np.zeros((self.length(),), dtype='string_')
-        # chain_letters = np.chararray((self.length(),), unicode=True)
-        # chain_letters[longest_connected_component] = 'A'
-        # chain_letters[other_component] = 'B'
         chain_letters = self.chains()
-        return rf2aa.util.writepdb(path,
+        return rf2aa.util.writepdb_file(fh,
             torch.nan_to_num(self.xyz[:,:14]), seq, idx_pdb=self.idx, chain_letters=chain_letters, bond_feats=self.bond_feats[None], **kwargs)
 
     def ca_dists(self):
@@ -162,8 +161,7 @@ class Indep:
     def type(indep):
         chains = indep.chains()
         chains_with_prot = np.unique(chains[~indep.is_sm])
-        is_on_same_chain_as_prot = np.isin(chains, chains_with_prot)
-
+        is_on_same_chain_as_prot = torch.tensor(np.isin(chains, chains_with_prot))
         is_atomized_cov = indep.is_sm * is_on_same_chain_as_prot
         is_ligand = indep.is_sm * ~is_on_same_chain_as_prot
         metadata = {}
@@ -183,7 +181,6 @@ class Indep:
     
     def assert_types(indep):
         assertpy.assert_that(indep.same_chain.dtype).is_equal_to(torch.bool)
-    
 
 def human_readable_seq(seq):
     return [rf2aa.chemical.num2aa[s] for s in seq]
@@ -659,6 +656,8 @@ class Model:
             hotspot_tens[hotspot_idx] = 1.0
             t1d=torch.cat((t1d, hotspot_tens[None,None,...,None].to(self.device)), dim=-1)
         
+        t1d = torch.cat((t1d, indep.extra_t1d[None, None, ...]), dim=-1)
+        
         # return msa_masked, msa_full, seq[None], torch.squeeze(xyz_t, dim=0), idx, t1d, t2d, xyz_t, alpha_t
         mask_t = torch.ones(1,2,L,L).bool()
         sctors = torch.zeros((1,L,rf2aa.chemical.NTOTALDOFS,2))
@@ -1080,7 +1079,7 @@ def cat_indeps_separate_chains(indeps):
 
 
 def rearrange_indep(indep, from_i):
-    from_i = torch.tensor(from_i)
+    # from_i = torch.tensor(from_i)
     assert_that(sorted(from_i.tolist())).is_equal_to(list(range(indep.length())))
     to_i = torch.argsort(from_i)
     indep.seq = indep.seq[from_i]

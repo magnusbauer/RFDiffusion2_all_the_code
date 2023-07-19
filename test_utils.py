@@ -8,9 +8,19 @@ from pathlib import Path
 import yaml
 import unittest
 import pickle
+import hydra
 from hydra import compose, initialize
 
 from rf2aa import tensor_util
+from data_loader import (
+    get_train_valid_set, loader_pdb, loader_fb, loader_complex, loader_pdb_fixbb, loader_fb_fixbb, loader_complex_fixbb, loader_cn_fixbb, default_dataset_configs,
+    DistilledDataset, DistributedWeightedSampler
+)
+from torch.utils import data
+from omegaconf import DictConfig
+from data import se3_diffuser
+
+
 golden_dir = 'goldens'
 
 
@@ -216,9 +226,63 @@ def assert_no_nan(t):
     msg = where_nan(t)
     if msg:
         raise Exception(msg)
-    
+
 def construct_conf(overrides=None, config_name='debug'):
+    hydra.core.global_hydra.GlobalHydra().clear()
     overrides = overrides or []
     initialize(version_base=None, config_path="config/training", job_name="test_app")
     conf = compose(config_name=f'{config_name}.yaml', overrides=overrides, return_hydra_config=True)
     return conf
+
+def no_batch_collate_fn(data):
+    assert len(data) == 1
+    return data[0]
+
+def get_dataloader(conf: DictConfig, epoch=0) -> None:
+
+    if conf.debug:
+        ic.configureOutput(includeContext=True)
+    diffuser = se3_diffuser.SE3Diffuser(conf.diffuser)
+    diffuser.T = conf.diffuser.T
+    dataset_configs, homo = default_dataset_configs(conf.dataloader, debug=conf.debug)
+
+    print('Making train sets')
+    train_set = DistilledDataset(dataset_configs,
+                                    conf.dataloader, diffuser,
+                                    conf.preprocess, conf, homo)
+    
+    train_sampler = DistributedWeightedSampler(dataset_configs,
+                                                dataset_options=conf.dataloader['DATASETS'],
+                                                dataset_prob=conf.dataloader['DATASET_PROB'],
+                                                num_example_per_epoch=conf.epoch_size,
+                                                num_replicas=1, rank=0, replacement=True)
+    train_sampler.epoch = epoch
+    
+    # mp.cpu_count()-1
+    LOAD_PARAM = {
+        'shuffle': False,
+        'num_workers': 0,
+        'pin_memory': True
+    }
+    train_loader = data.DataLoader(train_set, sampler=train_sampler, batch_size=conf.batch_size, collate_fn=no_batch_collate_fn, **LOAD_PARAM)
+    return train_loader
+
+def loader_out_from_conf(conf, epoch=0):
+    dataloader = get_dataloader(conf, epoch)
+    for loader_out in dataloader:
+        # indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context = loader_out
+        # indep.metadata = None
+        return loader_out
+    
+def loader_out_for_dataset(dataset, mask, overrides=[], epoch=0, config_name='debug'):
+    conf = construct_conf([
+        'dataloader.DATAPKL_AA=aa_dataset_256_subsampled_10.pkl',
+        'dataloader.CROP=256',
+        f'dataloader.DATASETS={dataset}',
+        f'dataloader.DATASET_PROB=[1.0]',
+        f'dataloader.DIFF_MASK_PROBS=null',
+        f'dataloader.DIFF_MASK_PROBS={{{mask}:1.0}}',
+        'spoof_item=null',
+    ] + overrides, config_name=config_name)
+    
+    return loader_out_from_conf(conf, epoch=epoch)
