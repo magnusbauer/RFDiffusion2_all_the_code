@@ -43,6 +43,7 @@ import guide_posts as gp
 import copy
 import atomize
 import dev.idealize_backbone
+from tqdm import trange
 # ic.configureOutput(includeContext=True)
 
 def make_deterministic(seed=0):
@@ -93,7 +94,6 @@ def expand_config(conf):
         sub_conf = copy.deepcopy(conf)
         ic(conf.inference.guidepost_xyz_as_design_bb)
         for val in conf.inference.guidepost_xyz_as_design_bb:
-            ic(val)
             sub_conf.inference.guidepost_xyz_as_design_bb = val
             suffix = f'atomized-bb-{val}'
             confs[suffix] = copy.deepcopy(sub_conf)
@@ -137,6 +137,7 @@ def sample(sampler):
 def sample_one(sampler, simple_logging=False):
     # For intermediate output logging
     indep = sampler.sample_init()
+    ic(sampler._conf.denoiser.noise_scale)
 
     denoised_xyz_stack = []
     px0_xyz_stack = []
@@ -145,7 +146,7 @@ def sample_one(sampler, simple_logging=False):
     rfo = None
 
     # Loop over number of reverse diffusion time steps.
-    for t in range(int(sampler.t_step_input), sampler.inf_conf.final_step-1, -1):
+    for t in trange(int(sampler.t_step_input), sampler.inf_conf.final_step-1, -1):
         if simple_logging:
             e = '.'
             if t%10 == 0:

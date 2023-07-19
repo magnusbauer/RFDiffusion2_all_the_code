@@ -100,8 +100,8 @@ def run(conf: DictConfig) -> None:
     # mp.cpu_count()-1
     LOAD_PARAM = {
         'shuffle': False,
-        # 'num_workers': test_utils.available_cpu_count() - 2,
-        'num_workers': 0,
+        'num_workers': test_utils.available_cpu_count() - 3,
+        # 'num_workers': 0,
         'pin_memory': True
     }
     n_validate=conf.show_dataset.n

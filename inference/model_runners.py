@@ -712,8 +712,8 @@ class NRBStyleSelfCond(Sampler):
 
         now = datetime.now()
         current_time = now.strftime("%H:%M:%S")
-        self._log.info(
-                f'{current_time}: Timestep {t}')
+        # self._log.info(
+        #         f'{current_time}: Timestep {t}')
         
 
 

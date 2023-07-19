@@ -7,4 +7,4 @@ inference:
   str_self_cond: True
 
 score_model:
-  weights_path: /net/scratch/ahern/se3_diffusion/training/from_scratch_4_resume_ep16/train_session2023-06-29_1688072531.6048305/models/RFD_30.pt
+  weights_path: /net/scratch/ahern/se3_diffusion/training/covale_complex/2023-07-17_1689653232.842943_2q8djdu0/rank_0/models/RFD_32.pt

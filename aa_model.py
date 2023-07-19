@@ -475,6 +475,7 @@ class Model:
         is_res_str_shown = ~is_diffused
         use_guideposts = self.conf.dataloader.USE_GUIDE_POSTS
         o, is_diffused, is_seq_masked, self.atomizer, contig_map.gp_to_ptn_idx0 = transform_indep(o, is_res_str_shown, is_atom_str_shown, use_guideposts, 'anywhere', self.conf.guidepost_bonds, metadata=defaultdict(dict))
+        o.extra_t1d = torch.zeros((o.length(),0))
 
         # HACK.  ComputeAllAtom in the network requires N and C coords even for atomized residues,
 	    # However, these have no semantic value.  TODO: Remove the network's reliance on these coordinates.
@@ -768,7 +769,6 @@ def write_traj(path, xyz_stack, seq, bond_feats, natoms=23, **kwargs):
     xyz23 = pad_dim(xyz_stack, 2, natoms)
     if bond_feats is not None:
         bond_feats = bond_feats[None]
-    ic(kwargs)
     with open(path, 'w') as fh:
         for i, xyz in enumerate(xyz23):
             rf2aa.util.writepdb_file(fh, xyz, seq, bond_feats=bond_feats, modelnum=i, **kwargs)
