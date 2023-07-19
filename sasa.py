@@ -14,7 +14,7 @@ np.int = np.int64
 
 import aa_model
 
-p = PDBParser(QUIET=1)
+p = PDBParser(PERMISSIVE=0, QUIET=1)
 
 def get_sasa_indep(indep, probe_radius=1.4):
     buffer = io.StringIO()
