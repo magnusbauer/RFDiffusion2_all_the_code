@@ -46,3 +46,43 @@ featurizers = {
     'radius_of_gyration': get_radius_of_gyration,
     'relative_sasa': get_relative_sasa,
 }
+
+def get_radius_of_gyration_inference(indep, feature_conf, is_gp=None):
+
+    assert is_gp is not None
+
+    rog = torch.zeros((indep.length(),))
+    rog_std = torch.zeros((indep.length(),))
+
+    is_prot = ~indep.is_sm * ~is_gp
+    indep_prot, _ = aa_model.slice_indep(indep, is_prot)
+    rog_prot = torch.full((indep_prot.length(),), -1.0)
+    rog_std_prot = torch.full((indep_prot.length(),), -1.0)
+    for is_chain in indep_prot.chain_masks():
+        rog_prot[is_chain] = feature_conf.mean
+        rog_std_prot[is_chain] = feature_conf.std
+    
+    rog[is_prot] = rog_prot
+    rog_std[is_prot] = rog_std_prot
+    return (rog, rog_std)
+
+def get_relative_sasa_inference(indep, feature_conf, **kwargs):
+    sasa = torch.full((indep.length(),), -10.0)
+    sasa[indep.is_sm] = feature_conf.mean
+    std = torch.full((indep.length(),), feature_conf.std)
+    return (sasa, std)
+
+inference_featurizers = {
+    'radius_of_gyration': get_radius_of_gyration_inference,
+    'relative_sasa': get_relative_sasa_inference,
+}
+
+def get_extra_t1d_inference(indep, featurizer_names, feature_conf_dict, **kwargs):
+    if not featurizer_names:
+        return torch.zeros((indep.length(),0))
+    t1d = []
+    for name in featurizer_names:
+        assert name in feature_conf_dict
+        feats_1d = inference_featurizers[name](indep, feature_conf_dict[name], **kwargs)
+        t1d.extend(feats_1d)
+    return torch.stack(t1d, dim=-1)

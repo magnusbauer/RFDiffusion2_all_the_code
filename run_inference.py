@@ -116,7 +116,7 @@ def sample(sampler):
         out_prefix = f'{sampler.inf_conf.output_prefix}_{i_des}'
         sampler.output_prefix = out_prefix
         log.info(f'Making design {out_prefix}')
-        existing_outputs = glob.glob(out_prefix + '*.pdb')
+        existing_outputs = glob.glob(out_prefix + '.pdb') + glob.glob(out_prefix + '-*.pdb')
         if sampler.inf_conf.cautious and len(existing_outputs):
             log.info(f'(cautious mode) Skipping this design because {out_prefix}.pdb already exists.')
             continue

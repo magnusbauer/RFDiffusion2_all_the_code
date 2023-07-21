@@ -42,6 +42,13 @@ inference:
   infer_guidepost_positions: True
   guidepost_xyz_as_design: True
   guidepost_xyz_as_design_bb: [False]
+  conditions:
+    relative_sasa:
+      mean: 0.5
+      std: 3.0
+    radius_of_gyration:
+      mean: 15
+      std: 20
 
 contigmap:
   contigs: ['20', 'A3-23', '30']

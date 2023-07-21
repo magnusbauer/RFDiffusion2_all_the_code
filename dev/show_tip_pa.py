@@ -1,6 +1,7 @@
 import os
 from dev import show_tip_row
 from dev import analyze
+from icecream import ic
 cmd = analyze.cmd
 
 def combine_selectors(objs, selectors):

@@ -478,8 +478,17 @@ class Model:
             is_diffused[list(is_atom_str_shown.keys())] = True
         is_res_str_shown = ~is_diffused
         use_guideposts = self.conf.dataloader.USE_GUIDE_POSTS
+        pre_transform_length = o.length()
         o, is_diffused, is_seq_masked, self.atomizer, contig_map.gp_to_ptn_idx0 = transform_indep(o, is_res_str_shown, is_atom_str_shown, use_guideposts, 'anywhere', self.conf.guidepost_bonds, metadata=defaultdict(dict))
-        o.extra_t1d = torch.zeros((o.length(),0))
+        # o.extra_t1d = torch.zeros((o.length(),0))
+        # HACK: gp indices may be lost during atomization, so we assume they are at the end of the protein.
+        is_gp = torch.full((o.length(),), True)
+        is_gp[:pre_transform_length] = False
+        extra_t1d = getattr(self.conf, 'extra_t1d', [])
+        o.extra_t1d = features.get_extra_t1d_inference(o, extra_t1d, self.conf.inference.conditions, is_gp=is_gp)
+        ic(self.conf.inference.conditions, extra_t1d)
+        for i, e in enumerate(o.extra_t1d.T):
+            ic(i, e)
 
         # HACK.  ComputeAllAtom in the network requires N and C coords even for atomized residues,
 	    # However, these have no semantic value.  TODO: Remove the network's reliance on these coordinates.
@@ -711,6 +720,7 @@ class Model:
         msa_full[...,-2:] = 0
         
         t1d = torch.tile(t1d, (1,2,1,1))
+        # This is messed up for extra_t1d
         t1d[0,1,:,-1] = -1
 
         # Note: should be batched
@@ -1485,7 +1495,7 @@ class AtomizeResidues:
         
         # no atomization was done, just return unmodified features
         if len(self.atomized_res)==0:
-            return seq_pred, xyz_pred, self.indep.bond_feats, self.indep.same_chain
+            return seq_pred, xyz_pred, self.indep.idx, self.indep.bond_feats, self.indep.same_chain
 
         # assumes all heavy atoms are present
         atomized_mask = rf2aa.util.allatom_mask[torch.tensor(self.atomized_res)][:,:N_atoms]

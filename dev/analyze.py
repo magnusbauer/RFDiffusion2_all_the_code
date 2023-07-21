@@ -587,7 +587,9 @@ def make_row_from_traj(traj_prefix):
         
     synth_row['mpnn'] = True
     trb = get_trb(synth_row)
+    rundir = synth_row['rundir']
     synth_row.update(trb['config'])
+    synth_row['rundir'] = rundir
     # for k,vdict in trb['config'].items():
     #     for k2,v in vdict.items():
     #         synth_row[k+'.'+k2] = v

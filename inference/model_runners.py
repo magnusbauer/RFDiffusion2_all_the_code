@@ -706,7 +706,7 @@ class NRBStyleSelfCond(Sampler):
                 # network's ComputeAllAtom requires even atoms to have N and C coords.
                 # aa_model.assert_has_coords(rfi.xyz[0], indep)
                 assert not rfi.xyz[0,:,:3,:].isnan().any(), f'{t}: {rfi.xyz[0,:,:3,:]}'
-                model_out = self.model.forward_from_rfi(rfi, torch.tensor([t/self._conf.diffuser.T]).to(rfi.xyz.device))
+                model_out = self.model.forward_from_rfi(rfi, torch.tensor([t/self._conf.diffuser.T]).to(rfi.xyz.device), use_checkpoint=False)
 
         px0 = all_atom.atom37_from_rigid(Rigid.from_tensor_7(model_out['rigids']))
 

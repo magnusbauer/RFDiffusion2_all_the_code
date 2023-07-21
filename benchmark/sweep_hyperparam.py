@@ -238,10 +238,20 @@ def prune_jobs_list(jobs_path):
     pruned = []
     with open(jobs_path, 'r') as fh:
         jobs = fh.readlines()
-    for job in jobs:
+    for i, job in enumerate(jobs):
         want_outs = expected_outputs(job)
-        if not all(os.path.exists(want) for want in want_outs):
+        def has_output(want_out):
+            want_out = want_out[:-4]
+            for suffix in ['', '-atomized-bb-False', '-atomized-bb-True']:
+                possible_path = want_out + suffix + '.pdb'
+                if os.path.exists(possible_path):
+                    return True
+            return False
+        has_outs = [has_output(want) for want in want_outs]
+        if not all(has_outs):
             pruned.append(job)
+    if len(pruned) != len(jobs):
+        print(f'{len(jobs)} jobs described, pruned to {len(pruned)} because all expected outputs exist for {len(jobs)-len(pruned)} jobs')
     with open(pruned_path, 'w') as fh:
         fh.writelines(pruned)
     return pruned_path
