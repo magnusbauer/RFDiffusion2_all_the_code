@@ -91,17 +91,24 @@ def run(conf: DictConfig) -> None:
                                     conf.dataloader, diffuser,
                                     conf.preprocess, conf, homo)
     
+    import nonechucks as nc
+    if conf.use_nonechucks:
+        train_set = nc.SafeDataset(train_set)
+    
     train_sampler = DistributedWeightedSampler(dataset_configs,
                                                 dataset_options=conf.dataloader['DATASETS'],
                                                 dataset_prob=conf.dataloader['DATASET_PROB'],
                                                 num_example_per_epoch=conf.epoch_size,
                                                 num_replicas=1, rank=0, replacement=True)
+    set_epoch = train_sampler.set_epoch
+    if conf.use_nonechucks:
+        train_sampler = nc.SafeSampler(train_set, train_sampler)
     
     # mp.cpu_count()-1
     LOAD_PARAM = {
         'shuffle': False,
-        'num_workers': test_utils.available_cpu_count() - 3,
-        # 'num_workers': 0,
+        # 'num_workers': test_utils.available_cpu_count() - 3,
+        'num_workers': 0,
         'pin_memory': True
     }
     n_validate=conf.show_dataset.n
@@ -110,22 +117,28 @@ def run(conf: DictConfig) -> None:
 
     show_tip_pa.clear()
     cmd.set('grid_mode', 1)
-    for loader_out in tqdm(itertools.islice(train_loader, n_validate), total=n_validate):
-        counter += 1
-        indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context = loader_out
-        bonds = indep.metadata['covale_bonds']
-        name = f'{chosen_dataset}_true_{len(bonds)}_{show.get_counter()}'
-        if conf.show_dataset.show_diffused:
-            show.color_diffused(indep, is_diffused, name=name)
-        if conf.show_dataset.show:
-            show.one(indep, None, name=name)
-            show.cmd.do(f'util.cbc {name}')
-            show.cmd.color('orange', f'{name} and hetatm and elem C')
+    for epoch in range(0, conf.n_epoch):
+        set_epoch(epoch)
+        for i, loader_out in enumerate(train_loader):
+            ic(epoch, i)
+            counter += 1
+            indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context = loader_out
+            item_context = eval(item_context)
+            chosen_dataset, index = item_context['chosen_dataset'], item_context['index']
+            ic('loader out', chosen_dataset, index)
+            bonds = indep.metadata['covale_bonds']
+            name = f'{chosen_dataset}_true_{len(bonds)}_{show.get_counter()}'
+            if conf.show_dataset.show_diffused:
+                show.color_diffused(indep, is_diffused, name=name)
+            if conf.show_dataset.show:
+                show.one(indep, None, name=name)
+                show.cmd.do(f'util.cbc {name}')
+                show.cmd.color('orange', f'{name} and hetatm and elem C')
 
-        if atomizer:
-            _ = atomize.deatomize(atomizer, indep)
+            if atomizer:
+                _ = atomize.deatomize(atomizer, indep)
 
-        # print('-------------------------------------------------------------------------------')
+            # print('-------------------------------------------------------------------------------')
 
 if __name__ == "__main__":
     run()

@@ -18,6 +18,7 @@ from copy import deepcopy
 from collections import OrderedDict
 from datetime import date
 from contextlib import ExitStack
+import nonechucks as nc
 import assertpy
 import time 
 import torch
@@ -590,6 +591,11 @@ class Trainer():
                                                    num_example_per_epoch=N_EXAMPLE_PER_EPOCH,
                                                    num_replicas=world_size, rank=rank, replacement=True)
         
+        set_epoch = train_sampler.set_epoch
+        if self.conf.use_nonechucks:
+            train_set = nc.SafeDataset(train_set)
+            train_sampler = nc.SafeSampler(train_set, train_sampler)
+
         print('THIS IS LOAD PARAM GOING INTO DataLoader inits')
         print(LOAD_PARAM)
 
@@ -608,7 +614,7 @@ class Trainer():
             return ddp_model, train_loader, optimizer, scheduler, scaler
         
         for epoch in range(loaded_epoch, self.conf.n_epoch):
-            train_sampler.set_epoch(epoch)
+            set_epoch(epoch)
             
             print('Just before calling train cycle...')
             train_tot, train_loss, train_acc = self.train_cycle(ddp_model, train_loader, optimizer, scheduler, scaler, rank, gpu, world_size, epoch)
@@ -791,7 +797,6 @@ class Trainer():
                         mask_crds = ~torch.isnan(true_crds).any(dim=-1)
                         true_crds, mask_crds = resolve_equiv_natives(pred_crds[-1], true_crds, mask_crds)
                         mask_crds[:,~is_diffused,:] = False
-                        ic(indep.is_sm.float().mean())
                         mask_BB = ~indep.is_sm[None]
                         mask_2d = mask_BB[:,None,:] * mask_BB[:,:,None] # ignore pairs having missing residues
                         assert torch.sum(mask_2d) > 0, "mask_2d is blank"

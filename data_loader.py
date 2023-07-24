@@ -1,4 +1,5 @@
 import torch
+import traceback
 import pprint
 import assertpy
 import torch.nn.functional as F
@@ -1572,7 +1573,7 @@ class DistilledDataset(data.Dataset):
             counter += n_ids
         return d
 
-    def __getitem__(self, index):
+    def getitem_unsafe(self, index):
         mask_gen_seed = np.random.randint(0, 99999999)
         p_unclamp = np.random.rand()
         task_idx = np.random.choice(np.arange(len(self.task_names)), 1, p=self.p_task)[0]
@@ -1604,6 +1605,7 @@ class DistilledDataset(data.Dataset):
 
         item_context = pprint.pformat({
             'chosen_dataset': chosen_dataset,
+            'index': index,
             'sel_item': sel_item,
             'task': task,
             'mask_gen_seed': mask_gen_seed}, indent=4)
@@ -1638,23 +1640,17 @@ class DistilledDataset(data.Dataset):
                 else:
                     out = chosen_loader(sel_item, self.params, unclamp=False,fixbb=fixbb)
             elif chosen_dataset in {'sm_complex', 'sm_compl_covale', 'sm_compl_asmb', 'sm_compl_multi', 'metal_compl'}:
-                try:
-                    num_protein_chains = None
-                    num_ligand_chains = None
-                    if chosen_dataset in {'sm_complex', 'sm_compl_covale'}:
-                        num_protein_chains = 1
-                        num_ligand_chains = 1
-                    out = dataset_config.task_loaders(
-                        sel_item,
-                        {**rf2aa.data_loader.default_dataloader_params, **self.params, "P_ATOMIZE_MODRES": -1},
-                        num_protein_chains=num_protein_chains, num_ligand_chains=num_ligand_chains,
-                        fixbb=fixbb,
-                    )
-                except Exception as e:
-                    if self.conf.debug:
-                        raise e
-                    print(f'WARNING: hit exception {str(e)} on item {item_context}')
-                    out = self.fallback_out()
+                num_protein_chains = None
+                num_ligand_chains = None
+                if chosen_dataset in {'sm_complex', 'sm_compl_covale'}:
+                    num_protein_chains = 1
+                    num_ligand_chains = 1
+                out = dataset_config.task_loaders(
+                    sel_item,
+                    {**rf2aa.data_loader.default_dataloader_params, **self.params, "P_ATOMIZE_MODRES": -1},
+                    num_protein_chains=num_protein_chains, num_ligand_chains=num_ligand_chains,
+                    fixbb=fixbb,
+                )
             else:
                 raise Exception(f'chosen_dataset {chosen_dataset} not implemented')
             
@@ -1732,14 +1728,15 @@ class DistilledDataset(data.Dataset):
                 run_inference.seed_all(mask_gen_seed) # Reseed the RNGs for test stability.
                 indep.metadata = metadata
                 return indep, rfi, chosen_dataset, sel_item, t, is_diffused, task, atomizer, masks_1d, diffuser_out, item_context
-            try:
-                processed = process_out(out)
-            except Exception as e:
-                print(f'WARNING: hit exception {str(e)} on item {item_context}')
-                if self.conf.debug:
-                    raise e
-                return process_out(self.fallback_out())
+            processed = process_out(out)
             return processed
+
+    def __getitem__(self, index):
+        try:
+            return self.getitem_unsafe(index)
+        except Exception as e:
+            print(f'WARNING: getitem_unsafe raised: {traceback.format_exc()}')
+            raise e
 
 
 
