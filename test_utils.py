@@ -282,6 +282,7 @@ def loader_out_for_dataset(dataset, mask, overrides=[], epoch=0, config_name='de
         f'dataloader.DATASET_PROB=[1.0]',
         f'dataloader.DIFF_MASK_PROBS=null',
         f'dataloader.DIFF_MASK_PROBS={{{mask}:1.0}}',
+        'debug=True',
         'spoof_item=null',
     ] + overrides, config_name=config_name)
     

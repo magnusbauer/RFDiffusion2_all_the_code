@@ -186,11 +186,11 @@ class Dataloader(unittest.TestCase):
         hydra.core.global_hydra.GlobalHydra().clear()
         return super().tearDown()
 
-    def indep_for_dataset(self, dataset, mask, epoch=0, overrides=[]):
+    def indep_for_dataset(self, dataset, mask, epoch=0, overrides=[], **kwargs):
 
         show_tip_pa.clear()
         cmd.set('grid_mode', 1)
-        return test_utils.loader_out_for_dataset(dataset,mask,overrides=overrides,epoch=epoch)
+        return test_utils.loader_out_for_dataset(dataset,mask,overrides=overrides,epoch=epoch, **kwargs)
         
     def test_uncond_sm(self):
         dataset = 'sm_complex'
@@ -343,10 +343,7 @@ class Dataloader(unittest.TestCase):
         loader_out = self.indep_for_dataset(dataset, mask, overrides=[
             'dataloader.DATAPKL_AA=aa_dataset_256_subsampled_10_2.pkl',
             f'spoof_item="{multi_covale}"',
-            'extra_t1d=["radius_of_gyration", "relative_sasa"]',
-            '+extra_t1d_params.radius_of_gyration.std_std=0',
-            '+extra_t1d_params.relative_sasa.std_std=0',
-            ])
+            ], config_name='extra_t1d_v2')
         indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context = loader_out
         indep.metadata = None
         for r in indep.extra_t1d.T:

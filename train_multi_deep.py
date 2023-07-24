@@ -452,7 +452,10 @@ class Trainer():
                 m.load_state_dict(new_chk, strict=False)
             else:
                 # Handle loading from structure prediction model.
-                model_name = getattr(checkpoint.get('model'), '__name__', '')
+                model_name = ''
+                model_name = checkpoint.get('model_name', '')
+                if not model_name:
+                    model_name = getattr(checkpoint.get('model'), '__name__', '')
                 if model_name != 'RFScore':
                     weight_state = {f'model.{k}':v for k,v in weight_state.items()}
                 m.load_state_dict(weight_state, strict=True)
@@ -546,6 +549,8 @@ class Trainer():
         print(f'{rank=} {world_size=} {self.conf.ddp_backend=} initializing process group')
         dist.init_process_group(backend=self.conf.ddp_backend, world_size=world_size, rank=rank)
         print(f'{rank=} {world_size=} initialized process group')
+        print(f'DEBUG2 print: {rank=} {world_size=} initialized process group')
+        ic(f'DEBUG2 ic: {rank=} {world_size=} initialized process group')
         if torch.cuda.device_count():
             gpu = rank % torch.cuda.device_count()
             torch.cuda.set_device("cuda:%d"%gpu)
@@ -786,6 +791,7 @@ class Trainer():
                         mask_crds = ~torch.isnan(true_crds).any(dim=-1)
                         true_crds, mask_crds = resolve_equiv_natives(pred_crds[-1], true_crds, mask_crds)
                         mask_crds[:,~is_diffused,:] = False
+                        ic(indep.is_sm.float().mean())
                         mask_BB = ~indep.is_sm[None]
                         mask_2d = mask_BB[:,None,:] * mask_BB[:,:,None] # ignore pairs having missing residues
                         assert torch.sum(mask_2d) > 0, "mask_2d is blank"

@@ -310,7 +310,7 @@ def save_outputs(sampler, out_prefix, indep, denoised_xyz_stack, px0_xyz_stack, 
         config = OmegaConf.to_container(sampler._conf, resolve=True),
         device = torch.cuda.get_device_name(torch.cuda.current_device()) if torch.cuda.is_available() else 'CPU',
         px0_xyz_stack = px0_xyz_stack.detach().cpu().numpy(),
-        indep={k:v.detach().cpu().numpy() for k,v in dataclasses.asdict(indep).items()},
+        indep={k:v.detach().cpu().numpy() if hasattr(v, 'detach') else v for k,v in dataclasses.asdict(indep).items()},
     )
     if hasattr(sampler, 'contig_map'):
         for key, value in sampler.contig_map.get_mappings().items():

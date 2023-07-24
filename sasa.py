@@ -80,7 +80,7 @@ def get_relative_sasa(indep):
     sm, _, sm_relative_sasa, _, _ = get_relative_sasa_sm(indep)
     flat_sm_indices = np.concatenate(sm)
     flat_relative_sasa = np.concatenate(sm_relative_sasa)
-    relative_sasa = torch.full((indep.length(),), -10.0)
+    relative_sasa = torch.full((indep.length(),), 0.0)
     relative_sasa[flat_sm_indices] = torch.tensor(flat_relative_sasa).float()
     return relative_sasa
 

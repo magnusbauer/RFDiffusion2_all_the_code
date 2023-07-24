@@ -1664,9 +1664,13 @@ class DistilledDataset(data.Dataset):
             def process_out(out):
                 # Convert template-based modeling inputs to a description of a single structure (the query structure).
                 indep, atom_mask = aa_model.adaptor_fix_bb_indep(out)
+
+                if indep.is_sm.all():
+                    raise Exception('is_sm is true for all indices')
                 
                 # Uncomment for debugging weird heteroatoms from the rf2aa dataloaders
                 # from dev import analyze
+                # analyze.make_network_cmd(show.cmd)
                 # analyze.clear()
                 # show.one(indep, None, 'both')
                 # # analyze.make_network_cmd(show.cmd)

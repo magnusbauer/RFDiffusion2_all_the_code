@@ -669,7 +669,11 @@ class Model:
             hotspot_tens = torch.zeros(L).float()
             hotspot_tens[hotspot_idx] = 1.0
             t1d=torch.cat((t1d, hotspot_tens[None,None,...,None].to(self.device)), dim=-1)
-        
+        # ic(
+        #     indep.extra_t1d.shape,
+        #     indep.extra_t1d[:,:10].argmax(dim=-1),
+        #     indep.extra_t1d[:,10:].argmax(dim=-1),
+        # )
         t1d = torch.cat((t1d, indep.extra_t1d[None, None, ...]), dim=-1)
         
         # return msa_masked, msa_full, seq[None], torch.squeeze(xyz_t, dim=0), idx, t1d, t2d, xyz_t, alpha_t
@@ -721,7 +725,8 @@ class Model:
         
         t1d = torch.tile(t1d, (1,2,1,1))
         # This is messed up for extra_t1d
-        t1d[0,1,:,-1] = -1
+        t1d[0,1,:,NAATOKENS-1] = -1
+        # ic(t1d[0,:,:4,NAATOKENS-1]) # Should look like [[conf, -1], [conf, -1], ...], 0 < conf < 1
 
         # Note: should be batched
         rfi = RFI(

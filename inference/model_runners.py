@@ -726,7 +726,7 @@ class NRBStyleSelfCond(Sampler):
             diffuse_mask=du.move_to_np(self.is_diffused.float()[None,...]),
             t=t/self._conf.diffuser.T,
             dt=1/self._conf.diffuser.T,
-            center=True,
+            center=self._conf.denoiser.center,
             noise_scale=self._conf.denoiser.noise_scale,
         )
         x_t_1 = all_atom.atom37_from_rigid(rigids_t)

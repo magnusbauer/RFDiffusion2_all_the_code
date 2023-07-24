@@ -1,5 +1,6 @@
 import torch
 from icecream import ic
+import conditions.v2
 
 import aa_model
 
@@ -10,9 +11,9 @@ def get_extra_t1d(indep, featurizer_names, **kwargs):
         return torch.zeros((indep.length(),0))
     t1d = []
     for name in featurizer_names:
-        feats_1d = featurizers[name](indep, **kwargs)
-        t1d.extend(feats_1d)
-    return torch.stack(t1d, dim=-1)
+        feats_1d = featurizers[name](indep, kwargs[name], **kwargs)
+        t1d.append(feats_1d)
+    return torch.cat(t1d, dim=-1)
 
 def get_radius_of_gyration(indep, is_gp=None, radius_of_gyration=None, **kwargs):
     assert is_gp is not None
@@ -45,6 +46,8 @@ def get_relative_sasa(indep, relative_sasa=None, **kwargs):
 featurizers = {
     'radius_of_gyration': get_radius_of_gyration,
     'relative_sasa': get_relative_sasa,
+    'radius_of_gyration_v2': conditions.v2.get_radius_of_gyration,
+    'relative_sasa_v2': conditions.v2.get_relative_sasa,
 }
 
 def get_radius_of_gyration_inference(indep, feature_conf, is_gp=None):

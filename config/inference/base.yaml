@@ -125,6 +125,7 @@ denoiser:
   noise_scale_ca: 1
   noise_scale_frame: 1
   noise_scale_torsion: 1
+  center: False
 
 ppi:
   hotspot_res: null
