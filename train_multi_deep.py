@@ -580,24 +580,32 @@ class Trainer():
         dataset_configs, homo = default_dataset_configs(self.conf.dataloader, debug=DEBUG)
         
         print('Making train sets')
-        train_set = DistilledDataset(dataset_configs,
-                                     self.conf.dataloader, self.diffuser,
-                                     self.conf.preprocess, self.conf, homo)
+        def get_dataset_and_sampler(dataset_configs, dataset_options, dataset_prob):
+            train_set = DistilledDataset(dataset_configs,
+                                        self.conf.dataloader, self.diffuser,
+                                        self.conf.preprocess, self.conf, homo)
+
+            train_sampler = DistributedWeightedSampler(dataset_configs,
+                                                    dataset_options=dataset_options,
+                                                    dataset_prob=dataset_prob,
+                                                    num_example_per_epoch=N_EXAMPLE_PER_EPOCH,
+                                                    num_replicas=world_size, rank=rank, replacement=True)
+
+            return train_set, train_sampler
 
         fallback_dataset_configs = {'pdb_aa': dataset_configs['pdb_aa']}
-        fallback_train_set = DistilledDataset(fallback_dataset_configs,
-                                     self.conf.dataloader, self.diffuser,
-                                     self.conf.preprocess, self.conf, homo)
-        
-        train_set = DatasetWithFallback(train_set, fallback_train_set)
+        train_set, train_sampler = get_dataset_and_sampler(dataset_configs,
+                                                    dataset_options=self.conf.dataloader['DATASETS'],
+                                                    dataset_prob=self.conf.dataloader['DATASET_PROB'])
+        fallback_train_set, fallback_train_sampler = get_dataset_and_sampler(fallback_dataset_configs,
+                                                    dataset_options='pdb_aa',
+                                                    dataset_prob=[1.0])
 
-        train_sampler = DistributedWeightedSampler(dataset_configs,
-                                                   dataset_options=self.conf.dataloader['DATASETS'],
-                                                   dataset_prob=self.conf.dataloader['DATASET_PROB'],
-                                                   num_example_per_epoch=N_EXAMPLE_PER_EPOCH,
-                                                   num_replicas=world_size, rank=rank, replacement=True)
+        train_set = DatasetWithFallback(train_set, fallback_train_set, fallback_train_sampler)
         
-        set_epoch = train_sampler.set_epoch
+        def set_epoch(epoch):
+            for sampler in [train_sampler, fallback_train_sampler]:
+                sampler.set_epoch(epoch)
 
         print('THIS IS LOAD PARAM GOING INTO DataLoader inits')
         print(LOAD_PARAM)

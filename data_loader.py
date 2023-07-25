@@ -1,4 +1,5 @@
 import torch
+import itertools
 import traceback
 import pprint
 import assertpy
@@ -1580,6 +1581,9 @@ class DistilledDataset(data.Dataset):
         task = self.task_names[task_idx]
 
         chosen_dataset, index = self.dataset_index_from_index(index)
+        # Uncomment to debug fallback dataset
+        # if chosen_dataset == 'sm_complex':
+        #     raise Exception('sm_complex debug fail')
         dataset_config = self.dataset_configs[chosen_dataset]
         ID = dataset_config.ids[index]
         if chosen_dataset == "sm_complex":
@@ -1738,17 +1742,19 @@ class DatasetWithFallback(data.Dataset):
 
     def __init__(self,
                  dataset,
-                 fallback_dataset):
+                 fallback_dataset,
+                 fallback_sampler):
             self.dataset = dataset
             self.fallback_dataset = fallback_dataset
+            self.fallback_iter = itertools.cycle(fallback_sampler.__iter__())
         
     def __getitem__(self, index):
         try:
             return self.dataset[index]
         except Exception as e:
-            print(f'WARNING: dataset.__getitem__ raised exception, falling back to fallback_dataset: {traceback.format_exc()}')
-            return self.fallback_dataset[index % len(self.fallback_dataset)]
-
+            fallback_index = next(self.fallback_iter)
+            print(f'WARNING: dataset.__getitem__ raised exception, falling back to fallback_dataset[{fallback_index}]: {traceback.format_exc()}')
+            return self.fallback_dataset[fallback_index]
 
 
 class DistributedWeightedSampler(data.Sampler):
@@ -1789,7 +1795,7 @@ class DistributedWeightedSampler(data.Sampler):
                 self.dataset_dict[dset] = num_example_per_epoch - sum([val for k, val in self.dataset_dict.items()])
 
         # Temporary until implemented
-        if self.dataset_dict['compl'] > 0:
+        if self.dataset_dict.get('compl', 0) > 0:
             print("WARNING: In this branch, the hotspot reside feature has been removed, and you're training on complexes. Be warned")
 
         self.total_size = num_example_per_epoch

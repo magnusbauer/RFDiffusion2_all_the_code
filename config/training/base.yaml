@@ -194,4 +194,4 @@ extra_t1d_params: {}
 use_nonechucks: False
 restart_timer: False
 pin_memory: True
-num_workers: 0
+num_workers: 1
