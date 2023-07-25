@@ -21,6 +21,7 @@ import inference.utils
 import contigs
 import pytest
 from rf2aa import tensor_util
+import run_inference
 ic.configureOutput(includeContext=True)
 
 class TestRearrange(unittest.TestCase):
@@ -277,6 +278,7 @@ class AAModelTestCase(unittest.TestCase):
 
 
     def test_parses_covale(self):
+        run_inference.seed_all()
         covale = '/home/ahern/campaigns/bilin/inputs/covale/3l0f.pdb'
         noncovale = '/home/ahern/campaigns/bilin/inputs/raw/3l0f.pdb'
         ligand_name = 'CYC'
@@ -311,6 +313,6 @@ class AAModelTestCase(unittest.TestCase):
 
         # add assertion that only specific bond feat is different
 
-REWRITE = True
+REWRITE = False
 if __name__ == '__main__':
         unittest.main()
