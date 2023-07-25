@@ -49,6 +49,10 @@ inference:
     radius_of_gyration:
       mean: 15
       std: 20
+    radius_of_gyration_v2:
+      active: False
+    relative_sasa_v2:
+      active: False
 
 contigmap:
   contigs: ['20', 'A3-23', '30']

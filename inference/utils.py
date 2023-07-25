@@ -972,7 +972,8 @@ def parse_pdb_lines(lines, parse_hetatom=False, ignore_het_h=True):
                     idx=int(l[7:11]),
                     atom_id=l[12:16],
                     atom_type=l[77],
-                    name=l[16:20]
+                    name=l[16:20],
+                    res_idx=int(l[22:26]),
                 ))
                 xyz_het.append([float(l[30:38]), float(l[38:46]), float(l[46:54])])
 

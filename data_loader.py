@@ -1680,6 +1680,7 @@ class DistilledDataset(data.Dataset):
                 pop = aa_model.is_occupied(indep, atom_mask)
                 # For now, do not pop unoccupied small molecule atoms, exit instead, as popping them can lose covale information.
                 unoccupied_sm = (~pop) * indep.is_sm
+                # ic(chosen_dataset, unoccupied_sm.any())
                 if unoccupied_sm.any():
                     raise Exception(f'there are small molecule atoms that are unoccupied at indices:  {unoccupied_sm.nonzero()[:,0]}')
                 aa_model.pop_mask(indep, pop)

@@ -279,7 +279,7 @@ def get_only_ligand(pdb_lines):
     return ligand
 
 
-def filter_het(pdb_lines, ligand):
+def filter_het(pdb_lines, ligand, covale_allowed=False):
     lines = []
     hetatm_ids = []
     for l in pdb_lines:
@@ -302,20 +302,98 @@ def filter_het(pdb_lines, ligand):
         if any(i in hetatm_ids for i in ids):
             ligand_atms_bonded_to_protein = [i for i in ids if i in hetatm_ids]
             violations.append(f'line {l} references atom ids in the target ligand {ligand}: {ligand_atms_bonded_to_protein} and another atom')
-    if violations:
+    if violations and not covale_allowed:
         raise Exception('\n'.join(violations))
     return lines
 
-def make_indep(pdb, ligand=None, center=True):
+def get_hetatm_ids(pdb_lines, ligand):
+    lines = []
+    hetatm_ids = []
+    for l in pdb_lines:
+        if 'HETATM' not in l:
+            continue
+        curr_ligand = l[17:17+4].strip()
+        if curr_ligand != ligand:
+            continue
+        lines.append(l)
+        hetatm_ids.append(int(l[7:7+5].strip()))
+    return hetatm_ids
+
+def get_bonds(pdb_lines):
+    ligand_atom_pdb_atom = []
+    from_to = []
+    for l in pdb_lines:
+        if 'CONECT' not in l:
+            continue
+        ids = [int(e.strip()) for e in l[6:].split()]
+        for r in ids[1:]:
+            from_to.append(tuple(sorted((ids[0], r))))
+    
+    # ic(from_to)
+    from_to = list(set(from_to))
+    return from_to
+
+import io
+from Bio import PDB
+from Bio.PDB import PDBParser
+p = PDBParser(PERMISSIVE=0, QUIET=1)
+def get_atom_by_atom_serial_number(pdb_lines):
+    buffer = io.StringIO()
+    for l in pdb_lines:
+        buffer.write(l)
+    buffer.seek(0)
+    struct = p.get_structure('none', buffer)
+    atomList = PDB.Selection.unfold_entities(struct, target_level='A')
+    atom_by_id = {atom.serial_number:atom for atom in atomList}
+    return atom_by_id
+
+def find_covale_bonds(pdb_lines, ligand):
+    # res_atom_name_by_atom_id = get_res_atom_name_by_atom_id(pdb_lines)
+    # covale_bonds = filter_het(pdb_lines, ligand)
+
+    hetatm_ids = get_hetatm_ids(pdb_lines, ligand)
+    bonds = get_bonds(pdb_lines)
+
+    hetatm_id_set = set(hetatm_ids)
+
+    protein_ligand_bonds = []
+    for d, r in bonds:
+        if (d in hetatm_id_set) != (r in hetatm_id_set):
+            protein_ligand_bonds.append(sorted((d,r), key=lambda x: x in hetatm_id_set))
+    
+    ic(protein_ligand_bonds)
+
+    atom_by_serial_number = get_atom_by_atom_serial_number(pdb_lines)
+    # ic(atom_by_serial_number)
+    for i, (d,r) in enumerate(protein_ligand_bonds):
+        protein_ligand_bonds[i] = (
+            atom_by_serial_number[d],
+            atom_by_serial_number[r],
+        )
+    ic(protein_ligand_bonds)
+    
+
+    
+    return protein_ligand_bonds
+
+def get_atom_uid(a):
+    _, _, ch, (ligand_name, res_idx, _), (atom_name, _) = a.get_full_id()
+    return (res_idx, atom_name)
+
+
+def make_indep(pdb, ligand=None, center=True, return_metadata=False):
     # self.target_feats = iu.process_target(self.inf_conf.input_pdb, parse_hetatom=True, center=False)
     # init_protein_tmpl=False, init_ligand_tmpl=False, init_protein_xyz=False, init_ligand_xyz=False,
     #     parse_hetatm=False, n_cycle=10, random_noise=5.0)
     chirals = torch.zeros((0, 5))
     atom_frames = torch.zeros((0,3,2), dtype=torch.int64)
 
-    xyz_prot, mask_prot, idx_prot, seq_prot = parsers.parse_pdb(pdb, seq=True)
+    # xyz_prot, mask_prot, idx_prot, seq_prot = parsers.parse_pdb(pdb, seq=True, parse_hetatom=True)
 
-    target_feats = inference.utils.parse_pdb(pdb)
+    target_feats = inference.utils.parse_pdb(pdb, parse_hetatom=True)
+    het_atom_uids = [(e['res_idx'], e['atom_id'].strip()) for e in target_feats['info_het']]
+    prot_atom_uids = [(idx, 'CA') for idx in target_feats['idx']]
+    uids = prot_atom_uids + het_atom_uids
     xyz_prot, mask_prot, idx_prot, seq_prot = target_feats['xyz'], target_feats['mask'], target_feats['idx'], target_feats['seq']
     xyz_prot[:,14:] = 0 # remove hydrogens
     mask_prot[:,14:] = False
@@ -325,16 +403,36 @@ def make_indep(pdb, ligand=None, center=True):
     msa_prot = torch.tensor(seq_prot)[None].long()
     ins_prot = torch.zeros(msa_prot.shape).long()
     a3m_prot = {"msa": msa_prot, "ins": ins_prot}
+    covale_bonds = []
     if ligand:
+        with open(pdb, 'r') as fh:
+            stream = fh.readlines()
+        protein_ligand_bonds_atoms = find_covale_bonds(stream, ligand)
+        print('Protein-ligand bonds:')
+        for i, (d,r) in enumerate(protein_ligand_bonds_atoms):
+            print(f'{d.get_full_id()} : {r.get_full_id()}')
+        for protein_atom, ligand_atom in protein_ligand_bonds_atoms:
+            prot_res_idx, prot_atom_name = get_atom_uid(protein_atom)
+            res_i = uids.index((prot_res_idx, 'CA'))
+            ligand_atom_uid = get_atom_uid(ligand_atom)
+            atom_i = uids.index((ligand_atom_uid))
+            # Hack, no way to detect bond types in PDB
+            bond_type = 1 # Single bond
+            covale_bonds.append(
+                ((res_i, prot_atom_name), atom_i, bond_type)
+            )
+
         with open(pdb, 'r') as fh:
             stream = [l for l in fh if "HETATM" in l or "CONECT" in l]
         if ligand == UNIQUE_LIGAND:
             ligand = get_only_ligand(pdb_lines)
-        stream = filter_het(stream, ligand)
+
+        stream = filter_het(stream, ligand, covale_allowed=True)
         if not len(stream):
             raise Exception(f'ligand {ligand} not found in pdb: {pdb}')
 
         mol, msa_sm, ins_sm, xyz_sm, _ = parsers.parse_mol("".join(stream), filetype="pdb", string=True)
+        assertpy.assert_that(len(het_atom_uids)).is_equal_to(xyz_sm.shape[1])
         a3m_sm = {"msa": msa_sm.unsqueeze(0), "ins": ins_sm.unsqueeze(0)}
         G = rf2aa.util.get_nxgraph(mol)
         atom_frames = rf2aa.util.get_atom_frames(msa_sm, G)
@@ -396,6 +494,9 @@ def make_indep(pdb, ligand=None, center=True):
         same_chain,
         is_sm,
         terminus_type)
+    if return_metadata:
+        metadata = {'covale_bonds': covale_bonds}
+        return indep, metadata
     return indep
 
 def add_fake_frame_legs(xyz, is_atom):
@@ -423,7 +524,8 @@ class Model:
         return RFO(*self.model(**{**rfi_dict, **kwargs}))
 
 
-    def insert_contig(self, indep, contig_map, partial_T=False):
+    def insert_contig(self, indep, contig_map, partial_T=False, metadata=None):
+        metadata = metadata or defaultdict(dict)
         o = copy.deepcopy(indep)
 
         # Insert small mol into contig_map
@@ -479,16 +581,16 @@ class Model:
         is_res_str_shown = ~is_diffused
         use_guideposts = self.conf.dataloader.USE_GUIDE_POSTS
         pre_transform_length = o.length()
-        o, is_diffused, is_seq_masked, self.atomizer, contig_map.gp_to_ptn_idx0 = transform_indep(o, is_res_str_shown, is_atom_str_shown, use_guideposts, 'anywhere', self.conf.guidepost_bonds, metadata=defaultdict(dict))
+        o, is_diffused, is_seq_masked, self.atomizer, contig_map.gp_to_ptn_idx0 = transform_indep(o, is_res_str_shown, is_atom_str_shown, use_guideposts, 'anywhere', self.conf.guidepost_bonds, metadata=metadata)
         # o.extra_t1d = torch.zeros((o.length(),0))
         # HACK: gp indices may be lost during atomization, so we assume they are at the end of the protein.
         is_gp = torch.full((o.length(),), True)
         is_gp[:pre_transform_length] = False
         extra_t1d = getattr(self.conf, 'extra_t1d', [])
-        o.extra_t1d = features.get_extra_t1d_inference(o, extra_t1d, self.conf.inference.conditions, is_gp=is_gp)
-        ic(self.conf.inference.conditions, extra_t1d)
-        for i, e in enumerate(o.extra_t1d.T):
-            ic(i, e)
+        o.extra_t1d = features.get_extra_t1d_inference(o, extra_t1d, self.conf.extra_t1d_params, self.conf.inference.conditions, is_gp=is_gp)
+        # for i, e in enumerate(o.extra_t1d.T):
+        #     ic(i, e)
+        # ic(self.conf.inference.conditions, extra_t1d, o.extra_t1d.shape)
 
         # HACK.  ComputeAllAtom in the network requires N and C coords even for atomized residues,
 	    # However, these have no semantic value.  TODO: Remove the network's reliance on these coordinates.
@@ -1623,6 +1725,7 @@ def make_guideposts(indep, is_motif):
     return indep_cat, gp_to_ptn_idx0
 
 def transform_indep(indep, is_res_str_shown, is_atom_str_shown, use_guideposts, guidepost_placement='anywhere', guidepost_bonds=True, metadata=None):
+    ic(metadata)
     indep = copy.deepcopy(indep)
     use_atomize = is_atom_str_shown is not None
     # use_atomize = is_atom_str_shown is not None and len(is_atom_str_shown) > 0

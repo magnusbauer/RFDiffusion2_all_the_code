@@ -49,3 +49,17 @@ def one_hot_buckets(a, low, high, n, eps=1e-6):
     bins = torch.linspace(low+step, high-step, n-1)
     cat = torch.bucketize(a, bins).long()
     return F.one_hot(cat, num_classes=n)
+
+
+def get_radius_of_gyration_inference(indep, feature_conf, feature_inference_conf, is_gp=None, **kwargs):
+    if not feature_inference_conf.active:
+        return torch.zeros((indep.length(), feature_conf.n_bins + 1))
+    else:
+        raise Exception('not implemented')
+
+
+def get_relative_sasa_inference(indep, feature_conf, feature_inference_conf, **kwargs):
+    if not feature_inference_conf.active:
+        return torch.zeros((indep.length(), feature_conf.n_bins + 1))
+    else:
+        raise Exception('not implemented')

@@ -78,14 +78,17 @@ def get_relative_sasa_inference(indep, feature_conf, **kwargs):
 inference_featurizers = {
     'radius_of_gyration': get_radius_of_gyration_inference,
     'relative_sasa': get_relative_sasa_inference,
+    'radius_of_gyration_v2': conditions.v2.get_radius_of_gyration_inference,
+    'relative_sasa_v2': conditions.v2.get_relative_sasa_inference,
 }
 
-def get_extra_t1d_inference(indep, featurizer_names, feature_conf_dict, **kwargs):
+def get_extra_t1d_inference(indep, featurizer_names, params_train, params_inference, **kwargs):
     if not featurizer_names:
         return torch.zeros((indep.length(),0))
     t1d = []
     for name in featurizer_names:
-        assert name in feature_conf_dict
-        feats_1d = inference_featurizers[name](indep, feature_conf_dict[name], **kwargs)
-        t1d.extend(feats_1d)
-    return torch.stack(t1d, dim=-1)
+        assert name in params_train
+        assert name in params_inference
+        feats_1d = inference_featurizers[name](indep, params_train[name], params_inference[name], **kwargs)
+        t1d.append(feats_1d)
+    return torch.cat(t1d, dim=-1)
