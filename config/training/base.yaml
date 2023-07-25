@@ -191,4 +191,7 @@ reshape:
 
 extra_t1d: []
 extra_t1d_params: {}
-use_nonechucks: True
+use_nonechucks: False
+restart_timer: False
+pin_memory: True
+num_workers: 0

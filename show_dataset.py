@@ -9,6 +9,8 @@ from omegaconf import DictConfig
 from torch.utils import data
 from tqdm import tqdm
 import show
+import reshape_weights
+reshape_weights.setup_rf_diffusion_imports()
 
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'RF2-allatom'))
 import atomize
@@ -91,9 +93,6 @@ def run(conf: DictConfig) -> None:
                                     conf.dataloader, diffuser,
                                     conf.preprocess, conf, homo)
     
-    import nonechucks as nc
-    if conf.use_nonechucks:
-        train_set = nc.SafeDataset(train_set)
     
     train_sampler = DistributedWeightedSampler(dataset_configs,
                                                 dataset_options=conf.dataloader['DATASETS'],
@@ -102,6 +101,8 @@ def run(conf: DictConfig) -> None:
                                                 num_replicas=1, rank=0, replacement=True)
     set_epoch = train_sampler.set_epoch
     if conf.use_nonechucks:
+    	import nonechucks as nc
+        train_set = nc.SafeDataset(train_set)
         train_sampler = nc.SafeSampler(train_set, train_sampler)
     
     # mp.cpu_count()-1

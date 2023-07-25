@@ -18,7 +18,6 @@ from copy import deepcopy
 from collections import OrderedDict
 from datetime import date
 from contextlib import ExitStack
-import nonechucks as nc
 import assertpy
 import time 
 import torch
@@ -44,7 +43,7 @@ import atomize
 from data_loader import (
     get_train_valid_set, loader_pdb, loader_fb, loader_complex, loader_pdb_fixbb, loader_fb_fixbb, loader_complex_fixbb, loader_cn_fixbb, default_dataset_configs,
     #Dataset, DatasetComplex, 
-    DistilledDataset, DistributedWeightedSampler
+    DistilledDataset, DistributedWeightedSampler, DatasetWithFallback
 )
 import error
 import pytimer.timer
@@ -585,6 +584,13 @@ class Trainer():
                                      self.conf.dataloader, self.diffuser,
                                      self.conf.preprocess, self.conf, homo)
 
+        fallback_dataset_configs = {'pdb_aa': dataset_configs['pdb_aa']}
+        fallback_train_set = DistilledDataset(fallback_dataset_configs,
+                                     self.conf.dataloader, self.diffuser,
+                                     self.conf.preprocess, self.conf, homo)
+        
+        train_set = DatasetWithFallback(train_set, fallback_train_set)
+
         train_sampler = DistributedWeightedSampler(dataset_configs,
                                                    dataset_options=self.conf.dataloader['DATASETS'],
                                                    dataset_prob=self.conf.dataloader['DATASET_PROB'],
@@ -592,9 +598,6 @@ class Trainer():
                                                    num_replicas=world_size, rank=rank, replacement=True)
         
         set_epoch = train_sampler.set_epoch
-        if self.conf.use_nonechucks:
-            train_set = nc.SafeDataset(train_set)
-            train_sampler = nc.SafeSampler(train_set, train_sampler)
 
         print('THIS IS LOAD PARAM GOING INTO DataLoader inits')
         print(LOAD_PARAM)
@@ -1018,6 +1021,9 @@ class Trainer():
                 timer.restart()
                 if rank == 0 and (counter % self.conf.timing_summary_every) == 0:
                     timer.summary()
+                
+                if self.conf.restart_timer:
+                    timer = Timer()
 
         # TODO(fix or delete)
         # write total train loss
@@ -1070,14 +1076,15 @@ def make_trainer(conf):
     global LOAD_PARAM
     global LOAD_PARAM2
 
-    max_workers = 8 if conf.prob_self_cond == 0 else 0
+    ic(test_utils.available_cpu_count())
+    max_workers = conf.num_workers
 
     LOAD_PARAM = {'shuffle': False,
-              'num_workers': max_workers if not DEBUG else 0,
-              'pin_memory': True}
+              'num_workers': max_workers,
+              'pin_memory': conf.pin_memory}
     LOAD_PARAM2 = {'shuffle': False,
-              'num_workers': max_workers if not DEBUG else 0,
-              'pin_memory': True}
+              'num_workers': max_workers,
+              'pin_memory': conf.pin_memory}
 
 
     # set random seed

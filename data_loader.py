@@ -1732,11 +1732,22 @@ class DistilledDataset(data.Dataset):
             return processed
 
     def __getitem__(self, index):
+        return self.getitem_unsafe(index)
+
+class DatasetWithFallback(data.Dataset):
+
+    def __init__(self,
+                 dataset,
+                 fallback_dataset):
+            self.dataset = dataset
+            self.fallback_dataset = fallback_dataset
+        
+    def __getitem__(self, index):
         try:
-            return self.getitem_unsafe(index)
+            return self.dataset[index]
         except Exception as e:
-            print(f'WARNING: getitem_unsafe raised: {traceback.format_exc()}')
-            raise e
+            print(f'WARNING: dataset.__getitem__ raised exception, falling back to fallback_dataset: {traceback.format_exc()}')
+            return self.fallback_dataset[index % len(self.fallback_dataset)]
 
 
 
