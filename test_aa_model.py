@@ -1,4 +1,5 @@
 import copy
+from collections import defaultdict
 import shutil
 import os
 import sys
@@ -272,7 +273,38 @@ class AAModelTestCase(unittest.TestCase):
             ic(want_atoms)
             assertpy.assert_that(want_atoms).is_equal_to(got_atoms)
 
-           
+
+    def test_parses_covale(self):
+        covale = '/home/ahern/campaigns/bilin/inputs/covale/3l0f.pdb'
+        noncovale = '/home/ahern/campaigns/bilin/inputs/raw/3l0f.pdb'
+        ligand_name = 'CYC'
+
+        conf = test_utils.construct_conf()
+        adaptor = aa_model.Model(conf)
+        d = defaultdict(dict)
+        for name, input_pdb in [
+            ('covale', covale),
+            ('noncovale', noncovale)
+        ]:
+            indep = aa_model.make_indep(covale, ligand_name)
+            target_feats = inference.utils.process_target(input_pdb)
+            contig_map =  contigs.ContigMap(target_feats,
+                                        contigs=['10-60,A84-87,10-60'],
+                                        contig_atoms="{'A84':'CA,C,N,O,CB,SG'}",
+                                        length='100-100',
+                                        )
+            indep, metadata = aa_model.make_indep(input_pdb, return_metadata=True)
+            indep_contig,is_diffused,_ = adaptor.insert_contig(indep, contig_map, metadata=metadata)
+            d[name]['indep_contig'] = indep_contig
+            d[name]['rfi'] = adaptor.prepro(indep, 100, is_diffused)
+
+        diff = test_utils.cmp_pretty(d['noncovale']['rfi'], d['covale']['rfi'])
+        if not diff:
+            self.fail('expected difference between covale and noncovale input')
+
+        ic(diff)
+
+        # add assertion that only specific bond feat is different
 
 if __name__ == '__main__':
         unittest.main()
