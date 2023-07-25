@@ -311,7 +311,7 @@ def make_indep(pdb, ligand=None, center=True):
     # init_protein_tmpl=False, init_ligand_tmpl=False, init_protein_xyz=False, init_ligand_xyz=False,
     #     parse_hetatm=False, n_cycle=10, random_noise=5.0)
     chirals = torch.zeros((0, 5))
-    atom_frames = torch.zeros((0,3,2))
+    atom_frames = torch.zeros((0,3,2), dtype=torch.int64)
 
     xyz_prot, mask_prot, idx_prot, seq_prot = parsers.parse_pdb(pdb, seq=True)
 

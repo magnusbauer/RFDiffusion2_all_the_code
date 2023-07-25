@@ -10,6 +10,7 @@ import unittest
 import pickle
 import hydra
 from hydra import compose, initialize
+from omegaconf import DictConfig, OmegaConf
 
 from rf2aa import tensor_util
 from data_loader import (
@@ -227,10 +228,25 @@ def assert_no_nan(t):
     if msg:
         raise Exception(msg)
 
-def construct_conf(overrides=None, config_name='debug'):
+def construct_conf(overrides=None, config_name='debug', train_config_name='train_covale_complex', inference=False):
+    if not inference:
+        return construct_conf_single(overrides=overrides, config_name=config_name, inference=inference)
+    train_conf = construct_conf_single(config_name=train_config_name, inference=False)
+    inference_conf = construct_conf_single(overrides=overrides, config_name=config_name, inference=inference)
+    OmegaConf.set_struct(train_conf, False)
+    OmegaConf.set_struct(inference_conf, False)
+    conf = OmegaConf.merge(
+        train_conf, inference_conf)
+    return conf
+    
+
+def construct_conf_single(overrides=None, config_name='debug', inference=False):
     hydra.core.global_hydra.GlobalHydra().clear()
     overrides = overrides or []
-    initialize(version_base=None, config_path="config/training", job_name="test_app")
+    config_path = 'config/training'
+    if inference:
+        config_path = 'config/inference'
+    initialize(version_base=None, config_path=config_path, job_name="test_app")
     conf = compose(config_name=f'{config_name}.yaml', overrides=overrides, return_hydra_config=True)
     return conf
 
