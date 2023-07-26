@@ -12,7 +12,7 @@ def main():
     # parse --out argument for this script
     parser = argparse.ArgumentParser()
     parser.add_argument('--out', type=str, default='out/out',help='Path prefix for output files')
-    parser.add_argument('--start_step', type=str, default='sweep', choices=['sweep','mpnn','thread_mpnn', 'score', 'compile'],
+    parser.add_argument('--start_step', type=str, default='sweep', choices=['sweep', 'foldseek', 'mpnn','thread_mpnn', 'score', 'compile'],
         help='Step of pipeline to start at')
     parser.add_argument('--inpaint', action='store_true', default=False, 
         help="Use sweep_hyperparam_inpaint.py, i.e. command-line arguments are in argparse format")
@@ -53,6 +53,7 @@ def main():
         print('Waiting for design jobs to finish...')
         wait_for_jobs(jobid_sweep)
 
+    if args.start_step in ['sweep', 'foldseek']:
         # Move "orphan" pdbs that somehow lack a trb file
         orphan_dir = f'{outdir}/orphan_pdbs'
         os.makedirs(orphan_dir, exist_ok=True)
@@ -64,14 +65,13 @@ def main():
 
         # Cluster designs within each condition
         jobid_cluster = run_pipeline_step(f'{script_dir}/cluster_pipeline_outputs.py --pipeline_outdir {outdir}')
+        print('Running foldseek in parallel to cluster generated backbones by condition. The pipeline will continue forward.')
 
         # Compute similarity of generated backbones to the PDB
         jobid_foldseek = run_pipeline_step(f'{script_dir}/chunkify_foldseek_pdb.py --pdb_dir {outdir} --chunk {args.foldseek_chunk}')
+        print('Running foldseek in parallel to compare the similarity of the generated backbones to the PDB. The pipeline will continue forward.')
 
-        print('Waiting for design jobs to finish...')
-        wait_for_jobs(jobid_sweep)
-
-    if args.start_step in ['sweep','mpnn']:
+    if args.start_step in ['sweep', 'foldseek', 'mpnn']:
         if args.use_ligand:
             job_id_prepare_ligandmpnn_params = run_pipeline_step(f'{script_dir}/pdb_to_params.py {outdir}')
             wait_for_jobs(job_id_prepare_ligandmpnn_params)
@@ -83,14 +83,14 @@ def main():
         print('Waiting for MPNN jobs to finish...')
         wait_for_jobs(jobid_mpnn)
 
-    if args.start_step in ['sweep', 'mpnn', 'thread_mpnn']:
+    if args.start_step in ['sweep', 'foldseek', 'mpnn', 'thread_mpnn']:
         print('Threading MPNN sequences onto design models...')
         if args.use_ligand:
             run_pipeline_step(f'{script_dir}thread_mpnn.py --use_ligand {outdir}')
         else:
             run_pipeline_step(f'{script_dir}thread_mpnn.py {outdir}')
 
-    if args.start_step in ['sweep', 'mpnn', 'thread_mpnn', 'score']:
+    if args.start_step in ['sweep', 'foldseek', 'mpnn', 'thread_mpnn', 'score']:
         print('Initiating scoring')
         af2_args = arg_str
         if args.af2_gres:

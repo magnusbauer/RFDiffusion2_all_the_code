@@ -15,7 +15,7 @@ def main():
     args = p.parse_args()
 
     # ID all conditions
-    conditions = {re.findall('cond\d+', pdb_fn)[0] for pdb_fn in glob.glob(f'{args.pipeline_outdir}/*pdb')}
+    conditions = {re.findall('cond\d+', pdb_fn)[0] for pdb_fn in glob.glob(f'{args.pipeline_outdir}/*cond*pdb')}
 
     # Make foldseek clustering jobs on all pdbs from the same condition.
     # TODO: Follow array submittion pattern in score_designs.py
