@@ -14,6 +14,7 @@ import itertools
 
 import os
 from dev import show_tip_pa
+from dev import show_tip_row
 from dev import analyze
 
 def model_generator(traj_path, seq=False):
@@ -98,8 +99,9 @@ def apply_dict(df, f, safe=True):
         try:
             metrics_dict = f(row)
         except Exception as e:
-            print(f'Caught exception at row {i}: {row["name"]}: {str(e)}')
+            print(safe)
             if safe:
+                print(f'Caught exception at row {i}: {row["name"]}: {str(e)}')
                 continue
             else:
                 raise e
@@ -148,7 +150,6 @@ def glob_re(pattern, strings):
 # '/mnt/home/ahern/projects/dev_rf_diffusion/debug/no_so3_0_*.pdb'a
 def get_sdata(path, pattern=None):
     traj_paths = glob.glob(path)
-    ic(traj_paths)
     if pattern:
         traj_paths = glob_re(pattern, traj_paths)
     traj_paths = [p[:-4] for p in traj_paths]
@@ -250,7 +251,15 @@ def get_sweeps(data):
 
     return sweeps
 
-def main(path, name=None, clear=False, structs='X0', pymol_keys=None):
+def main(path, name=None, clear=False, structs='X0', pymol_keys=None, pymol_url='http://calathea.dhcp.ipd:9123'):
+    ic(pymol_url)
+    # cmd = analyze.get_cmd(pymol_url)
+    # analyze.cmd = cmd
+    # show_tip_pa.cmd = cmd
+    # show_tip_row.cmd = cmd
+    ic('before show pro3')
+    cmd.fragment('pro')
+    ic('after show pro')
     ic.configureOutput(includeContext=True)
     data = get_sdata(path)
     print(data.shape)
@@ -262,12 +271,18 @@ def main(path, name=None, clear=False, structs='X0', pymol_keys=None):
     #     add_pymol_name(data, pymol_keys)
     sweeps = get_sweeps(data)
     ic(sweeps)
-    add_pymol_name(data, sweeps.keys())
+    if len(sweeps):
+        add_pymol_name(data, sweeps.keys())
     if clear:
         show_tip_pa.clear()
-    ic(structs)
     all_pymol = show_df(data, structs=structs)
     cmd.do('mass_paper_rainbow')
+
+# TODO: make this monadic
+cmd = analyze.get_cmd('http://10.64.100.67:9123')
+analyze.cmd = cmd
+show_tip_pa.cmd = cmd
+show_tip_row.cmd = cmd
 
 if __name__ == '__main__':
     fire.Fire(main)

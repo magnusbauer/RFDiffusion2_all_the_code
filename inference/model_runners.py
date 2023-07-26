@@ -75,6 +75,7 @@ class Sampler:
         self.initialized=True
 
         # Assemble config from the checkpoint
+        ic(self._conf.score_model.weights_path)
         from data import utils as du
         weights_pkl = du.read_pkl(
             self._conf.score_model.weights_path, use_torch=True,

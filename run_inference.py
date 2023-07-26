@@ -138,7 +138,7 @@ def sample(sampler):
 def sample_one(sampler, simple_logging=False):
     # For intermediate output logging
     indep = sampler.sample_init()
-    ic(sampler._conf.denoiser.noise_scale)
+    ic(sampler._conf.denoiser.noise_scale, sampler._conf.denoiser.center)
 
     denoised_xyz_stack = []
     px0_xyz_stack = []

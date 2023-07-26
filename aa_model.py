@@ -1781,6 +1781,7 @@ def make_guideposts(indep, is_motif):
     return indep_cat, gp_to_ptn_idx0
 
 def transform_indep(indep, is_res_str_shown, is_atom_str_shown, use_guideposts, guidepost_placement='anywhere', guidepost_bonds=True, metadata=None):
+    ic(use_guideposts, guidepost_bonds)
     indep = copy.deepcopy(indep)
     use_atomize = is_atom_str_shown is not None
     # use_atomize = is_atom_str_shown is not None and len(is_atom_str_shown) > 0

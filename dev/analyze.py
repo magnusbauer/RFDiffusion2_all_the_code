@@ -21,7 +21,10 @@ import util
 import sys
 
 def get_cmd(pymol_url='http://calathea.dhcp.ipd:9123'):
-    return xmlrpclib.ServerProxy(pymol_url)
+    cmd = xmlrpclib.ServerProxy(pymol_url)
+    if 'ipd' not in pymol_url:
+        make_network_cmd(cmd)
+    return cmd
 
 cmd = get_cmd()
 #
