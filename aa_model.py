@@ -75,6 +75,14 @@ def chain_letters_from_same_chain(same_chain):
 def same_chain_from_chain_letters(chains):
     return torch.tensor(chains[:, None] == chains[None, :]).bool()
 
+def same_chain_with_covale(same_chain, covale_bonds):
+    same_chain = same_chain.clone())
+    for (res_i, _), sm_i, _ in covale_bonds:
+        same_chain[res_i, sm_i] = True
+    chains_after_covale = chain_letters_from_same_chain(same_chain)
+    same_chain = same_chain_from_chain_letters(chains_after_covale)
+    return same_chain
+
 @dataclass
 class Indep:
     seq: torch.Tensor # [L]
@@ -185,6 +193,19 @@ class Indep:
     
     def assert_types(indep):
         assertpy.assert_that(indep.same_chain.dtype).is_equal_to(torch.bool)
+
+    def atom_label(self, i):
+        return (i, rf2aa.chemical.num2aa[self.seq[i]])
+    
+    def human_readable_2d_mask(self, mask):
+        o = []
+        for i, j in mask.nonzero():
+            o.append((self.atom_label(i), self.atom_label(j)))
+        return o
+    
+    def human_readable_2d_symmetric_mask(self, mask):
+        assertpy.assert_that((mask.T == mask).all()).is_true()
+        return self.human_readable_2d_mask(torch.triu(mask))
 
 def human_readable_seq(seq):
     return [rf2aa.chemical.num2aa[s] for s in seq]
@@ -361,18 +382,12 @@ def find_covale_bonds(pdb_lines, ligand):
         if (d in hetatm_id_set) != (r in hetatm_id_set):
             protein_ligand_bonds.append(sorted((d,r), key=lambda x: x in hetatm_id_set))
     
-    ic(protein_ligand_bonds)
-
     atom_by_serial_number = get_atom_by_atom_serial_number(pdb_lines)
-    # ic(atom_by_serial_number)
     for i, (d,r) in enumerate(protein_ligand_bonds):
         protein_ligand_bonds[i] = (
             atom_by_serial_number[d],
             atom_by_serial_number[r],
         )
-    ic(protein_ligand_bonds)
-    
-
     
     return protein_ligand_bonds
 
@@ -467,10 +482,12 @@ def make_indep(pdb, ligand=None, center=True, return_metadata=False):
     if ligand:
         bond_feats[Ls[0]:, Ls[0]:] = rf2aa.util.get_bond_feats(mol)
 
-
     same_chain = torch.zeros((sum(Ls), sum(Ls))).bool()
     same_chain[:Ls[0], :Ls[0]] = True
     same_chain[Ls[0]:, Ls[0]:] = True
+    # Amend same chain for the covalently linked small molecule case
+    same_chain = same_chain_with_covale(same_chain, covale_bonds)
+
     is_sm = torch.zeros(sum(Ls)).bool()
     is_sm[Ls[0]:] = True
     assert len(Ls) <= 2, 'multi chain inference not implemented yet'
@@ -579,6 +596,13 @@ class Model:
         if is_atom_str_shown:
             is_diffused[list(is_atom_str_shown.keys())] = True
         is_res_str_shown = ~is_diffused
+        for i, ((res_i, atom_name), sm_i, bond_type) in enumerate(metadata['covale_bonds']):
+            res_i = hal_by_ref_d[res_i]
+            sm_i = hal_by_ref_d[sm_i]
+            metadata['covale_bonds'][i] = ((res_i, atom_name), sm_i, bond_type)
+
+        o.same_chain = same_chain_with_covale(o.same_chain, metadata['covale_bonds'])
+
         use_guideposts = self.conf.dataloader.USE_GUIDE_POSTS
         pre_transform_length = o.length()
         o, is_diffused, is_seq_masked, self.atomizer, contig_map.gp_to_ptn_idx0 = transform_indep(o, is_res_str_shown, is_atom_str_shown, use_guideposts, 'anywhere', self.conf.guidepost_bonds, metadata=metadata)
@@ -1725,7 +1749,6 @@ def make_guideposts(indep, is_motif):
     return indep_cat, gp_to_ptn_idx0
 
 def transform_indep(indep, is_res_str_shown, is_atom_str_shown, use_guideposts, guidepost_placement='anywhere', guidepost_bonds=True, metadata=None):
-    ic(metadata)
     indep = copy.deepcopy(indep)
     use_atomize = is_atom_str_shown is not None
     # use_atomize = is_atom_str_shown is not None and len(is_atom_str_shown) > 0

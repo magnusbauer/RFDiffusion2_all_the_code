@@ -278,7 +278,6 @@ class AAModelTestCase(unittest.TestCase):
 
 
     def test_parses_covale(self):
-        run_inference.seed_all()
         covale = '/home/ahern/campaigns/bilin/inputs/covale/3l0f.pdb'
         noncovale = '/home/ahern/campaigns/bilin/inputs/raw/3l0f.pdb'
         ligand_name = 'CYC'
@@ -287,31 +286,37 @@ class AAModelTestCase(unittest.TestCase):
         adaptor = aa_model.Model(conf)
         d = defaultdict(dict)
         for name, input_pdb in [
-            # ('covale', covale),
-            ('noncovale', noncovale)
+            ('noncovale', noncovale),
+            ('covale', covale),
         ]:
-            indep = aa_model.make_indep(input_pdb, ligand_name)
+            print(f'----------{name}-------------------')
+            run_inference.seed_all()
+            indep, metadata = aa_model.make_indep(input_pdb, ligand_name, return_metadata=True)
             target_feats = inference.utils.process_target(input_pdb)
             contig_map =  contigs.ContigMap(target_feats,
                                         contigs=['10-60,A84-87,10-60'],
                                         contig_atoms="{'A84':'CA,C,N,O,CB,SG'}",
                                         length='100-100',
                                         )
-            # indep = aa_model.make_indep(input_pdb)
-            indep_contig,is_diffused,_ = adaptor.insert_contig(indep, contig_map)
+            indep_contig,is_diffused,_ = adaptor.insert_contig(indep, contig_map, metadata=metadata)
             d[name]['indep_contig'] = indep_contig
             # d[name]['rfi'] = adaptor.prepro(indep_contig, 100, is_diffused)
 
 
         cmp = partial(tensor_util.cmp, atol=1e-20, rtol=1e-5)        
-        test_utils.assert_matches_golden(self, 'inference_bilin_noncovale', d['noncovale']['indep_contig'], rewrite=REWRITE, custom_comparator=cmp)
-        # diff = test_utils.cmp_pretty(d['noncovale']['indep_contig'], d['covale']['indep_contig'])
-        # if not diff:
-        #     self.fail('expected difference between covale and noncovale input')
+        indep_covale, indep_noncovale = d['covale']['indep_contig'], d['noncovale']['indep_contig']
+        test_utils.assert_matches_golden(self, 'inference_bilin_noncovale', indep_noncovale, rewrite=REWRITE, custom_comparator=cmp)
+        diff = test_utils.cmp_pretty(indep_covale, indep_noncovale)
+        if not diff:
+            self.fail('expected difference between covale and noncovale input')
+        ic(diff)
+        test_utils.assert_matches_golden(self, 'inference_bilin_covale', indep_covale, rewrite=REWRITE, custom_comparator=cmp)
 
-        # ic(diff)
-
-        # add assertion that only specific bond feat is different
+        new_bonds = indep_covale.bond_feats != indep_noncovale.bond_feats
+        new_bonds = indep_covale.human_readable_2d_symmetric_mask(new_bonds)
+        ic(new_bonds)
+        new_bonded_elements = tuple(set([element for _, element in b]) for b in new_bonds)
+        assertpy.assert_that(new_bonded_elements).is_equal_to((set(['C', 'S']),))
 
 REWRITE = False
 if __name__ == '__main__':
