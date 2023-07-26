@@ -575,6 +575,12 @@ def get_contig_c_alpha_rmsd(row, all_idxs=False):
         i = torch.arange(traj.shape[0])
     return el.c_alpha_rmsd_traj(traj[i][:,motif_idx])
 
+def flatten_dict(dd, separator ='.', prefix =''):
+    return { prefix + separator + k if prefix else k : v
+             for kk, vv in dd.items()
+             for k, v in flatten_dict(vv, separator, kk).items()
+             } if isinstance(dd, dict) else { prefix : dd }
+
 def make_row_from_traj(traj_prefix):
     synth_row = {}
     
@@ -588,13 +594,11 @@ def make_row_from_traj(traj_prefix):
     synth_row['mpnn'] = True
     trb = get_trb(synth_row)
     rundir = synth_row['rundir']
-    synth_row.update(trb['config'])
+    config = trb['config']
+    config = flatten_dict(config)
+    synth_row.update(config)
     synth_row['rundir'] = rundir
-    # for k,vdict in trb['config'].items():
-    #     for k2,v in vdict.items():
-    #         synth_row[k+'.'+k2] = v
     return synth_row
-    #show_motif(synth_row, 'synth_row_2', show_af2=False)
 
 def show_row(row, traj_name, traj_type='X0'):
     show_traj(row, traj_name, traj_type)

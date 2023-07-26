@@ -71,7 +71,8 @@ def get_radius_of_gyration_inference(indep, feature_conf, feature_inference_conf
 def get_relative_sasa_inference(indep, feature_conf, feature_inference_conf, **kwargs):
     if not feature_inference_conf.active:
         return torch.zeros((indep.length(), feature_conf.n_bins + 1))
+    rasa = torch.full((indep.length(),), feature_inference_conf.rasa)
+    one_hot = one_hot_buckets(rasa, feature_conf.low, feature_conf.high, feature_conf.n_bins)
     is_feature_applicable = indep.is_sm
-    one_hot = one_hot_buckets(feature_inference_conf.rasa, feature_conf.low, feature_conf.high, feature_conf.n_bins)
     one_hot[~is_feature_applicable] = 0
     return torch.cat((~is_feature_applicable[:, None], one_hot), dim=1)

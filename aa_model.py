@@ -299,6 +299,41 @@ def get_only_ligand(pdb_lines):
     ligand = list(ligands)[0]
     return ligand
 
+def get_non_target_hetatm_ids(pdb_lines, ligands):
+    non_target_hetatm_ids = []
+    for l in pdb_lines:
+        if 'HETATM' in l:
+            curr_ligand = l[17:17+4].strip()
+            if curr_ligand not in ligands:
+                non_target_hetatm_ids.append(int(l[6:6+5].strip()))
+                continue
+    return set(non_target_hetatm_ids)
+
+def remove_non_target_ligands(pdb_lines, ligands, cautious=False):
+    non_target_hetatm_ids = get_non_target_hetatm_ids(pdb_lines, ligands)
+    lines = []
+    violations = []
+    for l in pdb_lines:
+        if 'HETATM' in l:
+                atom_id = int(l[6:6+5].strip())
+                if atom_id in non_target_hetatm_ids:
+                    continue
+        if 'CONECT' in l:
+            ids = [int(e.strip()) for e in l[6:].strip().split()]
+            if all(i in non_target_hetatm_ids for i in ids):
+                continue
+            if any(i in non_target_hetatm_ids for i in ids):
+                target_to_non_target = [i for i in ids if i in non_target_hetatm_ids]
+                violations.append(f'line {l} references atom ids in a non-target ligand, but also target atoms: {target_to_non_target}')
+                new_l = ['CONECT'] 
+                for i in ids:
+                    if i not in non_target_hetatm_ids:
+                        new_l.append(f'{123:>4}')
+                l = ''.join(new_l)
+        lines.append(l)
+    if len(violations) and cautious:
+        raise Exception('\n'.join(violations))
+    return lines
 
 def filter_het(pdb_lines, ligand, covale_allowed=False):
     lines = []
@@ -405,7 +440,10 @@ def make_indep(pdb, ligand=None, center=True, return_metadata=False):
 
     # xyz_prot, mask_prot, idx_prot, seq_prot = parsers.parse_pdb(pdb, seq=True, parse_hetatom=True)
 
-    target_feats = inference.utils.parse_pdb(pdb, parse_hetatom=True)
+    with open(pdb, 'r') as fh:
+        stream = fh.readlines()
+    stream = remove_non_target_ligands(stream, [ligand])
+    target_feats = inference.utils.parse_pdb_lines(stream, parse_hetatom=True)
     het_atom_uids = [(e['res_idx'], e['atom_id'].strip()) for e in target_feats['info_het']]
     prot_atom_uids = [(idx, 'CA') for idx in target_feats['idx']]
     uids = prot_atom_uids + het_atom_uids
@@ -420,8 +458,6 @@ def make_indep(pdb, ligand=None, center=True, return_metadata=False):
     a3m_prot = {"msa": msa_prot, "ins": ins_prot}
     covale_bonds = []
     if ligand:
-        with open(pdb, 'r') as fh:
-            stream = fh.readlines()
         protein_ligand_bonds_atoms = find_covale_bonds(stream, ligand)
         print('Protein-ligand bonds:')
         for i, (d,r) in enumerate(protein_ligand_bonds_atoms):
@@ -440,6 +476,7 @@ def make_indep(pdb, ligand=None, center=True, return_metadata=False):
         with open(pdb, 'r') as fh:
             stream = [l for l in fh if "HETATM" in l or "CONECT" in l]
         if ligand == UNIQUE_LIGAND:
+            raise Exception('not implemented')
             ligand = get_only_ligand(pdb_lines)
 
         stream = filter_het(stream, ligand, covale_allowed=True)
@@ -797,6 +834,7 @@ class Model:
             hotspot_tens = torch.zeros(L).float()
             hotspot_tens[hotspot_idx] = 1.0
             t1d=torch.cat((t1d, hotspot_tens[None,None,...,None].to(self.device)), dim=-1)
+        # Uncomment to see categorical extra_t1d_v2
         # ic(
         #     indep.extra_t1d.shape,
         #     indep.extra_t1d[:,:10].argmax(dim=-1),
