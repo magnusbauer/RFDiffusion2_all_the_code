@@ -54,12 +54,24 @@ def one_hot_buckets(a, low, high, n, eps=1e-6):
 def get_radius_of_gyration_inference(indep, feature_conf, feature_inference_conf, is_gp=None, **kwargs):
     if not feature_inference_conf.active:
         return torch.zeros((indep.length(), feature_conf.n_bins + 1))
-    else:
-        raise Exception('not implemented')
+    rog = torch.zeros((indep.length(),))
+    is_prot = ~indep.is_sm * ~is_gp
+    indep_prot, _ = aa_model.slice_indep(indep, is_prot)
+    rog_prot = torch.full((indep_prot.length(),), 0.0)
+    for is_chain in indep_prot.chain_masks():
+        rog_chain = feature_inference_conf.rog
+        rog_prot[is_chain] = rog_chain
+    rog[is_prot] = rog_prot
+    is_feature_applicable = is_prot
+    one_hot = one_hot_buckets(rog, feature_conf.low, feature_conf.high, feature_conf.n_bins)
+    one_hot[~is_feature_applicable] = 0
+    return torch.cat((~is_feature_applicable[:, None], one_hot), dim=1)
 
 
 def get_relative_sasa_inference(indep, feature_conf, feature_inference_conf, **kwargs):
     if not feature_inference_conf.active:
         return torch.zeros((indep.length(), feature_conf.n_bins + 1))
-    else:
-        raise Exception('not implemented')
+    is_feature_applicable = indep.is_sm
+    one_hot = one_hot_buckets(feature_inference_conf.rasa, feature_conf.low, feature_conf.high, feature_conf.n_bins)
+    one_hot[~is_feature_applicable] = 0
+    return torch.cat((~is_feature_applicable[:, None], one_hot), dim=1)

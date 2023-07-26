@@ -166,10 +166,11 @@ def main():
 
     def get_input_copy_path(input_pdb):
         return os.path.join(os.path.dirname(args.out), 'input', os.path.basename(input_pdb))
-    for input_pdb in df['inference.input_pdb'].unique():
-        shutil.copyfile(input_pdb, get_input_copy_path(input_pdb))
+    if 'inference.input_pdb' in df:
+        for input_pdb in df['inference.input_pdb'].unique():
+            shutil.copyfile(input_pdb, get_input_copy_path(input_pdb))
     
-    df['inference.input_pdb'] = df['inference.input_pdb'].apply(get_input_copy_path)
+        df['inference.input_pdb'] = df['inference.input_pdb'].apply(get_input_copy_path)
 
     out_dir, basename = os.path.split(args.out)
     def get_output_path(row):

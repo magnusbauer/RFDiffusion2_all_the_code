@@ -76,7 +76,7 @@ def same_chain_from_chain_letters(chains):
     return torch.tensor(chains[:, None] == chains[None, :]).bool()
 
 def same_chain_with_covale(same_chain, covale_bonds):
-    same_chain = same_chain.clone())
+    same_chain = same_chain.clone()
     for (res_i, _), sm_i, _ in covale_bonds:
         same_chain[res_i, sm_i] = True
     chains_after_covale = chain_letters_from_same_chain(same_chain)
@@ -667,15 +667,17 @@ class Model:
 
         msa_masked[:,:,:,:NAATOKENS] = seq_one_hot[None, None]
         msa_masked[:,:,:,NAATOKENS:2*NAATOKENS] = seq_one_hot[None, None]
-        msa_masked[:,:,:,MSAMASKED_N_TERM] = (indep.terminus_type == N_TERMINUS).float()
-        msa_masked[:,:,:,MSAMASKED_C_TERM] = (indep.terminus_type == C_TERMINUS).float()
+        if self.conf.preprocess.annotate_termini:
+            msa_masked[:,:,:,MSAMASKED_N_TERM] = (indep.terminus_type == N_TERMINUS).float()
+            msa_masked[:,:,:,MSAMASKED_C_TERM] = (indep.terminus_type == C_TERMINUS).float()
 
         ### msa_full ###
         ################
         msa_full = torch.zeros((1,1,L,NAATOKENS+NINDEL+NTERMINUS))
         msa_full[:,:,:,:NAATOKENS] = seq_one_hot[None, None]
-        msa_full[:,:,:,MSAFULL_N_TERM] = (indep.terminus_type == N_TERMINUS).float()
-        msa_full[:,:,:,MSAFULL_C_TERM] = (indep.terminus_type == C_TERMINUS).float()
+        if self.conf.preprocess.annotate_termini:
+            msa_full[:,:,:,MSAFULL_N_TERM] = (indep.terminus_type == N_TERMINUS).float()
+            msa_full[:,:,:,MSAFULL_C_TERM] = (indep.terminus_type == C_TERMINUS).float()
 
         ### t1d ###
         ########### 
@@ -840,14 +842,6 @@ class Model:
         xyz[0, indep.is_sm,14:] = 0
         xyz[0, is_protein_motif, 14:] = 0
         dist_matrix = rf2aa.data_loader.get_bond_distances(indep.bond_feats)
-
-        # minor tweaks to rfi to match gp training
-        '''Manually inspecting the pickled features passed to RF during training, 
-        I did not see markers for the N and C termini. This is to more accurately 
-        replicate the features seen during training at inference.'''
-        # Erase N/C termini markers
-        msa_masked[...,-2:] = 0
-        msa_full[...,-2:] = 0
         
         t1d = torch.tile(t1d, (1,2,1,1))
         # This is messed up for extra_t1d

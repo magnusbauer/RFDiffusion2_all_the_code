@@ -31,7 +31,6 @@ inference:
   symmetric_self_cond: True
   final_step: 1
   feed_true_xt: False
-  annotate_termini: True
   deterministic: True
   zero_weights: False
   ligand: null
@@ -51,8 +50,10 @@ inference:
       std: 20
     radius_of_gyration_v2:
       active: False
+      rog: -1
     relative_sasa_v2:
       active: False
+      rasa: -1
 
 contigmap:
   contigs: ['20', 'A3-23', '30']
@@ -161,6 +162,7 @@ preprocess:
   seq_self_cond: False
   predict_previous: False
   randomize_frames: False
+  annotate_termini: True
   
 logging:
   inputs: False

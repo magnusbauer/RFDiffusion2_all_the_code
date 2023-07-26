@@ -117,6 +117,7 @@ preprocess:
   randomize_frames: false
   sidechain_input: false
   d_t1d: 22
+  annotate_termini: True
 spoof_item: ''
 dataloader:
   BLOCKCUT: 5
