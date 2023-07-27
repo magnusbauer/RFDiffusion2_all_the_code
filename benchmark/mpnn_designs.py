@@ -47,9 +47,9 @@ def main(conf: HydraConfig) -> None:
         filenames_by_ligand_presence[has_ligand].append(fn)
     
     for use_ligand, filenames in filenames_by_ligand_presence.items():
-        # args_for_mpnn_flavor = copy.deepcopy(args)
-        # args_for_mpnn_flavor.use_ligand = use_ligand
-        run_mpnn(args_for_mpnn_flavor, filenames)
+        conf_for_mpnn_flavor = copy.deepcopy(conf)
+        conf_for_mpnn_flavor.use_ligand = use_ligand
+        run_mpnn(conf_for_mpnn_flavor, filenames)
 
 def get_binary(in_proc):
     in_apptainer = os.path.exists('/.singularity.d/Singularity')

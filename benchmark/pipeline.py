@@ -20,7 +20,7 @@ def main(conf: HydraConfig) -> None:
     slurm_submit:   False = Do not submit slurm array job, only generate job list. <True, False>
     in_proc:        True = Do not submit slurm array job, run on current node. <True, False>
     inpaint:        Use sweep_hyperparam_inpaint.py to generate the backbones.
-    af2_unmpnned:   Run Alphafold on the raw sequences made during backbone generation.
+    af2_unmpnned:   Run Alphafold on the raw sequences made during backbone generation. <True, False>
 
     sweep:          Conf for the hyperparameter sweep step.
     mpnn:           Conf for the mpnn_designs step.
@@ -35,11 +35,8 @@ def main(conf: HydraConfig) -> None:
         else:
             script = f'{script_dir}sweep_hyperparam.py'
         print('run pipeline step')
-        # print('cmd overrides:', command_line_overrides(conf.sweep))
         jobid_sweep = run_pipeline_step(f'{script} {command_line_overrides(conf.sweep)}')
 
-        # print(jobid_sweep)
-        # import ipdb; ipdb.set_trace()
         print('Waiting for design jobs to finish...')
         wait_for_jobs(jobid_sweep)
 
