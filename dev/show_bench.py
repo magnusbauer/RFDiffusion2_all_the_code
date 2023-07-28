@@ -157,6 +157,7 @@ def get_sdata(path, pattern=None):
     srows = [analyze.make_row_from_traj(traj_path) for traj_path in traj_paths]
     data = pd.DataFrame.from_dict(srows)
     data['des_color'] = pd.NA
+    data['seed'] = data.name.apply(lambda x: int(x.split('_cond')[1].split('_')[1].split('-')[0]))
     return data
 
 import re
@@ -246,20 +247,28 @@ def get_sweeps(data):
 
     sweeps = {k:v for k,v in uniques.items() if len(v) > 1}
 
-    for k in ['name', 'inference.output_prefix']:
+    for k in ['name', 'seed', 'inference.output_prefix']:
         _ = sweeps.pop(k, None)
 
     return sweeps
 
-def main(path, name=None, clear=False, structs='X0', pymol_keys=None, pymol_url='http://calathea.dhcp.ipd:9123'):
+
+def main(path,
+         name=None,
+         clear=False,
+         structs=['X0'],
+         pymol_keys=None,
+         pymol_url='http://calathea.dhcp.ipd:9123',
+         max_seed = 100,
+         ):
     ic(pymol_url)
     # cmd = analyze.get_cmd(pymol_url)
     # analyze.cmd = cmd
     # show_tip_pa.cmd = cmd
     # show_tip_row.cmd = cmd
-    ic('before show pro3')
-    cmd.fragment('pro')
-    ic('after show pro')
+    # ic('before show pro3')
+    # cmd.fragment('pro')
+    # ic('after show pro')
     ic.configureOutput(includeContext=True)
     data = get_sdata(path)
     print(data.shape)
@@ -269,6 +278,8 @@ def main(path, name=None, clear=False, structs='X0', pymol_keys=None, pymol_url=
     #     ic(pymol_keys, structs)
     #     pymol_keys = pymol_keys.split(',')
     #     add_pymol_name(data, pymol_keys)
+    data = data[data['seed'] < max_seed]
+
     sweeps = get_sweeps(data)
     ic(sweeps)
     if len(sweeps):
@@ -278,11 +289,11 @@ def main(path, name=None, clear=False, structs='X0', pymol_keys=None, pymol_url=
     all_pymol = show_df(data, structs=structs)
     cmd.do('mass_paper_rainbow')
 
-# TODO: make this monadic
-cmd = analyze.get_cmd('http://10.64.100.67:9123')
-analyze.cmd = cmd
-show_tip_pa.cmd = cmd
-show_tip_row.cmd = cmd
+# # TODO: make this monadic
+# cmd = analyze.get_cmd('http://10.64.100.67:9123')
+# analyze.cmd = cmd
+# show_tip_pa.cmd = cmd
+# show_tip_row.cmd = cmd
 
 if __name__ == '__main__':
     fire.Fire(main)

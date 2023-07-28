@@ -1,4 +1,4 @@
-#!/net/software/containers/users/dtischer/shebang_rf_se3_diffusion.sh
+#!/net/software/containers/users/ahern/shebang_rf_se3_diffusion.sh
 #
 # Generates and slurm array jobs for hyperparameter sweeps on design
 # scripts, optionally submits array job and outputs slurm job ID
@@ -45,6 +45,11 @@ def split_string_with_parentheses(string, delimiter=None):
     
     return result
 
+def remove_whitespace(arg_str):
+    arg_str = re.sub(r'\s*\|\s*', '|', arg_str)
+    arg_str = re.sub(r'\s*=\s*', '=', arg_str)
+    return arg_str
+
 def get_arg_combos(arg_str):
     '''
     Params:
@@ -61,6 +66,7 @@ def get_arg_combos(arg_str):
         ]`
     '''
     all_arg_dicts = []
+    arg_str = remove_whitespace(arg_str)
     for arg in split_string_with_parentheses(arg_str):
         if arg.startswith('('):
             arg_dicts = []

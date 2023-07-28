@@ -1,4 +1,4 @@
-#!/net/software/containers/users/dtischer/shebang_rf_se3_diffusion.sh
+#!/net/software/containers/users/ahern/shebang_rf_se3_diffusion.sh
 """
 Inference script.
 
