@@ -16,10 +16,8 @@ script_dir=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 benchmark_dir="$(dirname "$script_dir")"
 repo_dir="$(dirname "$benchmark_dir")"
 
-
 outdir=$benchmark_dir'/test_output'
-
-if [ ! resume ]; then
+if [ "$resume" != true ]; then
         echo "Deleting previous test run outputs"
         rm -r $outdir
 fi
