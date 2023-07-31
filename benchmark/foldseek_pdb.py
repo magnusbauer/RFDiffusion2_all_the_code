@@ -29,7 +29,7 @@ def main():
         os.system(f'ln -s {" ".join(pdbs_abs_path)} {args.pdb_dir}')
 
     # Run foldseek in a subprocess
-    FOLDSEEK = '/software/foldseek/foldseek'
+    FOLDSEEK = '/net/software/foldseek/bin/foldseek'
     TARGET_DB = '/projects/omics/ianh/databases/foldcomp/pdb'
     cmd = (f'{FOLDSEEK} easy-search {args.pdb_dir} {TARGET_DB} {args.out_dir}/aln.m8 {args.out_dir}/foldseek_tmp '
            f'-c {args.c} --alignment-type {args.alignment_type} --format-output {args.format_output}')

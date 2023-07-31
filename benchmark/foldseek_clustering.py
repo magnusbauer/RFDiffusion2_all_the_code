@@ -32,7 +32,7 @@ def main():
         os.system(f'ln -s {" ".join(pdbs_abs_path)} {args.pdb_dir}')
 
     # Run foldseek in a subprocess
-    FOLDSEEK = '/software/foldseek/foldseek'
+    FOLDSEEK = '/net/software/foldseek/bin/foldseek'
     cmd = (f'{FOLDSEEK} easy-cluster {args.pdb_dir} {args.out_dir}/foldseek_clustering {args.out_dir}/foldseek_tmp '
            f'-c {args.c} --alignment-type 1 --tmscore-threshold {args.tmscore_threshold}')
 
