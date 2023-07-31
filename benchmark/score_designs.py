@@ -1,4 +1,4 @@
-#!/home/ahern/shebangs/shebang_rf_se3_diffusion.sh
+#!/net/scratch/ahern/shebangs/shebang_rf_se3_diffusion.sh
 #
 # Takes a folder of pdb & trb files, generates list of AF2 prediction & scoring
 # jobs on batches of those designs, and optionally submits slurm array job and

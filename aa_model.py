@@ -472,6 +472,7 @@ def make_indep(pdb, ligand=None, center=True, return_metadata=False):
             covale_bonds.append(
                 ((res_i, prot_atom_name), atom_i, bond_type)
             )
+        ic(covale_bonds)
 
         with open(pdb, 'r') as fh:
             stream = [l for l in fh if "HETATM" in l or "CONECT" in l]
