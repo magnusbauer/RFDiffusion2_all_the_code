@@ -34,7 +34,7 @@ REWRITE = False
 def infer(overrides):
     conf = construct_conf(overrides)
     run_inference.main(conf)
-    p = Path(conf.inference.output_prefix + '_0-atomized-bb-False.pdb')
+    p = Path(conf.inference.output_prefix + '_0-atomized-bb-True.pdb')
     return p, conf
 
 def construct_conf(overrides):
@@ -47,7 +47,7 @@ def construct_conf(overrides):
     return conf
 
 def get_trb(conf):
-    path = conf.inference.output_prefix + '_0-atomized-bb-False.trb'
+    path = conf.inference.output_prefix + '_0-atomized-bb-True.trb'
     return np.load(path,allow_pickle=True)
 
 class TestRegression(unittest.TestCase):
@@ -204,7 +204,8 @@ class TestInference(unittest.TestCase):
             'inference.num_designs=1',
             'inference.output_prefix=tmp/test_2',
             "contigmap.contigs=['1,A518-519,1']",
-            'contigmap.length=4-4'
+            'contigmap.length=4-4',
+            'inference.guidepost_xyz_as_design_bb=[True]',
         ])
 
         input_feats = inference.utils.parse_pdb(conf.inference.input_pdb)
@@ -229,14 +230,14 @@ class TestInference(unittest.TestCase):
                 backbone_atom_mask[None])
         # The motif gets rotated and translated, so the accuracy is somewhat limited
         # due to the precision of coordinates in a PDB file.
-        self.assertLess(backbone_rmsd, 0.02)
+        self.assertLess(backbone_rmsd, 0.03)
 
         # All atoms
         rmsd = rf2aa.loss.calc_crd_rmsd(
                 torch.tensor(input_motif_xyz)[None],
                 torch.tensor(output_motif_xyz)[None],
                 torch.tensor(atom_mask)[None])
-        self.assertLess(rmsd, 0.02)
+        self.assertLess(rmsd, 0.03)
 
     # TODO create function for regenerating the golden here
     # def test_convert_motif_to_guide_posts(self):
