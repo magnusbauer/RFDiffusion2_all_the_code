@@ -1,4 +1,4 @@
-#!/net/software/containers/users/ahern/shebang_rf_se3_diffusion.sh
+#!/home/ahern/shebangs/shebang_rf_se3_diffusion.sh
 #
 # Takes a folder of pdb & trb files, generates list of AF2 prediction & scoring
 # jobs on batches of those designs, and optionally submits slurm array job and
@@ -53,7 +53,7 @@ def main():
             with open(tmp_fn,'w') as outf:
                 for j in np.arange(i,min(i+args.chunk, len(filenames))):
                     print(filenames[j], file=outf)
-            print(f'apptainer run --nv --bind /software/mlfold/alphafold:/software/mlfold/alphafold --bind /net/databases/alphafold/params/params_model_4_ptm.npz:/software/mlfold/alphafold-data/params/params_model_4_ptm.npz /software/containers/mlfold.sif {script_dir}/util/af2_metrics.py --use_ptm '\
+            print(f'/usr/bin/apptainer run --nv --bind /software/mlfold/alphafold:/software/mlfold/alphafold --bind /net/databases/alphafold/params/params_model_4_ptm.npz:/software/mlfold/alphafold-data/params/params_model_4_ptm.npz /software/containers/mlfold.sif {script_dir}/util/af2_metrics.py --use_ptm '\
                   f'--outcsv {args.datadir}/af2_metrics.csv.{i} '\
                   f'--trb_dir {args.trb_dir} '\
                   f'{tmp_fn}', file=job_list_file)

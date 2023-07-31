@@ -1,4 +1,4 @@
-#!/net/software/containers/users/ahern/shebang_rf_se3_diffusion.sh
+#!/home/ahern/shebangs/shebang_rf_se3_diffusion.sh
 #
 # Generates and slurm array jobs for hyperparameter sweeps on design
 # scripts, optionally submits array job and outputs slurm job ID
