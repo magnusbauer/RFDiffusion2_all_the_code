@@ -1,4 +1,4 @@
-#!/home/ahern/shebangs/shebang_rf_se3_diffusion.sh
+#!/net/software/containers/users/ahern/shebang_rf_se3_diffusion.sh
 #
 # Runs the benchmarking pipeline, given arguments for a hyperparameter sweep
 #
