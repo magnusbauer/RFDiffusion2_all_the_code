@@ -106,7 +106,7 @@ def run_mpnn(args, filenames):
         model_name = 'v_48_020'
 
     for i in range(0, len(filenames), args.chunk):
-        print(f'source activate SE3-nvidia; python {mpnn_script} '\
+        print(f'python {mpnn_script} '\
               f'--model_name "{model_name}" '\
               f'--jsonl_path {mpnn_folder}pdbs_{i}.jsonl '\
               f'--fixed_positions_jsonl {mpnn_folder}pdbs_position_fixed_{i}.jsonl '\
