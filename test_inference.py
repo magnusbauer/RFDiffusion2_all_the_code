@@ -34,7 +34,7 @@ REWRITE = False
 def infer(overrides):
     conf = construct_conf(overrides)
     run_inference.main(conf)
-    p = Path(conf.inference.output_prefix + '_0.pdb')
+    p = Path(conf.inference.output_prefix + '_0-atomized-bb-False.pdb')
     return p, conf
 
 def construct_conf(overrides):
@@ -47,7 +47,7 @@ def construct_conf(overrides):
     return conf
 
 def get_trb(conf):
-    path = conf.inference.output_prefix + '_0.trb'
+    path = conf.inference.output_prefix + '_0-atomized-bb-False.trb'
     return np.load(path,allow_pickle=True)
 
 class TestRegression(unittest.TestCase):
