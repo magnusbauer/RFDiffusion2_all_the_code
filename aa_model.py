@@ -1814,6 +1814,7 @@ def transform_indep(indep, is_res_str_shown, is_atom_str_shown, use_guideposts, 
             for i, (a, b, t) in enumerate(metadata['covale_bonds']):
                 res_i, atom_name = a
                 assertpy.assert_that(gp_from_ptn_idx0).described_as('residues participating in covalent bonds to small molecules must be made into guideposts').contains(res_i)
+                assertpy.assert_that(is_atom_str_shown).described_as('residues participating in covalent bonds to small molecules must be atomized').contains(res_i)
                 res_i = gp_from_ptn_idx0[res_i]
                 metadata['covale_bonds'][i] = ((res_i, atom_name), b, t)
 
