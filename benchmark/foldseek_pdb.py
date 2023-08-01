@@ -1,4 +1,4 @@
-#!/net/software/containers/users/dtischer/shebang_rf_se3_diffusion.sh
+#!/net/scratch/ahern/shebangs/shebang_rf_se3_diffusion.sh
 #
 # Get the structurally most similar matches for a list/dir of pdbs to the PDB.
 

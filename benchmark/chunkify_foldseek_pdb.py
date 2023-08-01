@@ -1,4 +1,4 @@
-#!/net/software/containers/users/dtischer/shebang_rf_se3_diffusion.sh
+#!/net/scratch/ahern/shebangs/shebang_rf_se3_diffusion.sh
 #
 # Breakup a foldseek job on a dir of many pdbs in several chunks, which run as separate jobs.
 
@@ -48,8 +48,16 @@ def main():
             job_name = args.J
         else:
             pre = 'foldseek_pdb_'
-            job_name = pre + os.path.basename(args.pdb_dir.strip('/')) 
-        cn_job, proc = array_submit(job_fn, p = 'cpu', gres=None, log=args.keep_logs, J=job_name, in_proc=args.in_proc)
+            job_name = pre + os.path.basename(args.pdb_dir.strip('/'))
+        
+        try:
+            cn_job, proc = array_submit(job_fn, p = 'cpu', gres=None, log=args.keep_logs, J=job_name, in_proc=args.in_proc)
+        except Exception as excep:
+            if 'No k-mer could be extracted for the database' in str(excep):
+                print('WARNING: Some generated protein was too short for foldseek (<14 aa). '
+                      'This often occurs when running the pipeline unit test. NBD')
+                sys.exit(0)
+
         print(f'Submitted array job {cn_job} with {chunk_number} jobs to compute the '
               f'similarity of {len(glob.glob(f"{args.pdb_dir}/*pdb"))} designs to the PDB.')
 
