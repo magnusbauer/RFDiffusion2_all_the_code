@@ -58,6 +58,8 @@ def main():
 
     df_base = pd.DataFrame.from_records(records)
 
+    print('zzzzzzzzzzz', df_base)
+
     # load computed metrics, if they exist
     print('loading computed metrics')
     # accumulate metrics for: no mpnn, mpnn, ligand mpnn

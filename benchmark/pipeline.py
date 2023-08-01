@@ -95,10 +95,10 @@ def main(conf: HydraConfig) -> None:
                     f'{script_dir}score_designs.py {hydra_overrides(conf.score)}'
                 ))
 
-    print('Waiting for scoring jobs to finish...')
-    if conf.af2_unmpnned:
-        wait_for_jobs(jobid_score)
-    wait_for_jobs(jobid_score_mpnn)
+        print('Waiting for scoring jobs to finish...')
+        if conf.af2_unmpnned:
+            wait_for_jobs(jobid_score)
+        wait_for_jobs(jobid_score_mpnn)
 
     print('Compiling metrics...')
     run_pipeline_step(f'{script_dir}compile_metrics.py {conf.outdir}')
