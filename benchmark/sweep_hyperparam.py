@@ -92,8 +92,7 @@ def get_arg_combos(arg_str):
 
     return arg_dicts
 
-def main():
-
+def parse_args(in_args=None):
     parser = argparse.ArgumentParser()
     parser.add_argument('--command',type=str,help='design script to run')
     parser.add_argument('--args',type=str,nargs='+',required=True,help='string with all arguments to pass to the command, '\
@@ -114,7 +113,12 @@ def main():
     parser.add_argument('--pilot', dest='pilot', action="store_true", default=False)
     parser.add_argument('--pilot_single', dest='pilot_single', action="store_true", default=False)
 
-    args, unknown = parser.parse_known_args()
+    args, unknown = parser.parse_known_args(in_args)
+    return args, unknown
+
+def main():
+    args, unknown = parse_args()
+
     if len(unknown)>0:
         print(f'WARNING: Unknown arguments {unknown}')
 

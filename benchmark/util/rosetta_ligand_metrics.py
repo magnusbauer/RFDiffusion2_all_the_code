@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/software/containers/mlfold.sif
 
 """
 Rosetta scoring script for ligand-binding protein designs.

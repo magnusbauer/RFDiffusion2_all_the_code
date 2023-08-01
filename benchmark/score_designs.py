@@ -78,7 +78,7 @@ def main():
             with open(tmp_fn,'w') as outf:
                 for j in np.arange(i,min(i+args.chunk, len(filenames))):
                     print(filenames[j], file=outf)
-            print(f'{script_dir}/util/pyrosetta_metrics.py '\
+            print(f'apptainer exec /software/containers/pyrosetta.sif python {script_dir}/util/pyrosetta_metrics.py '\
                   f'--outcsv {args.datadir}/pyrosetta_metrics.csv.{i} '\
                   f'{tmp_fn}', file=job_list_file)
 
@@ -96,13 +96,13 @@ def main():
     if 'chemnet' in args.run:
         job_fn = args.datadir + '/jobs.score.chemnet.list'
         job_list_file = open(job_fn, 'w') if args.submit else sys.stdout
-        chemnet_script = '/home/jue/git/chemnet/arch.22-08-19/predict/DALigandDock_v02.py'                
+        chemnet_script = '/net/databases/lab/chemnet/arch.22-10-28/DALigandDock_v03.py'
         for i in range(0, len(filenames), args.chunk):
             tmp_fn = f'{args.datadir}/{args.tmp_pre}.chemnet.{i}'
             with open(tmp_fn,'w') as outf:
                 for j in np.arange(i,min(i+args.chunk, len(filenames))):
                     print(filenames[j], file=outf)
-            print(f'source activate dlchem; python {chemnet_script} '\
+            print(f'apptainer exec --nv /software/containers/users/aivan/dlchem.sif python {chemnet_script} '\
                   f'-n 10 --ifile {tmp_fn} '\
                   f'--odir {args.datadir}/chemnet/ '\
                   f'--ocsv {args.datadir}/chemnet_scores.csv.{i} ',
@@ -120,7 +120,7 @@ def main():
             print(f'Submitted array job {cn_job} with {int(np.ceil(len(filenames)/args.chunk))} jobs to ChemNet-predict {len(filenames)} designs')
 
     # Ligand metrics (rosetta)
-    if 'rosettalig' in args.run:
+    if False:  #'rosettalig' in args.run: No current sif file has pyrosetta and pytorch.
         job_fn = args.datadir + '/jobs.score.rosettalig.list'
         job_list_file = open(job_fn, 'w') if args.submit else sys.stdout
         rosettalig_script = script_dir+'/util/rosetta_ligand_metrics.py'
@@ -129,7 +129,7 @@ def main():
             with open(tmp_fn,'w') as outf:
                 for j in np.arange(i,min(i+args.chunk, len(filenames))):
                     print(filenames[j], file=outf)
-            print(f'source activate SE3-nvidia; python {rosettalig_script} '\
+            print(f'apptainer exec /software/containers/pyrosetta.sif python {rosettalig_script} '\
                   f'--list {tmp_fn} '\
                   f'--outdir {args.datadir}/rosettalig/ '\
                   f'--outcsv {args.datadir}/rosettalig_scores.csv.{i} ',

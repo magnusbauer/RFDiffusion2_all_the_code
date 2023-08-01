@@ -3,7 +3,7 @@
 # Runs the benchmarking pipeline, given arguments for a hyperparameter sweep
 #
 
-import sys, os, re, subprocess, time, argparse
+import sys, os, re, subprocess, time, argparse, glob, json
 from icecream import ic
 script_dir = os.path.dirname(os.path.realpath(__file__))+'/'
 IN_PROC = False
@@ -26,6 +26,7 @@ def main():
     parser.add_argument('--in_proc', dest='in_proc', action="store_true", default=False, help='Do not submit slurm array job, run on current node.')
     parser.add_argument('--mpnn_chunk', dest='mpnn_chunk', default=100, type=int, help='# of structures to mpnn per job.')
     parser.add_argument('--af2_chunk', dest='af2_chunk', default=100, type=int, help='# of sequences to AF2 per job.')
+    parser.add_argument('--foldseek_chunk', dest='foldseek_chunk', default=500, type=int, help='# of structures to foldseek per job.')
     parser.add_argument('--score_scripts', dest='score_scripts', default=None)
     args, unknown = parser.parse_known_args()
     score_scripts = "af2,pyrosetta"
@@ -52,6 +53,24 @@ def main():
         print('Waiting for design jobs to finish...')
         wait_for_jobs(jobid_sweep)
 
+        # Move "orphan" pdbs that somehow lack a trb file
+        orphan_dir = f'{outdir}/orphan_pdbs'
+        os.makedirs(orphan_dir, exist_ok=True)
+        pdb_set = {os.path.basename(x.replace('.pdb', '')) for x in glob.glob(f'{outdir}/*pdb')}
+        trb_set = {os.path.basename(x.replace('.trb', '')) for x in glob.glob(f'{outdir}/*trb')}
+        orphan_pdbs = pdb_set - trb_set
+        for basename in orphan_pdbs:
+            os.rename(f'{outdir}/{basename}.pdb', f'{orphan_dir}/{basename}.pdb')
+
+        # Cluster designs within each condition
+        jobid_cluster = run_pipeline_step(f'{script_dir}/cluster_pipeline_outputs.py --pipeline_outdir {outdir}')
+
+        # Compute similarity of generated backbones to the PDB
+        jobid_foldseek = run_pipeline_step(f'{script_dir}/chunkify_foldseek_pdb.py --pdb_dir {outdir} --chunk {args.foldseek_chunk}')
+
+        print('Waiting for design jobs to finish...')
+        wait_for_jobs(jobid_sweep)
+
     if args.start_step in ['sweep','mpnn']:
         if args.use_ligand:
             job_id_prepare_ligandmpnn_params = run_pipeline_step(f'{script_dir}/pdb_to_params.py {outdir}')
@@ -61,7 +80,6 @@ def main():
         if args.tmalign:
             jobid_tmalign = run_pipeline_step(f'{script_dir}pair_tmalign.py {outdir} {passed_on_args}')
 
-    if args.start_step in ['sweep','mpnn']:
         print('Waiting for MPNN jobs to finish...')
         wait_for_jobs(jobid_mpnn)
 
@@ -99,13 +117,6 @@ def main():
                     f'{script_dir}score_designs.py --run "{score_scripts}" --chunk {args.af2_chunk} '\
                     f'{d} {af2_args}'
                 ))
-
-    if job_id_tmalign:
-        print('Waiting for TM-align jobs to finish...')
-        wait_for_jobs(jobid_tmalign)
-
-        print('Clustering by TM-score...')
-        run_pipeline_step(f'{script_dir}parse_tmalign.py {outdir}')
 
     print('Waiting for scoring jobs to finish...')
     if args.af2_unmpnned:
