@@ -1,0 +1,13 @@
+datadir: ./
+chunk: 100
+num_seq_per_target: 8
+use_ligand: True
+cautious: False
+
+slurm:
+  J: mpnn
+  p: cpu
+  gres: null
+  submit: True
+  in_proc: False
+  keep_logs: True

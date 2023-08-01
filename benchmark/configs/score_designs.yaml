@@ -1,0 +1,15 @@
+datadir: ${hydra:runtime.cwd}
+trb_dir: ${hydra:runtime.cwd}
+filenames: null
+chunk: 100
+tmp_pre: score.list
+pipeline: False
+run: af2
+
+slurm:
+  J: null
+  p: gpu-bf
+  gres: gpu:1
+  submit: True
+  in_proc: False
+  keep_logs: True

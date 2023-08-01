@@ -1,0 +1,22 @@
+out: out/out
+command: ???
+command_args: --config-name aa  # Args to `command` that will be swept over. '|' to delimite an args various values.
+benchmark_json: bench_tip_debug.json
+benchmarks: all
+num_per_condition: 1
+num_per_job: 1
+pilot: False
+pilot_single: False
+
+slurm:
+  J: hyperparam_sweep
+  t: 24:00:00
+  p: gpu-bf
+  gres: gpu:1
+  submit: True
+  in_proc: False
+  keep_logs: True
+
+
+
+

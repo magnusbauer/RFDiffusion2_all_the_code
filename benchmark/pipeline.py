@@ -4,64 +4,54 @@
 #
 
 import sys, os, re, subprocess, time, argparse, glob, json
-from icecream import ic
+import hydra
+from hydra.core.hydra_config import HydraConfig
+from util.hydra_utils import command_line_overrides
 script_dir = os.path.dirname(os.path.realpath(__file__))+'/'
 IN_PROC = False
     
-def main():
-    # parse --out argument for this script
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--out', type=str, default='out/out',help='Path prefix for output files')
-    parser.add_argument('--start_step', type=str, default='sweep', choices=['sweep', 'foldseek', 'mpnn','thread_mpnn', 'score', 'compile'],
-        help='Step of pipeline to start at')
-    parser.add_argument('--inpaint', action='store_true', default=False, 
-        help="Use sweep_hyperparam_inpaint.py, i.e. command-line arguments are in argparse format")
-    parser.add_argument('--af2_unmpnned', action='store_true', default=False)
-    parser.add_argument('--num_seq_per_target', default=8,type=int, help='How many mpnn sequences per design? Default = 8')
-    parser.add_argument('--use_ligand', default=False,action='store_true', 
-        help='Use LigandMPNN instead of regular MPNN.')
-    parser.add_argument('--no_tmalign', default=False,action='store_false', dest='tmalign')
-    parser.add_argument('--af2_gres', type=str, default='',help='--gres argument for alphfold.')
-    parser.add_argument('--af2_p', type=str, default='gpu',help='-p argument for alphfold.')
-    parser.add_argument('--in_proc', dest='in_proc', action="store_true", default=False, help='Do not submit slurm array job, run on current node.')
-    parser.add_argument('--mpnn_chunk', dest='mpnn_chunk', default=100, type=int, help='# of structures to mpnn per job.')
-    parser.add_argument('--af2_chunk', dest='af2_chunk', default=100, type=int, help='# of sequences to AF2 per job.')
-    parser.add_argument('--foldseek_chunk', dest='foldseek_chunk', default=500, type=int, help='# of structures to foldseek per job.')
-    parser.add_argument('--score_scripts', dest='score_scripts', default=None)
-    args, unknown = parser.parse_known_args()
-    score_scripts = "af2,pyrosetta"
-    if args.use_ligand:
-        score_scripts = "af2,pyrosetta,chemnet,rosettalig"
-    score_scripts = args.score_scripts or score_scripts
-    passed_on_args = '--in_proc' if args.in_proc else ''
+@hydra.main(version_base=None, config_path='configs/', config_name='pipeline')
+def main(conf: HydraConfig) -> None:
+    '''
+    ### Expected conf keys ###
+    outdir:         Dir to output generated backbones.
+    start_step:     Pipeline step to start at. <'sweep', 'foldseek', 'mpnn','thread_mpnn', 'score', 'compile'>
+    use_ligand:     Use LigandMPNN instead of regular MPNN. <True, False>
+    slurm_submit:   False = Do not submit slurm array job, only generate job list. <True, False>
+    in_proc:        True = Do not submit slurm array job, run on current node. <True, False>
+    inpaint:        Use sweep_hyperparam_inpaint.py to generate the backbones.
+    af2_unmpnned:   Run Alphafold on the raw sequences made during backbone generation.
+
+    sweep:          Conf for the hyperparameter sweep step.
+    mpnn:           Conf for the mpnn_designs step.
+    score:          Conf for the score_designs step.
+    '''
     global IN_PROC
-    IN_PROC = args.in_proc
+    IN_PROC = conf.in_proc
 
-    outdir = os.path.dirname(args.out)
-    job_id_tmalign=None
-
-    arg_str = ' '.join(['"'+x+'"' if (' ' in x or '|' in x or x=='') else x for x in sys.argv[1:]])
-    use_ligand = 'input_mol2' in arg_str
-    if args.start_step == 'sweep':
-        if args.inpaint:
+    if conf.start_step == 'sweep':
+        if conf.inpaint:
             script = f'{script_dir}sweep_hyperparam_inpaint.py'
         else:
             script = f'{script_dir}sweep_hyperparam.py'
         print('run pipeline step')
-        jobid_sweep = run_pipeline_step(f'{script} {arg_str}')
+        # print('cmd overrides:', command_line_overrides(conf.sweep))
+        jobid_sweep = run_pipeline_step(f'{script} {command_line_overrides(conf.sweep)}')
 
+        # print(jobid_sweep)
+        # import ipdb; ipdb.set_trace()
         print('Waiting for design jobs to finish...')
         wait_for_jobs(jobid_sweep)
 
-    if args.start_step in ['sweep', 'foldseek']:
+    if conf.start_step in ['sweep', 'foldseek']:
         # Move "orphan" pdbs that somehow lack a trb file
-        orphan_dir = f'{outdir}/orphan_pdbs'
+        orphan_dir = f'{conf.outdir}/orphan_pdbs'
         os.makedirs(orphan_dir, exist_ok=True)
-        pdb_set = {os.path.basename(x.replace('.pdb', '')) for x in glob.glob(f'{outdir}/*pdb')}
-        trb_set = {os.path.basename(x.replace('.trb', '')) for x in glob.glob(f'{outdir}/*trb')}
+        pdb_set = {os.path.basename(x.replace('.pdb', '')) for x in glob.glob(f'{conf.outdir}/*pdb')}
+        trb_set = {os.path.basename(x.replace('.trb', '')) for x in glob.glob(f'{conf.outdir}/*trb')}
         orphan_pdbs = pdb_set - trb_set
         for basename in orphan_pdbs:
-            os.rename(f'{outdir}/{basename}.pdb', f'{orphan_dir}/{basename}.pdb')
+            os.rename(f'{conf.outdir}/{basename}.pdb', f'{orphan_dir}/{basename}.pdb')
 
         # Cluster designs within each condition
         jobid_cluster = run_pipeline_step(f'{script_dir}/cluster_pipeline_outputs.py --pipeline_outdir {outdir} --in_proc')
@@ -71,60 +61,48 @@ def main():
         jobid_foldseek = run_pipeline_step(f'{script_dir}/chunkify_foldseek_pdb.py --pdb_dir {outdir} --chunk {args.foldseek_chunk} --in_proc')
         print('Running foldseek in parallel to compare the similarity of the generated backbones to the PDB. The pipeline will continue forward.')
 
-    if args.start_step in ['sweep', 'foldseek', 'mpnn']:
-        if args.use_ligand:
-            job_id_prepare_ligandmpnn_params = run_pipeline_step(f'{script_dir}/pdb_to_params.py {outdir}')
+    if conf.start_step in ['sweep', 'foldseek', 'mpnn']:
+        if conf.use_ligand:
+            job_id_prepare_ligandmpnn_params = run_pipeline_step(f'{script_dir}/pdb_to_params.py {conf.outdir}')
             wait_for_jobs(job_id_prepare_ligandmpnn_params)
-        jobid_mpnn = run_pipeline_step(f'{script_dir}mpnn_designs.py --num_seq_per_target {args.num_seq_per_target} --chunk {args.mpnn_chunk} -p cpu --gres "" {"--use_ligand" if args.use_ligand else ""} {outdir} {passed_on_args}')
-
-        if args.tmalign:
-            jobid_tmalign = run_pipeline_step(f'{script_dir}pair_tmalign.py {outdir} {passed_on_args}')
+        jobid_mpnn = run_pipeline_step(f'{script_dir}mpnn_designs.py {command_line_overrides(conf.mpnn)}')
 
         print('Waiting for MPNN jobs to finish...')
         wait_for_jobs(jobid_mpnn)
 
-    if args.start_step in ['sweep', 'foldseek', 'mpnn', 'thread_mpnn']:
+    if conf.start_step in ['sweep', 'foldseek', 'mpnn', 'thread_mpnn']:
         print('Threading MPNN sequences onto design models...')
-        if args.use_ligand:
-            run_pipeline_step(f'{script_dir}thread_mpnn.py --use_ligand {outdir}')
+        if conf.use_ligand:
+            run_pipeline_step(f'{script_dir}thread_mpnn.py --use_ligand {conf.outdir}')
         else:
-            run_pipeline_step(f'{script_dir}thread_mpnn.py {outdir}')
+            run_pipeline_step(f'{script_dir}thread_mpnn.py {conf.outdir}')
 
-    if args.start_step in ['sweep', 'foldseek', 'mpnn', 'thread_mpnn', 'score']:
+    if conf.start_step in ['sweep', 'foldseek', 'mpnn', 'thread_mpnn', 'score']:
         print('Initiating scoring')
-        af2_args = arg_str
-        if args.af2_gres:
-            af2_args = f' --gres {args.af2_gres}'
-        if args.af2_p:
-            af2_args += f' -p {args.af2_p}'
-        af2_args += f' --trb_dir {outdir}'
-        af2_args += f' {passed_on_args}'
-        if args.af2_unmpnned:
+        if conf.af2_unmpnned:
             jobid_score = run_pipeline_step(
-                f'{script_dir}score_designs.py --run "af2,pyrosetta" --chunk {args.af2_chunk} '\
-                f'{outdir}/ {af2_args}'
+                f'{script_dir}score_designs.py {command_line_overrides(conf.score)} conf.score.datadir={conf.outdir}'
             )
         
         mpnn_dirs = []
         for mpnn_flavor in ['mpnn', 'ligmpnn']:
-            mpnn_dirs.append(f'{outdir}/{mpnn_flavor}')
+            mpnn_dirs.append(f'{conf.outdir}/{mpnn_flavor}')
         
         assert any(os.path.exists(d) for d in mpnn_dirs)
         jobid_score_mpnn = []
         for d in mpnn_dirs:
             if os.path.exists(d):
                 jobid_score_mpnn.extend(run_pipeline_step(
-                    f'{script_dir}score_designs.py --run "{score_scripts}" --chunk {args.af2_chunk} '\
-                    f'{d} {af2_args}'
+                    f'{script_dir}score_designs.py {command_line_overrides(conf.score)}'
                 ))
 
     print('Waiting for scoring jobs to finish...')
-    if args.af2_unmpnned:
+    if conf.af2_unmpnned:
         wait_for_jobs(jobid_score)
     wait_for_jobs(jobid_score_mpnn)
 
     print('Compiling metrics...')
-    run_pipeline_step(f'{script_dir}compile_metrics.py {outdir}')
+    run_pipeline_step(f'{script_dir}compile_metrics.py {conf.outdir}')
 
     print('Done.')
     

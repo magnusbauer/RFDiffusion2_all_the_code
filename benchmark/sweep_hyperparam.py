@@ -7,6 +7,8 @@
 import sys, os, argparse, itertools, json, shutil, re
 import numpy as np
 import pandas as pd
+import hydra
+from hydra.core.hydra_config import HydraConfig
 
 script_dir = os.path.dirname(os.path.realpath(__file__))+'/'
 sys.path.append(script_dir+'util/')
@@ -92,64 +94,58 @@ def get_arg_combos(arg_str):
 
     return arg_dicts
 
-def parse_args(in_args=None):
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--command',type=str,help='design script to run')
-    parser.add_argument('--args',type=str,nargs='+',required=True,help='string with all arguments to pass to the command, '\
-                        'with pipe (|)-delimited value options for each')
-    parser.add_argument('--benchmarks', type=str, nargs='+',help='Space-separated list of benchmark names, as defined in "benchmarks.json"')
-    parser.add_argument('--num_per_condition', type=int, default=1,help='Number of designs to make for each condition')
-    parser.add_argument('--num_per_job', type=int, default=1,help='Split runs for each condition into this many designs per job')
-    parser.add_argument('-p', type=str, default='gpu',help='-p argument for slurm (partition)')
-    parser.add_argument('-t', type=str, help='-t argument for slurm')
-    parser.add_argument('-J', type=str, help='name of slurm job')
-    parser.add_argument('--gres', type=str, default='gpu:rtx2080:1',help='--gres argument for slurm, e.g. gpu:rtx2080:1')
-    parser.add_argument('--no_submit', dest='submit', action="store_false", default=True, help='Do not submit slurm array job, only generate job list.')
-    parser.add_argument('--in_proc', dest='in_proc', action="store_true", default=False, help='Do not submit slurm array job, only generate job list.')
-    parser.add_argument('--no_logs', dest='keep_logs', action="store_false", default=True, help='Don\'t keep slurm logs.')
-    parser.add_argument('--out', type=str, default='out/out',help='Path prefix for output files')
-    parser.add_argument('--benchmark_json', type=str, default='benchmarks.json', help='Path to non-standard custom json file of benchmarks')
-    parser.add_argument('--use_ligand', default=False, action='store_true', help='Use LigandMPNN instead of regular MPNN.')
-    parser.add_argument('--pilot', dest='pilot', action="store_true", default=False)
-    parser.add_argument('--pilot_single', dest='pilot_single', action="store_true", default=False)
+@hydra.main(version_base=None, config_path='configs/', config_name='sweep_hyperparam')
+def main(conf: HydraConfig) -> None:
+    '''
+    ### Expected conf keys ###
+    out:                Path prefix for output files.
+    command:            Design script to run.
+    command_args:       string with all arguments to pass to the command, 
+                        with pipe (|)-delimited value options for each.
+    benchmark_json:     Path to non-standard custom json file of benchmarks.
+    benchmarks:         List of benchmark names, as defined in "benchmarks.json". Also accepts the input "all".
+    num_per_condition:  Number of designs to make for each condition.
+    num_per_job:        Split runs for each condition into this many designs per job.
+    pilot: 
+    pilot_single:
 
-    args, unknown = parser.parse_known_args(in_args)
-    return args, unknown
-
-def main():
-    args, unknown = parse_args()
-
-    if len(unknown)>0:
-        print(f'WARNING: Unknown arguments {unknown}')
-
-    if args.num_per_job > args.num_per_condition:
+    slurm:
+        J:          Job name
+        t:          Time limit
+        p:          Partition
+        gres:       Gres specification
+        submit:     False = Do not submit slurm array job, only generate job list. <True, False>
+        in_proc:    Run slurm array job on the current node? <True, False>
+        keep_logs:  Keep the slurm logs? <True, False>
+    '''
+    if conf.num_per_job > conf.num_per_condition:
         sys.exit('ERROR: --num_per_job cannot be greater than --num_per_condition '\
                  '(different conditions can\'t be in the same job.)')
     
-    if args.pilot:
-        args.num_per_condition = 1
-        args.num_per_job = 1
+    if conf.pilot:
+        conf.num_per_condition = 1
+        conf.num_per_job = 1
 
     args_vals = [] # argument names and lists of values for passing to design script
 
     # default design script
-    if args.command is None:
-        args.command = os.path.abspath(script_dir+'../run_inference.py')
+    if conf.command is None:
+        conf.command = os.path.abspath(script_dir+'../run_inference.py')
 
     # parse pre-defined benchmarks
     print('This is benchmarks json')
-    print(args.benchmark_json)
-    if not args.benchmark_json.startswith('/'):
-        args.benchmark_json =script_dir+args.benchmark_json
-    with open(args.benchmark_json) as f: 
+    print(conf.benchmark_json)
+    if not conf.benchmark_json.startswith('/'):
+        conf.benchmark_json =script_dir+conf.benchmark_json
+    with open(conf.benchmark_json) as f: 
         benchmarks = json.load(f)
     input_path = script_dir+'input/' # prepend path to input pdbs in current repo
     benchmark_list = []
-    if args.benchmarks is not None:
-        if args.benchmarks[0]=='all':
+    if conf.benchmarks is not None:
+        if conf.benchmarks[0]=='all':
             to_run = benchmarks
         else:
-            to_run = args.benchmarks
+            to_run = conf.benchmarks
         for bm in to_run:
             benchmark_list.append([
                 f'inference.output_prefix={bm}',
@@ -157,7 +153,7 @@ def main():
             ])
 
     # parse names of arguments and their value options to be passed into the design script
-    arg_str = ''.join(args.args)
+    arg_str = ''.join(conf.command_args)
     if '--config-name' in arg_str.split():
         raise Exception('config names must be passed like: --config-name=name_here')
 
@@ -171,8 +167,8 @@ def main():
     df = pd.DataFrame.from_dict(arg_dicts, dtype=str)
 
     # make output folder
-    os.makedirs(os.path.dirname(args.out), exist_ok=True) 
-    os.makedirs(os.path.dirname(args.out)+'/input', exist_ok=True)
+    os.makedirs(os.path.dirname(conf.out), exist_ok=True) 
+    os.makedirs(os.path.dirname(conf.out)+'/input', exist_ok=True)
 
     def get_input_copy_path(input_pdb):
         return os.path.join(os.path.dirname(args.out), 'input', os.path.basename(input_pdb))
@@ -182,7 +178,7 @@ def main():
     
         df['inference.input_pdb'] = df['inference.input_pdb'].apply(get_input_copy_path)
 
-    out_dir, basename = os.path.split(args.out)
+    out_dir, basename = os.path.split(conf.out)
     def get_output_path(row):
         output_path_components = []
         if basename != '':
@@ -196,8 +192,8 @@ def main():
     df['inference.output_prefix'] = df.apply(get_output_path, axis=1)
 
     # output commands with all combos of argument values
-    job_fn = os.path.dirname(args.out) + '/jobs.list'
-    job_list_file = open(job_fn, 'w') if args.submit else sys.stdout
+    job_fn = os.path.dirname(conf.out) + '/jobs.list'
+    job_list_file = open(job_fn, 'w') if conf.slurm.submit else sys.stdout
     for _, arg_row in df.iterrows():
         arg_dict = arg_row.dropna().to_dict()
         combo = []
@@ -205,27 +201,27 @@ def main():
             combo.append(f'{k}={v}')
         extra_args = ' '.join(combo)
 
-        for istart in np.arange(0, args.num_per_condition, args.num_per_job):
+        for istart in np.arange(0, conf.num_per_condition, conf.num_per_job):
             log_fn = f'{arg_row["inference.output_prefix"]}_{istart}.log'
-            print(f'{args.command} {extra_args} '\
-                  f'inference.num_designs={args.num_per_job} inference.design_startnum={istart} >> {log_fn}', file=job_list_file)
+            print(f'{conf.command} {extra_args} '\
+                  f'inference.num_designs={conf.num_per_job} inference.design_startnum={istart} >> {log_fn}', file=job_list_file)
 
-    if args.submit or args.in_proc:
+    if conf.slurm.submit or conf.slurm.in_proc:
         job_list_file.close()
     # submit job
-    if args.submit:
+    if conf.slurm.submit:
         job_fn = prune_jobs_list(job_fn)
-        if args.pilot:
-            job_fn = pilot_jobs_list(job_fn, args.pilot_single)
+        if conf.pilot:
+            job_fn = pilot_jobs_list(job_fn, conf.pilot_single)
 
-        if args.J is not None:
-            job_name = args.J
+        if conf.slurm.J is not None:
+            job_name = conf.slurm.J
         else:
-            job_name = 'sweep_hyp_'+os.path.basename(os.path.dirname(args.out))
-        if args.p == 'cpu':
-            args.gres = ""
-        slurm_job, proc = slurm_tools.array_submit(job_fn, p = args.p, gres=args.gres, log=args.keep_logs, J=job_name, t=args.t, in_proc=args.in_proc)
-        print(f'Submitted array job {slurm_job} with {len(df)*args.num_per_condition/args.num_per_job} jobs to make {len(df)*args.num_per_condition} designs for {len(df)} conditions')
+            job_name = 'sweep_hyp_'+os.path.basename(os.path.dirname(conf.out))
+        if conf.slurm.p == 'cpu':
+            conf.slurm.gres = ""
+        slurm_job, proc = slurm_tools.array_submit(job_fn, p = conf.slurm.p, gres=conf.slurm.gres, log=conf.slurm.keep_logs, J=job_name, t=conf.slurm.t, in_proc=conf.slurm.in_proc)
+        print(f'Submitted array job {slurm_job} with {len(df)*conf.num_per_condition/conf.num_per_job} jobs to make {len(df)*conf.num_per_condition} designs for {len(df)} conditions')
 
 def pilot_jobs_list(jobs_path, single=False):
     pilot_path = os.path.join(os.path.split(jobs_path)[0], 'jobs.list.pilot')
