@@ -44,8 +44,8 @@ def hydra_overrides(conf: HydraConfig) -> str:
     for k, v in conf_dotdict.items():
         if (v is None) or (v==''):
             # Could this cause problems?
-            #continue
-            v = 'null'
+            continue
+            #v = 'null'
 
         if isinstance(v, list):
             # Need to ensure no spaces in the stringified list

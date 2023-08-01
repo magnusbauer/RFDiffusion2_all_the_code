@@ -50,7 +50,7 @@ def main(conf: HydraConfig) -> None:
             cn_job, proc = array_submit(job_fn, p='cpu', gres=None, log=conf.slurm.keep_logs, J=job_name, in_proc=conf.slurm.in_proc)
         except Exception as excep:
             if 'No k-mer could be extracted for the database' in str(excep):
-                print('WARNING: Some generated protein was too short for foldseek based clustering (<14 aa). '
+                print('WARNING: Some generated protein was too short for foldseek-based clustering (<14 aa). '
                       'This often occurs when running the pipeline unit test. NBD')
                 sys.exit(0)
             else:
