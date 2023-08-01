@@ -206,7 +206,7 @@ def load_df(metrics_path):
     return df
 
 
-def show_df(data, structs={'X0'}, af2=False, des=False, **kwargs):
+def show_df(data, structs={'X0'}, af2=False, des=False, pair_seeds=False, **kwargs):
     cmd.set('grid_mode', 1)
     all_pymol = []
     for i, (_, row) in enumerate(data.iterrows(), start=1):
@@ -218,7 +218,10 @@ def show_df(data, structs={'X0'}, af2=False, des=False, **kwargs):
             des_color = row['des_color']
         pymol_objs, _ = show_tip_pa.show(row, structs=structs, af2=af2, des=des, des_color=des_color, **kwargs)
         for v in pymol_objs.values():
-            cmd.set('grid_slot', i, v)
+            grid_slot = i
+            if pair_seeds:
+                grid_slot = row['seed'] + 1
+            cmd.set('grid_slot', grid_slot, v)
         all_pymol.append(pymol_objs)
     return all_pymol
         
@@ -233,6 +236,9 @@ def add_pymol_name(data, keys):
             k_str = k.replace('.', '_')
             pymol_prefix.append(f"{k_str}-{row[k]}")
         pymol_prefix = '_'.join(pymol_prefix)
+        if k == 'inference.input_pdb':
+            pymol_prefix = pymol_prefix.split('/')[-1]
+        ic(pymol_prefix)
         return pymol_prefix
     data['pymol'] = data.apply(f, axis=1)
 
@@ -260,6 +266,7 @@ def main(path,
          pymol_keys=None,
          pymol_url='http://calathea.dhcp.ipd:9123',
          max_seed = 100,
+         pair_seeds=False,
          ):
     ic(pymol_url)
     # cmd = analyze.get_cmd(pymol_url)
@@ -286,7 +293,7 @@ def main(path,
         add_pymol_name(data, sweeps.keys())
     if clear:
         show_tip_pa.clear()
-    all_pymol = show_df(data, structs=structs)
+    all_pymol = show_df(data, structs=structs, pair_seeds=pair_seeds)
     cmd.do('mass_paper_rainbow')
 
 # # TODO: make this monadic

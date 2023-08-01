@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/net/scratch/ahern/shebangs/shebang_rf_se3_diffusion.sh
 #
 # Takes a folder of pdb & trb files, generates MPNN features (fixing AAs at
 # contig positions), makes list of MPNN jobs on batches of those designs,
@@ -51,6 +51,12 @@ def main():
         args_for_mpnn_flavor.use_ligand = use_ligand
         run_mpnn(args_for_mpnn_flavor, filenames)
 
+def get_binary(in_proc):
+    in_apptainer = os.path.exists('/.singularity.d/Singularity')
+    if in_apptainer and in_proc:
+        return 'python -u'
+    return '/net/software/containers/users/dtischer/rf_se3_diffusion.sif -u'
+
 def run_mpnn(args, filenames):
 
     mpnn_flavor = 'mpnn'
@@ -80,7 +86,7 @@ def run_mpnn(args, filenames):
         with open(mpnn_folder+f'parse_multiple_chains.list.{i}','w') as outf:
             for fn in filenames[i:i+args.chunk]:
                 print(fn,file=outf)
-        print(f'python {parse_script} --input_files {mpnn_folder}/parse_multiple_chains.list.{i} '\
+        print(f'{parse_script} --input_files {mpnn_folder}/parse_multiple_chains.list.{i} '\
               f'--datadir {args.datadir} '\
               f'--output_parsed {mpnn_folder}/pdbs_{i}.jsonl '\
               f'--output_fixed_pos {mpnn_folder}/pdbs_position_fixed_{i}.jsonl', file=job_list_file)
@@ -106,7 +112,7 @@ def run_mpnn(args, filenames):
         model_name = 'v_48_020'
 
     for i in range(0, len(filenames), args.chunk):
-        print(f'python {mpnn_script} '\
+        print(f'{get_binary(args.in_proc)} {mpnn_script} '\
               f'--model_name "{model_name}" '\
               f'--jsonl_path {mpnn_folder}pdbs_{i}.jsonl '\
               f'--fixed_positions_jsonl {mpnn_folder}pdbs_position_fixed_{i}.jsonl '\

@@ -58,13 +58,18 @@ def main(input_dir, output_dir=None, prefix=''):
     pdbs_to_graft = glob.glob(os.path.join(input_dir, '*.pdb'))
     pdbs_to_graft.sort()
     for pdb in tqdm(pdbs_to_graft):
-        out_pdb = os.path.join(output_dir, prefix + os.path.split(pdb)[1])
-        if os.path.exists(out_pdb):
-            continue
-        row = analyze.make_row_from_traj(pdb[:-4])
-        get_input_aligned_pdb_with_ligand(row, out_pdb)
-    
+        input_path = pdb
+        output_path= os.path.join(output_dir, prefix + os.path.split(pdb)[1])
+        graft(input_path, output_path)
     print(f'grafted PDBs from {input_dir} to {output_dir}')
+
+def graft(input_path, output_path):
+    assert input_path != output_path
+    if os.path.exists(output_path):
+        return
+    row = analyze.make_row_from_traj(input_path[:-4])
+    get_input_aligned_pdb_with_ligand(row, output_path)
+    
 
 if __name__ == '__main__':
     fire.Fire(main)

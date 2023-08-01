@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/net/scratch/ahern/shebangs/shebang_rf_se3_diffusion.sh
 
 import os
 import sys
