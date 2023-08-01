@@ -15,7 +15,7 @@ script_dir=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 benchmark_dir="$(dirname "$script_dir")"
 repo_dir="$(dirname "$benchmark_dir")"
 
-outdir=$benchmark_dir'/test_output'
+outdir=$benchmark_dir'/test_output_hydra'
 if [ "$resume" != true ]; then
         echo "Deleting previous test run outputs"
         rm -r $outdir
@@ -32,7 +32,6 @@ $repo_dir/benchmark/pipeline.py \
     use_ligand=True \
     slurm_submit=True \
     in_proc=True \
-    start_step=compile \
     sweep.command_args=\""$DIFFUSION_ARGS"\" \
     sweep.num_per_condition=2 \
     sweep.num_per_job=2 \

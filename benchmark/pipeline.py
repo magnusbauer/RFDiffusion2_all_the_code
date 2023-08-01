@@ -80,7 +80,7 @@ def main(conf: HydraConfig) -> None:
         print('Initiating scoring')
         if conf.af2_unmpnned:
             jobid_score = run_pipeline_step(
-                f'{script_dir}score_designs.py {hydra_overrides(conf.score)} conf.score.datadir={conf.outdir}'
+                f'{script_dir}score_designs.py {hydra_overrides(conf.score)} datadir={conf.outdir}'
             )
         
         mpnn_dirs = []
@@ -92,7 +92,7 @@ def main(conf: HydraConfig) -> None:
         for d in mpnn_dirs:
             if os.path.exists(d):
                 jobid_score_mpnn.extend(run_pipeline_step(
-                    f'{script_dir}score_designs.py {hydra_overrides(conf.score)}'
+                    f'{script_dir}score_designs.py {hydra_overrides(conf.score)} datadir={d}'
                 ))
 
         print('Waiting for scoring jobs to finish...')

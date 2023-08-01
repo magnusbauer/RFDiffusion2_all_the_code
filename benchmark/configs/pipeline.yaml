@@ -40,7 +40,6 @@ mpnn:
     submit: ${slurm_submit}
 
 score:
-  datadir: ${outdir}
   trb_dir: ${outdir}
   slurm:
     in_proc: ${in_proc}
