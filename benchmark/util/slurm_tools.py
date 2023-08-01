@@ -30,9 +30,6 @@ def array_submit(job_list_file, p='gpu', gres='gpu:rtx2080:1', wait_for=None, lo
             # job = re.sub('>>', '2>&1 | tee', job)
             job = re.sub('>>.*', '', job)
 
-            # In
-            re.sub('')
-
             print(f'running job after: {job}')
 
             proc = subprocess.run(job, shell=True)

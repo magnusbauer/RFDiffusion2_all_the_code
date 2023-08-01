@@ -63,13 +63,13 @@ def main():
         for basename in orphan_pdbs:
             os.rename(f'{outdir}/{basename}.pdb', f'{orphan_dir}/{basename}.pdb')
 
-        # Cluster designs within each condition
-        jobid_cluster = run_pipeline_step(f'{script_dir}/cluster_pipeline_outputs.py --pipeline_outdir {outdir}')
-        print('Running foldseek in parallel to cluster generated backbones by condition. The pipeline will continue forward.')
+        # # Cluster designs within each condition
+        # jobid_cluster = run_pipeline_step(f'{script_dir}/cluster_pipeline_outputs.py --pipeline_outdir {outdir}')
+        # print('Running foldseek in parallel to cluster generated backbones by condition. The pipeline will continue forward.')
 
-        # Compute similarity of generated backbones to the PDB
-        jobid_foldseek = run_pipeline_step(f'{script_dir}/chunkify_foldseek_pdb.py --pdb_dir {outdir} --chunk {args.foldseek_chunk}')
-        print('Running foldseek in parallel to compare the similarity of the generated backbones to the PDB. The pipeline will continue forward.')
+        # # Compute similarity of generated backbones to the PDB
+        # jobid_foldseek = run_pipeline_step(f'{script_dir}/chunkify_foldseek_pdb.py --pdb_dir {outdir} --chunk {args.foldseek_chunk}')
+        # print('Running foldseek in parallel to compare the similarity of the generated backbones to the PDB. The pipeline will continue forward.')
 
     if args.start_step in ['sweep', 'foldseek', 'mpnn']:
         if args.use_ligand:
