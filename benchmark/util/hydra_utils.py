@@ -28,7 +28,7 @@ def to_dotdict(d: dict, prefix: str=None) -> dict:
             
     return dotdict
 
-def command_line_overrides(conf: HydraConfig) -> str:
+def hydra_overrides(conf: HydraConfig) -> str:
     '''
     Convert a HydraConfig to their equivalent command line arguments.
     Useful for passing configuration setting to subprocesses and 
@@ -44,19 +44,22 @@ def command_line_overrides(conf: HydraConfig) -> str:
     for k, v in conf_dotdict.items():
         if (v is None) or (v==''):
             # Could this cause problems?
-            continue
-        if isinstance(v, str):
+            #continue
+            v = 'null'
 
-            if (' ' in v) or ('|' in v):
-                v = f'"{v}"'
-        elif isinstance(v, list):
+        if isinstance(v, list):
             # Need to ensure no spaces in the stringified list
             v = '[' + ','.join(v) + ']'
 
-        # Equal signs needs to be escaped on the cmd line, otherwise hydra will try to parse it.
-        v = str(v).replace('=', '\=')
-
-        cmd.append(f'{k}={v}')
+        # Some special characters hydra will try to parse. We need to protect them with quotes.
+        v = str(v)
+        special_chars = "\()[]{}:=, |'\""
+        if any(char in v for char in special_chars):
+            v = v.replace('"', '\\"')
+            v = v.replace("'", "'\\''")
+            cmd.append(f'\'{k}="{v}"\'')
+        else:
+            cmd.append(f'{k}={v}')
            
     cmd = ' '.join(cmd)
             

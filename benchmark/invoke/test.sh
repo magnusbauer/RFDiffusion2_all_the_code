@@ -30,5 +30,5 @@ $repo_dir/benchmark/pipeline.py \
         --in_proc \
         --use_ligand \
         --num_per_condition 2 --num_per_job 2 --out $outdir/out/run \
-        --args "--config-name=aa diffuser.T=2 contigmap.length=200-200 inference.input_pdb=$benchmark_dir/input/gaa.pdb inference.ligand=LG1 contigmap.contigs=[\'4-4,A518-519\'] contigmap.length=6-6" \
+        --args "--config-name=aa diffuser.T=2 contigmap.length=200-200 inference.input_pdb=$benchmark_dir/input/gaa.pdb inference.ligand=LG1 contigmap.contigs=[4-4,A518-519] contigmap.length=6-6" \
         --num_seq_per_target 1 --af2_gres=gpu:a6000:1 -p cpu --no_tmalign --score_scripts='af2'

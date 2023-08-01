@@ -1,0 +1,8 @@
+pdb_dir: ???
+chunk: 500
+
+slurm:
+  J: foldseek_pdb
+  submit: True
+  in_proc: False
+  keep_logs: True

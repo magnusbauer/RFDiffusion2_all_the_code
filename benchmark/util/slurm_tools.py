@@ -32,7 +32,7 @@ def array_submit(job_list_file, p='gpu', gres='gpu:rtx2080:1', wait_for=None, lo
 
             print(f'running job after: {job}')
 
-            proc = subprocess.run(job, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            proc = subprocess.run(job, shell=True, stderr=subprocess.PIPE)
             if proc.returncode != 0:
                 raise Exception(f'FAILED command: {job}. \n'
                                 f'stderr: {proc.stderr.decode()}')

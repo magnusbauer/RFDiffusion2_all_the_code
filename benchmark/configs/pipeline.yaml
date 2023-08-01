@@ -1,10 +1,9 @@
 defaults:
   - sweep_hyperparam@sweep
-  - foldseek@foldseek
+  - cluster_pipeline_outputs@cluster
+  - chunkify_foldseek_pdb@foldseek
   - mpnn_designs@mpnn
   - score_designs@score
-
-repo_dir: /home/dtischer/code/rf_se3_tmp/rf_se3_diffusion/rf_diffusion
 
 outdir: ${hydra:runtime.cwd}  # The dir the python script was called from
 start_step: sweep
@@ -16,8 +15,19 @@ af2_unmpnned: False
 
 sweep:
   command_args: --config-name=aa score_model.weights_path=/net/scratch/ahern/se3_diffusion/training/from_scratch_4_resume_ep16/train_session2023-06-29_1688072531.6048305/models/RFD_30.pt
-  out: ${outdir}/design
-  command: ${repo_dir}/run_inference.py
+  out: ${outdir}/run
+  slurm:
+    in_proc: ${in_proc}
+    submit: ${slurm_submit}
+
+cluster:
+  pipeline_outdir: ${outdir}
+  slurm:
+    in_proc: ${in_proc}
+    submit: ${slurm_submit}
+
+foldseek:
+  pdb_dir: ${outdir}
   slurm:
     in_proc: ${in_proc}
     submit: ${slurm_submit}

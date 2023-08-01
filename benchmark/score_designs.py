@@ -56,8 +56,8 @@ def main(conf: HydraConfig) -> None:
                 for j in np.arange(i,min(i+conf.chunk, len(filenames))):
                     print(filenames[j], file=outf)
             print(f'/usr/bin/apptainer run --nv --bind /software/mlfold/alphafold:/software/mlfold/alphafold --bind /net/databases/alphafold/params/params_model_4_ptm.npz:/software/mlfold/alphafold-data/params/params_model_4_ptm.npz /software/containers/mlfold.sif {script_dir}/util/af2_metrics.py --use_ptm '\
-                  f'--outcsv {args.datadir}/af2_metrics.csv.{i} '\
-                  f'--trb_dir {args.trb_dir} '\
+                  f'--outcsv {conf.datadir}/af2_metrics.csv.{i} '\
+                  f'--trb_dir {conf.trb_dir} '\
                   f'{tmp_fn}', file=job_list_file)
 
         # submit job

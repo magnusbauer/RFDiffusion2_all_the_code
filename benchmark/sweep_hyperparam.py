@@ -142,7 +142,7 @@ def main(conf: HydraConfig) -> None:
     input_path = script_dir+'input/' # prepend path to input pdbs in current repo
     benchmark_list = []
     if conf.benchmarks is not None:
-        if conf.benchmarks[0]=='all':
+        if conf.benchmarks == 'all':
             to_run = benchmarks
         else:
             to_run = conf.benchmarks
@@ -171,7 +171,7 @@ def main(conf: HydraConfig) -> None:
     os.makedirs(os.path.dirname(conf.out)+'/input', exist_ok=True)
 
     def get_input_copy_path(input_pdb):
-        return os.path.join(os.path.dirname(args.out), 'input', os.path.basename(input_pdb))
+        return os.path.join(os.path.dirname(conf.out), 'input', os.path.basename(input_pdb))
     if 'inference.input_pdb' in df:
         for input_pdb in df['inference.input_pdb'].unique():
             shutil.copyfile(input_pdb, get_input_copy_path(input_pdb))

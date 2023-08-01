@@ -1,8 +1,8 @@
 out: out/out
-command: ???
+command: null
 command_args: --config-name aa  # Args to `command` that will be swept over. '|' to delimite an args various values.
 benchmark_json: bench_tip_debug.json
-benchmarks: all
+benchmarks: null
 num_per_condition: 1
 num_per_job: 1
 pilot: False
