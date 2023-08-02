@@ -1,7 +1,7 @@
 #!/bin/bash 
 
 echo "ARG 1: $1";
-resume=true
+resume=false
 if [[ $1 == "--resume" ]]; then
         echo "Resuming test"
         resume=true
@@ -32,6 +32,7 @@ $repo_dir/benchmark/pipeline.py \
     use_ligand=True \
     slurm_submit=True \
     in_proc=True \
+    start_step=sweep \
     sweep.command_args=\""$DIFFUSION_ARGS"\" \
     sweep.num_per_condition=2 \
     sweep.num_per_job=2 \

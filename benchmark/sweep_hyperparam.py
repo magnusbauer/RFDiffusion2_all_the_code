@@ -220,7 +220,7 @@ def main(conf: HydraConfig) -> None:
             job_name = 'sweep_hyp_'+os.path.basename(os.path.dirname(conf.out))
         if conf.slurm.p == 'cpu':
             conf.slurm.gres = ""
-        slurm_job, proc = slurm_tools.array_submit(job_fn, p = conf.slurm.p, gres=conf.slurm.gres, log=conf.slurm.keep_logs, J=job_name, t=conf.slurm.t, in_proc=conf.slurm.in_proc)
+        slurm_job, proc = slurm_tools.array_submit(job_fn, p=conf.slurm.p, gres=conf.slurm.gres, log=conf.slurm.keep_logs, J=job_name, t=conf.slurm.t, in_proc=conf.slurm.in_proc)
         print(f'Submitted array job {slurm_job} with {len(df)*conf.num_per_condition/conf.num_per_job} jobs to make {len(df)*conf.num_per_condition} designs for {len(df)} conditions')
 
 def pilot_jobs_list(jobs_path, single=False):

@@ -36,7 +36,7 @@ def main(conf: HydraConfig) -> None:
     job_fn = f'{conf.pdb_dir}/jobs.foldseek.list'
     job_list_file = open(job_fn, 'w') if conf.slurm.submit else sys.stdout
 
-    remaining_pdbs = glob.glob(f'{conf.pdb_dir}/*pdb')
+    remaining_pdbs = glob.glob(f'{conf.pdb_dir}/*.pdb')
     chunk_number = 0
     while remaining_pdbs:
         chunk_pdbs, remaining_pdbs = split_list(remaining_pdbs, conf.chunk)
@@ -65,7 +65,7 @@ def main(conf: HydraConfig) -> None:
                 sys.exit(excep)
 
         print(f'Submitted array job {cn_job} with {chunk_number} jobs to compute the '
-              f'similarity of {len(glob.glob(f"{conf.pdb_dir}/*pdb"))} designs to the PDB.')
+              f'similarity of {len(glob.glob(f"{conf.pdb_dir}/*.pdb"))} designs to the PDB.')
 
 if __name__ == '__main__':
     main()

@@ -25,7 +25,7 @@ def main(conf: HydraConfig) -> None:
     '''
 
     # ID all conditions
-    conditions = {re.findall('cond\d+', pdb_fn)[0] for pdb_fn in glob.glob(f'{conf.pipeline_outdir}/*cond*pdb')}
+    conditions = {re.findall('cond\d+', pdb_fn)[0] for pdb_fn in glob.glob(f'{conf.pipeline_outdir}/*cond*.pdb')}
 
     # Make foldseek clustering jobs on all pdbs from the same condition.
     job_fn = f'{conf.pipeline_outdir}/jobs.clustering.list'
@@ -33,7 +33,7 @@ def main(conf: HydraConfig) -> None:
     for condition in conditions:
         cluster_outdir = f'{conf.pipeline_outdir}/foldseek_clustering/{condition}'
         os.makedirs(cluster_outdir, exist_ok=True)
-        condition_pdbs = glob.glob(f'{conf.pipeline_outdir}/*{condition}*pdb')
+        condition_pdbs = glob.glob(f'{conf.pipeline_outdir}/*{condition}*.pdb')
         print(f'{script_dir}/foldseek_clustering.py --pdbs {" ".join(condition_pdbs)} --out_dir {cluster_outdir}',
                file=job_list_file)
 

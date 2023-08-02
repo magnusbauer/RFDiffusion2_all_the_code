@@ -46,8 +46,8 @@ def main(conf: HydraConfig) -> None:
         # Move "orphan" pdbs that somehow lack a trb file
         orphan_dir = f'{conf.outdir}/orphan_pdbs'
         os.makedirs(orphan_dir, exist_ok=True)
-        pdb_set = {os.path.basename(x.replace('.pdb', '')) for x in glob.glob(f'{conf.outdir}/*pdb')}
-        trb_set = {os.path.basename(x.replace('.trb', '')) for x in glob.glob(f'{conf.outdir}/*trb')}
+        pdb_set = {os.path.basename(x.replace('.pdb', '')) for x in glob.glob(f'{conf.outdir}/*.pdb')}
+        trb_set = {os.path.basename(x.replace('.trb', '')) for x in glob.glob(f'{conf.outdir}/*.trb')}
         orphan_pdbs = pdb_set - trb_set
         for basename in orphan_pdbs:
             os.rename(f'{conf.outdir}/{basename}.pdb', f'{orphan_dir}/{basename}.pdb')
