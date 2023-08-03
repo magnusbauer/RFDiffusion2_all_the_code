@@ -16,7 +16,7 @@ sys.path.append(os.path.join(script_dir,'util'))
 import slurm_tools
 
 @hydra.main(version_base=None, config_path='configs/', config_name='mpnn_designs')
-def main(conf: HydraConfig) -> None:
+def main(conf: HydraConfig) -> list[int]:
     '''
     ### Expected conf keys ###
     datadir:                Folder of designs to score.
@@ -93,12 +93,15 @@ def run_mpnn(conf, filenames):
     if conf.slurm.submit: job_list_file.close()
 
     # submit to slurm
+    job_ids = []
     if conf.slurm.submit:
         pre = 'ligmpnn_pre' if conf.use_ligand else 'mpnn_pre'
-        slurm_job, proc = slurm_tools.array_submit(job_fn, p='cpu', gres=None, J=pre, log=conf.slurm.keep_logs, in_proc=conf.slurm.in_proc)
-        print(f'Submitted array job {slurm_job} with {int(np.ceil(len(filenames)/conf.chunk))} jobs to preprocess {len(filenames)} designs for MPNN')
+        job_id, proc = slurm_tools.array_submit(job_fn, p='cpu', gres=None, J=pre, log=conf.slurm.keep_logs, in_proc=conf.slurm.in_proc)
+        if job_id > 0:
+            job_ids.append(job_id)
+        print(f'Submitted array job {job_id} with {int(np.ceil(len(filenames)/conf.chunk))} jobs to preprocess {len(filenames)} designs for MPNN')
 
-        prev_job = slurm_job
+        prev_job = job_id
     else:
         prev_job = None
 
@@ -131,8 +134,12 @@ def run_mpnn(conf, filenames):
         else:
             pre = 'ligmpnn_' if conf.use_ligand else 'mpnn_'
             job_name = pre + os.path.basename(conf.datadir.strip('/'))
-        slurm_job, proc = slurm_tools.array_submit(job_fn, p = conf.slurm.p, gres=conf.slurm.gres, log=conf.slurm.keep_logs, J=job_name, wait_for=[prev_job], in_proc=conf.slurm.in_proc)
-        print(f'Submitted array job {slurm_job} with {int(np.ceil(len(filenames)/conf.chunk))} jobs to MPNN {len(filenames)} designs')
+        job_id, proc = slurm_tools.array_submit(job_fn, p = conf.slurm.p, gres=conf.slurm.gres, log=conf.slurm.keep_logs, J=job_name, wait_for=[prev_job], in_proc=conf.slurm.in_proc)
+        if job_id > 0:
+            job_ids.append(job_id)
+        print(f'Submitted array job {job_id} with {int(np.ceil(len(filenames)/conf.chunk))} jobs to MPNN {len(filenames)} designs')
+
+    return job_ids
 
 if __name__ == "__main__":
     main()

@@ -12,7 +12,7 @@ from hydra.core.hydra_config import HydraConfig
 script_dir = os.path.dirname(os.path.realpath(__file__))+'/'
 
 @hydra.main(version_base=None, config_path='configs/', config_name='cluster_pipeline_outputs')
-def main(conf: HydraConfig) -> None:
+def main(conf: HydraConfig) -> list[int]:
     '''
     ### Expected conf keys ###
     pipeline_outdir:    Out dir of the pipeline.
@@ -38,6 +38,7 @@ def main(conf: HydraConfig) -> None:
                file=job_list_file)
 
     # submit job
+    job_ids = []
     if conf.slurm.submit:
         job_list_file.close()
         if conf.slurm.J is not None:
@@ -47,17 +48,19 @@ def main(conf: HydraConfig) -> None:
             job_name = pre + os.path.basename(conf.pipeline_outdir.strip('/'))
 
         try:
-            cn_job, proc = array_submit(job_fn, p='cpu', gres=None, log=conf.slurm.keep_logs, J=job_name, in_proc=conf.slurm.in_proc)
+            job_id, proc = array_submit(job_fn, p='cpu', gres=None, log=conf.slurm.keep_logs, J=job_name, in_proc=conf.slurm.in_proc)
+            if job_id > 0:
+                job_ids.append(job_id)
+            print(f'Submitted array job {job_id} with {len(conditions)} jobs to cluster the backbones '
+                'from each condition.')
         except Exception as excep:
             if 'No k-mer could be extracted for the database' in str(excep):
                 print('WARNING: Some generated protein was too short for foldseek-based clustering (<14 aa). '
                       'This often occurs when running the pipeline unit test. NBD')
-                sys.exit(0)
             else:
                 sys.exit(excep)
                   
-        print(f'Submitted array job {cn_job} with {len(conditions)} jobs to cluster the backbones '
-               'from each condition.')
+    return job_ids
 
 if __name__ == '__main__':
     main()

@@ -95,7 +95,7 @@ def get_arg_combos(arg_str):
     return arg_dicts
 
 @hydra.main(version_base=None, config_path='configs/', config_name='sweep_hyperparam')
-def main(conf: HydraConfig) -> None:
+def main(conf: HydraConfig) -> list[int]:
     '''
     ### Expected conf keys ###
     out:                Path prefix for output files.
@@ -209,6 +209,7 @@ def main(conf: HydraConfig) -> None:
     if conf.slurm.submit or conf.slurm.in_proc:
         job_list_file.close()
     # submit job
+    job_ids = []
     if conf.slurm.submit:
         job_fn = prune_jobs_list(job_fn)
         if conf.pilot:
@@ -221,7 +222,11 @@ def main(conf: HydraConfig) -> None:
         if conf.slurm.p == 'cpu':
             conf.slurm.gres = ""
         slurm_job, proc = slurm_tools.array_submit(job_fn, p=conf.slurm.p, gres=conf.slurm.gres, log=conf.slurm.keep_logs, J=job_name, t=conf.slurm.t, in_proc=conf.slurm.in_proc)
+        if slurm_job > 0:
+            job_ids.append(slurm_job)
         print(f'Submitted array job {slurm_job} with {len(df)*conf.num_per_condition/conf.num_per_job} jobs to make {len(df)*conf.num_per_condition} designs for {len(df)} conditions')
+
+    return job_ids
 
 def pilot_jobs_list(jobs_path, single=False):
     pilot_path = os.path.join(os.path.split(jobs_path)[0], 'jobs.list.pilot')

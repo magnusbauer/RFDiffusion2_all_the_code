@@ -16,7 +16,7 @@ sys.path.append(os.path.join(script_dir, 'util'))
 import slurm_tools
 
 @hydra.main(version_base=None, config_path='configs/', config_name='score_designs')
-def main(conf: HydraConfig) -> None:
+def main(conf: HydraConfig) -> list[int]:
     '''
     ### Expected conf keys ###
     datadir:        Folder of designs to score.
@@ -46,6 +46,8 @@ def main(conf: HydraConfig) -> None:
     if conf.chunk == -1:
         conf.chunk = len(filenames)
 
+    job_ids = []
+
     # AF2 predictions
     if 'af2' in conf.run:
         job_fn = conf.datadir + '/jobs.score.af2.list'
@@ -68,6 +70,8 @@ def main(conf: HydraConfig) -> None:
             else:
                 job_name = 'af2_'+os.path.basename(conf.datadir.strip('/'))
             af2_job, proc = slurm_tools.array_submit(job_fn, p = conf.slurm.p, gres=None if conf.slurm.p=='cpu' else conf.slurm.gres, log=conf.slurm.keep_logs, J=job_name, in_proc=conf.slurm.in_proc)
+            if af2_job > 0:
+                job_ids.append(af2_job)
             print(f'Submitted array job {af2_job} with {int(np.ceil(len(filenames)/conf.chunk))} jobs to AF2-predict {len(filenames)} designs')
 
     # Rosetta metrics
@@ -92,6 +96,8 @@ def main(conf: HydraConfig) -> None:
             else:
                 job_name = 'pyr_'+os.path.basename(conf.datadir.strip('/'))
             pyr_job, proc = slurm_tools.array_submit(job_fn, p = 'cpu', gres=None, log=conf.slurm.keep_logs, J=job_name, in_proc=conf.slurm.in_proc)
+            if pyr_job > 0:
+                job_ids.append(pyr_job)
             print(f'Submitted array job {pyr_job} with {int(np.ceil(len(filenames)/conf.chunk))} jobs to get PyRosetta metrics for {len(filenames)} designs')
 
     # Ligand metrics (chemnet)
@@ -119,6 +125,8 @@ def main(conf: HydraConfig) -> None:
                 pre = 'chemnet_'
                 job_name = pre + os.path.basename(conf.datadir.strip('/')) 
             cn_job, proc = slurm_tools.array_submit(job_fn, p = conf.slurm.p, gres=None if conf.slurm.p=='cpu' else conf.slurm.gres, log=conf.slurm.keep_logs, J=job_name, in_proc=conf.slurm.in_proc)
+            if cn_job > 0:
+                job_ids.append(cn_job)
             print(f'Submitted array job {cn_job} with {int(np.ceil(len(filenames)/conf.chunk))} jobs to ChemNet-predict {len(filenames)} designs')
 
     # Ligand metrics (rosetta)
@@ -145,9 +153,12 @@ def main(conf: HydraConfig) -> None:
             else:
                 pre = 'rosetta_lig_'
                 job_name = pre + os.path.basename(conf.datadir.strip('/')) 
-            cn_job, proc = slurm_tools.array_submit(job_fn, p = 'cpu', gres=None, log=conf.slurm.keep_logs, J=job_name, in_proc=conf.slurm.in_proc)
-            print(f'Submitted array job {cn_job} with {int(np.ceil(len(filenames)/conf.chunk))} jobs to compute Rosetta ligand metrics on {len(filenames)} designs')
+            lig_job, proc = slurm_tools.array_submit(job_fn, p = 'cpu', gres=None, log=conf.slurm.keep_logs, J=job_name, in_proc=conf.slurm.in_proc)
+            if lig_job > 0:
+                job_ids.append(lig_job)
+            print(f'Submitted array job {lig_job} with {int(np.ceil(len(filenames)/conf.chunk))} jobs to compute Rosetta ligand metrics on {len(filenames)} designs')
 
+    return job_ids
 
 if __name__ == "__main__":
     main()

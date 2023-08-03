@@ -2,7 +2,6 @@
 #
 # Breakup a foldseek job on a dir of many pdbs in several chunks, which run as separate jobs.
 
-import argparse
 import os
 import sys
 import glob
@@ -19,7 +18,7 @@ def split_list(l, idx):
     return l1, l2
 
 @hydra.main(version_base=None, config_path='configs/', config_name='chunkify_foldseek_pdb')
-def main(conf: HydraConfig) -> None:
+def main(conf: HydraConfig) -> list[int]:
     '''
     ### Expected conf keys ###
     pdb_dir:        Dir of pdbs. Too many to do in one foldseek job.
@@ -46,6 +45,7 @@ def main(conf: HydraConfig) -> None:
         chunk_number += 1
 
     # submit job
+    job_ids = []
     if conf.slurm.submit:
         job_list_file.close()
         if conf.slurm.J is not None:
@@ -55,17 +55,20 @@ def main(conf: HydraConfig) -> None:
             job_name = pre + os.path.basename(conf.pdb_dir.strip('/'))
         
         try:
-            cn_job, proc = array_submit(job_fn, p='cpu', gres=None, log=conf.slurm.keep_logs, J=job_name, in_proc=conf.slurm.in_proc)
+            job_id, proc = array_submit(job_fn, p='cpu', gres=None, log=conf.slurm.keep_logs, J=job_name, in_proc=conf.slurm.in_proc)
+            if job_id > 0:
+                job_ids.append(job_id)
+            print(f'Submitted array job {job_id} with {chunk_number} jobs to compute the '
+                f'similarity of {len(glob.glob(f"{conf.pdb_dir}/*.pdb"))} designs to the PDB.')
         except Exception as excep:
             if 'No k-mer could be extracted for the database' in str(excep):
                 print('WARNING: Some generated protein was too short for foldseek (<14 aa). '
                       'This often occurs when running the pipeline unit test. NBD')
-                sys.exit(0)
             else:
                 sys.exit(excep)
 
-        print(f'Submitted array job {cn_job} with {chunk_number} jobs to compute the '
-              f'similarity of {len(glob.glob(f"{conf.pdb_dir}/*.pdb"))} designs to the PDB.')
+    return job_ids
+
 
 if __name__ == '__main__':
     main()
