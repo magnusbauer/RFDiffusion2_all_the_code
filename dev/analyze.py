@@ -1175,9 +1175,9 @@ def show_df(data, cols=['af2_pae_mean', 'rmsd_af2_des'], traj_types=None, n=999)
             if not isinstance(v, str):
                 v = f'{v:.1f}'
             key_val.append(f'{k}_{v}')
-            print(key_val)
+            # print(key_val)
         design_name = '__'.join(key_val)
-        print(design_name)
+        # print(design_name)
         structures = show_paper_pocket_af2(row, design_name, traj_types=traj_types)
         all_structures.append(structures)
         for s in structures:

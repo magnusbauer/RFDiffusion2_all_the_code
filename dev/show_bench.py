@@ -238,7 +238,6 @@ def add_pymol_name(data, keys):
         pymol_prefix = '_'.join(pymol_prefix)
         if k == 'inference.input_pdb':
             pymol_prefix = pymol_prefix.split('/')[-1]
-        ic(pymol_prefix)
         return pymol_prefix
     data['pymol'] = data.apply(f, axis=1)
 

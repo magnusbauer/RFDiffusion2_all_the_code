@@ -98,7 +98,7 @@ class Sampler:
             self._conf.rf.model, self.diffuser, self.device)
         
         if 'final_state_dict' in weights_pkl:
-            model_weights = weights_pkl['final_state_dict']
+            model_weights = weights_pkl[self._conf.inference.state_dict_to_load] # model_state_dict | final_state_dict
         else:
             model_weights = weights_pkl['model']
 
