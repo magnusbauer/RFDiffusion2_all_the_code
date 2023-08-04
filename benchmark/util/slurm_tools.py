@@ -17,6 +17,7 @@ def slurm_submit(cmd, p='cpu', c=1, mem=2, gres=None, J=None, wait_for=[], hold_
 
     proc = subprocess.run(cmd_sbatch, shell=True, stdout=subprocess.PIPE)
     slurm_job = re.findall(r'\d+', str(proc.stdout))[0]
+    slurm_job = int(slurm_job)
 
     return slurm_job, proc
 
