@@ -1,4 +1,4 @@
-import subprocess, re, os
+import subprocess, re, os, time
 
 def slurm_submit(cmd, p='cpu', c=1, mem=2, gres=None, J=None, wait_for=[], hold_until_finished=False, log=False, **kwargs):
     '''
@@ -23,6 +23,10 @@ def slurm_submit(cmd, p='cpu', c=1, mem=2, gres=None, J=None, wait_for=[], hold_
 
 def array_submit(job_list_file, p='gpu', gres='gpu:rtx2080:1', wait_for=None, log=False, in_proc=False, **kwargs):
     print(f'array_submit: in_proc: {in_proc}')
+
+    # Sometimes it can take a few second for the file system to recognize the job_list_file
+    time.sleep(10)
+    
     if in_proc:
         with open(job_list_file) as f:
             jobs = f.readlines()
