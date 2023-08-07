@@ -145,7 +145,7 @@ def main(conf: HydraConfig) -> None:
         if conf.benchmarks == 'all':
             to_run = benchmarks
         else:
-            to_run = conf.benchmarks
+            to_run = conf.benchmarks.split(',')
         for bm in to_run:
             benchmark_list.append([
                 f'inference.output_prefix={bm}',

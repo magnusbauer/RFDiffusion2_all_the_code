@@ -173,6 +173,33 @@ multi_covale = """{
     'task': 'diff',
 }"""
 
+nonatomized_covale = """{
+    'chosen_dataset': 'sm_compl_covale',
+    'index': 2,
+    'mask_gen_seed': 72799612,
+    'sel_item': {   'ASSEMBLY': 1,
+                    'CHAINID': '1nbp_A',
+                    'CLUSTER': 22700,
+                    'COVALENT': [   (   ('A', '31', 'CYS', 'SG'),
+                                        ('C', '201', 'MHC', 'S1'))],
+                    'DEPOSITION': '2002-12-03',
+                    'HASH': '004725',
+                    'LEN_EXIST': 121,
+                    'LIGAND': [('C', '201', 'MHC')],
+                    'LIGATOMS': 18,
+                    'LIGATOMS_RESOLVED': 18,
+                    'LIGXF': [('C', 2)],
+                    'PARTNERS': [   (   'A',
+                                        0,
+                                        243,
+                                        2.0362677574157715,
+                                        'polypeptide(L)')],
+                    'RESOLUTION': 2.2,
+                    'SEQUENCE': 'APTSSSTKKTQLQLEHLLLDLQMILNGINNCKNPKLTRMLTFKFYMPKKATELKHLQCLEEELKPLEEVLNLAQSKNFHLRPRDLISNINVIVLELKGSETTFMCEYADETATIVEFLNRWITFCQSIISTLT',
+                    'SUBSET': 'covale'},
+    'task': 'diff',
+}"""
+
 
 REWRITE=False
 # REWRITE=True
@@ -352,6 +379,23 @@ class Dataloader(unittest.TestCase):
         golden_name = f'indep_{dataset}-{mask}'
         unique_chains = np.unique(indep.chains())
         assertpy.assert_that(len(unique_chains)).is_equal_to(2)
+        name, names = show.one(indep, None)
+        show.cmd.do(f'util.cbc {name}')
+        show.diffused(indep, is_diffused, 'true')
+        
+        test_utils.assert_matches_golden(self, golden_name, indep, rewrite=REWRITE, custom_comparator=self.cmp)
+
+
+    def test_covale_is_guideposted(self):
+        dataset = 'sm_compl_multi'
+        mask = 'get_unconditional_diffusion_mask'
+        loader_out = self.indep_for_dataset(dataset, mask, overrides=[
+            'dataloader.DATAPKL_AA=aa_dataset_256_subsampled_10.pkl',
+            f'spoof_item="{nonatomized_covale}"',
+            ], config_name='extra_t1d_v2')
+        indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context = loader_out
+        indep.metadata = None
+        golden_name = f'indep_{dataset}-{mask}-is-guideposted'
         name, names = show.one(indep, None)
         show.cmd.do(f'util.cbc {name}')
         show.diffused(indep, is_diffused, 'true')

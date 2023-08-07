@@ -4,6 +4,7 @@
 #
 
 import sys, os, re, subprocess, time, argparse, glob, json
+from icecream import ic
 import hydra
 from hydra.core.hydra_config import HydraConfig
 from util.hydra_utils import hydra_overrides
@@ -28,6 +29,10 @@ def main(conf: HydraConfig) -> None:
     mpnn:           Conf for the mpnn_designs step.
     score:          Conf for the score_designs step.
     '''
+    os.makedirs(conf.outdir, exist_ok=True)
+    cwd = os.path.dirname(conf.outdir.rstrip('/'))
+    os.chdir(cwd)
+
     global IN_PROC
     IN_PROC = conf.in_proc
 

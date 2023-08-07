@@ -1782,7 +1782,6 @@ def make_guideposts(indep, is_motif):
     return indep_cat, gp_to_ptn_idx0
 
 def transform_indep(indep, is_res_str_shown, is_atom_str_shown, use_guideposts, guidepost_placement='anywhere', guidepost_bonds=True, metadata=None):
-    ic(use_guideposts, guidepost_bonds)
     indep = copy.deepcopy(indep)
     use_atomize = is_atom_str_shown is not None
     # use_atomize = is_atom_str_shown is not None and len(is_atom_str_shown) > 0
@@ -1814,8 +1813,8 @@ def transform_indep(indep, is_res_str_shown, is_atom_str_shown, use_guideposts, 
             for i, (a, b, t) in enumerate(metadata['covale_bonds']):
                 res_i, atom_name = a
                 assertpy.assert_that(gp_from_ptn_idx0).described_as('residues participating in covalent bonds to small molecules must be made into guideposts').contains(res_i)
-                assertpy.assert_that(is_atom_str_shown).described_as('residues participating in covalent bonds to small molecules must be atomized').contains(res_i)
                 res_i = gp_from_ptn_idx0[res_i]
+                assertpy.assert_that(is_atom_str_shown).described_as('residues participating in covalent bonds to small molecules must be atomized').contains(res_i)
                 metadata['covale_bonds'][i] = ((res_i, atom_name), b, t)
 
         is_masked_seq = is_diffused.clone()

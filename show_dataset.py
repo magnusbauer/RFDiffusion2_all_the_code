@@ -100,8 +100,9 @@ def run(conf: DictConfig) -> None:
                                                 num_example_per_epoch=conf.epoch_size,
                                                 num_replicas=1, rank=0, replacement=True)
     set_epoch = train_sampler.set_epoch
+    ic(conf.show_dataset)
     if conf.use_nonechucks:
-    	import nonechucks as nc
+        import nonechucks as nc
         train_set = nc.SafeDataset(train_set)
         train_sampler = nc.SafeSampler(train_set, train_sampler)
     

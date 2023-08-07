@@ -203,6 +203,13 @@ def load_df(metrics_path):
         df['epoch'] = df.apply(get_epoch, axis=1)
     except Exception as e:
         print(f'caught exception {e}')
+    
+    root, _ = os.path.splitext(metrics_path)
+    root = os.path.abspath(root)
+    root = root.split('/')[-3]
+    df['source'] = root
+    df['design_id'] = df['source'] + '_' + df['name']
+
     return df
 
 
