@@ -1,0 +1,18 @@
+defaults:
+    - pipeline
+
+sweep:
+    command_args: >
+      --config-name=aa
+      contigmap.contigs='[150]'
+      contigmap.length=150-150
+      score_model.weights_path=/net/scratch/ahern/se3_diffusion/training/covale_complex_from_str_pred_batch24_l40_fallback/2023-07-24_1690254530.7745314_v4znb6v8/rank_0/models/RFD_17.pt|/net/scratch/ahern/se3_diffusion/training/covale_complex_from_str_pred_batch24_l40_fallback/2023-07-24_1690254530.7745314_v4znb6v8/rank_0/models/RFD_26.pt
+      (inference.conditions.relative_sasa_v2.active=False)|(inference.conditions.relative_sasa_v2.active=True inference.conditions.relative_sasa_v2.rasa=0.0|0.1|1.0)
+    
+    num_per_condition: 20
+    num_per_job: 10
+    benchmark_json: bench_07-26.json
+    benchmarks: heme
+
+outdir: '/net/scratch/ahern/tip_atoms/ep17_26_rasa/out/'
+start_step: mpnn
