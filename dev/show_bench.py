@@ -273,6 +273,7 @@ def main(path,
          pymol_url='http://calathea.dhcp.ipd:9123',
          max_seed = 100,
          pair_seeds=False,
+         des=False,
          ):
     ic(pymol_url)
     # cmd = analyze.get_cmd(pymol_url)
@@ -299,7 +300,7 @@ def main(path,
         add_pymol_name(data, sweeps.keys())
     if clear:
         show_tip_pa.clear()
-    all_pymol = show_df(data, structs=structs, pair_seeds=pair_seeds)
+    all_pymol = show_df(data, structs=structs, des=des, pair_seeds=pair_seeds)
     cmd.do('mass_paper_rainbow')
 
 # # TODO: make this monadic

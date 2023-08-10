@@ -279,6 +279,9 @@ def load_ligand_from_pdb(fn, lig_name=None, remove_H=True):
     atom_names = []
     for line in stream:
         if line.startswith('HETATM'):
+            atom_type = line[76:78].strip()
+            if atom_type == 'H' and remove_H:
+                continue
             atom_names.append(line[12:16])
 
     return mol, xyz_sm, mask_sm, msa_sm, bond_feats_sm, atom_names

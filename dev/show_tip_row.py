@@ -130,6 +130,7 @@ def get_selectors_2(atom_names_by_res_idx_0):
     shown = OR([
             '(name C or name N or name CA)',
             OR(motif_resi_selectors),
+            resi_motifs_selector,
             lig,
         ])
     selectors = {

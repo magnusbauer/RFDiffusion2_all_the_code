@@ -1,0 +1,12 @@
+datadir: ${hydra:runtime.cwd}
+filenames: null
+chunk: 1000
+tmp_pre: add_metrics.list
+
+slurm:
+  J: null
+  p: cpu
+  gres: null
+  submit: True
+  in_proc: False
+  keep_logs: True

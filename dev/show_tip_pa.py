@@ -1,6 +1,7 @@
 import os
 from dev import show_tip_row
 from dev import analyze
+import aa_model
 from icecream import ic
 cmd = analyze.cmd
 
@@ -82,6 +83,9 @@ def load_pdbs(pdbs, name_by_pdb):
 def clear():
     analyze.clear()
 
+def is_rf_diff(row):
+    return 'scaffoldguided.target_ss' in row
+
 import random
 def show(row, structs = {'X0'}, af2=False, des=True, des_color=None):
     # x0_pdb = analyze.get_design_pdb(row)
@@ -142,7 +146,11 @@ def show(row, structs = {'X0'}, af2=False, des=True, des_color=None):
         # traj = label in traj_types
         # print(f'{label=}')
         is_traj = label.split('_')[0] in traj_types
-        atom_names_by_res_idx = get_motif_spec(row, traj=is_traj)
+        if is_rf_diff(row):
+            trb = analyze.get_trb(row)
+            atom_names_by_res_idx = {resi: ['ALL'] for ch, resi in trb['con_hal_pdb_idx']}
+        else:
+            atom_names_by_res_idx = get_motif_spec(row, traj=is_traj)
         # print(f'{atom_names_by_res_idx=}')
         selectors = show_tip_row.get_selectors_2(atom_names_by_res_idx)
         obj_selectors[label] = selectors

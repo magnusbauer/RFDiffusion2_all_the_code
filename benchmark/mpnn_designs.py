@@ -8,6 +8,7 @@ from collections import defaultdict
 import sys, os, argparse, itertools, json, glob
 import numpy as np
 import copy
+from icecream import ic
 import hydra
 from hydra.core.hydra_config import HydraConfig
 
@@ -36,8 +37,7 @@ def main(conf: HydraConfig) -> list[int]:
     filenames = glob.glob(conf.datadir+'/*.pdb')
     
     if not conf.use_ligand:
-        run_mpnn(conf, filenames)
-        return
+        return run_mpnn(conf, filenames)
 
     filenames_by_ligand_presence = defaultdict(list)
     for fn in filenames:
@@ -49,7 +49,7 @@ def main(conf: HydraConfig) -> list[int]:
     for use_ligand, filenames in filenames_by_ligand_presence.items():
         conf_for_mpnn_flavor = copy.deepcopy(conf)
         conf_for_mpnn_flavor.use_ligand = use_ligand
-        run_mpnn(conf_for_mpnn_flavor, filenames)
+        return run_mpnn(conf_for_mpnn_flavor, filenames)
 
 def get_binary(in_proc):
     in_apptainer = os.path.exists('/.singularity.d/Singularity')
@@ -132,8 +132,9 @@ def run_mpnn(conf, filenames):
         if conf.slurm.J is not None:
             job_name = conf.slurm.J
         else:
-            pre = 'ligmpnn_' if conf.use_ligand else 'mpnn_'
-            job_name = pre + os.path.basename(conf.datadir.strip('/'))
+            job_name = 'mpnn_' + os.path.basename(conf.datadir.strip('/'))
+        pre = 'ligand_' if conf.use_ligand else 'protein_'
+        job_name = pre + job_name
         job_id, proc = slurm_tools.array_submit(job_fn, p = conf.slurm.p, gres=conf.slurm.gres, log=conf.slurm.keep_logs, J=job_name, wait_for=[prev_job], in_proc=conf.slurm.in_proc)
         if job_id > 0:
             job_ids.append(job_id)

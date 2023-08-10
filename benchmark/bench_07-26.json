@@ -7,5 +7,6 @@
 	"tip_3_serine": "inference.input_pdb=sh_native.pdb contigmap.contigs=[\\'65,A140-140,4,A145-145,13,A159-159,65\\'] contigmap.contig_atoms=\"'{\\'A140\\':\\'OD1,CG\\',\\'A145\\':\\'ND1,CE1,NE2\\',\\'A159\\':\\'OG,CB,CA,N\\'}'\"",
 	"tip_3_lig_serine": "inference.input_pdb=sh_native.pdb contigmap.contigs=[\\'65,A140-140,4,A145-145,13,A159-159,65\\'] contigmap.contig_atoms=\"'{\\'A140\\':\\'OD1,CG\\',\\'A145\\':\\'ND1,CE1,NE2\\',\\'A159\\':\\'OG,CB,CA,N\\'}'\" inference.ligand=rsa",
 	"tip_4_retroaldolase_single": "inference.input_pdb=ra_5an7_no_cov.pdb contigmap.contigs=[\\'70,A1051-1051,74\\'] contigmap.contig_atoms=\"'{\\'A1051\\':\\'OH,CZ\\'}'\"",
-	"tip_4_lig_retroaldolase": "inference.input_pdb=ra_5an7_no_cov.pdb contigmap.contigs=[\\'10,A1051-1051,31,A1083-1083,26,A1110-1110,69,A1180-1180,10\\'] contigmap.contig_atoms=\"'{\\'A1051\\':\\'OH,CZ\\',\\'A1083\\':\\'NZ,CE\\',\\'A1110\\':\\'OD1,CG,ND2\\',\\'A1180\\':\\'OH,CZ\\'}'\" inference.ligand=LLK"
+	"tip_4_lig_retroaldolase": "inference.input_pdb=ra_5an7_no_cov.pdb contigmap.contigs=[\\'10,A1051-1051,31,A1083-1083,26,A1110-1110,69,A1180-1180,10\\'] contigmap.contig_atoms=\"'{\\'A1051\\':\\'OH,CZ\\',\\'A1083\\':\\'NZ,CE\\',\\'A1110\\':\\'OD1,CG,ND2\\',\\'A1180\\':\\'OH,CZ\\'}'\" inference.ligand=LLK",
+	"tip_3_lig_retroaldolase": "inference.input_pdb=ra_5an7_no_cov.pdb contigmap.contigs=[\\'10,A1051-1051,31,A1083-1083,96,A1180-1180,10\\'] contigmap.contig_atoms=\"'{\\'A1051\\':\\'OH,CZ\\',\\'A1083\\':\\'NZ,CE\\',\\'A1180\\':\\'OH,CZ\\'}'\" inference.ligand=LLK"
 }

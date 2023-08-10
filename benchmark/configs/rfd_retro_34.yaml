@@ -1,0 +1,7 @@
+defaults:
+    - rfd_enzyme
+
+sweep:
+  benchmarks: tip_3_lig_retroaldolase,tip_4_lig_retroaldolase
+
+outdir: '/net/scratch/ahern/tip_atoms/rfd_retro_34/out/'

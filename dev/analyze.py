@@ -846,9 +846,16 @@ def get_native(row):
     input_pdb = get_input_pdb(row)
     native = utils.process_target(input_pdb, center=False, parse_hetatom=True)
     #print(native.keys())
-    het_names = set([i['name'].strip() for i in native['info_het']])
-    assert len(het_names) <= 1, f'more than 1 het: {het_names}'
-    return native['xyz_27'][:,:14], native['xyz_het']
+    het_names = [i['name'].strip() for i in native['info_het']]
+    het_names = np.array(het_names)
+    # ic(native['info_het'])
+    # import ipbd
+    # ipdb.set_trace()
+    # assert len(het_names) <= 1, f'more than 1 het: {het_names}'
+    is_design_ligand = het_names == row.get('inference.ligand', None)
+    # ic(is_design_ligand.sum(), len(is_design_ligand))
+    # ic(native['xyz_het'].shape, native['xyz_het'][is_design_ligand].shape)
+    return native['xyz_27'][:,:14], native['xyz_het'][is_design_ligand]
     # return native['xyz_27'][native_motif_idx][:,:14]
 
 def get_registered_ligand(row, af2=False):
@@ -866,7 +873,14 @@ def get_registered_ligand(row, af2=False):
     return des, native, het
 
 def get_dist_to_ligand(row, af2=False, c_alpha=False):
-    des, native, het = get_registered_ligand(row, af2=af2)
+    # if row.get('inference.ligand', False):
+    #     design_pdb = get_design_pdb(row)
+    #     design_info = utils.process_target(design_pdb, center=False, parse_hetatom=True)
+    #     des = design_info['xyz_27'][:, :14]
+    #     het = design_info['xyz_het']
+
+    des, _, het = get_registered_ligand(row, af2=af2)
+
     motif_idx, native_motif_idx = get_idx_motif(row, mpnn=False)
     L, _, _ = des.shape
     if c_alpha:
@@ -874,6 +888,7 @@ def get_dist_to_ligand(row, af2=False, c_alpha=False):
     else:
         bb_des = des[:,:3].reshape(L*3, 3)
     dgram = torch.cdist(bb_des[None,...], torch.tensor(het[None, ...], dtype=torch.float32), p=2)
+    # ic(dgram)
     return dgram[0]
 
 null_structure = Structure('null', [])
@@ -1158,6 +1173,7 @@ def add_ligand_dist(df, c_alpha=False):
     designs = df.drop_duplicates(groupers, ignore_index=True)
     name = ('c_alpha' if c_alpha else 'bb') + '_ligand_dist'
     designs = apply_arr(designs, name, lambda x: get_dist_to_ligand(x, c_alpha=c_alpha).min(-1)[0].numpy())
+    # ic(designs)
     return df.merge(designs[groupers + [name]], on=groupers, how='inner')
 
 

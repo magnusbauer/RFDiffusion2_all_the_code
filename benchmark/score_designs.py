@@ -48,6 +48,33 @@ def main(conf: HydraConfig) -> list[int]:
 
     job_ids = []
 
+    if 'protein_metrics' in conf.run:
+        # General metrics
+        job_fn = conf.datadir + '/jobs.score.protein_metrics.list'
+        job_list_file = open(job_fn, 'w') if conf.slurm.submit else sys.stdout
+        for i in np.arange(0,len(filenames),conf.chunk):
+            tmp_fn = f'{conf.datadir}/{conf.tmp_pre}.protein_metrics.{i}'
+            with open(tmp_fn,'w') as outf:
+                for j in np.arange(i,min(i+conf.chunk, len(filenames))):
+                    print(filenames[j], file=outf)
+            print(f'/usr/bin/apptainer run --nv --bind /software/mlfold/alphafold:/software/mlfold/alphafold --bind /net/databases/alphafold/params/params_model_4_ptm.npz:/software/mlfold/alphafold-data/params/params_model_4_ptm.npz /software/containers/mlfold.sif {script_dir}/util/af2_metrics.py --use_ptm '\
+                  f'--outcsv {conf.datadir}/protein_metrics.csv.{i} '\
+                  f'--trb_dir {conf.trb_dir} '\
+                  f'{tmp_fn}', file=job_list_file)
+
+        # submit job
+        if conf.slurm.submit: 
+            job_list_file.close()
+            if conf.slurm.J is not None:
+                job_name = conf.slurm.J 
+            else:
+                job_name = 'af2_'+os.path.basename(conf.datadir.strip('/'))
+            af2_job, proc = slurm_tools.array_submit(job_fn, p = conf.slurm.p, gres=None if conf.slurm.p=='cpu' else conf.slurm.gres, log=conf.slurm.keep_logs, J=job_name, in_proc=conf.slurm.in_proc)
+            if af2_job > 0:
+                job_ids.append(af2_job)
+            print(f'Submitted array job {af2_job} with {int(np.ceil(len(filenames)/conf.chunk))} jobs to AF2-predict {len(filenames)} designs')
+
+
     # AF2 predictions
     if 'af2' in conf.run:
         job_fn = conf.datadir + '/jobs.score.af2.list'

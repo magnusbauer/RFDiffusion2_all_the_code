@@ -148,6 +148,7 @@ def main():
     for path in [
         args.datadir+'/tm_clusters.csv',
         args.datadir+'/blast_clusters.csv',
+        args.datadir+'/metrics/per_design/csv.*',
     ]:
         df_s = [ pd.read_csv(fn,index_col=0) for fn in glob.glob(path) ]
         tmp = pd.concat(df_s) if len(df_s)>0 else pd.DataFrame(dict(name=[]))

@@ -1,0 +1,35 @@
+defaults:
+    - pipeline
+
+sweep:
+    command: /usr/bin/apptainer run --nv /software/containers/RF_diffusion.sif /home/ahern/projects/clean_rf_diffusion/run_inference.py
+    command_args: >
+      --config-name=base
+      inference.input_pdb=/home/ahern/projects/se3_diffusion/rf_diffusion/benchmark/input/ra_5an7_no_cov.pdb
+      inference.deterministic=True
+      inference.align_motif=True
+      inference.annotate_termini=True
+      inference.model_runner=NRBStyleSelfCond
+      +inference.ckpt_override_path=/home/ahern/projects/rf_diffusion/models/theo_pdb/BFF_4.pt
+      contigmap.contigs=[\'10-100,A1083-1083,10-100,A1051-1051,10-100,A1180-1180,10-100\']
+      contigmap.length=150-150
+      potentials.guide_scale=1
+      potentials.guiding_potentials=[\'type:substrate_contacts,s:1,r_0:8,rep_r_0:5.0,rep_s:2,rep_r_min:1\']
+      +inference.ligand=LLK
+      potentials.substrate=LLK
+      diffuser.T=15
+    
+    num_per_condition: 1
+    num_per_job: 1
+
+score:
+  run: af2
+
+mpnn:
+  num_seq_per_target: 8
+
+outdir: '/net/scratch/ahern/tip_atoms/test_rf_diffusion_local_debug/out/'
+start_step: metrics
+graft: True
+in_proc: True
+

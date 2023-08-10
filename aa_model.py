@@ -1987,3 +1987,6 @@ def open_indep(indep, is_open):
     indep_cat.same_chain[is_cross_term] = indep.same_chain[is_cross_term]
     for key, value in dataclasses.asdict(indep_cat).items():
         setattr(indep, key, value)
+
+def residue_atoms(res):
+    return [n.strip() for n in rf2aa.chemical.aa2long[res][:14] if n is not None]

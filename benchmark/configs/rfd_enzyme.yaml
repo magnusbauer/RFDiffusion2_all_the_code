@@ -1,0 +1,18 @@
+defaults:
+    - enzyme
+
+sweep:
+    command: /usr/bin/apptainer run --nv /software/containers/RF_diffusion.sif -u /home/ahern/projects/clean_rf_diffusion/run_inference.py
+    command_args: >
+      --config-name=base
+      inference.deterministic=True
+      inference.align_motif=True
+      inference.annotate_termini=True
+      inference.model_runner=NRBStyleSelfCond
+      +inference.ckpt_override_path=/home/ahern/projects/rf_diffusion/models/theo_pdb/BFF_4.pt
+      contigmap.shuffle=True|False
+      potentials.guide_scale=1
+      potentials.guiding_potentials=[\'type:substrate_contacts,s:1,r_0:8,rep_r_0:5.0,rep_s:2,rep_r_min:1\']
+      diffuser.T=200
+
+graft: True

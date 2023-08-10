@@ -494,7 +494,7 @@ def main():
                 row['contig_rmsd_af2' + suffix] = calc_rmsd(xyz_pred_motif, xyz_ref_motif)
                 row['contig_rmsd' + suffix] = calc_rmsd(xyz_des_motif, xyz_ref_motif)
             
-            if trb['atomize_indices2atomname']:
+            if trb.get('atomize_indices2atomname', None):
                 ref_idx0_by_des_idx0 = {}
                 for ref_idx0, des_idx0 in zip(trb['con_ref_idx0'], trb['con_hal_idx0']):
                     ref_idx0_by_des_idx0[des_idx0] = ref_idx0

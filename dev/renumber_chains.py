@@ -1,3 +1,5 @@
+#!/net/scratch/ahern/shebangs/shebang_rf_se3_diffusion.sh
+
 import sys
 import os
 root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -30,11 +32,12 @@ def main(input_dir, output_dir=None, prefix='', cautious=True):
             het = pdb_rplchain.run(het, ('A', 'B'))
             o = pdb_merge.run([prot, het])
             # o = pdb_sort.run(o, [])
-            o = pdb_tidy.run(o)
+            # o = pdb_tidy.run(o) -- pdb_tidy deletes CONECT records, do not run
+            o = [e for e in o]
         
-            with open(out_pdb, 'w') as of:
-                for l in o:
-                    of.write(l)
+        with open(out_pdb, 'w') as of:
+            for l in o:
+                of.write(l)
 
 if __name__ == '__main__':
     fire.Fire(main)

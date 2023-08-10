@@ -1,0 +1,12 @@
+defaults:
+    - enzyme
+
+sweep:
+    command_args: >
+      --config-name=aa
+      score_model.weights_path=/net/scratch/ahern/se3_diffusion/training/covale_complex_from_str_pred_batch24_l40_fallback_2/2023-08-03_1691112266.2135339_v4znb6v8/rank_0/models/RFD_36.pt
+      (inference.conditions.relative_sasa_v2.active=False)|(inference.conditions.relative_sasa_v2.active=True inference.conditions.relative_sasa_v2.rasa=0.0)
+    
+    num_per_condition: 200
+    num_per_job: 20
+
