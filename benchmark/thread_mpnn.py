@@ -20,7 +20,7 @@ sys.path.insert(0,script_dir+'/../RF2-allatom/')
 import inference.utils
 import rf2aa.parsers
 import rf2aa.chemical
-from parsers import load_ligand_from_pdb
+from parsers import load_ligand_from_pdb, load_ligands_from_pdb
 from rf2aa.util import kabsch
 import assertpy
 
@@ -57,28 +57,31 @@ def main():
         L_prot, N_atoms_prot = xyz_prot.shape[:2]
         Ls = [L_prot]
 
-        lig_name = trb['config']['inference']['ligand']
-        mpnn_flavor = 'ligmpnn' if args.use_ligand and lig_name else 'mpnn'
+        lig_names = trb['config']['inference']['ligand'].split(',')
+        mpnn_flavor = 'ligmpnn' if args.use_ligand and lig_names else 'mpnn'
         seqdir = args.seqdir or args.datadir+(f'/{mpnn_flavor}/seqs/')
         outdir = args.outdir or args.datadir+(f'/{mpnn_flavor}/')
-        if args.use_ligand and lig_name:
+        if args.use_ligand and lig_names:
             # load ligand from design
-            mol_des, xyz_sm_des, mask_sm_des, msa_sm_des, bond_feats_sm_des, atom_names_des = \
-                load_ligand_from_pdb(fn, lig_name = lig_name)
+            xyz_sm_des, mask_sm_des, msa_sm_des, bond_feats_sm_des, atom_names_des, ligand_names_arr_des = \
+                load_ligands_from_pdb(fn, lig_names = lig_names)
+                # load_ligand_from_pdb(fn, lig_name = lig_name)
 
             # reference ligand, to get hydrogen atoms (for downstream Rosetta scoring)
             input_pdb_fn = args.datadir+'/input/'+os.path.basename(trb['config']['inference']['input_pdb'])
-            mol, xyz_sm, mask_sm, msa_sm, bond_feats_sm, atom_names = \
-                load_ligand_from_pdb(input_pdb_fn, lig_name = lig_name, remove_H=False)
-
-            assertpy.assert_that(atom_names).does_not_contain_duplicates()
-            assertpy.assert_that(atom_names_des).does_not_contain_duplicates()
-
-            # superimpose reference ligand onto design ligand
+            xyz_sm, mask_sm, msa_sm, bond_feats_sm, atom_names, ligand_names_arr = \
+                load_ligands_from_pdb(input_pdb_fn, lig_names = lig_names, remove_H=False)
+            
             atom_names = [a.strip() for a in atom_names]
             atom_names_des = [a.strip() for a in atom_names_des]
-            to_align_des = np.isin(np.array(atom_names_des), np.array(atom_names))
-            to_align_ref = np.isin(np.array(atom_names), np.array(atom_names_des))
+            lig_atom_des = [f'{lig}_{atom}' for lig, atom in zip(ligand_names_arr_des, atom_names_des)]
+            lig_atom = [f'{lig}_{atom}' for lig, atom in zip(ligand_names_arr, atom_names)]
+            assertpy.assert_that(lig_atom).does_not_contain_duplicates()
+            assertpy.assert_that(lig_atom_des).does_not_contain_duplicates()
+
+            # superimpose reference ligand onto design ligand
+            to_align_des = np.isin(np.array(lig_atom_des), np.array(lig_atom))
+            to_align_ref = np.isin(np.array(lig_atom), np.array(lig_atom_des))
             sm_des = xyz_sm_des[0, to_align_des]
             sm_ref = xyz_sm[0, to_align_ref]
             rmsd, U = kabsch(xyz_sm_des[0, to_align_des], xyz_sm[0, to_align_ref]) 
@@ -135,7 +138,8 @@ def main():
                     chain_Ls = Ls,
                     bond_feats = bond_feats[None],
                     atom_names = atom_names,
-                    lig_name = lig_name
+                    ligand_name_arr=np.concatenate(
+                        (np.array(L_prot * ['UNK']), ligand_names_arr)),
                 )
 
 if __name__ == "__main__":

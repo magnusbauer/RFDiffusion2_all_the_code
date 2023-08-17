@@ -75,7 +75,7 @@ def combine(*df_paths, names=None):
     for i,p in enumerate(df_paths):
         df = read_metrics(p)
         #_, base = os.path.split(p)
-        root, _ = os.path.splitext(p)
+        root, _ = os.path.splitext(os.path.abspath(p))
         root = root.split('/')[-3]
         df['source'] = names[i] if names else root
         to_cat.append(df)
@@ -787,6 +787,18 @@ def get_motif_from_pdb(pdb, chain_i):
     return motif
 
 def get_min_dist_to_het(pdb, chain_i):
+
+    dgram, het_names = get_dist_to_het(pdb, chain_i)
+    minidx  = torch.argmin(dgram, keepdim=True)
+    _, M, H = dgram.shape
+    hetidx = minidx // M
+    return torch.min(dgram), het_names[hetidx]
+    print(f'{torch.min(dgram)} to {het_names[hetidx]}')
+
+def get_dist_to_het(pdb, chain_i, ligands=None):
+    '''
+    Returns [M, L]
+    '''
     feats = utils.process_target(pdb, parse_hetatom=True, center=False)
     xyz_motif_idx = pdb_to_xyz_idx(pdb, chain_i)
     motif = feats['xyz_27'][xyz_motif_idx]
@@ -794,6 +806,10 @@ def get_min_dist_to_het(pdb, chain_i):
     het_names = np.array([i['name'].strip() for i in feats['info_het']])
     het_xyz = feats['xyz_het'][het_names != 'HOH']
     het_names =  het_names[het_names != 'HOH']
+    if ligands:
+        is_ligand = [h in ligands for h in het_names]
+        het_xyz = het_xyz[is_ligand]
+        het_names =  het_names[is_ligand]
     if het_xyz.size == 0:
         return 999.0, ''
     try:
@@ -803,11 +819,18 @@ def get_min_dist_to_het(pdb, chain_i):
         raise e
     # print(dgram.shape)
     # print(set(het_names))
-    minidx  = torch.argmin(dgram, keepdim=True)
-    _, M, H = dgram.shape
-    hetidx = minidx // M
-    return torch.min(dgram), het_names[hetidx]
-    print(f'{torch.min(dgram)} to {het_names[hetidx]}')
+    return dgram, het_names
+
+def get_xyz_het(pdb, ligands):
+    feats = utils.process_target(pdb, parse_hetatom=True, center=False)
+    het_names = np.array([i['name'].strip() for i in feats['info_het']])
+    het_xyz = feats['xyz_het'][het_names != 'HOH']
+    het_names =  het_names[het_names != 'HOH']
+    if ligands:
+        is_ligand = [h in ligands for h in het_names]
+        het_xyz = het_xyz[is_ligand]
+        het_names =  het_names[is_ligand]
+    return het_xyz, het_names
 
 def get_traj_motif(row):
     motif_idx, native_motif_idx = analyze.get_idx_motif(row, mpnn=False)
@@ -873,13 +896,13 @@ def get_registered_ligand(row, af2=False):
     return des, native, het
 
 def get_dist_to_ligand(row, af2=False, c_alpha=False):
-    # if row.get('inference.ligand', False):
-    #     design_pdb = get_design_pdb(row)
-    #     design_info = utils.process_target(design_pdb, center=False, parse_hetatom=True)
-    #     des = design_info['xyz_27'][:, :14]
-    #     het = design_info['xyz_het']
-
-    des, _, het = get_registered_ligand(row, af2=af2)
+    if row.get('inference.ligand', False):
+        design_pdb = get_design_pdb(row)
+        design_info = utils.process_target(design_pdb, center=False, parse_hetatom=True)
+        des = design_info['xyz_27'][:, :14]
+        het = design_info['xyz_het']
+    else:
+        des, _, het = get_registered_ligand(row, af2=af2)
 
     motif_idx, native_motif_idx = get_idx_motif(row, mpnn=False)
     L, _, _ = des.shape

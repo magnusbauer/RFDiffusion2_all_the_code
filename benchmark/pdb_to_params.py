@@ -25,8 +25,9 @@ def convert_all(indir):
     pdb_ligand_count = defaultdict(list)
     for trb_path in glob.glob(os.path.join(indir, '*.trb')):
         trb = np.load(trb_path,allow_pickle=True)
-        pdb_ligand.add((trb['config']['inference']['input_pdb'], trb['config']['inference']['ligand']))
-        pdb_ligand_count[((trb['config']['inference']['input_pdb'], trb['config']['inference']['ligand']))].append(trb_path)
+        for ligand in trb['config']['inference']['ligand'].split(','):
+            pdb_ligand.add((trb['config']['inference']['input_pdb'], ligand))
+            pdb_ligand_count[(trb['config']['inference']['input_pdb'], ligand)].append(trb_path)
     
     ic(pdb_ligand_count)
     pdb_ligand_count = {k: len(v) for k,v in pdb_ligand_count.items()}
@@ -51,7 +52,7 @@ def convert(pdb, mol2, ligand):
     mol = openbabel.OBMol()
     with open(pdb, 'r') as fh:
         stream = [l for l in fh if "HETATM" in l or "CONECT" in l]
-    stream = aa_model.filter_het(stream, ligand)
+    stream = aa_model.remove_non_target_ligands(stream, ligand)
     stream = "".join(stream)
     obConversion.ReadString(mol, stream)
 

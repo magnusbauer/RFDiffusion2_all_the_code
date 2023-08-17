@@ -287,7 +287,7 @@ def save_outputs(sampler, out_prefix, indep, denoised_xyz_stack, px0_xyz_stack, 
 
     # pX0 last step
     out_unidealized = os.path.join(unidealized_dir, f'{out_tail}.pdb')
-    aa_model.write_traj(out_unidealized, xyz_design[None,...], seq_design, indep.bond_feats, chain_Ls=chain_Ls, lig_name=sampler._conf.inference.ligand, idx_pdb=indep.idx)
+    aa_model.write_traj(out_unidealized, xyz_design[None,...], seq_design, indep.bond_feats, ligand_name_arr=sampler.contig_map.ligand_names, chain_Ls=chain_Ls, idx_pdb=indep.idx)
     out_idealized = f'{out_prefix}.pdb'
     dev.idealize_backbone.rewrite(out_unidealized, out_idealized)
     des_path = os.path.abspath(out_idealized)
@@ -297,11 +297,11 @@ def save_outputs(sampler, out_prefix, indep, denoised_xyz_stack, px0_xyz_stack, 
     os.makedirs(os.path.dirname(traj_prefix), exist_ok=True)
 
     out = f'{traj_prefix}_Xt-1_traj.pdb'
-    aa_model.write_traj(out, denoised_xyz_stack, final_seq, indep.bond_feats, chain_Ls=chain_Ls, lig_name=sampler._conf.inference.ligand, idx_pdb=indep.idx)
+    aa_model.write_traj(out, denoised_xyz_stack, final_seq, indep.bond_feats, ligand_name_arr=sampler.contig_map.ligand_names, chain_Ls=chain_Ls, idx_pdb=indep.idx)
     xt_traj_path = os.path.abspath(out)
 
     out=f'{traj_prefix}_pX0_traj.pdb'
-    aa_model.write_traj(out, px0_xyz_stack, final_seq, indep.bond_feats, chain_Ls=chain_Ls, lig_name=sampler._conf.inference.ligand, idx_pdb=indep.idx)
+    aa_model.write_traj(out, px0_xyz_stack, final_seq, indep.bond_feats, chain_Ls=chain_Ls, ligand_name_arr=sampler.contig_map.ligand_names, idx_pdb=indep.idx)
     x0_traj_path = os.path.abspath(out)
 
     # run metadata

@@ -1,4 +1,5 @@
 import sys
+import torch
 import numpy as np
 import scipy
 import scipy.spatial
@@ -285,3 +286,31 @@ def load_ligand_from_pdb(fn, lig_name=None, remove_H=True):
             atom_names.append(line[12:16])
 
     return mol, xyz_sm, mask_sm, msa_sm, bond_feats_sm, atom_names
+
+
+def load_ligands_from_pdb(fn, lig_names=None, remove_H=True):
+    xyz_stack = []
+    mask_stack = []
+    msa_stack = []
+    bond_feats_stack = []
+    atom_names_stack = []
+    ligand_names_arr = []
+    for ligand in lig_names:
+        mol, xyz, mask, msa, bond_feats, atom_names = load_ligand_from_pdb(fn, ligand, remove_H=remove_H)
+        xyz = xyz[0]
+        xyz_stack.append(xyz)
+        mask_stack.append(mask)
+        msa_stack.append(msa)
+        bond_feats_stack.append(bond_feats)
+        atom_names_stack.append(atom_names)
+        L = xyz.shape[0]
+        ligand_names_arr.extend([ligand]*L)
+    
+    xyz = torch.cat(xyz_stack)
+    mask = torch.cat(mask_stack, dim=1)
+    msa = torch.cat(msa_stack)
+    bond_feats = torch.block_diag(*bond_feats_stack)
+    atom_names = []
+    for a in atom_names_stack:
+        atom_names.extend(a)
+    return xyz[None,...], mask, msa, bond_feats, atom_names, np.array(ligand_names_arr)

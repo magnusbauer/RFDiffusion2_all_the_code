@@ -58,7 +58,7 @@ N_TERMINUS = 1
 C_TERMINUS = 2
 
 UNIQUE_LIGAND="__UNIQUE_LIGAND"
-
+alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
 
 def chain_letters_from_same_chain(same_chain):
     L = same_chain.shape[0]
@@ -67,7 +67,7 @@ def chain_letters_from_same_chain(same_chain):
     cc.sort(key=min)
     chain_letters = np.chararray((L,), unicode=True)
 
-    for ch_i, ch_name in zip(cc, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'):
+    for ch_i, ch_name in zip(cc, alphabet):
         chain_letters[list(ch_i)] = ch_name
 
     return chain_letters
@@ -302,47 +302,73 @@ def get_only_ligand(pdb_lines):
 def get_non_target_hetatm_ids(pdb_lines, ligands):
     non_target_hetatm_ids = []
     for l in pdb_lines:
-        if 'HETATM' in l:
+        if l.startswith('HETATM'):
             curr_ligand = l[17:17+4].strip()
             if curr_ligand not in ligands:
                 non_target_hetatm_ids.append(int(l[6:6+5].strip()))
                 continue
     return set(non_target_hetatm_ids)
 
-def remove_non_target_ligands(pdb_lines, ligands, cautious=False):
+def filter_connect(l, invalid_ids):
+    ids = [int(e.strip()) for e in l[6:].strip().split()]
+    implied_bonds = []
+    d = ids[0]
+    R = ids[1:]
+
+    implied_bonds = [(d, r) for r in R]
+
+    valid_bonds = []
+    invalid_bonds = []
+    for d, r in implied_bonds:
+        if d in invalid_ids or r in invalid_ids:
+            invalid_bonds.append((d,r))
+        else:
+            valid_bonds.append((d,r))
+    
+    if not valid_bonds:
+        return '', invalid_bonds
+
+    d = valid_bonds[0][0]
+    R = [b[1] for b in valid_bonds]
+    new_l = ['CONECT']
+    for atom_id in [d] + R:
+        new_l.append(f'{atom_id:>4}')
+    
+    return ''.join(new_l), invalid_bonds
+
+def remove_non_target_ligands(pdb_lines, ligands):
     non_target_hetatm_ids = get_non_target_hetatm_ids(pdb_lines, ligands)
     lines = []
-    violations = []
+    all_invalid_bonds = []
+    all_invalid_hetatms = []
     for l in pdb_lines:
         if 'HETATM' in l:
                 atom_id = int(l[6:6+5].strip())
                 if atom_id in non_target_hetatm_ids:
+                    all_invalid_hetatms.append(atom_id)
                     continue
         if 'CONECT' in l:
-            ids = [int(e.strip()) for e in l[6:].strip().split()]
-            if all(i in non_target_hetatm_ids for i in ids):
-                continue
-            if any(i in non_target_hetatm_ids for i in ids):
-                target_to_non_target = [i for i in ids if i in non_target_hetatm_ids]
-                violations.append(f'line {l} references atom ids in a non-target ligand, but also target atoms: {target_to_non_target}')
-                new_l = ['CONECT'] 
-                for i in ids:
-                    if i not in non_target_hetatm_ids:
-                        new_l.append(f'{123:>4}')
-                l = ''.join(new_l)
+            l, invalid_bonds = filter_connect(l, non_target_hetatm_ids)
+            all_invalid_bonds.extend(invalid_bonds)
         lines.append(l)
-    if len(violations) and cautious:
-        raise Exception('\n'.join(violations))
+
+    # Uncomment to see ignored atoms/bonds
+    # if all_invalid_bonds or all_invalid_hetatms:
+    #     atom_by_serial_number = get_atom_by_atom_serial_number(pdb_lines)
+    #     name = lambda x: str(atom_by_serial_number.get(x, 'UNKNOWN'))
+    #     print(f'Removing hetatms:\n' + '\n'.join([name(atom_id) for atom_id in all_invalid_hetatms]))
+    #     print(f'Removing the following bonds:' + '\n'.join(f'{name(d)} --> {name(d)}' for d,r in all_invalid_bonds))
+
     return lines
 
-def filter_het(pdb_lines, ligand, covale_allowed=False):
+def filter_het(pdb_lines, ligands, covale_allowed=False):
     lines = []
     hetatm_ids = []
     for l in pdb_lines:
         if 'HETATM' not in l:
             continue
         curr_ligand = l[17:17+4].strip()
-        if curr_ligand != ligand:
+        if curr_ligand not in ligands:
             continue
         lines.append(l)
         hetatm_ids.append(int(l[7:7+5].strip()))
@@ -357,19 +383,19 @@ def filter_het(pdb_lines, ligand, covale_allowed=False):
             continue
         if any(i in hetatm_ids for i in ids):
             ligand_atms_bonded_to_protein = [i for i in ids if i in hetatm_ids]
-            violations.append(f'line {l} references atom ids in the target ligand {ligand}: {ligand_atms_bonded_to_protein} and another atom')
+            violations.append(f'line {l} references atom ids in the target ligands {ligands}: {ligand_atms_bonded_to_protein} and another atom')
     if violations and not covale_allowed:
         raise Exception('\n'.join(violations))
     return lines
 
-def get_hetatm_ids(pdb_lines, ligand):
+def get_hetatm_ids(pdb_lines, ligands):
     lines = []
     hetatm_ids = []
     for l in pdb_lines:
         if 'HETATM' not in l:
             continue
         curr_ligand = l[17:17+4].strip()
-        if curr_ligand != ligand:
+        if curr_ligand not in ligands:
             continue
         lines.append(l)
         hetatm_ids.append(int(l[7:7+5].strip()))
@@ -431,7 +457,26 @@ def get_atom_uid(a):
     return (res_idx, atom_name)
 
 
-def make_indep(pdb, ligand=None, center=True, return_metadata=False):
+def parse_ligand(pdb, ligand):
+    with open(pdb, 'r') as fh:
+        stream = [l for l in fh if "HETATM" in l or "CONECT" in l]
+    if ligand == UNIQUE_LIGAND:
+        raise Exception('not implemented')
+
+    stream = filter_het(stream, [ligand], covale_allowed=True)
+    if not len(stream):
+        raise Exception(f'ligand {ligand} not found in pdb: {pdb}')
+
+    mol, seq_sm, _, xyz_sm, _ = parsers.parse_mol("".join(stream), filetype="pdb", string=True, find_automorphs=False)
+    G = rf2aa.util.get_nxgraph(mol)
+    atom_frames = rf2aa.util.get_atom_frames(seq_sm, G)
+    chirals = get_chirals(mol, xyz_sm[0])
+    bond_feats = rf2aa.util.get_bond_feats(mol)
+    return xyz_sm[0], seq_sm, atom_frames, chirals, bond_feats
+    # if chirals.numel() !=0:
+    #     chirals[:,:-1] += protein_L
+
+def make_indep(pdb, ligand='', center=True, return_metadata=False):
     # self.target_feats = iu.process_target(self.inf_conf.input_pdb, parse_hetatom=True, center=False)
     # init_protein_tmpl=False, init_ligand_tmpl=False, init_protein_xyz=False, init_ligand_xyz=False,
     #     parse_hetatm=False, n_cycle=10, random_noise=5.0)
@@ -442,7 +487,11 @@ def make_indep(pdb, ligand=None, center=True, return_metadata=False):
 
     with open(pdb, 'r') as fh:
         stream = fh.readlines()
-    stream = remove_non_target_ligands(stream, [ligand])
+
+    ligands = []
+    if ligand:
+        ligands = ligand.split(',')
+    stream = remove_non_target_ligands(stream, ligands)
     target_feats = inference.utils.parse_pdb_lines(stream, parse_hetatom=True)
     het_atom_uids = [(e['res_idx'], e['atom_id'].strip()) for e in target_feats['info_het']]
     prot_atom_uids = [(idx, 'CA') for idx in target_feats['idx']]
@@ -453,15 +502,22 @@ def make_indep(pdb, ligand=None, center=True, return_metadata=False):
     xyz_prot = torch.tensor(xyz_prot)
     mask_prot = torch.tensor(mask_prot)
     protein_L, nprotatoms, _ = xyz_prot.shape
-    msa_prot = torch.tensor(seq_prot)[None].long()
-    ins_prot = torch.zeros(msa_prot.shape).long()
-    a3m_prot = {"msa": msa_prot, "ins": ins_prot}
+    seq_prot = torch.tensor(seq_prot).long()
     covale_bonds = []
-    if ligand:
-        protein_ligand_bonds_atoms = find_covale_bonds(stream, ligand)
-        print('Protein-ligand bonds:')
-        for i, (d,r) in enumerate(protein_ligand_bonds_atoms):
-            print(f'{d.get_full_id()} : {r.get_full_id()}')
+
+    Ls = [seq_prot.shape[0]]
+    seq_sm = torch.zeros((0,)).long()
+    if len(ligands):
+        protein_ligand_bonds_atoms = find_covale_bonds(stream, ligands)
+        msg = []
+        for d,r in protein_ligand_bonds_atoms:
+            msg.append(f'{d.get_full_id()} : {r.get_full_id()}')
+        msg = '\n'.join(msg)
+        if msg:
+            print(f'Protein-ligand bonds:\n{msg}')
+        else:
+            print(f'No protein-ligand bonds')
+        
         for protein_atom, ligand_atom in protein_ligand_bonds_atoms:
             prot_res_idx, prot_atom_name = get_atom_uid(protein_atom)
             res_i = uids.index((prot_res_idx, 'CA'))
@@ -472,63 +528,69 @@ def make_indep(pdb, ligand=None, center=True, return_metadata=False):
             covale_bonds.append(
                 ((res_i, prot_atom_name), atom_i, bond_type)
             )
-        ic(covale_bonds)
 
-        with open(pdb, 'r') as fh:
-            stream = [l for l in fh if "HETATM" in l or "CONECT" in l]
-        if ligand == UNIQUE_LIGAND:
-            raise Exception('not implemented')
-            ligand = get_only_ligand(pdb_lines)
+        xyz_sm_stack = []
+        seq_sm_stack = []
+        atom_frames_stack = []
+        chirals_stack = []
+        bond_feats_stack = []
+        # covale_bonds_stack = []
+        for ligand in ligands:
+            o = parse_ligand(pdb, ligand)
+            xyz_sm, seq_sm, atom_frames, chirals, bond_feats = o
 
-        stream = filter_het(stream, ligand, covale_allowed=True)
-        if not len(stream):
-            raise Exception(f'ligand {ligand} not found in pdb: {pdb}')
+            chirals[:, :-1] += sum(Ls)
+            xyz_sm_stack.append(xyz_sm)
+            seq_sm_stack.append(seq_sm)
+            atom_frames_stack.append(atom_frames)
+            chirals_stack.append(chirals)
+            bond_feats_stack.append(bond_feats)
+            # covale_bonds_stack.append(covale_bonds)
 
-        mol, msa_sm, ins_sm, xyz_sm, _ = parsers.parse_mol("".join(stream), filetype="pdb", string=True)
-        assertpy.assert_that(len(het_atom_uids)).is_equal_to(xyz_sm.shape[1])
-        a3m_sm = {"msa": msa_sm.unsqueeze(0), "ins": ins_sm.unsqueeze(0)}
-        G = rf2aa.util.get_nxgraph(mol)
-        atom_frames = rf2aa.util.get_atom_frames(msa_sm, G)
-        N_symmetry, sm_L, _ = xyz_sm.shape
-        Ls = [protein_L, sm_L]
-        a3m = merge_a3m_hetero(a3m_prot, a3m_sm, Ls)
-        msa = a3m['msa'].long()
-        chirals = get_chirals(mol, xyz_sm[0])
-        if chirals.numel() !=0:
-            chirals[:,:-1] += protein_L
+            Ls.append(seq_sm.shape[0])
+
+        xyz_sm = torch.cat(xyz_sm_stack)
+        seq_sm = torch.cat(seq_sm_stack)
+        atom_frames = torch.cat(atom_frames_stack)
+        chirals = torch.cat(chirals_stack)
+        bond_feats_sm = torch.block_diag(*bond_feats_stack)
     else:
-        Ls = [msa_prot.shape[-1], 0]
-        N_symmetry = 1
-        msa = msa_prot
+        Ls.append(0)
 
-    xyz = torch.full((N_symmetry, sum(Ls), NTOTAL, 3), np.nan).float()
-    mask = torch.full(xyz.shape[:-1], False).bool()
-    xyz[:, :Ls[0], :nprotatoms, :] = xyz_prot.expand(N_symmetry, Ls[0], nprotatoms, 3)
+    xyz = torch.full((sum(Ls), NTOTAL, 3), np.nan).float()
+    xyz[:Ls[0], :nprotatoms, :] = xyz_prot
     if ligand:
-        xyz[:, Ls[0]:, 1, :] = xyz_sm
-    xyz = xyz[0]
-    mask[:, :protein_L, :nprotatoms] = mask_prot.expand(N_symmetry, Ls[0], nprotatoms)
+        xyz[Ls[0]:, 1, :] = xyz_sm
     idx_sm = torch.arange(max(idx_prot),max(idx_prot)+Ls[1])+200
+    idx_sm_stack = []
+    last_idx = max(idx_prot)
+    for i, l in enumerate(Ls[1:]):
+        new_idx = torch.arange(l) + 200 + last_idx
+        idx_sm_stack.append(new_idx)
+        if len(new_idx):
+            last_idx = max(new_idx)
+    idx_sm = torch.cat(idx_sm_stack)
+
     idx_pdb = torch.concat([torch.tensor(idx_prot), idx_sm])
-    
-    seq = msa[0]
-    
-    # seq, msa_seed_orig, msa_seed, msa_extra, mask_msa = MSAFeaturize(msa, ins, 
-    #     p_mask=0.0, params={'MAXLAT': 128, 'MAXSEQ': 1024, 'MAXCYCLE': n_cycle}, tocpu=True)
+    seq = torch.cat((seq_prot, seq_sm))
     bond_feats = torch.zeros((sum(Ls), sum(Ls))).long()
     bond_feats[:Ls[0], :Ls[0]] = rf2aa.util.get_protein_bond_feats(Ls[0])
     if ligand:
-        bond_feats[Ls[0]:, Ls[0]:] = rf2aa.util.get_bond_feats(mol)
+        bond_feats[Ls[0]:, Ls[0]:] = bond_feats_sm
 
     same_chain = torch.zeros((sum(Ls), sum(Ls))).bool()
     same_chain[:Ls[0], :Ls[0]] = True
     same_chain[Ls[0]:, Ls[0]:] = True
+    chains = []
+    for i, l in enumerate(Ls):
+        chains.extend([alphabet[i]] * l)
+    same_chain = same_chain_from_chain_letters(np.array(chains))
     # Amend same chain for the covalently linked small molecule case
     same_chain = same_chain_with_covale(same_chain, covale_bonds)
 
     is_sm = torch.zeros(sum(Ls)).bool()
     is_sm[Ls[0]:] = True
-    assert len(Ls) <= 2, 'multi chain inference not implemented yet'
+    # assert len(Ls) <= 2, 'multi chain inference not implemented yet'
     terminus_type = torch.zeros(sum(Ls))
     terminus_type[0] = N_TERMINUS
     terminus_type[Ls[0]-1] = C_TERMINUS
@@ -550,7 +612,14 @@ def make_indep(pdb, ligand=None, center=True, return_metadata=False):
         is_sm,
         terminus_type)
     if return_metadata:
-        metadata = {'covale_bonds': covale_bonds}
+        ligand_name_arr = []
+        for l, name in zip(Ls, [''] + ligands):
+            ligand_name_arr.extend(l * [name])
+
+        metadata = {
+            'covale_bonds': covale_bonds,
+            'ligand_names': np.array(ligand_name_arr,  dtype='<U3'),
+        }
         return indep, metadata
     return indep
 
@@ -587,14 +656,26 @@ class Model:
         all_chains = set(ch for ch,_ in contig_map.hal)
         # Not yet implemented due to index shifting
         assert_that(len(all_chains)).is_equal_to(1)
-        next_unused_chain = next(e for e in contig_map.chain_order if e not in all_chains)
+        next_unused_chain = (e for e in contig_map.chain_order if e not in all_chains)
         n_sm = indep.is_sm.sum()
         is_sm_idx0 = torch.nonzero(indep.is_sm, as_tuple=True)[0].tolist()
         contig_map.ref_idx0.extend(is_sm_idx0)
         n_protein_hal = len(contig_map.hal)
         contig_map.hal_idx0 = np.concatenate((contig_map.hal_idx0, np.arange(n_protein_hal, n_protein_hal+n_sm)))
         max_hal_idx = max(i for _, i  in contig_map.hal)
-        contig_map.hal.extend(zip([next_unused_chain]*n_sm, range(max_hal_idx+200,max_hal_idx+200+n_sm)))
+        new_chains = {}
+        for ch in np.unique(indep.chains()[indep.is_sm]):
+            new_chains[ch] = next(next_unused_chain)
+        
+        new_chain_arr = np.array([new_chains[ch] for ch in indep.chains()[indep.is_sm]])
+        new_idx_arr = np.full((n_sm), np.nan, dtype=np.int64)
+        chs, n_chs = np.unique(new_chain_arr, return_counts=True)
+        for ch, n_ch in zip(chs, n_chs):
+            new_idx_ch = np.arange(n_ch) + max_hal_idx+200
+            new_idx_arr[new_chain_arr == ch] = new_idx_ch
+            max_hal_idx = np.max(new_idx_ch)
+        
+        contig_map.hal.extend(zip(new_chain_arr, new_idx_arr))
         chain_id = np.array([c for c, _ in contig_map.hal])
         L_mapped = len(contig_map.hal)
         n_prot = L_mapped - n_sm
@@ -659,6 +740,9 @@ class Model:
         sm_ca = o.xyz[o.is_sm, 1]
         o.xyz[o.is_sm,:3] = sm_ca[...,None,:]
         o.xyz[o.is_sm] += chemical.INIT_CRDS
+        
+        contig_map.ligand_names = np.full(o.length(), '', dtype='<U3')
+        contig_map.ligand_names[contig_map.hal_idx0.astype(int)] = metadata['ligand_names'][contig_map.ref_idx0]
 
         # To see the shapes of the indep struct with contig inserted
         # print(rf2aa.tensor_util.info(rf2aa.tensor_util.to_ordered_dict(o)))

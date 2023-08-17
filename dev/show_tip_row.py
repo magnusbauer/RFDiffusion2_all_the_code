@@ -136,13 +136,16 @@ def get_selectors_2(atom_names_by_res_idx_0):
     selectors = {
         'shown': shown,
         'protein': protein,
+        'residue_motif': resi_motifs_selector,
         'sidechains_diffused':sidechains_diffused,
         'sidechains_motif': sidechains_motif,
         'lig': lig,
-        'residue_motif': resi_motifs_selector,
     }
     return selectors
 
+def get_atom_selector(obj, ch, idx, atom_names):
+    atom_sel = ' or '.join(f'name {a}' for a in atom_names)
+    return f'({obj} and chain {ch} and resi {idx} and ({atom_sel}))'
 
 
 def color_selectors(selectors, carbon=True, verbose=False, des_color=None):

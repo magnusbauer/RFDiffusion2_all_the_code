@@ -307,8 +307,8 @@ class Sampler:
         self.contig_map = self.construct_contig(self.target_feats)
         L = len(self.target_feats['pdb_idx'])
 
-        indep_orig = aa_model.make_indep(self._conf.inference.input_pdb, self._conf.inference.ligand)
-        indep, self.is_diffused, self.is_seq_masked = self.model_adaptor.insert_contig(indep_orig, self.contig_map)
+        indep_orig, metadata = aa_model.make_indep(self._conf.inference.input_pdb, self._conf.inference.ligand, return_metadata=True)
+        indep, self.is_diffused, self.is_seq_masked = self.model_adaptor.insert_contig(indep_orig, self.contig_map, metadata=metadata)
         self.t_step_input = self._conf.diffuser.T
         if self.diffuser_conf.partial_T:
             mappings = self.contig_map.get_mappings()

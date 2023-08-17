@@ -347,8 +347,12 @@ def main():
         trb = np.load(fn.replace('.pdb','.trb'), allow_pickle=True)
 
         folder = os.path.dirname(fn)
-        params_fn = pdb_to_params.aux_file(folder, trb['config']['inference']['input_pdb'], trb['config']['inference']['ligand'], 'params')
-        out = parse_PDB(fn, {fn: [params_fn]})
+        params_fns = []
+        for ligand in trb['config']['inference']['ligand'].split(','):
+            params_fns.append(pdb_to_params.aux_file(
+                    folder, trb['config']['inference']['input_pdb'], ligand, 'params'))
+            
+        out = parse_PDB(fn, {fn: params_fns})
         pdb_dict_list += out
 
         if args.output_fixed_pos is not None:

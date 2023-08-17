@@ -129,7 +129,8 @@ def run(conf: DictConfig) -> None:
             chosen_dataset, index = item_context['chosen_dataset'], item_context['index']
             ic('loader out', chosen_dataset, index)
             bonds = indep.metadata['covale_bonds']
-            name = f'{chosen_dataset}_true_{len(bonds)}_{show.get_counter()}'
+            name = f'{chosen_dataset}_true_bonds_{len(bonds)}_{show.get_counter()}'
+            print(name)
             if conf.show_dataset.show_diffused:
                 show.color_diffused(indep, is_diffused, name=name)
             if conf.show_dataset.show:

@@ -1,0 +1,17 @@
+# Configuration for inference on SE(3) diffusion experiments.
+defaults:
+  - base
+
+dataloader:
+  DIFF_MASK_PROBS:
+    get_closest_tip_atoms: 0.15
+    get_diffusion_mask_islands: 0.2
+    get_unconditional_diffusion_mask: 0.15
+    get_closest_tip_atoms_partial_ligand: 0.15
+    get_diffusion_mask_islands_partial_ligand: 0.2
+    get_unconditional_diffusion_mask_partial_ligand: 0.15
+  DATASETS: pdb_aa,compl,sm_complex,sm_compl_covale,metal_compl,sm_compl_asmb,sm_compl_multi
+  DATASET_PROB: [0.4,0.2,0.15,0.1,0.05,0.05,0.05]
+
+
+

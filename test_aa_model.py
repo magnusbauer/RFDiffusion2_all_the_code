@@ -64,6 +64,7 @@ class TestRearrange(unittest.TestCase):
         input_copy = copy.deepcopy(indep)
         i = np.arange(L)
         i = np.concatenate((i[indep.is_sm], i[~indep.is_sm]))
+        i = torch.tensor(i)
         aa_model.rearrange_indep(indep, i)
 
         diff = test_utils.cmp_pretty(indep.atom_frames, input_copy.atom_frames)
@@ -78,6 +79,7 @@ class TestRearrange(unittest.TestCase):
         input_copy = copy.deepcopy(indep)
         i = np.arange(L)
         i = np.concatenate((i[indep.is_sm][-1:], i[indep.is_sm][:-1], i[~indep.is_sm]))
+        i = torch.tensor(i)
         aa_model.rearrange_indep(indep, i)
 
         frame_has_0 = (input_copy.atom_frames[:,:,0] == 0).any(dim=1)
@@ -97,6 +99,7 @@ class TestRearrange(unittest.TestCase):
         sm_i_b = sm_i[len(sm_i)//2:]
         non_sm_i = (~indep.is_sm).nonzero()[:,0]
         i = np.concatenate((sm_i_a, non_sm_i, sm_i_b))
+        i = torch.tensor(i)
         aa_model.rearrange_indep(indep, i)
 
         diff = test_utils.cmp_pretty(indep.atom_frames, input_copy.atom_frames)
@@ -243,21 +246,21 @@ class AAModelTestCase(unittest.TestCase):
         got_atoms = atoms_by_ligand[ligand_name]
         assertpy.assert_that(want_atoms).is_equal_to(got_atoms)
 
-    
-    def test_ligand_renaming_traj(self):
-        ligand_name = 'LLK'
-        input_pdb = 'benchmark/input/ra_5an7_no_cov.pdb'
-        atoms_by_ligand = aa_model.hetatm_names(input_pdb)
-        atoms_by_ligand = aa_model.without_H(atoms_by_ligand)
-        want_atoms = atoms_by_ligand[ligand_name]
-        n_models = 3
-        traj_pdb = 'test_data/traj_2.pdb'
-        out_pdb = 'tmp/traj.pdb'
-        shutil.copy(traj_pdb, out_pdb)
-        aa_model.rename_ligand_atoms(input_pdb, out_pdb)
-        atoms_by_ligand = aa_model.hetatm_names(out_pdb)
-        got_atoms = atoms_by_ligand[ligand_name]
-        assertpy.assert_that(want_atoms * n_models).is_equal_to(got_atoms)
+    # Missing input file
+    # def test_ligand_renaming_traj(self):
+    #     ligand_name = 'LLK'
+    #     input_pdb = 'benchmark/input/ra_5an7_no_cov.pdb'
+    #     atoms_by_ligand = aa_model.hetatm_names(input_pdb)
+    #     atoms_by_ligand = aa_model.without_H(atoms_by_ligand)
+    #     want_atoms = atoms_by_ligand[ligand_name]
+    #     n_models = 3
+    #     traj_pdb = 'test_data/traj_2.pdb'
+    #     out_pdb = 'tmp/traj.pdb'
+    #     shutil.copy(traj_pdb, out_pdb)
+    #     aa_model.rename_ligand_atoms(input_pdb, out_pdb)
+    #     atoms_by_ligand = aa_model.hetatm_names(out_pdb)
+    #     got_atoms = atoms_by_ligand[ligand_name]
+    #     assertpy.assert_that(want_atoms * n_models).is_equal_to(got_atoms)
     
     def test_ligand_renaming(self):
         for input_pdb, ligand_name in [
@@ -278,8 +281,8 @@ class AAModelTestCase(unittest.TestCase):
 
 
     def test_parses_covale(self):
-        covale = '/home/ahern/campaigns/bilin/inputs/covale/3l0f.pdb'
-        noncovale = '/home/ahern/campaigns/bilin/inputs/raw/3l0f.pdb'
+        covale = 'benchmark/input/3l0f_covale.pdb'
+        noncovale = 'benchmark/input/3l0f.pdb'
         ligand_name = 'CYC'
 
         conf = test_utils.construct_conf(inference=True) 
@@ -317,6 +320,53 @@ class AAModelTestCase(unittest.TestCase):
         ic(new_bonds)
         new_bonded_elements = tuple(set([element for _, element in b]) for b in new_bonds)
         assertpy.assert_that(new_bonded_elements).is_equal_to((set(['C', 'S']),))
+
+    def test_parses_multiligand_2(self):
+        ligand_name = 'CYC'
+
+        conf = test_utils.construct_conf(inference=True) 
+        adaptor = aa_model.Model(conf)
+        d = defaultdict(dict)
+        for name, ligand_name, input_pdb in [
+            ('single', 'UDX', 'test_data/ec1_M0092_same_resn.pdb'),
+            ('multi', 'NAD,UDX', 'test_data/ec1_M0092.pdb'),
+        ]:
+            print(f'----------{name}-------------------')
+            run_inference.seed_all()
+            indep, metadata = aa_model.make_indep(input_pdb, ligand_name, return_metadata=True)
+            target_feats = inference.utils.process_target(input_pdb)
+            contig_map =  contigs.ContigMap(target_feats,
+                                        contigs=['3-3'],
+                                        # contig_atoms="{'A84':'CA,C,N,O,CB,SG'}",
+                                        length='3-3',
+                                        )
+            indep_contig,is_diffused,_ = adaptor.insert_contig(indep, contig_map, metadata=metadata)
+            d[name]['indep_contig'] = indep_contig
+            # d[name]['rfi'] = adaptor.prepro(indep_contig, 100, is_diffused)
+
+
+        cmp = partial(tensor_util.cmp, atol=1e-20, rtol=1e-5)        
+        indep_single = d['single']['indep_contig']
+        test_utils.assert_matches_golden(self, 'ligand_single_2', indep_single, rewrite=REWRITE, custom_comparator=cmp)
+        indep_multi= d['multi']['indep_contig']
+        diff = test_utils.cmp_pretty(indep_multi, indep_single)
+        if not diff:
+            self.fail('expected difference')
+        ic(diff)
+        test_utils.assert_matches_golden(self, 'ligand_multi_2', indep_multi, rewrite=REWRITE, custom_comparator=cmp)
+
+        # ic(
+        #     # list(zip(indep_single.idx,
+        #     # indep_multi.idx))
+        #     # indep_single.chains(),
+        #     # indep_multi.chains(),
+        # )
+
+        new_bonds = indep_multi.bond_feats != indep_single.bond_feats
+        new_bonds = indep_multi.human_readable_2d_symmetric_mask(new_bonds)
+        ic(new_bonds)
+        new_bonded_elements = tuple(set([element for _, element in b]) for b in new_bonds)
+        # assertpy.assert_that(new_bonded_elements).is_equal_to((set(['C', 'S']),))
 
 REWRITE = False
 if __name__ == '__main__':

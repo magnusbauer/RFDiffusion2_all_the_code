@@ -1,0 +1,20 @@
+defaults:
+  - train_covale_complex
+  - _self_
+
+rf:
+  ckpt_path: null
+  model:
+    d_t1d: 94 #80 + 10 + 4
+
+extra_t1d: ['radius_of_gyration_v2', 'relative_sasa_v2']
+extra_t1d_params:
+  radius_of_gyration_v2:
+    low: 10
+    high: 100
+    n_bins: 9
+  relative_sasa_v2:
+    low: 0
+    high: 0.2
+    n_bins: 3 # Inaccesible, semi-accesible, unaccessible
+  

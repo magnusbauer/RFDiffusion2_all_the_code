@@ -201,6 +201,53 @@ nonatomized_covale = """{
 }"""
 
 
+multiligand_item = """{
+    'chosen_dataset': 'sm_compl_asmb',                                                                                                       
+    'index': 0,                                                                                                                              
+    'mask_gen_seed': 68054314,                                                                                                               
+    'sel_item': {   'ASSEMBLY': 2,                                                                                                           
+                'CHAINID': '6fp1_B',                                                                                                     
+                'CLUSTER': 6750,                                                                                                         
+                'COVALENT': [],                                                                                                          
+                'DEPOSITION': '2018-02-08',                                                                                              
+                'HASH': '104197',                                                                                                        
+                'LEN_EXIST': 445,                                                                                                        
+                'LIGAND': [('G', '501', 'FAD')],                                                                                         
+                'LIGATOMS': 53,                                                                                                          
+                'LIGATOMS_RESOLVED': 53,                                                                                                 
+                'LIGXF': [('G', 1)],                                                                                                     
+                'PARTNERS': [   (   'B',                                                                                                                                                                                                                                              
+                                    0,                                                                                                                                                                                                                                                
+                                    605,                                                                                                 
+                                    2.6784911155700684,                                                                                  
+                                    'polypeptide(L)'),                                                                                   
+                                (   [('M', '507', 'E0Q')],                                                                               
+                                    [('M', 7)],                                                                                          
+                                    16,                                                                                                  
+                                    3.4406967163085938,                                                                                  
+                                    'nonpoly'),                                                                                          
+                                (   [('J', '504', 'PEG')],                                                                               
+                                    [('J', 4)],                                                                                          
+                                    0,                                                                                                   
+                                    12.409589767456055,                                                                                  
+                                    'nonpoly'),                                                                                          
+                                (   [('K', '505', 'PEG')],                                                                               
+                                    [('K', 5)],                                                                                          
+                                    0,                                                                                                   
+                                    14.890626907348633,                                                                                  
+                                    'nonpoly'),                                                                                          
+                                (   [('L', '506', 'PEG')],                                                                               
+                                    [('L', 6)],                                                                                          
+                                    0,
+                                    20.84391212463379,
+                                    'nonpoly')],
+                'RESOLUTION': 1.97,
+                'SEQUENCE': 'TATDNARQVTIIGAGLAGTLVARLLARNGWQVNLFERRPDPRIETGARGRSINLALAERGAHALRLAGLEREVLAEAVMMRGRMVHVPGTPPNLQPYGRDDSEVIWSINRDRLNRILLDGAEAAGASIHFNLGLDSVDFARQRLTLSNVSGERLEKRFHLLIGADGCNSAVRQAMASVVDLGEHLETQPHGYKELQITPEASAQFNLEPNALHIWPHGDYMCIALPNLDRSFTVTLFLHHQSPAAQPASPSFAQLVDGHAARRFFQRQFPDLSPMLDSLEQDFEHHPTGKLATLRLTTWHVGGQAVLLGDAAHPMVPFHGQGMNCALEDAVALAEHLQSAADNASALAAFTAQRQPDALAIQAMALENYVEMSSKVASPTYLLERELGQIMAQRQPTRFIPRYSMVTFSRLPYAQAMARGQIQEQLLKFAVANHSDLTSINLDAVEHEVTRCLPPLSHLS',
+                'SUBSET': 'asmb'},
+    'task': 'diff',
+}"""
+
+
 REWRITE=False
 # REWRITE=True
 class Dataloader(unittest.TestCase):
@@ -380,8 +427,9 @@ class Dataloader(unittest.TestCase):
         unique_chains = np.unique(indep.chains())
         assertpy.assert_that(len(unique_chains)).is_equal_to(2)
         name, names = show.one(indep, None)
-        show.cmd.do(f'util.cbc {name}')
-        show.diffused(indep, is_diffused, 'true')
+        # show.cmd.do(f'util.cbc {name}')
+        # show.diffused(indep, is_diffused, 'true')
+        # show.one(indep, None)
         
         test_utils.assert_matches_golden(self, golden_name, indep, rewrite=REWRITE, custom_comparator=self.cmp)
 
@@ -399,6 +447,29 @@ class Dataloader(unittest.TestCase):
         name, names = show.one(indep, None)
         show.cmd.do(f'util.cbc {name}')
         show.diffused(indep, is_diffused, 'true')
+        
+        test_utils.assert_matches_golden(self, golden_name, indep, rewrite=REWRITE, custom_comparator=self.cmp)
+    
+    def test_multiligand(self):
+
+        dataset = 'sm_compl_asmb'
+        mask = 'get_unconditional_diffusion_mask'
+        loader_out = self.indep_for_dataset(dataset, mask, overrides=[
+            'dataloader.DATAPKL_AA=aa_dataset_256_subsampled_10.pkl',
+            f'spoof_item="{multiligand_item}"',
+            ], config_name='extra_t1d_v2')
+        indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context = loader_out
+        indep.metadata = None
+        ic(
+            indep.chains()[indep.is_sm],
+            indep.idx[indep.is_sm],
+        )
+        golden_name = f'indep_{dataset}-{mask}-multiligand'
+        name, names = show.one(indep, None)
+        show.cmd.do(f'util.cbc {name}')
+        show.cmd.color('orange', f'{name} and hetatm and elem C')
+        # show.cmd.do(f'util.cbc {name}')
+        # show.diffused(indep, is_diffused, 'true')
         
         test_utils.assert_matches_golden(self, golden_name, indep, rewrite=REWRITE, custom_comparator=self.cmp)
 

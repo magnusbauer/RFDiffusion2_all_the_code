@@ -25,6 +25,7 @@ import hydra
 import rf2aa.chemical
 import rf2aa.tensor_util
 import aa_model
+import error
 
 ###########################################################
 #### Functions which can be called outside of Denoiser ####
@@ -967,15 +968,16 @@ def parse_pdb_lines(lines, parse_hetatom=False, ignore_het_h=True):
     if parse_hetatom:
         xyz_het, info_het = [], []
         for l in lines:
-            if l[:6]=='HETATM' and not (ignore_het_h and l[77]=='H'):
-                info_het.append(dict(
-                    idx=int(l[7:11]),
-                    atom_id=l[12:16],
-                    atom_type=l[77],
-                    name=l[16:20],
-                    res_idx=int(l[22:26]),
-                ))
-                xyz_het.append([float(l[30:38]), float(l[38:46]), float(l[46:54])])
+            with error.context(l):
+                if l[:6]=='HETATM' and not (ignore_het_h and l[77]=='H'):
+                    info_het.append(dict(
+                        idx=int(l[7:11]),
+                        atom_id=l[12:16],
+                        atom_type=l[77],
+                        name=l[16:20],
+                        res_idx=int(l[22:26]),
+                    ))
+                    xyz_het.append([float(l[30:38]), float(l[38:46]), float(l[46:54])])
 
         out['xyz_het'] = np.array(xyz_het)
         out['info_het'] = info_het

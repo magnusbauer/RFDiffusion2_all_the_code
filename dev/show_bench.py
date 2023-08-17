@@ -15,6 +15,7 @@ import itertools
 import os
 from dev import show_tip_pa
 from dev import show_tip_row
+from dev.show_tip_row import NOT, AND, OR
 from dev import analyze
 
 def model_generator(traj_path, seq=False):
@@ -157,7 +158,10 @@ def get_sdata(path, pattern=None):
     srows = [analyze.make_row_from_traj(traj_path) for traj_path in traj_paths]
     data = pd.DataFrame.from_dict(srows)
     data['des_color'] = pd.NA
-    data['seed'] = data.name.apply(lambda x: int(x.split('_cond')[1].split('_')[1].split('-')[0]))
+    try:
+        data['seed'] = data.name.apply(lambda x: int(x.split('_cond')[1].split('_')[1].split('-')[0]))
+    except Exception as e:
+        print(e)
     return data
 
 import re
@@ -212,10 +216,25 @@ def load_df(metrics_path):
 
     return df
 
+class PymolObj:
+    def __init__(self, name, selectors):
+        self.name = name
+        self.selectors = selectors
 
-def show_df(data, structs={'X0'}, af2=False, des=False, pair_seeds=False, **kwargs):
+    def __getitem__(self, k):
+        return f'({self.name} and {self.selectors[k]})'
+    
+    def self_selectors(self):
+        # return show_tip_pa.combine_selectors([self.name], 
+        o = {}
+        for k in self.selectors.items():
+            o[k] = self[k]
+        return o
+
+def show_df(data, structs={'X0'}, af2=False, des=False, pair_seeds=False, return_entities=False, **kwargs):
     cmd.set('grid_mode', 1)
     all_pymol = []
+    all_entities = []
     for i, (_, row) in enumerate(data.iterrows(), start=1):
         # print(row[['benchmark', 'name', 'dist_backbone_gp_sum', 'contig_rmsd_af2_des', 'contig_rmsd_af2_atomized']])
         # print(f'{(row['rmsd_af2_des'] < 2)=}, {row['contig_rmsd_af2_des'] < 2=} and {row['af2_ligand_dist'] > 2=}')
@@ -223,13 +242,29 @@ def show_df(data, structs={'X0'}, af2=False, des=False, pair_seeds=False, **kwar
         des_color = None
         if not pd.isna(row['des_color']):
             des_color = row['des_color']
-        pymol_objs, _ = show_tip_pa.show(row, structs=structs, af2=af2, des=des, des_color=des_color, **kwargs)
+        pymol_objs, obj_selectors = show_tip_pa.show(row, structs=structs, af2=af2, des=des, des_color=des_color, **kwargs)
+
+        entities = {}
+        for label, pymol_name in pymol_objs.items():
+            entities[label] = PymolObj(pymol_name, obj_selectors[label])
+        
+        all_entities.append(entities)
+
+        # Uncomment to show only residue motifs
+        # for label, entity in entities.items():
+        #     ic(entity)
+        #     cmd.hide(AND([entity.name, NOT(entity['residue_motif'])]))
+
         for v in pymol_objs.values():
             grid_slot = i
             if pair_seeds:
                 grid_slot = row['seed'] + 1
             cmd.set('grid_slot', grid_slot, v)
         all_pymol.append(pymol_objs)
+    cmd.color('atomic', 'hetatm and not elem C')
+    cmd.set('valence', 1)
+    if return_entities:
+        return all_entities
     return all_pymol
         
             
@@ -240,11 +275,15 @@ def add_pymol_name(data, keys):
     def f(row):
         pymol_prefix = []
         for k in keys:
+            v = row[k]
+            if k == 'inference.input_pdb':
+                v = v.split('/')[-1]
             k_str = k.replace('.', '_')
-            pymol_prefix.append(f"{k_str}-{row[k]}")
+            v = str(v)
+            v = v.replace('.', '_')
+            v = v.replace(',', '_')
+            pymol_prefix.append(f"{k_str}-{v}")
         pymol_prefix = '_'.join(pymol_prefix)
-        if k == 'inference.input_pdb':
-            pymol_prefix = pymol_prefix.split('/')[-1]
         return pymol_prefix
     data['pymol'] = data.apply(f, axis=1)
 
@@ -271,9 +310,10 @@ def main(path,
          structs=['X0'],
          pymol_keys=None,
          pymol_url='http://calathea.dhcp.ipd:9123',
-         max_seed = 100,
+         max_seed = 999999,
          pair_seeds=False,
          des=False,
+         af2=False,
          ):
     ic(pymol_url)
     # cmd = analyze.get_cmd(pymol_url)
@@ -285,7 +325,8 @@ def main(path,
     # ic('after show pro')
     ic.configureOutput(includeContext=True)
     data = get_sdata(path)
-    print(data.shape)
+    data['des_color'] = 'rainbow'
+    print(f'1 {data.shape=}')
     if name:
         data['pymol'] = name
     # if pymol_keys:
@@ -297,11 +338,12 @@ def main(path,
     sweeps = get_sweeps(data)
     ic(sweeps)
     if len(sweeps):
-        add_pymol_name(data, sweeps.keys())
+        keys = [k for k in sweeps.keys() if k not in ['contigmap.contig_atoms']]
+        add_pymol_name(data, keys)
     if clear:
         show_tip_pa.clear()
-    all_pymol = show_df(data, structs=structs, des=des, pair_seeds=pair_seeds)
-    cmd.do('mass_paper_rainbow')
+    all_pymol = show_df(data, structs=structs, des=des, pair_seeds=pair_seeds, af2=af2)
+    # cmd.do('mass_paper_rainbow')
 
 # # TODO: make this monadic
 # cmd = analyze.get_cmd('http://10.64.100.67:9123')

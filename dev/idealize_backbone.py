@@ -23,9 +23,9 @@ tmp_dir = '/tmp'
 def rewrite(path, outpath):
     with open(path, 'r') as fh:
         stream = [l for l in fh if "HETATM" in l or "CONECT" in l]
-    
-    ligand = aa_model.get_only_ligand_or_none(stream)
-    indep = aa_model.make_indep(path, ligand, center=False)
+
+    ligands = aa_model.get_ligands(stream)
+    indep, metadata = aa_model.make_indep(path, ','.join(ligands), center=False, return_metadata=True)
     xyz = indep.xyz[~indep.is_sm]
     idx = indep.idx[~indep.is_sm]
     L = xyz.shape[0]
@@ -33,7 +33,7 @@ def rewrite(path, outpath):
     xyz = rf2aa.util.idealize_reference_frame(ala_seq[None], xyz[None])[0]
     xyz_ideal = get_o(xyz, idx)
     indep.xyz[~indep.is_sm, :4] = xyz_ideal
-    indep.write_pdb(outpath, lig_name=ligand)
+    indep.write_pdb(outpath, ligand_name_arr=metadata['ligand_names'])
 
 def get_o(xyz, idx):
     idx_pad = torch.concat([idx, torch.tensor([-1])])

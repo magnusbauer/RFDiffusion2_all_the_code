@@ -2,6 +2,8 @@ import os
 from dev import show_tip_row
 from dev import analyze
 import aa_model
+import numpy as np
+import math
 from icecream import ic
 cmd = analyze.cmd
 
@@ -84,7 +86,8 @@ def clear():
     analyze.clear()
 
 def is_rf_diff(row):
-    return 'scaffoldguided.target_ss' in row
+    k = 'resume_scheduler'
+    return math.isnan(row[k])
 
 import random
 def show(row, structs = {'X0'}, af2=False, des=True, des_color=None):
@@ -151,7 +154,6 @@ def show(row, structs = {'X0'}, af2=False, des=True, des_color=None):
             atom_names_by_res_idx = {resi: ['ALL'] for ch, resi in trb['con_hal_pdb_idx']}
         else:
             atom_names_by_res_idx = get_motif_spec(row, traj=is_traj)
-        # print(f'{atom_names_by_res_idx=}')
         selectors = show_tip_row.get_selectors_2(atom_names_by_res_idx)
         obj_selectors[label] = selectors
     # print(f'{pymol_objects=}')
@@ -175,7 +177,9 @@ def show(row, structs = {'X0'}, af2=False, des=True, des_color=None):
         # print(f'{sels=}')
         shown = sels.pop(f'{pymol_name}_shown')
         cmd.show_as('licorice', shown)
-        
+        if 'residue_motif' in sels:
+            cmd.unbond(sels['residue_motif'], show_tip_row.NOT(sels['residue_motif']))
+    
         # print(f'{label=}')
         # print(f'{len(obj_selectors[label])}')
         # # print(f'{sels}')
