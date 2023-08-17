@@ -231,36 +231,6 @@ class AAModelTestCase(unittest.TestCase):
                                 new_protein_L+ torch.sum(atomized_residue_lengths[:i+2])]), 1, msg="Incorrect bond placement between neighboring residues")
         
         self.assertTrue(torch.all(indep.same_chain == 1), msg="all nodes should be on the same chain because there is no small molecule")
-
-    def test_ligand_renaming_pdb(self):
-        ligand_name = 'LLK'
-        input_pdb = 'benchmark/input/ra_5an7_no_cov.pdb'
-        atoms_by_ligand = aa_model.hetatm_names(input_pdb)
-        atoms_by_ligand = aa_model.without_H(atoms_by_ligand)
-        want_atoms = atoms_by_ligand[ligand_name]
-        indep = make_indep(input_pdb, ligand_name)
-        out_pdb = 'tmp/out.pdb'
-        indep.write_pdb(out_pdb, lig_name=ligand_name)
-        aa_model.rename_ligand_atoms(input_pdb, out_pdb)
-        atoms_by_ligand = aa_model.hetatm_names(out_pdb)
-        got_atoms = atoms_by_ligand[ligand_name]
-        assertpy.assert_that(want_atoms).is_equal_to(got_atoms)
-
-    # Missing input file
-    # def test_ligand_renaming_traj(self):
-    #     ligand_name = 'LLK'
-    #     input_pdb = 'benchmark/input/ra_5an7_no_cov.pdb'
-    #     atoms_by_ligand = aa_model.hetatm_names(input_pdb)
-    #     atoms_by_ligand = aa_model.without_H(atoms_by_ligand)
-    #     want_atoms = atoms_by_ligand[ligand_name]
-    #     n_models = 3
-    #     traj_pdb = 'test_data/traj_2.pdb'
-    #     out_pdb = 'tmp/traj.pdb'
-    #     shutil.copy(traj_pdb, out_pdb)
-    #     aa_model.rename_ligand_atoms(input_pdb, out_pdb)
-    #     atoms_by_ligand = aa_model.hetatm_names(out_pdb)
-    #     got_atoms = atoms_by_ligand[ligand_name]
-    #     assertpy.assert_that(want_atoms * n_models).is_equal_to(got_atoms)
     
     def test_ligand_renaming(self):
         for input_pdb, ligand_name in [
@@ -270,7 +240,7 @@ class AAModelTestCase(unittest.TestCase):
             atoms_by_ligand = aa_model.without_H(atoms_by_ligand)
             want_atoms = atoms_by_ligand[ligand_name]
             indep = make_indep(input_pdb, ligand_name)
-            out_pdb = 'tmp/out.pdb'
+            out_pdb = 'test_data/needs_renaming.pdb'
             indep.write_pdb(out_pdb, lig_name=ligand_name)
             aa_model.rename_ligand_atoms(input_pdb, out_pdb)
             atoms_by_ligand = aa_model.hetatm_names(out_pdb)
