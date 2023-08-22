@@ -87,7 +87,9 @@ def clear():
 
 def is_rf_diff(row):
     k = 'resume_scheduler'
-    return math.isnan(row[k])
+    if k in row:
+        return math.isnan(row[k])
+    return True
 
 import random
 def show(row, structs = {'X0'}, af2=False, des=True, des_color=None):
@@ -155,6 +157,7 @@ def show(row, structs = {'X0'}, af2=False, des=True, des_color=None):
         else:
             atom_names_by_res_idx = get_motif_spec(row, traj=is_traj)
         selectors = show_tip_row.get_selectors_2(atom_names_by_res_idx)
+        ic(selectors)
         obj_selectors[label] = selectors
     # print(f'{pymol_objects=}')
     # sel_lens = {k:len(v) for k,v in obj_selectors['des'].items()}

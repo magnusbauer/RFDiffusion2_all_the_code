@@ -10,7 +10,11 @@ import glob
 from icecream import ic
 from tqdm import tqdm
 import fire
+import numpy as np
 from pdbtools import *
+import io
+
+from dev import analyze
 
 def main(input_dir, output_dir=None, prefix='', cautious=True):
     '''
@@ -26,11 +30,22 @@ def main(input_dir, output_dir=None, prefix='', cautious=True):
         out_pdb = os.path.join(output_dir, prefix + os.path.split(pdb)[1])
         if cautious and os.path.exists(out_pdb):
             continue
+        row = analyze.make_row_from_traj(pdb[:-4])
+        trb = analyze.get_trb(row)
+        ligands = trb['config']['inference']['ligand'].split(',')
+        hets = []
+        alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+        for ligand, chain in zip(ligands, alphabet[1:]):
+            with open(pdb) as fh:
+                het = pdb_selresname.run(fh, [ligand])
+                het = pdb_rplchain.run(het, ('A', chain))
+                het = list(het)
+                ic(ligand, len(het))
+                het = io.StringIO(''.join(het))
+                hets.append(het)
         with open(pdb) as fh, open(pdb) as fh2:
             prot = pdb_delhetatm.run(fh)
-            het = pdb_selhetatm.run(fh2)
-            het = pdb_rplchain.run(het, ('A', 'B'))
-            o = pdb_merge.run([prot, het])
+            o = pdb_merge.run([prot] + hets)
             # o = pdb_sort.run(o, [])
             # o = pdb_tidy.run(o) -- pdb_tidy deletes CONECT records, do not run
             o = [e for e in o]
