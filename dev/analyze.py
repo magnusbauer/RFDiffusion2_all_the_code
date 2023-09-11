@@ -19,22 +19,15 @@ import parsers
 import util
 
 import sys
+from dev.pymol import cmd
 
-def get_cmd(pymol_url='http://calathea.dhcp.ipd:9123'):
-    cmd = xmlrpclib.ServerProxy(pymol_url)
-    if 'ipd' not in pymol_url:
-        make_network_cmd(cmd)
-    return cmd
-
-cmd = get_cmd()
-#
 import estimate_likelihood as el
 from inference import utils
 from itertools import takewhile
 
+from dev.show_tip_row import NOT, AND, OR
 
-#sns.set_theme()
-#sns.set_style()
+
 
 print('initializing analyze')
 DESIGN = 'design_path'
@@ -43,6 +36,16 @@ def common_prefix(strlist):
     return ''.join(c[0] for c in takewhile(lambda x:
                 all(x[0] == y for y in x), zip(*strlist)))
 
+
+def get_pdb_path(row):
+    possible_paths = [
+            os.path.join(row['rundir'], 'ligmpnn/packed', f"{row['name']}_{row['mpnn_index']}.pdb"),
+            os.path.join(row['rundir'], 'ligmpnn', f"{row['name']}_{row['mpnn_index']}.pdb")
+    ]
+    for p in possible_paths:
+        if os.path.exists(p):
+            return p
+    raise Exception(f'pdb not found in {possible_paths} ')
 
 def read_metrics(df_path, add_contig_rmsd=True):
     df = pd.read_csv(df_path)
@@ -62,6 +65,10 @@ def read_metrics(df_path, add_contig_rmsd=True):
         models = df[model_key].unique()
         common = common_prefix(models)
         df['model'] = df[model_key].apply(lambda x: x[len(common):])
+    
+    df['pdb_path'] = df.apply(get_pdb_path, axis=1)
+    df['des_color'] = 'rainbow'
+
     #get_epoch  = lambda x: re.match('.*_(\w+).*', x).groups()[0]
 
     #df['model'] = df['inference.ckpt_path'].apply(get_epoch)
@@ -242,7 +249,11 @@ def get_af2(row):
     mpnn_flavor = 'mpnn'
     if not pd.isna(row['inference.ligand']):
         mpnn_flavor = 'ligmpnn'
-    path = os.path.join(row['rundir'], mpnn_flavor, f'af2/{row["name"]}_{row["mpnn_index"]}.pdb')
+    mpnn_dir = os.path.join(row['rundir'], mpnn_flavor)
+    mpnn_packed_dir = os.path.join(mpnn_dir, 'packed')
+    if os.path.exists(mpnn_packed_dir):
+        mpnn_dir = mpnn_packed_dir
+    path = os.path.join(mpnn_dir, f'af2/{row["name"]}_{row["mpnn_index"]}.pdb')
     return path
 
 def load_af2(row, name=None):
@@ -255,6 +266,10 @@ def load_af2(row, name=None):
         path = os.path.join(d, f'af2/{row["name"]}_{row["mpnn_index"]}.pdb')
     if row.get('ligmpnn'):
         d = os.path.join(d, 'ligmpnn')
+        packed_dir = os.path.join(d, 'packed')
+        ic(os.path.exists(packed_dir))
+        if os.path.exists(packed_dir):
+            d= packed_dir
         path = os.path.join(d, f'af2/{row["name"]}_{row["mpnn_index"]}.pdb')
     name = (name or row['model']) + '_af2'
     cmd.load(path, name)
@@ -586,10 +601,18 @@ def flatten_dict(dd, separator ='.', prefix =''):
 
 def make_row_from_traj(traj_prefix):
     synth_row = {}
+    pdb_path = traj_prefix
+    if not pdb_path.endswith('.pdb'):
+        pdb_path += '.pdb'
+    
+    synth_row['pdb_path'] = pdb_path
     
     synth_row['rundir'], synth_row['name'] = os.path.split(traj_prefix)
     synth_row['mpnn_index'] = 0
-    if '/mpnn/' in traj_prefix:
+    if 'packed' in synth_row['rundir']:
+        synth_row['rundir'] = os.path.dirname(synth_row['rundir'])
+        synth_row['name'] = synth_row['name'].replace('_packed', '')
+    if 'mpnn/' in traj_prefix:
         synth_row['mpnn_index'] = int(traj_prefix.split('_')[-1])
         synth_row['rundir'] = os.path.dirname(synth_row['rundir'])
         synth_row['name'] = '_'.join(synth_row['name'].split('_')[:-1])
@@ -838,14 +861,10 @@ def get_traj_motif(row):
     return traj[0, motif_idx]
 
 def get_design_pdb(row):
-    mpnn_flavor = 'mpnn'
-    if not pd.isna(row['inference.ligand']):
-        mpnn_flavor = 'ligmpnn'
-    path = os.path.join(row['rundir'], mpnn_flavor, f'{row["name"]}_{row["mpnn_index"]}.pdb')
-    if os.path.exists(path):
-        return path
-    else:
-        return os.path.join(row['rundir'], f'{row["name"]}.pdb')
+    return row['pdb_path']
+
+def get_diffusion_pdb(row):
+    return os.path.join(row['rundir'], f'{row["name"]}.pdb')
 
 def get_design(row):
     rundir = row['rundir'] 
@@ -1337,3 +1356,158 @@ def make_network_cmd(cmd):
     cmd.is_network = True
     cmd.load = new_load
 
+def show_percents(g):
+    # iterate through axes
+    for ax in g.axes.ravel():
+        # add annotations
+        for c in ax.containers:
+            labels = [f'{(v.get_height()*100):.1f}%' for v in c]
+            ax.bar_label(c, labels=labels, label_type='edge')
+        ax.margins(y=0.2)
+        _ =ax.tick_params(axis='x', rotation=90)
+        
+def add_metrics_sc(df):
+    df['self_consistent'] = df['rmsd_af2_des'] < 2.0
+    df['self_consistent_and_motif'] = df['self_consistent'] & (np.isnan(df['contig_rmsd_af2_des']) | (df['contig_rmsd_af2_des'] < 1.0))
+
+def get_best(df):
+    data = df.groupby(["design_id"]).apply(lambda grp: grp.sort_values(['self_consistent_and_motif', 'contig_rmsd_af2_des', 'rmsd_af2_des'], ascending=[False, True, True]).head(1)).reset_index(drop=True)
+    return data
+
+def get_best_design(df, column, ascending=True):
+    data = df.groupby(["design_id"]).apply(lambda grp: grp.sort_values([column], ascending=[ascending]).head(1)).reset_index(drop=True)
+    return data
+
+def get_best_design_multi(df, columns, ascendings):
+    
+    data = df.groupby(["design_id"]).apply(lambda grp: grp.sort_values(columns, ascending=ascendings).head(1)).reset_index(drop=True)
+    return data
+
+def get_best_n_designs_in_group(df, groups, n, columns, ascendings):
+    assert max(df['design_id'].value_counts()) == 1
+    data = df.groupby(groups).apply(lambda grp: grp.sort_values(columns, ascending=ascendings).head(n)).reset_index(drop=True)
+    return data
+
+def get_keys(df, substring):
+    return [k for k in df.keys() if substring in k]
+
+
+def get_motif_indep(pdb, motif_i):
+    indep = aa_model.make_indep(pdb)
+    is_motif = aa_model.make_mask(motif_i, indep.length())
+    indep_motif, _ = aa_model.slice_indep(indep, is_motif)
+    return indep_motif
+
+def rigid_loss(r):
+    trb = dev.analyze.get_trb(r)
+    has_motif = bool(len(trb['con_ref_idx0']))
+    if not has_motif:
+        return {'rigid_loss': torch.tensor(-1)}
+    
+    indep_motif_native = get_motif_indep(r['inference.input_pdb'], trb['con_ref_idx0'])
+    indep_motif_des = get_motif_indep(dev.analyze.get_design_pdb(r), trb['con_hal_idx0'])
+    i_inv = torch.argsort(torch.tensor(trb['con_hal_idx0']))
+    i_inv = torch.argsort(i_inv)
+    aa_model.rearrange_indep(indep_motif_des, i_inv)
+    is_atom_str_shown = {}
+    for i in range(indep_motif_des.length()):
+        res = indep_motif_des.seq[i]
+        atom_names = [n.strip() for n in rf2aa.chemical.aa2long[res][:14] if n is not None]
+        is_atom_str_shown[i] = atom_names
+    is_res_str_shown = torch.zeros((indep_motif_des.length(),)).bool()
+    true_atomized, is_diffused, is_masked_seq, atomizer = atomize.atomize_and_mask(indep_motif_native, is_res_str_shown, is_atom_str_shown)
+    pred_atomized, _, _, _                              = atomize.atomize_and_mask(indep_motif_des, is_res_str_shown, is_atom_str_shown)
+
+    rigid_losses = bond_geometry.calc_rigid_loss(true_atomized, pred_atomized.xyz, is_diffused)
+    return {'rigid_loss': rigid_losses['motif_atom_determined']}
+
+def get_rog(row):
+    trb = dev.analyze.get_trb(row)
+    indep = trb['indep']
+    rog = conditions.v2.radius_of_gyration_xyz(torch.tensor(indep['xyz'])[~indep['is_sm'], 1])
+    return {'design_rog': rog}
+
+    
+def get_method(r):
+    method = []
+    if r['is_aa']:
+        method.append('aa')
+        if r['inference.conditions.relative_sasa_v2.active']:
+            method.append('rasa-conditioned')
+    else:
+        method.append('rfd')
+        if r['contigmap.shuffle']:
+            method.append('shuffled')
+        else:
+            method.append('native')
+    return '_'.join(method)
+
+
+
+def parse_rfd_aa_df(df):
+    df['seed'] = df.name.apply(lambda x: int(x.split('_cond')[1].split('_')[1].split('-')[0]))
+#     print(
+# data['seed'].value_counts())
+    df['source'].value_counts()
+    df['benchmark'].value_counts()
+
+    # df['n_motif'] = df['contigmap.contigs'].map({
+    #     "['10,A1051-1051,31,A1083-1083,26,A1110-1110,69,A1180-1180,10']": 4,
+    #     "['10,A1051-1051,31,A1083-1083,96,A1180-1180,10']": 3})
+
+    # df['n_motif'].value_counts()
+
+    df['is_aa'] = df['source'].apply(lambda v: v.startswith('aa_'))
+
+    df['is_aa'].value_counts()
+
+    def get_target_contig_rmsd_af2(r):
+        assert r['is_aa'] in [True, False]
+        if r['is_aa']:
+            return r['contig_rmsd_af2_des']
+        else:
+            return r['contig_rmsd_af2']
+
+    df['target_contig_rmsd_af2'] = df.apply(get_target_contig_rmsd_af2, axis=1)
+
+    df['design_id'] = df['source'] + '_' + df['name']
+
+    df['missing_af2'] = df['rmsd_af2_des'].isna()
+
+    missing_af2 = df['rmsd_af2_des'].isna()
+    print(f'{missing_af2.sum()=}')
+    # df['missing_af2'].shape
+    # df.groupby('design_id').agg({'missing_af2': 'sum'}).value_counts()
+
+    designs = df.groupby('design_id').agg({'missing_af2': 'sum'})
+    designs['has_all_af2'] = designs['missing_af2'] == 0
+    # print(f'{designs["has_all_af2"].value_counts()=}')
+    print(f'dropping {(~designs["has_all_af2"]).sum()}/{len(designs["has_all_af2"])} designs missing any of their AF2 outputs')
+    
+    # n_drop = has_all_af2['missing_af2'] == 
+    design_ids_with_all_af2 = designs[designs['has_all_af2']]
+    # df[df['design_id'].isin(design_ids_with_all_af2.index)].shape
+    # design_ids_with_all_af2['missing
+    df = df[df['design_id'].isin(design_ids_with_all_af2.index)]
+    
+    df = df.copy()
+    df['method'] = df.apply(get_method, axis=1)
+    # import assertpy
+    # assertpy.assert_that(df['name'].nunique() * 8).is_equal_to(df.shape[0])
+    return df
+
+
+
+def get_min_max(df, col):
+    # Find the row with the minimum value in 'col'
+    min_row = df[df[col] == df[col].min()]
+
+    # Find the row with the maximum value in 'col'
+    max_row = df[df[col] == df[col].max()]
+
+    # Concatenate the two rows into a new dataframe
+    result_df = pd.concat([min_row, max_row])
+
+    # Reset the index of the new dataframe if desired
+    result_df.reset_index(drop=True, inplace=True)
+    return result_df

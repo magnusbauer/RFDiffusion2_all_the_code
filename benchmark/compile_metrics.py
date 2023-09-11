@@ -84,6 +84,7 @@ def main():
         for path in [
             mpnn_dir+'/af2_metrics.csv.*',
             mpnn_dir+'/pyrosetta_metrics.csv.*',
+            mpnn_dir+'/rosetta_gen_ff.csv.*',
         ]:
             df_s = [ pd.read_csv(fn,index_col=0) for fn in glob.glob(path) ]
             tmp = pd.concat(df_s) if len(df_s)>0 else pd.DataFrame(dict(name=[]))
@@ -116,7 +117,13 @@ def main():
             df_accum = df_accum.merge(tmp, on='name', how='outer')
 
         # mpnn likelihoods
-        mpnn_scores = load_mpnn_scores(mpnn_dir)
+        for seq_dir in [
+            os.path.join(mpnn_dir, 'seqs'),
+            os.path.join(mpnn_dir, '../seqs')
+        ]:
+            if os.path.exists(seq_dir):
+                break
+        mpnn_scores = load_mpnn_scores(seq_dir)
         df_accum = df_accum.merge(mpnn_scores, on='name', how='outer')
         df_accum['mpnn_index'] = df_accum.name.map(lambda x: int(x.split('_')[-1]))
         df_accum['name'] = df_accum.name.map(lambda x: '_'.join(x.split('_')[:-1]))
@@ -135,7 +142,11 @@ def main():
 
     # LigandMPNN metrics
     if os.path.exists(args.datadir+'/ligmpnn/'):
-        df_ligmpnn = _load_mpnn_df(args.datadir+'/ligmpnn/', df_base)
+        mpnn_dir = args.datadir+'/ligmpnn/'
+        packed_dir = os.path.join(mpnn_dir,'packed')
+        if os.path.exists(packed_dir):
+            mpnn_dir = packed_dir
+        df_ligmpnn = _load_mpnn_df(mpnn_dir, df_base)
         if df_ligmpnn.shape[1] > df_base.shape[1]: # were there designs that we added metrics for?
             df_ligmpnn['mpnn'] = False
             df_ligmpnn['ligmpnn'] = True
@@ -152,14 +163,27 @@ def main():
     ]:
         df_s = [ pd.read_csv(fn,index_col=0) for fn in glob.glob(path) ]
         tmp = pd.concat(df_s) if len(df_s)>0 else pd.DataFrame(dict(name=[]))
-        df = df.merge(tmp, on='name', how='outer')
+        ic(
+            path,
+            tmp.shape,
+            tmp['name'][:3],
+        )
+        df = df.merge(tmp, on='name', how='outer')    
+
+    # add seq/struc clusters (assumed to be the same for mpnn designs as non-mpnn)
+    for path in [
+        args.datadir+'/metrics/per_sequence/csv.*',
+    ]:
+        df_s = [ pd.read_csv(fn,index_col=0) for fn in glob.glob(path) ]
+        tmp = pd.concat(df_s) if len(df_s)>0 else pd.DataFrame(dict(name=[]))
+        df = df.merge(tmp, on=['name', 'mpnn_index'], how='left')
 
     df.to_csv(args.datadir+'/'+args.outcsv, index=None)
     print(f'Wrote metrics dataframe {df.shape} to "{args.datadir}/{args.outcsv}"')
 
 def load_mpnn_scores(folder):
 
-    filenames = glob.glob(folder+'/seqs/*.fa')
+    filenames = glob.glob(os.path.join(folder, '*.fa'))
 
     records = []
     for fn in filenames:

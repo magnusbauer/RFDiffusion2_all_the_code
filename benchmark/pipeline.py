@@ -12,7 +12,8 @@ from hydra.core.hydra_config import HydraConfig
 from sweep_hyperparam import main as main_sweep
 from cluster_pipeline_outputs import main as main_cluster
 from chunkify_foldseek_pdb import main as main_foldseek
-from mpnn_designs import main as main_mpnn
+import mpnn_designs
+import mpnn_designs_v2
 from score_designs import main as main_score
 import add_metrics
 script_dir = os.path.dirname(os.path.realpath(__file__))+'/'
@@ -43,12 +44,12 @@ def main(conf: HydraConfig) -> None:
     IN_PROC = conf.in_proc
 
 
-    if step_is_after(conf.start_step, 'sweep'):
+    if step_in_scope(conf.start_step, conf.stop_step, 'sweep'):
         jobid_sweep = main_sweep(conf.sweep)
         print('Waiting for design jobs to finish...', jobid_sweep)
         wait_for_jobs(jobid_sweep)
 
-    if step_is_after(conf.start_step, 'foldseek'):
+    if step_in_scope(conf.start_step, conf.stop_step, 'foldseek'):
         # Move "orphan" pdbs that somehow lack a trb file
         orphan_dir = f'{conf.outdir}/orphan_pdbs'
         os.makedirs(orphan_dir, exist_ok=True)
@@ -66,30 +67,39 @@ def main(conf: HydraConfig) -> None:
         jobid_foldseek = main_foldseek(conf.foldseek)
         print(f'Running foldseek in parallel ({jobid_foldseek})to compare the similarity of the generated backbones to the PDB. The pipeline will continue forward.')
 
-    if step_is_after(conf.start_step, 'graft'):
+    if step_in_scope(conf.start_step, conf.stop_step, 'graft'):
         if conf.graft:
             ic(script_dir)
             run_pipeline_step(f'{os.path.join(script_dir, "../dev/graft_native_motif.py")} {conf.outdir} {conf.outdir}')
             run_pipeline_step(f'{os.path.join(script_dir, "../dev/renumber_chains.py")} {conf.outdir} {conf.outdir} --cautious=False')
 
-    if step_is_after(conf.start_step, 'mpnn'):
+    if step_in_scope(conf.start_step, conf.stop_step, 'mpnn'):
 
-        if conf.use_ligand:
-            job_id_prepare_ligandmpnn_params = run_pipeline_step(f'{script_dir}/pdb_to_params.py {conf.outdir}')
-            wait_for_jobs(job_id_prepare_ligandmpnn_params)
+        if conf.mpnn.v2:
+            main_mpnn = mpnn_designs_v2.main
+        else:
+            main_mpnn = mpnn_designs.main
+            if conf.use_ligand:
+                job_id_prepare_ligandmpnn_params = run_pipeline_step(f'{script_dir}/pdb_to_params.py {conf.outdir}')
+                wait_for_jobs(job_id_prepare_ligandmpnn_params)
         jobid_mpnn = main_mpnn(conf.mpnn)
 
         print('Waiting for MPNN jobs to finish...', jobid_mpnn)
         wait_for_jobs(jobid_mpnn)
 
-    if step_is_after(conf.start_step, 'thread_mpnn'):
-        print('Threading MPNN sequences onto design models...')
-        if conf.use_ligand:
-            run_pipeline_step(f'{script_dir}thread_mpnn.py --use_ligand {conf.outdir}')
+    if step_in_scope(conf.start_step, conf.stop_step, 'thread_mpnn'):
+        ic(conf.mpnn.v2)
+        if conf.mpnn.v2:
+            # raise Exception('do we thread here?')
+            print('Skipping threading since mpnn v2 is used')
         else:
-            run_pipeline_step(f'{script_dir}thread_mpnn.py {conf.outdir}')
+            print('Threading MPNN sequences onto design models...')
+            if conf.use_ligand:
+                run_pipeline_step(f'{script_dir}thread_mpnn.py --use_ligand {conf.outdir}')
+            else:
+                run_pipeline_step(f'{script_dir}thread_mpnn.py {conf.outdir}')
 
-    if step_is_after(conf.start_step, 'score'):
+    if step_in_scope(conf.start_step, conf.stop_step, 'score'):
         print('Initiating scoring')
         if conf.af2_unmpnned:
             conf_score = copy.deepcopy(conf.score)
@@ -104,8 +114,16 @@ def main(conf: HydraConfig) -> None:
         jobid_score_mpnn = []
         for d in mpnn_dirs:
             if os.path.exists(d):
+                ic(d, conf.score.datadir)
                 conf_score = copy.deepcopy(conf.score)
+                if conf.mpnn.v2:
+                    d = os.path.join(d, 'packed')
+                    # add_h_dir = os.path.join(d, 'addh')
+                    # if os.path.exists(add_h_dir):
+                    #     d = add_h_dir
+                conf_score.trb_dir = conf.outdir
                 conf_score.datadir = d
+                # conf_score.input_dir = os.path.join(conf.outdir, 'input')
                 jobid_score_mpnn += main_score(conf_score)
 
         print('Waiting for scoring jobs to finish...', jobid_score_mpnn)
@@ -113,16 +131,31 @@ def main(conf: HydraConfig) -> None:
             wait_for_jobs(jobid_score)
         wait_for_jobs(jobid_score_mpnn)
 
-    if step_is_after(conf.start_step, 'metrics'):
+    if step_in_scope(conf.start_step, conf.stop_step, 'metrics'):
         conf.metrics.datadir = conf.outdir
         jobid_add_metrics = add_metrics.main(conf.metrics)
         wait_for_jobs(jobid_add_metrics)
 
-    print('Compiling metrics...')
-    run_pipeline_step(f'{script_dir}compile_metrics.py {conf.outdir}')
+    if step_in_scope(conf.start_step, conf.stop_step, 'compile'):
+        print('Compiling metrics...')
+        run_pipeline_step(f'{script_dir}compile_metrics.py {conf.outdir}')
 
     print('Done.')
+
+def get_mpnn_dirs(outdir, v2):
+    mpnn_dirs = []
+    for mpnn_flavor in ['mpnn', 'ligmpnn']:
+        mpnn_dirs.append(f'{outdir}/{mpnn_flavor}')
     
+    jobid_score_mpnn = []
+    out_mpnn_dirs = []
+    for d in mpnn_dirs:
+        if os.path.exists(d):
+            if v2:
+                d = os.path.join(d, 'packed')
+            out_mpnn_dirs.append(d)
+    return out_mpnn_dirs
+
 def run_pipeline_step(cmd):
     '''Runs a script in shell, prints its output, quits if there's an error,
     and returns list of slurm ids that appear in its output'''
@@ -172,13 +205,12 @@ def wait_for_jobs(job_ids, interval=60):
                 break
         return 
 
-def step_is_after(start_step, current_step):
-    all_steps = ['sweep', 'foldseek', 'graft', 'mpnn', 'thread_mpnn', 'score', 'metrics', 'compile']
-    steps_to_run = all_steps[all_steps.index(start_step):]
+def step_in_scope(start_step, stop_step, current_step):
+    all_steps = ['sweep', 'foldseek', 'graft', 'mpnn', 'thread_mpnn', 'score', 'metrics', 'compile', 'end']
+    steps_to_run = all_steps[all_steps.index(start_step):all_steps.index(stop_step)]
     do_run = current_step in steps_to_run
     print(f'{"Running" if do_run else "Skipping"} step: {current_step}')
     return do_run
-    
 
 if __name__ == "__main__":
     main()

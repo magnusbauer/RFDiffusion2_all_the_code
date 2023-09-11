@@ -18,15 +18,25 @@ import pyrosetta.distributed.tasks.rosetta_scripts as rosetta_scripts
 
 script_dir = os.path.dirname(os.path.realpath(__file__))
 sys.path.insert(0,script_dir+'/../')
-import pdb_to_params
 
 sys.path.insert(0,script_dir+'/../../')
 sys.path.insert(0,script_dir+'/../../RF2-allatom/')
 import inference.utils
-import rf2aa.parsers
-import rf2aa.chemical
+import parsers
 from parsers import load_ligand_from_pdb
 
+
+def aux_file(rundir, pdb, ligand, kind):
+    input_dir = os.path.join(rundir, 'input')
+    pdb_name = trim_suffix(os.path.basename(pdb), '.pdb')
+    return os.path.join(input_dir, kind, f'{pdb_name}_{ligand}.{kind}')
+
+def trim_suffix(s, suffix):
+    if s.endswith(suffix):
+        s = s[:-(len(suffix))]
+    return s
+
+psipred_version = 3
 
 def parse_args(in_args):
     argparser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -73,7 +83,7 @@ def main(args):
             trb = pickle.load(f)
         lig_name = trb['config']['inference']['ligand']
         in_pdb = trb['config']['inference']['input_pdb']
-        params_fn = pdb_to_params.aux_file(parent_dir, in_pdb, lig_name, 'params')
+        params_fn = aux_file(parent_dir, in_pdb, lig_name, 'params')
 
         # identify potential H-bond donors & acceptors
         mol, xyz_sm, mask_sm, msa_sm, bond_feats_sm, atom_names = \
@@ -347,10 +357,10 @@ def design(pose, heavy_atms, ligand_res_number, constraint_sd):
 
             <InterfaceHydrophobicResidueContacts name="hydrophobic_residue_contacts" target_selector="chainB" binder_selector="chainA" scorefxn="sfxn" confidence="0"/>
 
-            <SSPrediction name="pre_mismatch_probability" confidence="0" cmd="/software/psipred4/runpsipred_single" use_probability="1" mismatch_probability="1" use_svm="0" use_scratch_dir="1"/>
+            <SSPrediction name="pre_mismatch_probability" confidence="0" cmd="/software/psipred{psipred_version}/runpsipred_single" use_probability="1" mismatch_probability="1" use_svm="0" use_scratch_dir="1"/>
             <MoveBeforeFilter name="mismatch_probability" mover="chain1only" filter="pre_mismatch_probability" confidence="0" />
 
-            <SSPrediction name="pre_sspred_overall" cmd="/software/psipred4/runpsipred_single" use_probability="0" use_svm="0" threshold="0.85" confidence="0" use_scratch_dir="1" />
+            <SSPrediction name="pre_sspred_overall" cmd="/software/psipred{psipred_version}/runpsipred_single" use_probability="0" use_svm="0" threshold="0.85" confidence="0" use_scratch_dir="1" />
             <MoveBeforeFilter name="sspred_overall" mover="chain1only" filter="pre_sspred_overall" confidence="0" />
             <!-- <MoveBeforeFilter name="clash_check" mover="short_repack_and_min" filter="ddg1" confidence="0"/> -->
             <Ddg name="ddg_hydrophobic_pre"  threshold="-10" jump="1" repeats="1" repack="0" confidence="0" scorefxn="vdw_sol" />

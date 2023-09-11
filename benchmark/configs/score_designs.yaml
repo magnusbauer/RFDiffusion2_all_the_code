@@ -1,7 +1,7 @@
 datadir: ${hydra:runtime.cwd}
 trb_dir: ${hydra:runtime.cwd}
 filenames: null
-chunk: 100
+chunk: 300
 tmp_pre: score.list
 pipeline: False
 run: af2

@@ -342,7 +342,12 @@ def main():
     seqs = []
     names = []
     for fn in filenames:
-        seq = ''.join([aa_N_1[a] for a in parse_pdb(fn)['seq']])
+        try:
+            parsed = parse_pdb(fn)
+        except Exception as e:
+            print(f'error parsing design {fn}')
+            raise e
+        seq = ''.join([aa_N_1[a] for a in parsed['seq']])
         seqs.append(seq)
         names.append(os.path.basename(fn).replace('.pdb',''))
     Lmax = max([len(s) for s in seqs])
@@ -434,6 +439,9 @@ def main():
         if not os.path.exists(trbname):
             # strip the mpnn suffix
             trbname = re.sub('_\d+\.trb$', '.trb', trbname)
+        if not os.path.exists(trbname):
+            trbname = re.sub('_packed', '', trbname)
+
         assert os.path.exists(trbname), f'{trbname} does not exist'
         if os.path.exists(trbname): 
             trb = np.load(trbname,allow_pickle=True)
@@ -450,6 +458,8 @@ def main():
                 refpdb_fn = os.path.dirname(fn)+'/input/'+os.path.basename(refpdb_fn)
             if not os.path.exists(refpdb_fn):
                 refpdb_fn = os.path.dirname(fn)+'/../input/'+os.path.basename(refpdb_fn)
+            if not os.path.exists(refpdb_fn):
+                refpdb_fn = os.path.dirname(fn)+'/../../input/'+os.path.basename(refpdb_fn)
             pdb_ref = parse_pdb(refpdb_fn)
             xyz_ref = pdb_ref['xyz']
         if args.template_dir is not None and os.path.exists(trbname):

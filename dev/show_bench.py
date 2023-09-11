@@ -229,7 +229,7 @@ class PymolObj:
         o = {}
         for k in self.selectors.items():
             o[k] = self[k]
-        return o
+        return o        
 
 def show_df(data, structs={'X0'}, af2=False, des=False, pair_seeds=False, return_entities=False, **kwargs):
     cmd.set('grid_mode', 1)
@@ -282,6 +282,10 @@ def add_pymol_name(data, keys):
             v = str(v)
             v = v.replace('.', '_')
             v = v.replace(',', '_')
+            if k == 'rundir':
+                vs = v.split('/')
+                v = vs[vs.index('out')-1]
+
             pymol_prefix.append(f"{k_str}-{v}")
         pymol_prefix = '_'.join(pymol_prefix)
         return pymol_prefix
@@ -298,22 +302,28 @@ def get_sweeps(data):
 
     sweeps = {k:v for k,v in uniques.items() if len(v) > 1}
 
-    for k in ['name', 'seed', 'inference.output_prefix']:
+    for k in ['name', 'seed', 'inference.output_prefix', 'pdb_path']:
         _ = sweeps.pop(k, None)
 
     return sweeps
 
+backbone = '(name ca or name c or name n or name o)'
 
 def main(path,
          name=None,
          clear=False,
          structs=['X0'],
          pymol_keys=None,
-         pymol_url='http://calathea.dhcp.ipd:9123',
+         pymol_url='http://localhost:9123',
          max_seed = 999999,
          pair_seeds=False,
          des=False,
          af2=False,
+         mpnn_packed=False,
+         ga_lig=False,
+         rosetta_lig=False,
+         sidechains=False,
+         hydrogenated=False,
          ):
     ic(pymol_url)
     # cmd = analyze.get_cmd(pymol_url)
@@ -325,6 +335,7 @@ def main(path,
     # ic('after show pro')
     ic.configureOutput(includeContext=True)
     data = get_sdata(path)
+    assert len(data) > 0
     data['des_color'] = 'rainbow'
     print(f'1 {data.shape=}')
     if name:
@@ -333,16 +344,31 @@ def main(path,
     #     ic(pymol_keys, structs)
     #     pymol_keys = pymol_keys.split(',')
     #     add_pymol_name(data, pymol_keys)
+    # ic(data)
     data = data[data['seed'] < max_seed]
 
     sweeps = get_sweeps(data)
-    ic(sweeps)
     if len(sweeps):
         keys = [k for k in sweeps.keys() if k not in ['contigmap.contig_atoms']]
         add_pymol_name(data, keys)
     if clear:
         show_tip_pa.clear()
-    all_pymol = show_df(data, structs=structs, des=des, pair_seeds=pair_seeds, af2=af2)
+    all_entities = show_df(
+            data,
+            structs=structs,
+            des=des,
+            pair_seeds=pair_seeds,
+            af2=af2,
+            mpnn_packed=mpnn_packed,
+            ga_lig=ga_lig,
+            rosetta_lig=rosetta_lig,
+            hydrogenated=hydrogenated,
+            return_entities=True)
+
+    if sidechains:
+        ic(all_entities)
+        show_sidechains(all_entities, ['mpnn_packed', 'ga_lig'])
+
     # cmd.do('mass_paper_rainbow')
 
 # # TODO: make this monadic
@@ -350,6 +376,16 @@ def main(path,
 # analyze.cmd = cmd
 # show_tip_pa.cmd = cmd
 # show_tip_row.cmd = cmd
+
+def show_sidechains(all_entities, which_entities=['mpnn_packed']):
+    for entity in all_entities:
+        for name in which_entities:
+            if name not in entity:
+                continue
+            packed = entity[name]
+            diffused = AND([packed.name, NOT(OR([packed['lig'], packed['sidechains_diffused'], packed['sidechains_motif']]))])
+            cmd.show('licorice', diffused)
+            cmd.color('lightteal', AND([diffused, NOT(backbone)]))
 
 if __name__ == '__main__':
     fire.Fire(main)

@@ -44,29 +44,40 @@ def main(conf: HydraConfig) -> list[int]:
 
     job_ids = []
 
-    # General metrics
-    job_fn = conf.datadir + '/jobs.metrics_per_design.list'
-    job_list_file = open(job_fn, 'w') if conf.slurm.submit else sys.stdout
-    for i in np.arange(0,len(filenames),conf.chunk):
-        tmp_fn = f'{conf.datadir}/{conf.tmp_pre}.metrics_per_design.{i}'
-        with open(tmp_fn,'w') as outf:
-            for j in np.arange(i,min(i+conf.chunk, len(filenames))):
-                print(filenames[j], file=outf)
-        print(f'{os.path.join(script_dir, "per_design_metrics.py")} '\
-                f'--outcsv {conf.datadir}/metrics/per_design/csv.{i} '\
-                f'{tmp_fn}', file=job_list_file)
+    backbone_filenames = filenames
+    sequence_filenames = []
+    for d in conf.mpnn_dirs:
+        sequence_filenames.extend(sorted(glob.glob(os.path.join(d, '*.pdb'))))
+    # ic(sequence_filenames)
+    # raise Exception('stop')
 
-    # submit job
-    if conf.slurm.submit: 
-        job_list_file.close()
-        if conf.slurm.J is not None:
-            job_name = conf.slurm.J 
-        else:
-            job_name = 'af2_'+os.path.basename(conf.datadir.strip('/'))
-        af2_job, proc = slurm_tools.array_submit(job_fn, p = conf.slurm.p, gres=None if conf.slurm.p=='cpu' else conf.slurm.gres, log=conf.slurm.keep_logs, J=job_name, in_proc=conf.slurm.in_proc)
-        if af2_job > 0:
-            job_ids.append(af2_job)
-        print(f'Submitted array job {af2_job} with {int(np.ceil(len(filenames)/conf.chunk))} jobs to compute per-design metrics for {len(filenames)} designs')
+    # General metrics
+    for cohort, filenames in [
+        ('design', backbone_filenames),
+        ('sequence', sequence_filenames),
+    ]:
+        job_fn = conf.datadir + '/jobs.metrics_per_{cohort}.list'
+        job_list_file = open(job_fn, 'w') if conf.slurm.submit else sys.stdout
+        for i in np.arange(0,len(filenames),conf.chunk):
+            tmp_fn = f'{conf.datadir}/{conf.tmp_pre}.metrics_per_{cohort}.{i}'
+            with open(tmp_fn,'w') as outf:
+                for j in np.arange(i,min(i+conf.chunk, len(filenames))):
+                    print(filenames[j], file=outf)
+            print(f'{os.path.join(script_dir, f"per_{cohort}_metrics.py")} '\
+                    f'--outcsv {conf.datadir}/metrics/per_{cohort}/csv.{i} '\
+                    f'{tmp_fn}', file=job_list_file)
+
+        # submit job
+        if conf.slurm.submit: 
+            job_list_file.close()
+            if conf.slurm.J is not None:
+                job_name = conf.slurm.J 
+            else:
+                job_name = f'{cohort}_metrics_'+os.path.basename(conf.datadir.strip('/'))
+            af2_job, proc = slurm_tools.array_submit(job_fn, p = conf.slurm.p, gres=None if conf.slurm.p=='cpu' else conf.slurm.gres, log=conf.slurm.keep_logs, J=job_name, in_proc=conf.slurm.in_proc)
+            if af2_job > 0:
+                job_ids.append(af2_job)
+            print(f'Submitted array job {af2_job} with {int(np.ceil(len(filenames)/conf.chunk))} jobs to compute per-{cohort} metrics for {len(filenames)} designs')
 
     return job_ids
 

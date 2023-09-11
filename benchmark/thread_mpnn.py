@@ -30,6 +30,7 @@ def get_args():
     parser.add_argument('datadir',type=str,help='Folder of designs')
     parser.add_argument('--seqdir',type=str,help='Folder of MPNN sequences, one .fa file per design')
     parser.add_argument('--outdir',type=str,help='Folder to put threaded MPNN PDBs')
+    parser.add_argument('--sidechains',type=int,default=0,help='Folder to put threaded MPNN PDBs')
     parser.add_argument('--use_ligand',action='store_true',default=False,
         help='Whether to parse and write ligand in the PDB. Also affects default I/O paths')
     args = parser.parse_args()

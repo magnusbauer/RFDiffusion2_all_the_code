@@ -166,7 +166,7 @@ def main(conf: HydraConfig) -> list[int]:
             with open(tmp_fn,'w') as outf:
                 for j in np.arange(i,min(i+conf.chunk, len(filenames))):
                     print(filenames[j], file=outf)
-            print(f'apptainer exec /software/containers/pyrosetta.sif python {rosettalig_script} '\
+            print(f'apptainer exec /software/containers/mpnn_binder_design.sif python {rosettalig_script} '\
                   f'--list {tmp_fn} '\
                   f'--outdir {conf.datadir}/rosettalig/ '\
                   f'--outcsv {conf.datadir}/rosettalig_scores.csv.{i} ',
@@ -184,6 +184,36 @@ def main(conf: HydraConfig) -> list[int]:
             if lig_job > 0:
                 job_ids.append(lig_job)
             print(f'Submitted array job {lig_job} with {int(np.ceil(len(filenames)/conf.chunk))} jobs to compute Rosetta ligand metrics on {len(filenames)} designs')
+
+    if 'rosetta_gen_ff' in conf.run:
+        job_fn = conf.datadir + '/jobs.score.rosetta_gen_ff.list'
+        job_list_file = open(job_fn, 'w') if conf.slurm.submit else sys.stdout
+        rosettalig_script = script_dir+'/util/rosetta_gen_ff.py'
+        for i in range(0, len(filenames), conf.chunk):
+            tmp_fn = f'{conf.datadir}/{conf.tmp_pre}.rosetta_gen_ff.{i}'
+            with open(tmp_fn,'w') as outf:
+                for j in np.arange(i,min(i+conf.chunk, len(filenames))):
+                    print(filenames[j], file=outf)
+            print(f'apptainer exec --bind /databases:/databases /software/containers/users/ahern/atom_diff_4.1.sif python -u {rosettalig_script} '\
+                  f'--list {tmp_fn} '\
+                  f'--trb_dir {conf.trb_dir} '\
+                  f'--outdir {conf.datadir}/rosetta_gen_ff/ '\
+                  f'--outcsv {conf.datadir}/rosetta_gen_ff.csv.{i} ',
+                  file=job_list_file)
+
+        # submit job
+        if conf.slurm.submit:
+            job_list_file.close()
+            if conf.slurm.J is not None:
+                job_name = conf.slurm.J
+            else:
+                pre = 'rosetta_gen_ff_'
+                job_name = pre + os.path.basename(conf.datadir.strip('/')) 
+            lig_job, proc = slurm_tools.array_submit(job_fn, p = 'cpu', gres=None, log=conf.slurm.keep_logs, J=job_name, in_proc=conf.slurm.in_proc)
+            if lig_job > 0:
+                job_ids.append(lig_job)
+            print(f'Submitted array job {lig_job} with {int(np.ceil(len(filenames)/conf.chunk))} jobs to compute Rosetta gen ff metrics on {len(filenames)} designs')
+
 
     return job_ids
 

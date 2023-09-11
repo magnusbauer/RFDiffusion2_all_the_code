@@ -92,7 +92,7 @@ def is_rf_diff(row):
     return True
 
 import random
-def show(row, structs = {'X0'}, af2=False, des=True, des_color=None):
+def show(row, structs = {'X0'}, af2=False, des=True, des_color=None, mpnn_packed=False, rosetta_lig=False, ga_lig=False, hydrogenated=False):
     # x0_pdb = analyze.get_design_pdb(row)
 
 
@@ -102,7 +102,8 @@ def show(row, structs = {'X0'}, af2=False, des=True, des_color=None):
     traj_types = ['X0', 'Xt']
     pdbs = {}
     if des:
-        pdbs['des'] =  analyze.get_design_pdb(row)
+        pdbs['des'] =  analyze.get_diffusion_pdb(row)
+        # pdbs['des_raw'] = '/net/scratch/ahern/tip_atoms/rfd_retro_3_pilot/out/run_tip_3_lig_retroaldolase_cond0_0.pdb'
     for s in structs:
         if s in traj_types:
             if s == 'X0':
@@ -114,6 +115,38 @@ def show(row, structs = {'X0'}, af2=False, des=True, des_color=None):
             #     name = row['pymol']
             # s = f'{name}_{s}_{random.randint(0, 1000)}'
             pdbs[s] = os.path.join(row['rundir'], f'traj/{name}_{suffix}_traj.pdb')
+
+    name = row['name']
+    mpnn_i = row['mpnn_index']
+    if mpnn_packed:
+        # pdbs['mpnn_packed'] = os.path.join(row['rundir'], 'ligmpnn', 'packed', f'{name}_packed_1.pdb')
+        pdbs['mpnn_packed'] = os.path.join(row['rundir'], 'ligmpnn/packed', f'{name}_{mpnn_i}.pdb')
+    
+    if rosetta_lig:
+        # mpnn_i = 0
+        pdbs['mpnn_packed'] = os.path.join(row['rundir'], 'ligmpnn', 'rosettalig', f'{name}_{mpnn_i}_FR.pdb')
+        name
+    
+    if ga_lig:
+        # pdbs['ga_lig'] = os.path.join(row['rundir'], 'ligmpnn', 'packed', 'rosetta_gen_ff', f'{name}_{mpnn_i}_0001.pdb')
+        for pdb in [
+            os.path.join(row['rundir'], 'ligmpnn', 'packed', 'addh', 'rosetta_gen_ff', f'{name}_{mpnn_i}_0001.pdb'),
+            os.path.join(row['rundir'], 'ligmpnn', 'packed', 'rosetta_gen_ff', f'{name}_{mpnn_i}_0001.pdb'),
+        ]:
+            if os.path.exists(pdb):
+                ga_lig_pdb = pdb
+                break
+        else:
+            raise Exception('ga_lig pdb not found')
+        pdbs['ga_lig'] = ga_lig_pdb
+        # pdbs['ga_lig'] = os.path.join(row['rundir'], 'ligmpnn', 'packed', 'addh', 'rosetta_gen_ff', f'{name}_{mpnn_i}_0001.pdb')
+
+    
+    if hydrogenated:
+        # pdbs['mpnn_packed'] = os.path.join(row['rundir'], 'ligmpnn', 'packed', f'{name}_packed_1.pdb')
+        pdbs['hydrogenated'] = os.path.join(row['rundir'], 'ligmpnn/packed/addh', f'{name}_{mpnn_i}.pdb')
+
+    # ic(pdbs)
     
     # x0_pdb = os.path.join(row['rundir'], f'traj/{row["name"]}_Xt-1_traj.pdb')
     
@@ -134,16 +167,18 @@ def show(row, structs = {'X0'}, af2=False, des=True, des_color=None):
     name_by_pdb = {}
     for label, pdb in pdbs.items():
         name_by_pdb[pdb] = f'{prefix}_{label}'
-
-    # print(f"{pdbs=}")
-    
     pymol_objects = load_pdbs(pdbs, name_by_pdb)
-    # print(f'{pymol_objects=}')
-
-    # load_pdbs(pdbs)
-    # pymol_objects = 
     if af2:
-        cmd.align(pymol_objects['af2'], pymol_objects['des'])
+        for k, align in [
+                ('mpnn_packed', cmd.align),
+                ('des', cmd.super),
+        ]:
+            if k not in pymol_objects:
+                continue
+            print('aligning af2 to', k)
+            align(pymol_objects['af2'], pymol_objects[k])
+            break
+
     # print(pdbs, pymol_objects)
     
     obj_selectors = {}
@@ -157,7 +192,6 @@ def show(row, structs = {'X0'}, af2=False, des=True, des_color=None):
         else:
             atom_names_by_res_idx = get_motif_spec(row, traj=is_traj)
         selectors = show_tip_row.get_selectors_2(atom_names_by_res_idx)
-        ic(selectors)
         obj_selectors[label] = selectors
     # print(f'{pymol_objects=}')
     # sel_lens = {k:len(v) for k,v in obj_selectors['des'].items()}

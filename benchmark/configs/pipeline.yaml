@@ -2,12 +2,13 @@ defaults:
   - sweep_hyperparam@sweep
   - cluster_pipeline_outputs@cluster
   - chunkify_foldseek_pdb@foldseek
-  - mpnn_designs@mpnn
+  - mpnn_designs_v2@mpnn
   - score_designs@score
   - add_metrics@metrics
 
 outdir: ${hydra:runtime.cwd}  # The dir the python script was called from
 start_step: sweep
+stop_step: end
 use_ligand: True
 slurm_submit: True
 in_proc: False
@@ -51,4 +52,5 @@ metrics:
   slurm:
     in_proc: ${in_proc}
     submit: ${slurm_submit}
+  mpnn_dirs: ${mpnn.outdirs}
 

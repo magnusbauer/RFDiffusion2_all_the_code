@@ -3,6 +3,12 @@ chunk: 100
 num_seq_per_target: 8
 use_ligand: True
 cautious: False
+v2: False
+regen_jobs: True
+unsafe_skip_parsing: False
+outdirs:
+  - ${..datadir}/mpnn
+  - ${..datadir}/ligmpnn
 
 slurm:
   J: mpnn
