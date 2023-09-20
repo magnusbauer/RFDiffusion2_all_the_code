@@ -3,3 +3,7 @@
     url = https://git.ipd.uw.edu/jue/RF2-allatom.git
     update = checkout
     branch = main
+[submodule "rf_se3_diffusion"]
+	path = rf_se3_diffusion
+	url = git@github.com:w-ahern/rf_se3_diffusion.git
+	branch = no_submodule
