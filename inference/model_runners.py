@@ -31,11 +31,11 @@ import torch.nn.functional as nn
 import util
 import hydra
 from hydra.core.hydra_config import HydraConfig
-from data import all_atom
-from data import utils as du
+from rf_se3_diffusion.data import all_atom
+import rf_se3_diffusion.data.utils as du
 from openfold.utils.rigid_utils import Rigid
 import rf_score.model
-from data import se3_diffuser
+from rf_se3_diffusion.data import se3_diffuser
 import os
 
 import sys
@@ -76,7 +76,6 @@ class Sampler:
 
         # Assemble config from the checkpoint
         ic(self._conf.score_model.weights_path)
-        from data import utils as du
         weights_pkl = du.read_pkl(
             self._conf.score_model.weights_path, use_torch=True,
                 map_location=self.device)
@@ -324,7 +323,6 @@ class Sampler:
         t_list = np.arange(1, self.t_step_input+1)
         atom_mask = None
         seq_one_hot = None
-        from data import utils as du
         rigids_0 = du.rigid_frames_from_atom_14(indep.xyz)
         diffuser_out = self.diffuser.forward_marginal(
             rigids_0,

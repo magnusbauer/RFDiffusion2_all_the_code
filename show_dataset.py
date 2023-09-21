@@ -20,7 +20,7 @@ from data_loader import (
     #Dataset, DatasetComplex, 
     DistilledDataset, DistributedWeightedSampler
 )
-from data import se3_diffuser
+from rf_se3_diffusion.data import se3_diffuser
 import test_utils
 
 cmd = analyze.cmd

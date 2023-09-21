@@ -37,8 +37,8 @@ import atomize
 import os, sys
 script_dir = os.path.dirname(os.path.realpath(__file__))
 sys.path.append(os.path.join(script_dir, '..'))
-from data import utils as du
-from data import all_atom
+import rf_se3_diffusion.data.utils as du
+from rf_se3_diffusion.data import all_atom
 import show
 import features
 

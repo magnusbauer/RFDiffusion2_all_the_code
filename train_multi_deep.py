@@ -59,7 +59,7 @@ from scheduler import get_stepwise_decay_schedule_with_warmup
 import rotation_conversions as rot_conv
 from rf_diffusion import test_utils
 from openfold.utils import rigid_utils as ru
-from data import all_atom
+from rf_se3_diffusion.data import all_atom
 
 #added for inpainting training
 from icecream import ic
@@ -177,7 +177,7 @@ class Trainer():
         self.metrics=[getattr(metrics, k) for k in conf.metrics]
 
         # Initialize experiment objects
-        from data import se3_diffuser
+        from rf_se3_diffusion.data import se3_diffuser
         self.diffuser = se3_diffuser.SE3Diffuser(self.conf.diffuser)
         self.diffuser.T = conf.diffuser.T
 

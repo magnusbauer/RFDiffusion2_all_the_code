@@ -19,7 +19,7 @@ from data_loader import (
 )
 from torch.utils import data
 from omegaconf import DictConfig
-from data import se3_diffuser
+from rf_se3_diffusion.data import se3_diffuser
 
 
 golden_dir = 'goldens'
