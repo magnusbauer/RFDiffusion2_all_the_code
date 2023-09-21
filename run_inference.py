@@ -20,7 +20,6 @@ script_dir = os.path.dirname(os.path.realpath(__file__))
 aa_se3_path = os.path.join(script_dir, 'RF2-allatom/rf2aa/SE3Transformer')
 sys.path.insert(0, aa_se3_path)
 sys.path.append(os.path.join(script_dir, 'RF2-allatom'))
-sys.path.append(os.path.join(script_dir, '..'))
 
 import re
 import os, time, pickle
