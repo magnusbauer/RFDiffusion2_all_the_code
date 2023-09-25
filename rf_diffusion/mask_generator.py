@@ -1,0 +1,1034 @@
+import random
+import sys
+import copy
+
+import torch
+import scipy.stats
+import kinematics
+import numpy as np
+from icecream import ic
+import rf2aa.util
+import networkx as nx
+nx.from_numpy_matrix = nx.from_numpy_array
+from functools import wraps
+import assertpy
+from collections import OrderedDict
+import rf_diffusion.aa_model as aa_model
+
+
+def make_covale_compatible(get_mask):
+    @wraps(get_mask)
+    def out_get_mask(indep, atom_mask, *args, **kwargs):
+        is_motif, is_atom_motif = get_mask(indep, atom_mask, *args, **kwargs)
+        covale_res_i = torch.tensor([res_i for (res_i, atom_name), lig_i, _ in indep.metadata['covale_bonds']])
+        is_atom_motif = is_atom_motif or {}
+        for res_i in covale_res_i:
+            if res_i not in is_atom_motif:
+                is_atom_motif[res_i] = []
+        motif_idx = is_motif.nonzero()[:,0].numpy()
+        covalently_modified_res_motif = set(motif_idx).intersection(set(covale_res_i))
+        for res_i in covalently_modified_res_motif:
+            seq = indep.seq[res_i]
+            atom_names = np.array(rf2aa.chemical.aa2long[seq], dtype=np.str_)
+            atom_mask_i = atom_mask[res_i]
+            atom_names = atom_names[atom_mask_i]
+            is_atom_motif[res_i] = atom_names
+        return is_motif, is_atom_motif
+    return out_get_mask
+
+#####################################
+# Misc functions for mask generation
+#####################################
+
+def get_masks(L, min_length, max_length, min_flank, max_flank):
+    """
+    Makes a random contiguous mask, with (or without) flanking residues masked.
+    """
+    flank_width = random.randint(min_flank, max_flank)
+    max_length = min([max_length, L-2*flank_width - 20]) #require at least 20 visible residues in any masking regime.
+    central_width = random.randint(min_length,max_length)
+    assert central_width > min_length - 1
+    assert max_length > min_length
+    
+    start = random.randint(flank_width,L-flank_width-central_width-1)
+    return (start,start+central_width),flank_width
+
+
+def get_diffusion_pos(L,min_length, max_length=None):
+    """
+    Random contiguous mask generation to denote which residues are being diffused 
+    and which are not. 
+
+    TODO: This does not support multi-chain diffusion training at the moment 
+
+    Returns:
+
+        start,end : indices between which residues are allowed to be diffused. 
+                    Otherwise, residues are held fixed and revealed 
+    """
+    if (max_length is None) or (max_length > L):
+        max_length = L 
+
+    assert min_length <= max_length 
+
+    # choose a length to crop 
+    chosen_length = np.random.randint(min_length, max_length)
+
+    # choose a start position - between 0 (inclusive) and L-chosen_length (exclusive)
+    start_idx = random.randint(0, L-chosen_length)
+    end_idx   = start_idx + chosen_length
+
+    return start_idx, end_idx 
+
+def get_cb_distogram(xyz):
+    Cb = kinematics.get_Cb(xyz)
+    dist = kinematics.get_pair_dist(Cb, Cb)
+    return dist
+
+def get_contacts(xyz, xyz_less_than=5, seq_dist_greater_than=10):
+    L = xyz.shape[0]
+    dist = get_cb_distogram(xyz)
+
+    is_close_xyz = dist < xyz_less_than
+
+    idx = torch.ones_like(dist).nonzero()
+    seq_dist = torch.abs(torch.arange(L)[None] - torch.arange(L)[:,None])
+    is_far_seq = torch.abs(seq_dist) > seq_dist_greater_than
+
+    contacts = is_far_seq * is_close_xyz
+    return contacts
+
+def sample_around_contact(L, indices, len_low, len_high):
+    diffusion_mask = torch.zeros(L).bool()
+    for anchor in indices:
+        mask_length = int(np.floor(random.uniform(len_low, len_high)))
+        l = anchor - mask_length // 2
+        r = anchor + (mask_length - mask_length//2)
+        l = max(0, l)
+        r = min(r, L)
+        diffusion_mask[l:r] = True
+    return diffusion_mask
+
+
+def _get_double_contact(xyz, low_prop, high_prop, broken_prop, xyz_less_than=5, seq_dist_greater_than=25, len_low=5, len_high=10):
+    contacts = get_contacts(xyz, xyz_less_than, seq_dist_greater_than)
+    if not contacts.any():
+        return _get_diffusion_mask_simple(xyz, low_prop, high_prop, broken_prop)
+    contact_idxs = contacts.nonzero()
+    contact_idx = np.random.choice(np.arange(len(contact_idxs)))
+    indices = contact_idxs[contact_idx]
+    L = xyz.shape[0]
+    return sample_around_contact(L, indices, len_low, len_high)
+
+def find_third_contact(contacts):
+    contact_idxs = contacts.nonzero()
+    contact_idxs = contact_idxs[torch.randperm(len(contact_idxs))]
+    for i,j in contact_idxs:
+        if j < i:
+            continue
+        K = (contacts[i,:] * contacts[j,:]).nonzero()
+        if len(K):
+            K = K[torch.randperm(len(K))]
+            for k in K:
+                return torch.tensor([i,j,k])
+    return None
+
+def get_sm_contacts(
+        indep, atom_mask,
+    d_beyond_closest = 1.5,
+    n_beyond_closest = 2,
+    n_sample_low = 1,
+    n_sample_high = 8, **kwargs):
+
+    xyz, is_sm = indep.xyz, indep.is_sm
+
+    assert len(xyz.shape) == 3
+    assert is_sm.any()
+
+    L = xyz.shape[0]
+    L_prot = (~is_sm).sum()
+    n_sample = np.random.randint(n_sample_low, n_sample_high)
+
+    crds = torch.clone(xyz)
+    crds[~atom_mask] = torch.nan
+    prot_crds = crds[~is_sm]
+    sm_crds = crds[is_sm]
+    dist = (prot_crds[:, None] - sm_crds[ None]).pow(2).sum(dim=-1).sqrt()
+    dist = dist.nan_to_num(99999)
+    dist = dist.min(dim=-1)[0].min(dim=-1)[0]
+    dist_cutoff = dist.min() + d_beyond_closest
+
+    is_sampled = torch.zeros(L_prot).bool()
+    _, closest_idx = torch.topk(dist, n_sample + n_beyond_closest, largest=False)
+    is_sampled[closest_idx] = True
+    is_sampled[dist < dist_cutoff] = True
+
+    is_sampled_het = torch.zeros(L).bool()
+    is_sampled_het[~is_sm] = is_sampled
+
+    candidate_indices = is_sampled_het.nonzero().flatten()
+    indices = np.random.choice(candidate_indices, n_sample, replace=False)
+    is_motif = torch.zeros(L).bool()
+    is_motif[is_sm] = True
+    is_motif[indices] = True
+
+    # Verification
+    picked = crds[is_motif]
+    dist_conf = (picked[:, None] - sm_crds[ None]).pow(2).sum(dim=-1).sqrt()
+    dist_conf = dist_conf.nan_to_num(9999)
+    picked_distances = dist_conf.min(-1)[0].min(-1)[0]
+    #ic(is_motif, n_sample, picked_distances, dist_cutoff, indices)
+
+    return is_motif, None
+
+def get_triple_contact_atomize(*args, **kwargs):
+    raise Exception('not implemented')
+
+# TODO: fix
+@make_covale_compatible
+def get_closest_tip_atoms(indep, atom_mask,
+    d_beyond_closest = 1.0,
+    n_beyond_closest = 1,
+    n_sample_low = 1,
+    n_sample_high = 5, **kwargs):
+
+    assert len(indep.xyz.shape) == 3
+    assert indep.is_sm.any()
+
+    L = indep.length()
+    L_prot = (~indep.is_sm).sum()
+    n_sample = np.random.randint(n_sample_low, n_sample_high)
+
+    crds = torch.clone(indep.xyz)
+    crds[~atom_mask] = torch.nan
+    prot_crds = crds[~indep.is_sm]
+    sm_crds = crds[indep.is_sm][:, 1]
+    dist_res_sidechain_ligand = (prot_crds[:,:, None,...] - sm_crds[ None,None,...]).pow(2).sum(dim=-1).sqrt()
+    dist_res_sidechain_ligand = dist_res_sidechain_ligand.nan_to_num(9999)
+    dist_res_sidechain = dist_res_sidechain_ligand.min(dim=-1)[0]
+    dist = dist_res_sidechain.min(dim=-1)[0]
+    is_valid_for_atomization = indep.is_valid_for_atomization(atom_mask)[~indep.is_sm]
+    if not is_valid_for_atomization.any():
+        ic('No valid residues for atomization, falling back to unconditional generation')
+        return torch.zeros(L).bool(), None
+    dist[~is_valid_for_atomization] = 9999
+
+    # Calculate distance cutoff
+    dist_cutoff = dist.min() + d_beyond_closest
+    is_sampled = torch.zeros(L_prot).bool()
+    _, closest_idx = torch.topk(dist, n_sample + n_beyond_closest, largest=False)
+    is_sampled[closest_idx] = True
+    is_sampled[dist < dist_cutoff] = True
+    n_contacts_before = is_sampled.sum()
+    is_sampled[~is_valid_for_atomization] = False
+    n_contacts_after = is_sampled.sum()
+    #ic(f'After removing residue contacts with unresolved heavy atoms: {n_contacts_before} --> {n_contacts_after}')
+
+    is_sampled_het = torch.zeros(L).bool()
+    is_sampled_het[~indep.is_sm] = is_sampled
+    candidate_indices = is_sampled_het.nonzero().flatten()
+
+    n_sample = min(n_sample, len(candidate_indices))
+    # print(f'choosing {n_sample} out of {len(candidate_indices)}')
+    indices = np.random.choice(candidate_indices, n_sample, replace=False)
+
+    # Verification for debugging
+    if False:
+        picked = crds[indices]
+        dist_conf = (picked[:, None] - sm_crds[ None]).pow(2).sum(dim=-1).sqrt()
+        dist_conf = dist_conf.nan_to_num(9999)
+        picked_distances = dist_conf.min(-1)[0].min(-1)[0]
+        ic(picked_distances, dist_cutoff, indices)
+
+    is_atom_diffused = {}
+    sm_prot_transition_types = (indep.is_sm[1:].int() - indep.is_sm[:-1].int()).unique().tolist()
+    # If the ligands do not come in a single block after the protein, using dist_sc_to_sm will provide incorrect indices,
+    assertpy.assert_that(sm_prot_transition_types).is_equal_to([0,1])
+    # prot_by_het = torch.full((indep.length(),), torch.nan)
+    # prot_by_het[~indep.is_sm] = torch.arange((~indep.is_sm).sum())
+    # torch.nonzero(~indep.is_sm).flatten()
+    for het_i in indices:
+        # prot_i = prot_by_het[het_i]
+        prot_i = het_i
+        closest_atom = torch.argmin(dist_res_sidechain[prot_i]).item()
+        n_bonds = np.random.randint(1, 3)
+        is_atom_diffused[het_i] = get_atom_names_within_n_bonds(indep.seq[het_i], closest_atom, n_bonds)
+    is_motif = torch.zeros(L).bool()
+    is_motif[indep.is_sm] = True
+
+    return is_motif, is_atom_diffused
+
+
+def get_atom_names_within_n_bonds(res, source_node, n_bonds):
+    bond_feats = get_residue_bond_feats(res)
+    bond_graph = nx.from_numpy_matrix(bond_feats.numpy())
+    paths = nx.single_source_shortest_path_length(bond_graph, source=source_node,cutoff=n_bonds)
+    atoms_within_n_bonds = paths.keys()
+    atom_names = [rf2aa.chemical.aa2long[res][i] for i in atoms_within_n_bonds]
+    return atom_names
+
+def tip_crd(indep, i):
+    '''Returns the coordinates of the tip atom of residue index i'''
+    aa = indep.seq[i]
+    tip_atom_name = rf2aa.chemical.aa2tip[aa].strip()
+    tip_idx_within_res = next(i for i, atom_name in enumerate(rf2aa.chemical.aa2long[aa]) if atom_name.strip() == tip_atom_name)
+    return indep.xyz[i, tip_idx_within_res]
+
+def get_tip_gaussian_mask(indep, atom_mask, *args, std_dev=8, **kwargs):
+    '''
+    Params:
+        indep: aa_model.Indep, a description of a protein complex
+        atom_mask: [L, 36] mask of whether an atom is resolved in indep
+        std_dev: standard deviation of the multivariate gaussian (see below)
+        *args: ignored, necessary to match masker function signature
+        **kwargs: ignored, necessary to match masker function signature
+    Returns:
+        is_motif: binary mask that is True where a non-atomized residue is motif
+        is_atom_motif: dictionary mapping residue indices to the atom names which are motif
+    
+    This masking function provides a few partial sidechains as motif.
+
+    The protocol for selecting those sidechains is as follows:
+        1. Find all atomizable residue
+        2. Select one at random, call it origin
+        3. Sample 1-6 atomizable residues with probabilities given by evaluation of a
+            multivariate gaussian centered at origin at the tips of the atomizable residues
+        4. Select a random atom in each residue, weighted towards selecting the tip
+        5. Expand the mask starting from each selected atom by traversing 1-3 bonds within the residue.
+    '''
+    assert not indep.is_sm.any()
+    is_valid_for_atomization = indep.has_heavy_atoms_and_seq(atom_mask)
+    if not is_valid_for_atomization.any():
+        ic('No valid residues for atomization, falling back to unconditional generation')
+        is_motif = torch.zeros(indep.length()).bool()
+        is_motif[indep.is_sm] = True
+        return is_motif, None
+    valid_idx = is_valid_for_atomization.nonzero()[:,0]
+    
+    origin_i = np.random.choice(valid_idx, 1)[0]
+    origin_tip_crd = tip_crd(indep, origin_i)
+    tip_crds = [tip_crd(indep, i) for i in valid_idx]
+    tip_crds = np.stack(tip_crds, axis=0)
+    gaussian = scipy.stats.multivariate_normal(origin_tip_crd, std_dev)
+    probs = gaussian.pdf(tip_crds)
+    probs /= probs.sum()
+    n_atomize = random.randint(1, 6)
+    n_atomize = min(n_atomize, len(valid_idx))
+    atomize_i = np.random.choice(valid_idx, n_atomize, p=probs, replace=False)
+
+    is_atom_motif = {}
+    for i in atomize_i:
+        atom_crds = indep.xyz[i][atom_mask[i]]
+        closest_atom_i = torch.argmin(torch.norm(atom_crds - origin_tip_crd), axis=-1)
+        n_atoms = len(atom_crds)
+        prob_non_closest = 0.5 / (n_atoms-1)
+        probs = np.full((n_atoms,), prob_non_closest)
+        probs[closest_atom_i] = 0.5
+        p_tip_only = 0.5
+        if np.random.rand() < p_tip_only:
+            probs[:4] = 1e-6
+        probs = probs.astype('float64')
+        probs /= probs.sum()
+        seed_atom = np.random.choice(np.arange(n_atoms), 1, p=probs)[0]
+        n_bonds = np.random.randint(1, 3)
+        atom_names = get_atom_names_within_n_bonds(indep.seq[i], seed_atom, n_bonds)
+        assertpy.assert_that(atom_names).does_not_contain(None)
+        is_atom_motif[i] = atom_names
+
+    is_motif = torch.zeros(indep.length()).bool()
+    return is_motif, is_atom_motif
+
+def _get_triple_contact(xyz, low_prop, high_prop, broken_prop, xyz_less_than=6, seq_dist_greater_than=10, len_low=1, len_high=3):
+    contacts = get_contacts(xyz, xyz_less_than, seq_dist_greater_than)
+    if not contacts.any():
+        return _get_diffusion_mask_simple(xyz, low_prop, high_prop, broken_prop)
+    indices = find_third_contact(contacts)
+    if indices is None:
+        return _get_diffusion_mask_simple(xyz, low_prop, high_prop, broken_prop)
+    L = xyz.shape[0]
+    return sample_around_contact(L, indices, len_low, len_high)
+
+def _get_diffusion_mask_simple(xyz, low_prop, high_prop, broken_prop):
+    """
+    Function to make a diffusion mask.
+    Options:
+        low_prop - lower bound on the proportion of the protein masked
+        high_prop - upper bound on the proportion of the protein masked
+        broken_prop - proportion of the time the mask is in the middle (broken motif), vs at the ends
+    Output:
+        1D diffusion mask. True is unmasked, False is masked/diffused
+    """
+    L = xyz.shape[0]
+    diffusion_mask = torch.ones(L).bool()
+    if L <= 3:
+        # Too small to mask
+        return torch.zeros(L).bool()
+    mask_length = int(np.floor(random.uniform(low_prop, high_prop) * L))
+    # decide if mask goes in the middle or the ends
+    if random.uniform(0,1) < broken_prop or mask_length < 3:
+        high_start = L-mask_length-1
+        start = random.randint(0, high_start)
+        diffusion_mask[start:start+mask_length] = False
+    else:
+        # split mask in two
+        split = random.randint(1, mask_length-2)
+        diffusion_mask[:split] = False
+        diffusion_mask[-(mask_length-split):] = False
+    return diffusion_mask
+
+def _get_diffusion_mask_islands(xyz, *args, island_len_min=1, island_len_max=15, n_islands_min=1, n_islands_max=4, **kwargs):
+    L = xyz.shape[0]
+    is_motif = torch.zeros(L).bool()
+    n_islands = np.random.randint(n_islands_min, n_islands_max)
+    for _ in range(n_islands):
+        mask_length = np.random.randint(island_len_min, island_len_max)
+        high_start = L - mask_length
+        start = random.randint(0, high_start)
+        is_motif[start:start+mask_length] = True
+    
+    # Prevents the entire thing from being motif, as this is disallowed.
+    if is_motif.all():
+        is_motif[np.random.randint(L)] = False
+    return is_motif
+
+def _get_unconditional_diffusion_mask(xyz, *args, **kwargs):
+    """
+    unconditional generation of proteins, if a small molecule is present it will be given as context
+    """
+    L = xyz.shape[0]
+    is_motif = torch.zeros(L).bool()
+    return is_motif
+
+def make_sm_compatible(get_mask):
+    @wraps(get_mask)
+    def out_get_mask(indep, atom_mask, *args, **kwargs):
+        L = indep.length()
+        diffusion_mask = torch.ones(L).bool()
+        diffusion_mask_prot = get_mask(indep.xyz[~indep.is_sm], *args, **kwargs)
+        diffusion_mask[~indep.is_sm] = diffusion_mask_prot
+        return diffusion_mask, None
+    return out_get_mask
+
+def make_atomized(get_mask, min_atomized_residues=1, max_atomized_residues=5):
+    @wraps(get_mask)
+    def out_get_mask(indep, atom_mask, *args, **kwargs):
+        is_motif, is_atom_motif = get_mask(indep, atom_mask, *args, **kwargs)
+        assert is_atom_motif is None, 'attempting to atomize a masking function that is already returning atomization masks'
+        can_be_atomized = is_motif * indep.is_valid_for_atomization(atom_mask)
+        if not can_be_atomized.any():
+            return is_motif, None
+        atomize_indices = torch.nonzero(can_be_atomized).flatten()
+        n_sample = random.randint(min_atomized_residues, max_atomized_residues)
+        n_sample = min(len(atomize_indices), n_sample)
+        atomize_indices = np.random.choice(atomize_indices, n_sample, replace=False)
+        is_atom_motif = {i:choose_contiguous_atom_motif(indep.seq[i]) for i in atomize_indices}
+        is_motif[atomize_indices] = False
+        return is_motif, is_atom_motif
+    return out_get_mask
+
+def partially_mask_ligand(get_mask, ligand_mask_low=0.0, ligand_mask_high=1.0):
+    @wraps(get_mask)
+    def out_get_mask(indep, atom_mask, *args, **kwargs):
+        is_motif, is_atom_motif = get_mask(indep, atom_mask, *args, **kwargs)
+        is_motif[indep.is_sm] = True
+        abs_from_sm_i = indep.is_sm.nonzero()[:, 0]
+        G = nx.from_numpy_matrix(indep.bond_feats[indep.is_sm,:][:,indep.is_sm].detach().cpu().numpy())
+        cc = list(nx.connected_components(G))
+        for component in cc:
+            n_atoms = len(component)
+            mask_frac = np.random.uniform(low=ligand_mask_low, high=ligand_mask_high)
+            to_mask = np.random.choice(list(component), int(np.floor(mask_frac*n_atoms)))
+            to_mask_abs = abs_from_sm_i[to_mask]
+            if to_mask_abs.any():
+                assertpy.assert_that(indep.is_sm[to_mask_abs].all()).is_true()
+            is_motif[to_mask_abs] = False
+        return is_motif, is_atom_motif
+    return out_get_mask
+
+get_diffusion_mask_simple = make_covale_compatible(make_sm_compatible(_get_diffusion_mask_simple))
+get_diffusion_mask_islands = make_covale_compatible(make_sm_compatible(_get_diffusion_mask_islands))
+get_triple_contact = make_sm_compatible(_get_triple_contact)
+get_double_contact = make_sm_compatible(_get_double_contact)
+atomize_get_triple_contact = make_atomized(get_triple_contact)
+atomize_get_double_contact = make_atomized(get_double_contact)
+get_unconditional_diffusion_mask = make_covale_compatible(make_sm_compatible(_get_unconditional_diffusion_mask))
+
+
+
+get_diffusion_mask_islands_partial_ligand = partially_mask_ligand(get_diffusion_mask_islands)
+get_tip_gaussian_mask_partial_ligand = partially_mask_ligand(get_tip_gaussian_mask)
+get_closest_tip_atoms_partial_ligand = partially_mask_ligand(get_closest_tip_atoms)
+get_unconditional_diffusion_mask_partial_ligand = partially_mask_ligand(get_unconditional_diffusion_mask)
+
+sm_mask_fallback = {
+    get_closest_tip_atoms: get_tip_gaussian_mask,
+    get_closest_tip_atoms_partial_ligand: get_tip_gaussian_mask_partial_ligand,
+}
+
+def get_diffusion_mask(
+        indep, atom_mask, low_prop, high_prop, broken_prop,
+        diff_mask_probs):
+    
+    mask_probs = list(diff_mask_probs.items())
+    masks = [m for m, _ in mask_probs]
+    props = [p for _, p in mask_probs]
+    get_mask = np.random.choice(masks, p=props)
+
+    # Use fallback mask if no small molecule present.
+    if not indep.is_sm.any():
+        get_mask = sm_mask_fallback.get(get_mask, get_mask)
+
+    return get_mask(indep, atom_mask, low_prop=low_prop, high_prop=high_prop, broken_prop=broken_prop)
+
+
+def generate_sm_mask(prot_masks, is_sm):
+    # Not currently used, but may become part of a better way to do this
+    L = is_sm.shape[0]
+    input_seq_mask = torch.ones(L).bool()
+    input_str_mask = torch.ones(L).bool()
+    input_floating_mask = -1
+    input_t1d_str_conf_mask = torch.ones(L)
+    input_t1d_seq_conf_mask = torch.ones(L)
+    loss_seq_mask = torch.ones(L).bool()
+    loss_str_mask = torch.ones(L).bool()
+    loss_str_mask_2d = torch.ones(L,L).bool()
+
+    mask_dict = {'input_seq_mask':input_seq_mask,
+                'input_str_mask':input_str_mask,
+                'input_floating_mask':input_floating_mask,
+                'input_t1d_str_conf_mask':input_t1d_str_conf_mask,
+                'input_t1d_seq_conf_mask':input_t1d_seq_conf_mask,
+                'loss_seq_mask':loss_seq_mask,
+                'loss_str_mask':loss_str_mask,
+                'loss_str_mask_2d':loss_str_mask_2d}
+    #is_motif = torch.ones(L).bool()
+    #is_motif_prot = mask_dict['input_str_mask']
+    for k, v in mask_dict.items():
+        if type(v) is not torch.Tensor:
+            continue
+        if k == 'loss_str_mask_2d':
+            continue
+        #ic(k, v.shape, prot_masks[k].shape, is_sm.shape)
+        v[~is_sm] = prot_masks[k]
+        mask_dict[k] = v
+    mask_dict['input_seq_mask']
+    
+    return mask_dict
+
+###################
+# Functions for making a mask for nearby contigs - DT
+###################
+def closest_distance(group1: torch.Tensor, group2: torch.Tensor, 
+                     include_point1: torch.Tensor, include_point2: torch.Tensor) -> torch.Tensor:
+    '''
+    Given two groups of points, how close are the closest pair of points?
+    
+    Args
+        group1 (batch1, n_points1, 3)
+        group2 (batch2, n_points2, 3)
+        include_point1 (batch1, n_points1): True = the coordinates should be considered in the distance calculation.
+    
+    Returns
+        closest_dist: (batch1, batch2)
+    '''
+    assert group1.shape[:-1] == include_point1.shape
+    assert group2.shape[:-1] == include_point2.shape
+    
+    # Expand shapes so we can broadcast
+    group1 = group1[:,:,None,None,:]
+    group2 = group2[None,None,:,:,:]
+    include_point1 = include_point1[:,:,None,None]
+    include_point2 = include_point2[None,None,:,:]
+
+    # Distance calc
+    dists = torch.linalg.norm(group1 - group2, ord=2, dim=-1)
+    
+    # Both points must be "included" to consider the dist between them
+    include_dist = torch.logical_and(include_point1, include_point2)
+    dists[~include_dist] = torch.inf
+
+    # find min over all pairs of atom in each group. Would be clearner to do with a "topk_any_dims" like function.
+    closest_dist = dists.min(dim=1)[0]
+    closest_dist = closest_dist.min(dim=2)[0]
+    
+    return closest_dist
+
+def get_neighboring_residues(xyz: torch.Tensor, atom_mask: torch.Tensor, 
+                             i: int, r: float) -> torch.Tensor:
+    '''
+    Args
+        xyz (L, 14, 3): Atom coordinates in the protien
+        atom_mask (L, 14): True = atom is "really" there.
+        i: Index of the central residue
+        r: Contact radius.
+            
+    Returns
+        neighboring_residues (L,): Boolean mask. True if any atom in the central residue is 
+            closer than r to any atom in another residue, they are considered neighbors.
+            DOES NOT INCLUDE THE CENTRAL RESIDUE! This is a mask of the *neighbors*.
+    '''
+    res_xyz = xyz[[i]]
+    res_atom_mask = atom_mask[[i]]
+    closest_dist = closest_distance(
+        group1=res_xyz, 
+        group2=xyz,
+        include_point1=res_atom_mask,
+        include_point2=atom_mask
+    )[0]
+    neighboring_residues = closest_dist < r
+    return neighboring_residues
+
+def dilate_1d(mask: torch.Tensor) -> torch.Tensor:
+    '''
+    Args
+        mask: A 1D boolean mask
+        
+    Returns
+        dilated: A boolean mask where True values have "spread" one space
+            to the left and right.
+    '''
+    
+    mask = mask[None,None].float()
+    kernel = torch.ones(1,1,3).float()
+    dilated = torch.nn.functional.conv1d(mask, kernel, padding=1)
+    dilated = torch.clamp(dilated, 0, 1)
+    return dilated[0,0].bool()
+
+def erode_1d(mask: torch.Tensor) -> torch.Tensor:
+    '''
+    Args
+        mask: A 1D boolean mask
+        
+    Returns
+        eroded: A boolean mask where True values have "contracted" one space
+            from the left and right. Isolated islands of True are removed.
+    '''
+    return ~dilate_1d(~mask)
+
+def merge_islands(mask: torch.Tensor, n: int=1) -> torch.Tensor:
+    '''
+    If two Trues are separated by 2*n or fewer spaces,
+    the interviening spaces are set to True.
+    
+    Ex for n=2.
+        in:  [0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0]
+        out: [0, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0]
+    
+    Args
+        mask: A 1D boolean mask        
+    '''
+    
+    for _ in range(n):
+        mask = dilate_1d(mask)
+    for _ in range(n):
+        mask = erode_1d(mask)
+        
+    return mask
+
+def remove_small_islands(mask: torch.Tensor, n: int = 1) -> torch.Tensor:
+    '''
+    If a contiguous chunk has less than or equal to 2*n Trues, it is removed.
+    
+    Ex for n=2.
+        in:  [0, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0]
+        out: [0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0]
+    
+    Args
+        mask: A 1D boolean mask        
+    '''
+    for _ in range(n):
+        mask = erode_1d(mask)
+    for _ in range(n):
+        mask = dilate_1d(mask)
+        
+    return mask
+
+def get_contigs_around_residue(xyz: torch.Tensor, atom_mask: torch.Tensor,
+                                i: int, r: float) -> torch.Tensor:
+    '''
+    Given a residue in a protein, find contigs that have residues with at least
+    one atom within r Angstroms of any atom in the central residue. Essentially
+    it selects residues in a sphere around a central residue, then joins isolated
+    residues into contigs. Small contigs are then removed.
+    
+    Args
+        xyz (L, 14, 3): Atom coordinates in the protien
+        atom_mask = True = Atom is "really" there.
+        i: Index of the central residue
+        r: Contact radius.
+       
+    Returns
+        mask (L,): True = residue is in the motif.
+    '''
+    mask = get_neighboring_residues(xyz, atom_mask, i, r)
+    mask[i] = True  # include the central resiude in the motif
+    mask = merge_islands(mask, n=1)
+    mask = remove_small_islands(mask, n=2)
+    
+    return mask
+
+def get_nearby_contigs(indep, atom_mask, low_prop, high_prop, broken_prop):
+    '''
+    Randomly samples a central residue and radius, and returns a contig mask
+    of residues in that radius. 
+    
+    Args: NOTE: These must match the call signature of "get_mask", hence the unused args.
+    
+    Return
+        mask: True = residue is in the contig(s)
+        is_atom_motif: Currently this contig selector only works for proteins.
+            This is spoofed to match the "get_mask" output signature.
+    '''
+    max_tries = 100
+    xyz = indep.xyz
+    L_ptn = xyz.shape[0]
+    
+    for _ in range(max_tries):
+        # Get nearby contig mask
+        i = int(torch.randint(high=L_ptn, size=(1,)))
+        r = float(torch.rand(size=(1,))) * 15. + 5.
+        mask = get_contigs_around_residue(xyz, atom_mask, i, r)
+        
+        # Do the contigs cover enough/too much of the protein?
+        prop = mask.sum() / L_ptn
+        if low_prop <= prop <= high_prop:
+            break
+
+    # Spoof is_atom_motif output
+    is_atom_motif = None
+
+    return mask, is_atom_motif
+
+#####################################
+# Main mask generator function
+#####################################
+
+def generate_masks(indep, task, loader_params, chosen_dataset, full_chain=None, atom_mask=None, metadata=None): #full_chain is for complexes, to signify which chain is complete
+    '''
+    Slimmed down function that outputs 1D masks for inputs and loss calculations.
+    Input masks are defined as True=(unmasked)/False=masked (except for input_t1dconf, which is a scalar value, and seq2str_mask which is the msa mask for the seq2str task)
+    Loss masks are defined as True=(loss applied)/False=(no loss applied)
+    
+    Input masks:
+        -input_seq
+        -input_str
+        -input_floating = points to be represented as floating points (structure present but side chains masked out)
+        -input_t1d_str_conf = scalar to multiply input str t1d confidences by
+        -input_t1d_seq_conf = scalar to multiply input seq t1d confidences by
+
+    Output masks:
+        -loss_seq
+        -loss_str
+        -loss_str_2d = additional coordinate pair masking to be applied on top of loss_str 1d masking.
+    '''
+
+    L = indep.length()
+
+    input_seq_mask = torch.ones(L).bool()
+    input_str_mask = torch.ones(L).bool()
+    input_floating_mask = -1
+    input_t1d_str_conf_mask = torch.ones(L).bool() * 0.9
+    input_t1d_seq_conf_mask = torch.ones(L).bool() * 0.9
+    loss_seq_mask = torch.ones(L).bool()
+    loss_str_mask = torch.ones(L).bool()
+    loss_str_mask_2d = torch.ones(L,L).bool()
+    is_atom_motif = None
+    if task == 'seq2str':
+        '''
+        Classic structure prediction task.
+        '''
+        #input masks
+        # Currently msa loss masking is performed in train_multi_EMA
+        #input_seq_mask = torch.clone(seq2str_mask) #this is not 1D
+        input_str_mask = torch.ones(L).bool()
+        input_floating_mask = torch.ones(L).bool()
+        input_t1d_str_conf_mask = torch.ones(L)*0.9 #scale seq2str t1d confidences by 0.9
+        input_t1d_seq_conf_mask = torch.ones(L) # Very confident about the true sequence
+
+        #loss masks
+        # Currently msa loss masking is performed in train_multi_EMA
+        # loss_seq_mask = torch.clone(seq2str_mask) #this is not 1D
+        #loss_str_mask = seq2str_str_mask
+        #loss_str_mask_2d = seq2_str_mask[None, :] * seq2str_str_mask[:, None]
+
+    # dj - only perform diffusion hal on pdb and fb for now 
+    elif task == 'diff' and chosen_dataset not in ['complex','negative']:
+        """
+        Hal task but created for the diffusion-based training. 
+        """ 
+        thismodule = sys.modules[__name__]
+        mask_probs = OrderedDict()
+        for k, v in loader_params['DIFF_MASK_PROBS'].items():
+            mask_probs[getattr(thismodule, k)] = float(v)
+        # Plumbing hack
+        indep.metadata = metadata
+    
+        diffusion_mask, is_atom_motif = get_diffusion_mask(
+            indep,
+            atom_mask,
+            low_prop=loader_params['MASK_MIN_PROPORTION'],
+            high_prop=loader_params['MASK_MAX_PROPORTION'],
+            broken_prop=loader_params['MASK_BROKEN_PROPORTION'],
+            diff_mask_probs=mask_probs,
+            ) 
+        # ic(is_atom_motif, torch.nonzero(diffusion_mask), diffusion_mask.sum())
+        input_str_mask = diffusion_mask.clone()
+        input_seq_mask = diffusion_mask.clone()
+        # t1dconf scaling will be taken care of by diffuser, so just leave those at 1 here 
+        input_t1d_str_conf_mask = torch.ones(L)
+        input_t1d_seq_conf_mask = torch.ones(L)
+
+        ## loss masks 
+        loss_seq_mask[diffusion_mask] = False  # Dont score where diffusion mask is True (i.e., where things are not diffused)
+
+    elif task == 'diff' and chosen_dataset == 'complex':
+        '''
+        Diffusion task for complexes. Default is to diffuse the whole of the complete chain.
+        Takes full_chain as input, which is [full_chain_start_idx, full_chain_end_idx]
+        '''
+        assert full_chain[1] is not None
+        
+        input_str_mask = torch.clone(full_chain)
+        input_seq_mask = torch.clone(input_str_mask)
+
+    elif task == 'hal' and chosen_dataset != 'complex':
+        '''
+        This is Joe's hallucination task, where a contiguous region is masked, along with flanks, and two residues either end are given (but not their angles).
+        Scored on everything but the flank regions (may want to change this to only score central inpainted region
+        '''
+        splice, flank_width = get_masks(L, loader_params['HAL_MASK_LOW'], loader_params['HAL_MASK_HIGH'], loader_params['FLANK_LOW'], loader_params['FLANK_HIGH'])
+        hal_mask_len = splice[1]-splice[0]
+
+        #input masks
+        input_seq_mask = torch.ones(L).bool()
+        input_seq_mask[splice[0]-flank_width:splice[1]+flank_width] = False #mask out flanks and central region
+        input_str_mask = torch.clone(input_seq_mask)
+        input_str_mask[splice[0]-1] = True #give structure of two flanking residues
+        input_str_mask[splice[1]] = True
+
+        input_floating_mask = torch.ones(L).bool()
+        input_floating_mask[splice[0]-1] = False #immediate two flanking residues are set to false/floating
+        input_floating_mask[splice[1]] = False
+        input_t1d_str_conf_mask = torch.ones(L) #t1d confidences are unscaled in hal task
+        input_t1d_seq_conf_mask = torch.ones(L) #t1d confidences are unscaled in hal task
+
+        #loss masks
+        loss_seq_mask = torch.zeros(L).bool()
+        loss_seq_mask[splice[0]:splice[1]] = True #only apply a loss on the central region
+        loss_str_mask = torch.ones(L).bool()
+        loss_str_mask[splice[0]-flank_width:splice[0]] = False #don't apply a loss in the flanking regions
+        loss_str_mask[splice[1]:splice[1] + flank_width] = False
+        loss_str_mask_2d[~loss_str_mask,:] = False
+        loss_str_mask_2d[:,~loss_str_mask] = False
+
+    elif task == 'hal_ar' and chosen_dataset != 'complex':
+        '''
+        This is Joe's hallucination task, where a contiguous region is masked, along with flanks, and two residues either end are given (but not their angles).
+        This is autoregressive sequence unmasking.
+        Scored on everything but the flank regions (may want to change this to only score central inpainted region
+        '''
+        splice, flank_width = get_masks(L, loader_params['HAL_MASK_LOW'], loader_params['HAL_MASK_HIGH'], loader_params['FLANK_LOW'], loader_params['FLANK_HIGH'])
+        hal_mask_len = splice[1]-splice[0]
+
+        to_unmask = random.uniform(0,0.5) #up to 50% of sequence unmasked
+        #input masks
+        input_seq_mask = torch.where(torch.rand(L) < to_unmask, True, False)
+        input_seq_mask[:splice[0]-flank_width] = True
+        input_seq_mask[splice[1]+flank_width:] = True
+        input_seq_mask[splice[0]-flank_width:splice[0]] = False #mask out flanks
+        input_seq_mask[splice[1]:splice[1]+flank_width] = False
+        
+        input_str_mask[splice[0]-flank_width:splice[1]+flank_width] = False
+        input_str_mask[splice[0]-1] = True #give structure of two flanking residues
+        input_str_mask[splice[1]] = True
+
+        input_floating_mask = torch.ones(L).bool()
+        input_floating_mask[splice[0]-1] = False #immediate two flanking residues are set to false/floating
+        input_floating_mask[splice[1]] = False
+        input_t1d_str_conf_mask = torch.ones(L) #t1d confidences are unscaled in hal task
+        input_t1d_seq_conf_mask = torch.ones(L) #t1d confidences are unscaled in hal task
+
+        #loss masks
+        loss_seq_mask = torch.zeros(L).bool()
+        loss_seq_mask[splice[0]:splice[1]] = True #only apply a loss on the central region
+        loss_str_mask = torch.ones(L).bool()
+        loss_str_mask[splice[0]-flank_width:splice[0]] = False #don't apply a loss in the flanking regions
+        loss_str_mask[splice[1]:splice[1] + flank_width] = False
+        loss_str_mask_2d[~loss_str_mask,:] = False
+        loss_str_mask_2d[:,~loss_str_mask] = False
+
+    elif task == 'hal' and chosen_dataset == 'complex':
+        ''' 
+        This is Joe's complex hal task, where a contiguous region is masked.
+        Everything is scored.
+        This is for complexes
+        '''
+        len_full_chain = full_chain[1]-full_chain[0]+1 #full_chain has start and end index
+        high_limit = min([loader_params['COMPLEX_HAL_MASK_HIGH'],len_full_chain-20])
+        low_limit = min([loader_params['COMPLEX_HAL_MASK_LOW'],high_limit])
+        len_to_mask = random.randint(low_limit, high_limit)
+        start = random.randint(full_chain[0], len_full_chain-len_to_mask + full_chain[0])
+        #input masks
+        input_seq_mask = torch.ones(L).bool()
+        input_seq_mask[start:start+len_to_mask] = False
+        input_str_mask = torch.ones(L).bool()
+        input_str_mask[start:start+len_to_mask] = False #not doing flanking masking now
+        input_t1d_str_conf_mask = torch.ones(L) #t1d confidences are unscaled in str2seq task
+        input_t1d_seq_conf_mask = torch.ones(L) #t1d confidences are unscaled in str2seq task
+
+        #loss masks
+        loss_seq_mask = torch.zeros(L).bool()
+        loss_seq_mask[start:start+len_to_mask] = True
+        loss_str_mask = torch.ones(L).bool()
+        loss_str_mask_2d[~loss_str_mask,:] = False
+        loss_str_mask_2d[:,~loss_str_mask] = False
+   
+    elif task == 'hal_ar' and chosen_dataset == 'complex':
+        ''' 
+        This is Joe's complex hal task, where a contiguous region is masked, but with some sequence tokens visible (to mimic autoregressive unmasking).
+        Everything is scored.
+        This is for complexes
+        '''
+        len_full_chain = full_chain[1]-full_chain[0]+1 #full_chain has start and end index
+        high_limit = np.min([loader_params['COMPLEX_HAL_MASK_HIGH_AR'],len_full_chain-20])
+        low_limit=np.min([loader_params['COMPLEX_HAL_MASK_LOW_AR'],high_limit])
+        len_to_mask = random.randint(low_limit, high_limit)
+        start = random.randint(full_chain[0], len_full_chain-len_to_mask + full_chain[0])
+ 
+        to_unmask = random.uniform(0,0.5) #up to 50% of sequence unmasked
+        #input masks
+        input_seq_mask = torch.where(torch.rand(L) < to_unmask, True, False)
+        input_seq_mask[:start] = True
+        input_seq_mask[start+len_to_mask:] = True
+        input_str_mask = torch.ones(L).bool()
+        input_str_mask[start:start+len_to_mask] = False #not doing flanking masking now. No AR unmasking of structure
+        input_t1d_str_conf_mask = torch.ones(L) #t1d confidences are unscaled in str2seq task
+        input_t1d_seq_conf_mask = torch.ones(L) #t1d confidences are unscaled in str2seq task
+
+        #loss masks
+        loss_seq_mask = torch.zeros(L).bool()
+        loss_seq_mask[start:start+len_to_mask] = True
+        loss_str_mask = torch.ones(L).bool()
+        loss_str_mask_2d[~loss_str_mask,:] = False
+        loss_str_mask_2d[:,~loss_str_mask] = False
+
+    elif task == 'str2seq' and chosen_dataset != 'complex':
+        '''
+        This is Joe's str2seq task, where a contiguous region is masked, along with flanks.
+        Everything, but the flanked regions, is scored
+        This is only if the protein is monomeric
+        '''
+        splice, flank_width = get_masks(L, loader_params['HAL_MASK_LOW'], loader_params['HAL_MASK_HIGH'], loader_params['FLANK_LOW'], loader_params['FLANK_HIGH'])
+        hal_mask_len = splice[1]-splice[0]
+        #input masks
+        input_seq_mask = torch.ones(L).bool()
+        input_seq_mask[splice[0]-flank_width:splice[1]+flank_width] = False #mask out flanks and central region
+        input_str_mask = torch.ones(L).bool()
+        input_str_mask[splice[0] - flank_width:splice[0]] = False #mask out flanks only (i.e. provide structure of the central region)
+        input_str_mask[splice[1]:splice[1] + flank_width] = False
+        input_floating_mask = torch.ones(L).bool()
+        input_t1d_str_conf_mask = torch.ones(L) #t1d confidences are unscaled in str2seq task
+        input_t1d_seq_conf_mask = torch.ones(L) #t1d confidences are unscaled in str2seq task
+
+        #loss masks
+        loss_seq_mask = torch.zeros(L).bool()
+        loss_seq_mask[splice[0]:splice[1]] = True #only apply a loss on sequence recovery in the central region
+        loss_str_mask = torch.clone(input_str_mask) #don't apply a structure loss on the flanking regions
+        loss_str_mask_2d[~loss_str_mask,:] = False
+        loss_str_mask_2d[:,~loss_str_mask] = False 
+    
+    elif task == 'str2seq' and chosen_dataset == 'complex':
+        ''' 
+        This is Joe's str2seq task, where a contiguous region is masked.
+        Everything is scored
+        This is for complexes
+        '''
+        len_full_chain = full_chain[1]-full_chain[0]+1 #full_chain has start and end index
+        high_limit = np.min([loader_params['COMPLEX_HAL_MASK_HIGH'],len_full_chain-20])
+        low_limit=np.min([loader_params['COMPLEX_HAL_MASK_LOW'],high_limit])
+        len_to_mask = random.randint(low_limit, high_limit)
+        start = random.randint(full_chain[0], len_full_chain-len_to_mask + full_chain[0])
+
+        #input masks
+        input_seq_mask = torch.ones(L).bool()
+        input_seq_mask[start:start+len_to_mask] = False
+        input_str_mask = torch.ones(L).bool()
+        input_t1d_str_conf_mask = torch.ones(L) #t1d confidences are unscaled in str2seq task
+        input_t1d_seq_conf_mask = torch.ones(L) #t1d confidences are unscaled in str2seq task
+ 
+        #loss masks
+        loss_seq_mask = torch.zeros(L).bool()
+        loss_seq_mask[start:start+len_to_mask] = True
+        loss_str_mask = torch.clone(input_str_mask)
+        loss_str_mask_2d[~loss_str_mask,:] = False
+        loss_str_mask_2d[:,~loss_str_mask] = False
+
+    elif task == 'str2seq_full':
+        '''
+        This is David's str2seq task, where most (default 90-100%) of sequence is masked.
+        Score on everything.
+        '''
+        #NOTE this has not been implemented yet for e.g. complexes
+        rand_prop = random.uniform(loader_params['STR2SEQ_FULL_LOW'], loader_params['STR2SEQ_FULL_HIGH']) #random proportion masked, between two extremes
+        
+        #input masks
+        input_seq_mask = torch.rand(L).bool() < rand_prop
+        input_str_mask = torch.ones(L).bool()
+        input_floating_mask = torch.ones(L).bool()
+
+        input_t1d_str_conf_mask = torch.ones(L) #t1d confidences are not scaled in str2seq_full task
+        input_t1d_seq_conf_mask = torch.ones(L) #t1d confidences are not scaled in str2seq_full task
+
+        #loss masks
+        loss_seq_mask = torch.clone(input_seq_mask)
+        loss_str_mask = torch.ones(L).bool() #apply a loss on the whole structure        
+        loss_str_mask_2d[~loss_str_mask,:] = False
+        loss_str_mask_2d[:,~loss_str_mask] = False
+ 
+    else:
+        sys.exit(f'Masks cannot be generated for the {task} task!')
+    if task != 'seq2str':
+       assert torch.sum(~input_seq_mask) > 0, f'Task = {task}, dataset = {chosen_dataset}, full chain = {full_chain}'
+    mask_dict = {'input_seq_mask':input_seq_mask,
+                'input_str_mask':input_str_mask,
+                'input_floating_mask':input_floating_mask,
+                'input_t1d_str_conf_mask':input_t1d_str_conf_mask,
+                'input_t1d_seq_conf_mask':input_t1d_seq_conf_mask,
+                'loss_seq_mask':loss_seq_mask,
+                'loss_str_mask':loss_str_mask,
+                'loss_str_mask_2d':loss_str_mask_2d,
+                'is_atom_motif': is_atom_motif,
+                }
+    
+    return mask_dict
+
+
+def choose_contiguous_atom_motif(res):
+    """
+    chooses a contiguous 3 or 4 atom motif
+    """
+    bond_feats = get_residue_bond_feats(res)
+    natoms = bond_feats.shape[0]
+    # choose atoms to be given as the motif 
+    is_atom_motif = torch.zeros((natoms),dtype=bool)
+    bond_graph = nx.from_numpy_matrix(bond_feats.numpy())
+    paths = rf2aa.util.find_all_paths_of_length_n(bond_graph, 2)
+    paths.extend(rf2aa.util.find_all_paths_of_length_n(bond_graph, 3))
+    chosen_path = random.choice(paths)
+    atom_names = [rf2aa.chemical.aa2long[res][i] for i in chosen_path]
+    return atom_names
+
+
+def get_residue_bond_feats(res, include_H=False):
+    bond_feats = torch.zeros((rf2aa.chemical.NTOTAL, rf2aa.chemical.NTOTAL))
+    for j, bond in enumerate(rf2aa.chemical.aabonds[res]):
+        start_idx = rf2aa.chemical.aa2long[res].index(bond[0])
+        end_idx = rf2aa.chemical.aa2long[res].index(bond[1])
+
+        # maps the 2d index of the start and end indices to btype
+        bond_feats[start_idx, end_idx] = rf2aa.chemical.aabtypes[res][j]
+        bond_feats[end_idx, start_idx] = rf2aa.chemical.aabtypes[res][j]
+    
+    if not include_H:
+        bond_feats = bond_feats[:rf2aa.chemical.NHEAVYPROT, :rf2aa.chemical.NHEAVYPROT]
+    return bond_feats
