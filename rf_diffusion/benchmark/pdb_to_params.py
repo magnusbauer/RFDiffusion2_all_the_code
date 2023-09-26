@@ -5,8 +5,7 @@ import os
 import subprocess
 import openbabel
 import fire
-import run_inference
-import aa_model
+from rf_diffusion import aa_model
 import glob
 import numpy as np
 from icecream import ic

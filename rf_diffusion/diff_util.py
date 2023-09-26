@@ -2,9 +2,6 @@ import torch
 import numpy as np 
 import random 
 
-from chemical import INIT_CRDS
-from icecream import ic 
-
 
 def th_min_angle(start, end, radians=False):
     """

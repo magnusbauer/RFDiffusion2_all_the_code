@@ -12,7 +12,8 @@ def slurm_submit(cmd, p='cpu', c=1, mem=2, gres=None, J=None, wait_for=[], hold_
         f'{f"--gres {gres}" if gres else ""} '\
         f'{"-W" if hold_until_finished else ""} '\
         f'{"--dependency afterok:" + ":".join(map(str, wait_for)) if wait_for else ""} '\
-        f'-o {log_file} '
+        f'-o {log_file} ' \
+        f'--export PYTHONPATH={os.environ["PYTHONPATH"]} '
     cmd_sbatch += ' '.join([f'{"--"+k if len(k)>1 else "-"+k} {v}' for k,v in kwargs.items() if v is not None])
 
     proc = subprocess.run(cmd_sbatch, shell=True, stdout=subprocess.PIPE)

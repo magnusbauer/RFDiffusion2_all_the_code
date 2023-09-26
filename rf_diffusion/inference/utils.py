@@ -2,7 +2,7 @@ import numpy as np
 import os
 import sys
 from omegaconf import DictConfig
-from kinematics import xyz_to_t2d
+from rf_diffusion.kinematics import xyz_to_t2d
 import torch
 import torch.nn.functional as nn
 from rf_diffusion.util import get_torsions

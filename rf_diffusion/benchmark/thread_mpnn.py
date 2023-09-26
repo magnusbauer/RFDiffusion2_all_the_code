@@ -14,10 +14,10 @@ import numpy as np
 import torch
 from icecream import ic
 
-from rf_diffusion import inference
+from rf_diffusion.inference.utils import parse_pdb
 import rf2aa.parsers
 import rf2aa.chemical
-from parsers import load_ligand_from_pdb, load_ligands_from_pdb
+from rf_diffusion.parsers import load_ligand_from_pdb, load_ligands_from_pdb
 from rf2aa.util import kabsch
 import assertpy
 
@@ -44,7 +44,7 @@ def main():
         name = os.path.basename(fn).replace('.pdb','')
 
         # load designed protein
-        parsed_pdb = inference.utils.parse_pdb(fn)
+        parsed_pdb = parse_pdb(fn)
         xyz_prot = torch.tensor(parsed_pdb['xyz'])
         mask_prot = torch.tensor(parsed_pdb['mask'])
         with open(args.datadir+'/'+name+'.trb','rb') as f:
@@ -59,6 +59,7 @@ def main():
         mpnn_flavor = 'ligmpnn' if args.use_ligand and lig_names else 'mpnn'
         seqdir = args.seqdir or args.datadir+(f'/{mpnn_flavor}/seqs/')
         outdir = args.outdir or args.datadir+(f'/{mpnn_flavor}/')
+        ligand_names_arr = []
         if args.use_ligand and lig_names:
             # load ligand from design
             xyz_sm_des, mask_sm_des, msa_sm_des, bond_feats_sm_des, atom_names_des, ligand_names_arr_des = \

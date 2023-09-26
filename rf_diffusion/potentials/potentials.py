@@ -1,7 +1,7 @@
 import torch
 from icecream import ic 
 import numpy as np 
-from util import generate_Cbeta
+from rf_diffusion.util import generate_Cbeta
 from icecream import ic
 import rf2aa
 
