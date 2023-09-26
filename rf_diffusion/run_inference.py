@@ -29,7 +29,7 @@ from hydra.core.hydra_config import HydraConfig
 import numpy as np
 import random
 import glob
-from rf_diffusion import inference
+from rf_diffusion.inference import model_runners
 import rf2aa.tensor_util
 import rf2aa.util
 from rf_diffusion import aa_model
@@ -79,7 +79,7 @@ def get_sampler(conf):
 
     conf.inference.design_startnum = design_startnum
     # Initialize sampler and target/contig.
-    sampler = inference.model_runners.sampler_selector(conf)
+    sampler = model_runners.sampler_selector(conf)
     return sampler
 
 def expand_config(conf):
