@@ -332,5 +332,4 @@ def save_outputs(sampler, out_prefix, indep, denoised_xyz_stack, px0_xyz_stack, 
 
 
 if __name__ == '__main__':
-    print('This is my small change.')
     main()
