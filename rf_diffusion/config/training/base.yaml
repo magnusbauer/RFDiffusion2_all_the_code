@@ -19,6 +19,7 @@ diffuser:
     schedule: logarithmic
     cache_dir: .cache/
   T: 200
+  time_type: discrete
 experiment:
   trans_loss_weight: 1.0
   rot_loss_weight: 1.0
@@ -81,6 +82,7 @@ rf:
     copy_main_block_template: false
     main_block: None
     lj_lin: 0.75
+  ckpt_path: null
 model:
   embed:
     embed_self_conditioning: false

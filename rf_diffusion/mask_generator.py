@@ -338,6 +338,15 @@ def get_tip_gaussian_mask(indep, atom_mask, *args, std_dev=8, **kwargs):
     is_motif = torch.zeros(indep.length()).bool()
     return is_motif, is_atom_motif
 
+def atomize_all_res(indep, atom_mask, *args, **kwargs):
+    is_atom_motif = {}
+    for i in range(indep.length()):
+        if indep.seq[i] < 20:
+            is_atom_motif[i] = ['CA']
+
+    is_motif = torch.zeros(indep.length()).bool()
+    return is_motif, is_atom_motif
+
 def _get_triple_contact(xyz, low_prop, high_prop, broken_prop, xyz_less_than=6, seq_dist_greater_than=10, len_low=1, len_high=3):
     contacts = get_contacts(xyz, xyz_less_than, seq_dist_greater_than)
     if not contacts.any():

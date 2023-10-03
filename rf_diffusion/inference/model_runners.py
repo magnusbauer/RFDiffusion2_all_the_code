@@ -3,7 +3,7 @@ from datetime import datetime
 import torch
 from assertpy import assert_that
 import numpy as np
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import DictConfig, OmegaConf, open_dict
 import data_loader
 from icecream import ic
 

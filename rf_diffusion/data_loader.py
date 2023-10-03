@@ -9,7 +9,7 @@ import time
 from dataclasses import dataclass
 from torch.utils import data
 from torch import tensor
-from omegaconf import OmegaConf
+from omegaconf import OmegaConf, open_dict
 from collections import OrderedDict
 import os
 import csv
@@ -1707,15 +1707,31 @@ class DistilledDataset(data.Dataset):
 
                 pre_transform_length = indep.length()
                 indep, is_diffused, is_masked_seq, atomizer, _ = aa_model.transform_indep(indep, is_res_str_shown, is_atom_str_shown, self.params['USE_GUIDE_POSTS'], guidepost_bonds=self.conf.guidepost_bonds, metadata=metadata)
+
+                if self.conf.experiment.diffuse_everything:
+                    is_diffused = torch.ones_like(is_diffused, dtype=bool)
+
                 # HACK: gp indices may be lost during atomization, so we assume they are at the end of the protein.
                 is_gp = torch.full((indep.length(),), True)
                 is_gp[:pre_transform_length] = False
+
+                if self.conf.diffuser.time_type == 'discrete':
+                    t = random.randint(1, self.conf.diffuser.T)
+                elif self.conf.diffuser.time_type == 'continuous':
+                    t = random.random() * self.conf.diffuser.T
+                else:
+                    raise ValueError(f"Invalid option: {self.conf.diffuser.time_type}. Please choose from <'discrete', 'continuous'>.")
+
+                if 'little_t_embedding' in self.conf.extra_t1d_params:
+                    OmegaConf.set_struct(self.conf, True)
+                    with open_dict(self.conf):
+                        self.conf.extra_t1d_params['little_t_embedding']['t_cont'] = t / self.conf.diffuser.T
+
                 indep.extra_t1d = features.get_extra_t1d(indep, self.conf.extra_t1d, is_gp=is_gp, **self.conf.extra_t1d_params)
                 aa_model.assert_valid_seq_mask(indep, is_masked_seq)
 
                 run_inference.seed_all(mask_gen_seed) # Reseed the RNGs for test stability.
                 aa_model.centre(indep, is_diffused)
-                t = random.randint(1, self.diffuser.T)
                 indep_t, diffuser_out = aa_model.diffuse(self.conf, self.diffuser, indep, is_diffused, t)
 
                 # Compute all strictly dependent model inputs from the independent inputs.

@@ -15,6 +15,48 @@ def get_extra_t1d(indep, featurizer_names, **kwargs):
         t1d.append(feats_1d)
     return torch.cat(t1d, dim=-1)
 
+def one_hot_bucket(x: torch.Tensor, boundaries: torch.Tensor):
+    '''
+    Return a one-hot encoding of the bucket x falls into.
+    '''
+    n_cat = len(boundaries) - 1
+    cat_int = torch.bucketize(x, boundaries)
+    return torch.nn.functional.one_hot(cat_int, n_cat)
+
+def get_boundary_values(style: str, T:int):
+    '''
+    Inputs
+        style: Different ways of constructing the boundary values.
+        T: Controls how finely the [0, 1] interval is binned.
+    Returns
+        Boundaries for little t embeddings. Spans [0, 1]
+    '''
+    if style == 'linear':
+        return torch.linspace(0, 1, T + 1),
+    elif style == 'low_t_heavy':
+        return torch.cat([
+            torch.arange(0,    0.05, 1 / (T * 16)),
+            torch.arange(0.05, 0.10, 1 / (T * 8)),
+            torch.arange(0.10, 0.20, 1 / (T * 4)),
+            torch.arange(0.20, 0.40, 1 / (T * 2)),
+            torch.arange(0.40, 1.00, 1 / (T * 1)),
+            torch.tensor([1.]),
+        ])
+
+def get_little_t_embedding(indep, feature_conf, **kwargs):
+    '''
+    feature_conf:
+        t_cont [0, 1]: "continuous" time little_t
+        style: Different ways of constructing the time boundary values.
+        T: Controls how finely the [0, 1] interval is binned. Higher is finer.
+
+    Returns
+        One-hot encoding of the selected time bin.
+    '''
+    boundary_values = get_boundary_values(feature_conf.boundary_style, feature_conf.T)
+    oh = one_hot_bucket(feature_conf.t_cont, boundary_values)[None]
+    return oh.tile(indep.length(), 1)
+
 def get_radius_of_gyration(indep, is_gp=None, radius_of_gyration=None, **kwargs):
     assert is_gp is not None
     rog = torch.zeros((indep.length(),))
@@ -48,6 +90,7 @@ featurizers = {
     'relative_sasa': get_relative_sasa,
     'radius_of_gyration_v2': v2.get_radius_of_gyration,
     'relative_sasa_v2': v2.get_relative_sasa,
+    'little_t_embedding': get_little_t_embedding,
 }
 
 def get_radius_of_gyration_inference(indep, feature_conf, is_gp=None):

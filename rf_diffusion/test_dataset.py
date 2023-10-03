@@ -260,8 +260,8 @@ class Dataloader(unittest.TestCase):
 
     def indep_for_dataset(self, dataset, mask, epoch=0, overrides=[], **kwargs):
 
-        show_tip_pa.clear()
-        cmd.set('grid_mode', 1)
+        #show_tip_pa.clear()
+        #cmd.set('grid_mode', 1)
         return test_utils.loader_out_for_dataset(dataset,mask,overrides=overrides,epoch=epoch, **kwargs)
         
     def test_uncond_sm(self):
@@ -469,6 +469,19 @@ class Dataloader(unittest.TestCase):
         # show.cmd.do(f'util.cbc {name}')
         # show.diffused(indep, is_diffused, 'true')
         
+        test_utils.assert_matches_golden(self, golden_name, indep, rewrite=REWRITE, custom_comparator=self.cmp)
+
+    def test_continuous_time_embedding(self):
+        '''
+        Tests that the continuous timestep t ([0, 1]) is correctly
+        one-hot encoded in the t1d features.
+        '''
+        dataset = 'pdb_aa'
+        mask = 'get_diffusion_mask_simple'
+        loader_out = self.indep_for_dataset(dataset, mask, config_name='time_embedding')
+        indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context = loader_out
+
+        golden_name = 'indep-extra-t1d-time-embedding'
         test_utils.assert_matches_golden(self, golden_name, indep, rewrite=REWRITE, custom_comparator=self.cmp)
 
     # def test_covale_simple_mask_0(self):

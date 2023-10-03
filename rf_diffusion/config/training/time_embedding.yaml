@@ -1,0 +1,15 @@
+defaults:
+  - base
+  - _self_
+
+rf:
+  ckpt_path: null
+  model:
+    d_t1d: 94 #80 + 10 + 4
+
+extra_t1d: [little_t_embedding]
+extra_t1d_params:
+  little_t_embedding: 
+    boundary_style: low_t_heavy
+    T: ${diffuser.T}
+  

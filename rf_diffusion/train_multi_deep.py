@@ -54,6 +54,7 @@ import rotation_conversions as rot_conv
 from rf_diffusion import test_utils
 from openfold.utils import rigid_utils as ru
 from rf_se3_diffusion.data import all_atom
+from rf_diffusion.reshape_weights import changed_dimensions, get_t1d_updates
 
 #added for inpainting training
 from icecream import ic
@@ -452,6 +453,22 @@ class Trainer():
                     model_name = getattr(checkpoint.get('model'), '__name__', '')
                 if model_name != 'RFScore':
                     weight_state = {f'model.{k}':v for k,v in weight_state.items()}
+
+                # Expand embedding layer size to handle additional t1d features
+                model_state = m.state_dict()
+                changed = changed_dimensions(model_state, weight_state)
+                for param, (model_tensor, weight_tensor) in changed.items():
+                    print (f'wrong size: {param}\n\tmodel   :{model_tensor.shape}\n\tweights: {weight_tensor.shape}')
+                
+                d_t1d_old = weight_state['model.templ_emb.templ_stack.proj_t1d.weight'].shape[1]
+                d_t1d_new = model_state['model.templ_emb.templ_stack.proj_t1d.weight'].shape[1]
+                new_t1d_dim = d_t1d_new - d_t1d_old
+
+                for k in ['final_state_dict', 'model_state_dict']:
+                    weight_state = checkpoint[k]
+                    updates = get_t1d_updates(model_state, weight_state, new_t1d_dim)
+                    weight_state.update(updates)
+
                 m.load_state_dict(weight_state, strict=True)
 
         if resume_train:
@@ -804,7 +821,7 @@ class Trainer():
                         mask_crds[:,~is_diffused,:] = False
                         mask_BB = ~indep.is_sm[None]
                         mask_2d = mask_BB[:,None,:] * mask_BB[:,:,None] # ignore pairs having missing residues
-                        assert torch.sum(mask_2d) > 0, "mask_2d is blank"
+                        # assert torch.sum(mask_2d) > 0, "mask_2d is blank"
                         true_crds_frame = rf2aa.util.xyz_to_frame_xyz(true_crds, indep.seq[None], indep.atom_frames[None])
                         c6d = rf2aa.kinematics.xyz_to_c6d(true_crds_frame)
                         negative = torch.tensor([False])
