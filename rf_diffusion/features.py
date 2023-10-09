@@ -18,9 +18,10 @@ def get_extra_t1d(indep, featurizer_names, **kwargs):
 def one_hot_bucket(x: torch.Tensor, boundaries: torch.Tensor):
     '''
     Return a one-hot encoding of the bucket x falls into.
+    x must be in the interval (boundaries_low, boundaries_high).
     '''
     n_cat = len(boundaries) - 1
-    cat_int = torch.bucketize(x, boundaries)
+    cat_int = torch.bucketize(x, boundaries) - 1
     return torch.nn.functional.one_hot(cat_int, n_cat)
 
 def get_boundary_values(style: str, T:int):

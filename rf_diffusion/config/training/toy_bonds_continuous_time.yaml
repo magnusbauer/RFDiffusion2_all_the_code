@@ -1,0 +1,52 @@
+defaults:
+  - RFD_36
+
+guidepost_bonds: false
+
+dataloader:
+  CROP: 10
+  USE_GUIDE_POSTS: false
+  DATASETS: pdb_aa
+  DATASET_PROB: [1.0]
+  DIFF_MASK_PROBS:
+    atomize_all_res: 1.0
+    get_closest_tip_atoms: 0.0
+    get_unconditional_diffusion_mask: 0.0
+    get_diffusion_mask_islands: 0.0
+    get_closest_tip_atoms_partial_ligand: 0.0
+    get_diffusion_mask_islands_partial_ligand: 0.0
+    get_unconditional_diffusion_mask_partial_ligand: 0.0
+  DATAPKL_AA: /home/dtischer/code/rf_diffusion_train/rf_diffusion/aa_dataset_256.pkl
+
+experiment:
+  c6d_loss_weight: 0.0
+  diffuse_everything: true
+
+diffuser:
+  time_type: continuous
+  t_cont_max: 0.025
+
+rf:
+  model:
+    d_t1d: 614
+
+extra_t1d:
+  - radius_of_gyration_v2
+  - relative_sasa_v2
+  - little_t_embedding
+extra_t1d_params:
+  radius_of_gyration_v2:
+    low: 10
+    high: 100
+    n_bins: 9
+  relative_sasa_v2:
+    low: 0
+    high: 0.2
+    n_bins: 3
+  little_t_embedding: 
+    boundary_style: low_t_heavy
+    T: ${diffuser.T}
+
+ckpt_load_path: /net/scratch/ahern/se3_diffusion/training/covale_complex_from_str_pred_batch24_l40_fallback_2/2023-08-03_1691112266.2135339_v4znb6v8/rank_0/models/RFD_36.pt
+n_write_pdb: 10
+resume_scheduler: false

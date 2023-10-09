@@ -1718,7 +1718,7 @@ class DistilledDataset(data.Dataset):
                 if self.conf.diffuser.time_type == 'discrete':
                     t = random.randint(1, self.conf.diffuser.T)
                 elif self.conf.diffuser.time_type == 'continuous':
-                    t = random.random() * self.conf.diffuser.T
+                    t = random.random() * self.conf.t_cont_max * self.conf.diffuser.T
                 else:
                     raise ValueError(f"Invalid option: {self.conf.diffuser.time_type}. Please choose from <'discrete', 'continuous'>.")
 
