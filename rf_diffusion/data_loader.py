@@ -1716,19 +1716,15 @@ class DistilledDataset(data.Dataset):
                 is_gp[:pre_transform_length] = False
 
                 if self.conf.diffuser.time_type == 'discrete':
+                    t_cont = None
                     t = random.randint(1, self.conf.diffuser.T)
                 elif self.conf.diffuser.time_type == 'continuous':
-                    t = random.random() * self.conf.diffuser.t_cont_max * self.conf.diffuser.T
+                    t_cont = random.random() * self.conf.diffuser.t_cont_max
+                    t =  t_cont * self.conf.diffuser.T
                 else:
                     raise ValueError(f"Invalid option: {self.conf.diffuser.time_type}. Please choose from <'discrete', 'continuous'>.")
 
-                # Convert extra_t1d_params to a regular dictionary
-                extra_t1d_params = dict(OmegaConf.resolve(self.conf.extra_t1d_params))
-
-                if 'little_t_embedding' in extra_t1d_params:
-                    extra_t1d_params['little_t_embedding']['t_cont'] = t / self.conf.diffuser.T
-
-                indep.extra_t1d = features.get_extra_t1d(indep, self.conf.extra_t1d, is_gp=is_gp, **extra_t1d_params)
+                indep.extra_t1d = features.get_extra_t1d(indep, self.conf.extra_t1d, is_gp=is_gp, t_cont=t_cont, **self.conf.extra_t1d_params)
                 aa_model.assert_valid_seq_mask(indep, is_masked_seq)
 
                 run_inference.seed_all(mask_gen_seed) # Reseed the RNGs for test stability.

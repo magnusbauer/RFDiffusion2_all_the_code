@@ -44,18 +44,20 @@ def get_boundary_values(style: str, T:int):
             torch.tensor([1.]),
         ])
 
-def get_little_t_embedding(indep, feature_conf, **kwargs):
+def get_little_t_embedding(indep, feature_conf, t_cont: float=None, **kwargs):
     '''
-    feature_conf:
+    Args
         t_cont [0, 1]: "continuous" time little_t
-        style: Different ways of constructing the time boundary values.
-        T: Controls how finely the [0, 1] interval is binned. Higher is finer.
+
+        feature_conf:
+            style: Different ways of constructing the time boundary values.
+            T: Controls how finely the [0, 1] interval is binned. Higher is finer.
 
     Returns
         One-hot encoding of the selected time bin.
     '''
     boundary_values = get_boundary_values(feature_conf.boundary_style, feature_conf.T)
-    oh = one_hot_bucket(feature_conf.t_cont, boundary_values)[None]
+    oh = one_hot_bucket(t_cont, boundary_values)[None]
     return oh.tile(indep.length(), 1)
 
 def get_radius_of_gyration(indep, is_gp=None, radius_of_gyration=None, **kwargs):
