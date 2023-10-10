@@ -141,6 +141,7 @@ def sample_one(sampler, simple_logging=False):
 
     # Loop over number of reverse diffusion time steps.
     for t in trange(int(sampler.t_step_input), sampler.inf_conf.final_step-1, -1):
+        sampler._log.info(f'Denoising {t=}')
         if simple_logging:
             e = '.'
             if t%10 == 0:
