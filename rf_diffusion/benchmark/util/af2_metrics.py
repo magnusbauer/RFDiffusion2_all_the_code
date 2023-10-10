@@ -432,9 +432,10 @@ def main():
         else:
             trb_dir = os.path.dirname(fn)+'/'
         trbname = os.path.join(trb_dir, name+args.pdb_suffix+'.trb')
-        if not os.path.exists(trbname):
-            # strip the mpnn suffix
-            trbname = re.sub('_\d+\.trb$', '.trb', trbname)
+        # strip the mpnn suffixes: SEQ_INDEX, PACK_INDEX
+        for i in range(2):
+            if not os.path.exists(trbname):
+                trbname = re.sub('_\d+\.trb$', '.trb', trbname)
         if not os.path.exists(trbname):
             trbname = re.sub('_packed', '', trbname)
 

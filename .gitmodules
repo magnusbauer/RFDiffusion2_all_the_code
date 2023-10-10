@@ -7,3 +7,6 @@
 	path = rf_se3_diffusion
 	url = git@github.com:w-ahern/rf_se3_diffusion.git
 	branch = no_submodule
+[submodule "fused_mpnn"]
+	path = fused_mpnn
+	url = https://git.ipd.uw.edu/justas/fused_mpnn.git
