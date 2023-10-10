@@ -1,3 +1,5 @@
+from icecream import ic
+
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 from matplotlib import cm
@@ -95,23 +97,28 @@ def get_motif_selectors_2(atom_names_by_res_idx):
     motif_atom_selectors = []
     for idx_pdb, atom_names in atom_names_by_res_idx.items():
         motif_resi_selectors.append(f'resi {idx_pdb}')
-        # if atom_names == ['ALL']:
-        #     atom_sel = 
         atom_sel = ' or '.join(f'name {a}' for a in atom_names)
         motif_atom_selectors.append(f'({atom_sel})')
     
     return motif_resi_selectors, motif_atom_selectors
 
 def get_selectors_2(atom_names_by_res_idx_0):
-    resi_motifs = [i for i, atom_names in atom_names_by_res_idx_0.items() if atom_names == ['ALL']]
-    resi_motifs_selector = ['resi 9999']
-    for resi in resi_motifs:
-        resi_motifs_selector.append(f'resi {resi}')
-    resi_motifs_selector = ' or '.join(resi_motifs_selector)
-    # for idx_pdb, atom_names in resi_motifs:
 
+    token_by_selector_name = {
+        'residue_gp_motif': ['ALL'],
+        'residue_motif': 'RES',
+    }
 
-    atom_names_by_res_idx = {i:atom_names for i, atom_names in atom_names_by_res_idx_0.items() if i not in resi_motifs}
+    residue_selectors = {}
+    for selector_name, token in token_by_selector_name.items():
+        residue_idxs = [i for i, atom_names in atom_names_by_res_idx_0.items() if atom_names == token]
+        selectors = ['resi 9999']
+        for resi in residue_idxs:
+            selectors.append(f'resi {resi}')
+        residue_selectors[selector_name] = OR(selectors)
+
+    residue_tokens = list(token_by_selector_name.values())
+    atom_names_by_res_idx = {i:atom_names for i, atom_names in atom_names_by_res_idx_0.items() if atom_names not in residue_tokens}
     motif_resi_selectors, motif_atom_selectors = get_motif_selectors_2(atom_names_by_res_idx)
     sidechains_motif = OR(map(AND, zip(motif_resi_selectors, motif_atom_selectors)))
     sidechains_diffused = OR(map(AND, zip(motif_resi_selectors, map(NOT, motif_atom_selectors))))
@@ -121,25 +128,23 @@ def get_selectors_2(atom_names_by_res_idx_0):
         sidechains_diffused = '(resi 9999)'
     if len(motif_resi_selectors) == 0:
         motif_resi_selectors = ['(resi 9999)']
-    # print(f'{motif_resi_selectors=}')
     lig = 'hetatm'
     protein = f'(not {lig})'
-    # lig = AND([carbon, lig])
     sidechains_motif = AND([protein, sidechains_motif])
     sidechains_diffused = AND([protein, sidechains_diffused])
     shown = OR([
             '(name C or name N or name CA)',
             OR(motif_resi_selectors),
-            resi_motifs_selector,
+            # resi_motifs_selector,
             lig,
         ])
     selectors = {
         'shown': shown,
         'protein': protein,
-        'residue_motif': resi_motifs_selector,
         'sidechains_diffused':sidechains_diffused,
         'sidechains_motif': sidechains_motif,
         'lig': lig,
+        **residue_selectors,
     }
     return selectors
 
@@ -148,7 +153,7 @@ def get_atom_selector(obj, ch, idx, atom_names):
     return f'({obj} and chain {ch} and resi {idx} and ({atom_sel}))'
 
 
-def color_selectors(selectors, carbon=True, verbose=False, des_color=None):
+def color_selectors(selectors, carbon=True, verbose=False, des_color=None, hetatm_color=None):
     palette = PymolPalette(cmd, 'Pastel1', 0, 9)
     # if not carbon:
     #     selectors = [AND([s, carbon]) for s in selectors]
@@ -164,6 +169,9 @@ def color_selectors(selectors, carbon=True, verbose=False, des_color=None):
         else:
             # print(f'{sel=}')
             cmd.color(color, sel)
+
+        if hetatm_color:
+            cmd.color(hetatm_color, f'({sel}) and hetatm and elem C')
     return palette
 
 def show_design(srow, name=None):

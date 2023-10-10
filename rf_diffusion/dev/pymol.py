@@ -1,4 +1,9 @@
+import sys
+import os
+
 import xmlrpc.client as xmlrpclib
+
+sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'RF2-allatom'))
 
 def get_cmd(pymol_url='http://chesaw.dhcp.ipd:9123'):
     cmd = xmlrpclib.ServerProxy(pymol_url)
@@ -23,3 +28,5 @@ def make_network_cmd(cmd):
         cmd.read_pdbstr(*args, **kwargs)
     cmd.is_network = True
     cmd.load = new_load
+
+init()

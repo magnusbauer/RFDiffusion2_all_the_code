@@ -24,9 +24,6 @@ import rf_diffusion.estimate_likelihood as el
 from rf_diffusion.inference import utils
 from itertools import takewhile
 
-from rf_diffusion.dev.show_tip_row import NOT, AND, OR
-
-
 
 print('initializing analyze')
 DESIGN = 'design_path'
@@ -1510,3 +1507,12 @@ def get_min_max(df, col):
     # Reset the index of the new dataframe if desired
     result_df.reset_index(drop=True, inplace=True)
     return result_df
+
+def AND(i):
+    return '('+ ' and '.join(i) + ')'
+
+def OR(i):
+    return '(' + ' or '.join(i) +')'
+
+def NOT(e):
+    return f'not ({e})'

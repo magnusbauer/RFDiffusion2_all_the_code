@@ -3,20 +3,19 @@ import glob
 from icecream import ic
 
 import os
-from dev import show_tip_pa
+from rf_diffusion.dev import show_tip_pa
 
 cmd = show_tip_pa.cmd
 
 from collections import defaultdict
-import inference.utils
+import rf_diffusion.inference.utils as iu
 import numpy as np
 import itertools
 
 import os
-from dev import show_tip_pa
-from dev import show_tip_row
-from dev.show_tip_row import NOT, AND, OR
-from dev import analyze
+from rf_diffusion.dev import show_tip_pa
+from rf_diffusion.dev import show_tip_row
+from rf_diffusion.dev import analyze
 
 def model_generator(traj_path, seq=False):
     with open(traj_path) as f:
@@ -45,7 +44,7 @@ def parse_traj(traj_path, n=None):
     # d = defaultdict(list)
     d = []
     for pdb_lines in itertools.islice(model_generator(traj_path), n):
-        o = inference.utils.parse_pdb_lines(pdb_lines.split('\n'), True)
+        o = iu.parse_pdb_lines(pdb_lines.split('\n'), True)
         d.append(o)
         # print(list(o.keys()))
         # print(list((k, type(v)) for k,v in o.items()))
@@ -240,9 +239,12 @@ def show_df(data, structs={'X0'}, af2=False, des=False, pair_seeds=False, return
         # print(f'{(row['rmsd_af2_des'] < 2)=}, {row['contig_rmsd_af2_des'] < 2=} and {row['af2_ligand_dist'] > 2=}')
         # print(row[['benchmark', 'name', 'rmsd_af2_des', 'contig_rmsd_af2_des_atomized','contig_rmsd_af2_des', 'dist_backbone_gp',  'contig_rmsd_af2_atomized', 'inference.guidepost_xyz_as_design_bb']]) 
         des_color = None
+        hetatm_color = None
         if not pd.isna(row['des_color']):
             des_color = row['des_color']
-        pymol_objs, obj_selectors = show_tip_pa.show(row, structs=structs, af2=af2, des=des, des_color=des_color, **kwargs)
+        if 'hetatm_color' in row and not pd.isna(row['hetatm_color']):
+            hetatm_color = row['hetatm_color']
+        pymol_objs, obj_selectors = show_tip_pa.show(row, structs=structs, af2=af2, des=des, des_color=des_color, hetatm_color=hetatm_color, **kwargs)
 
         entities = {}
         for label, pymol_name in pymol_objs.items():
@@ -284,7 +286,10 @@ def add_pymol_name(data, keys):
             v = v.replace(',', '_')
             if k == 'rundir':
                 vs = v.split('/')
-                v = vs[vs.index('out')-1]
+                if 'out' in vs:
+                    v = vs[vs.index('out')-1]
+                else:
+                    v = vs[-2]
 
             pymol_prefix.append(f"{k_str}-{v}")
         pymol_prefix = '_'.join(pymol_prefix)
@@ -324,6 +329,7 @@ def main(path,
          rosetta_lig=False,
          sidechains=False,
          hydrogenated=False,
+         key=None,
          ):
     ic(pymol_url)
     # cmd = analyze.get_cmd(pymol_url)
@@ -345,11 +351,15 @@ def main(path,
     #     pymol_keys = pymol_keys.split(',')
     #     add_pymol_name(data, pymol_keys)
     # ic(data)
-    data = data[data['seed'] < max_seed]
+    ic(data.shape)
+    # data = data[data['seed'] < max_seed]
 
     sweeps = get_sweeps(data)
     if len(sweeps):
-        keys = [k for k in sweeps.keys() if k not in ['contigmap.contig_atoms']]
+        if key:
+            keys = [key]
+        else:
+            keys = [k for k in sweeps.keys() if k not in ['contigmap.contig_atoms']]
         add_pymol_name(data, keys)
     if clear:
         show_tip_pa.clear()

@@ -1,6 +1,8 @@
 import os
 from rf_diffusion.dev import show_tip_row
 from rf_diffusion.dev import analyze
+from rf_diffusion import aa_model
+import numpy as np
 import math
 from icecream import ic
 cmd = analyze.cmd
@@ -33,16 +35,19 @@ def get_motif_spec(row, traj=False):
         is_atom_motif = trb['motif']
     else:
         is_atom_motif = trb.get('atomize_indices2atomname', {})
-#     trb
     # is_atom_motif = trb['motif']
     # print(f'{is_atom_motif=}')
     idx = trb['indep']['idx']
-#     print(idx)
-    
     atom_names_by_res_idx = {}
     for i0, atom_names in is_atom_motif.items():
         idx_pdb = idx[i0]
         atom_names_by_res_idx[idx_pdb] = atom_names
+
+    if not traj:
+        contig_res = [resi for ch, resi in trb['con_hal_pdb_idx']]
+        for resi in contig_res:
+            if resi not in atom_names_by_res_idx:
+                atom_names_by_res_idx[resi] = 'RES'
 
     return atom_names_by_res_idx
 
@@ -90,9 +95,12 @@ def is_rf_diff(row):
     return True
 
 import random
-def show(row, structs = {'X0'}, af2=False, des=True, des_color=None, mpnn_packed=False, rosetta_lig=False, ga_lig=False, hydrogenated=False):
+def show(row, structs = {'X0'}, af2=False, des=True, des_color=None, hetatm_color=None, mpnn_packed=False, rosetta_lig=False, ga_lig=False, hydrogenated=False, unbond_motif=True, extras=None):
     # x0_pdb = analyze.get_design_pdb(row)
-
+    # print(f'{row["extras"]=}')
+    extras = row.get('extras', '{}')
+    extras = eval(extras)
+    # print(extras)
 
     traj_type = 'X0'
     # traj = analyze.load_traj(row, traj_type, traj_type)
@@ -113,6 +121,10 @@ def show(row, structs = {'X0'}, af2=False, des=True, des_color=None, mpnn_packed
             #     name = row['pymol']
             # s = f'{name}_{s}_{random.randint(0, 1000)}'
             pdbs[s] = os.path.join(row['rundir'], f'traj/{name}_{suffix}_traj.pdb')
+    
+    # for extra_name, path in extras.items():
+    #     pdbs[extra_name] = path
+    pdbs.update(extras)
 
     name = row['name']
     mpnn_i = row['mpnn_index']
@@ -135,7 +147,7 @@ def show(row, structs = {'X0'}, af2=False, des=True, des_color=None, mpnn_packed
                 ga_lig_pdb = pdb
                 break
         else:
-            raise Exception('ga_lig pdb not found')
+            raise Exception(f'ga_lig pdb not found: {pdb}')
         pdbs['ga_lig'] = ga_lig_pdb
         # pdbs['ga_lig'] = os.path.join(row['rundir'], 'ligmpnn', 'packed', 'addh', 'rosetta_gen_ff', f'{name}_{mpnn_i}_0001.pdb')
 
@@ -181,8 +193,6 @@ def show(row, structs = {'X0'}, af2=False, des=True, des_color=None, mpnn_packed
     
     obj_selectors = {}
     for label in pymol_objects:
-        # traj = label in traj_types
-        # print(f'{label=}')
         is_traj = label.split('_')[0] in traj_types
         if is_rf_diff(row):
             trb = analyze.get_trb(row)
@@ -191,38 +201,19 @@ def show(row, structs = {'X0'}, af2=False, des=True, des_color=None, mpnn_packed
             atom_names_by_res_idx = get_motif_spec(row, traj=is_traj)
         selectors = show_tip_row.get_selectors_2(atom_names_by_res_idx)
         obj_selectors[label] = selectors
-    # print(f'{pymol_objects=}')
-    # sel_lens = {k:len(v) for k,v in obj_selectors['des'].items()}
-    # sel_lens = len(obj_selectors['des'])
-    # print(f'{sel_lens=}')
-    
-    
-    # obj_0 = pymol_objects['des']
-    # for _, obj in pymol_objects.items():
-    #     cmd.align(f'{obj} and chain A', f'{obj_0} and chain A')
-    # ic(selectors)
-    
-    
-    # print(f'{selectors}')
-    # print(
 
     for i, (label, pymol_name) in enumerate(pymol_objects.items(), start=1):
         selectors = obj_selectors[label]
         sels = combine_selectors([pymol_name], selectors)
-        # print(f'{sels=}')
         shown = sels.pop(f'{pymol_name}_shown')
         cmd.show_as('licorice', shown)
-        if 'residue_motif' in sels:
-            cmd.unbond(sels['residue_motif'], show_tip_row.NOT(sels['residue_motif']))
+        gp_selector = f'{pymol_name}_residue_gp_motif'
+        if gp_selector in sels:
+            cmd.unbond(sels[gp_selector], show_tip_row.NOT(sels[gp_selector]))
     
-        # print(f'{label=}')
-        # print(f'{len(obj_selectors[label])}')
-        # # print(f'{sels}')
-        # print(f'{len(sels)}')
-        palette = show_tip_row.color_selectors(sels, verbose=False, des_color=des_color)
-        # cmd.set('grid_slot', i, obj)
-    # cmd.set('grid_mode', 1)
-    cmd.unbond('chain A', 'chain B')
+        palette = show_tip_row.color_selectors(sels, verbose=False, des_color=des_color, hetatm_color=hetatm_color)
+    if unbond_motif:
+        cmd.unbond('chain A', 'chain B')
 
     cmd.alter('name CA', 'vdw=2.0')
     cmd.set('sphere_transparency', 0.1)
