@@ -25,7 +25,8 @@ from rf2aa.chemical import MASKINDEX
 import rf2aa.chemical
 from rf2aa import chemical
 import rf_diffusion.util as util
-from rf_diffusion.inference.utils import parse_pdb_lines
+#from rf_diffusion.inference.utils import parse_pdb_lines
+from rf_diffusion.parsers import parse_pdb_lines_target
 import networkx as nx
 nx.from_numpy_matrix = nx.from_numpy_array
 import itertools
@@ -489,7 +490,7 @@ def make_indep(pdb, ligand='', center=True, return_metadata=False):
     if ligand:
         ligands = ligand.split(',')
     stream = remove_non_target_ligands(stream, ligands)
-    target_feats = parse_pdb_lines(stream, parse_hetatom=True)
+    target_feats = parse_pdb_lines_target(stream, parse_hetatom=True)
     het_atom_uids = [(e['res_idx'], e['atom_id'].strip()) for e in target_feats['info_het']]
     prot_atom_uids = [(idx, 'CA') for idx in target_feats['idx']]
     uids = prot_atom_uids + het_atom_uids
