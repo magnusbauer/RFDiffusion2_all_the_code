@@ -5,19 +5,6 @@ from icecream import ic
 import torch
 import hydra
 from omegaconf import DictConfig
-
-# def setup_rf_diffusion_imports():
-#     se3_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
-#     sys.path = [
-#         os.path.join(se3_dir, 'rf_diffusion/RF2-allatom/rf2aa/SE3Transformer'),
-#         os.path.join(se3_dir, 'rf_diffusion/nonechucks'),
-#         os.path.join(se3_dir, 'rf_diffusion'),
-#         os.path.join(se3_dir, 'rf_diffusion/RF2-allatom'),
-#         se3_dir
-#     ] + sys.path
-
-# setup_rf_diffusion_imports()
-
 from rf_score.model import RFScore
 
 def get_t1d_updates(model_d, weight_d, n):

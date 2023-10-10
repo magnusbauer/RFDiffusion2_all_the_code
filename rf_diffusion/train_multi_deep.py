@@ -454,21 +454,6 @@ class Trainer():
                 if model_name != 'RFScore':
                     weight_state = {f'model.{k}':v for k,v in weight_state.items()}
 
-                # Expand embedding layer size to handle additional t1d features
-                model_state = m.state_dict()
-                changed = changed_dimensions(model_state, weight_state)
-                for param, (model_tensor, weight_tensor) in changed.items():
-                    print (f'wrong size: {param}\n\tmodel   :{model_tensor.shape}\n\tweights: {weight_tensor.shape}')
-                
-                d_t1d_old = weight_state['model.templ_emb.templ_stack.proj_t1d.weight'].shape[1]
-                d_t1d_new = model_state['model.templ_emb.templ_stack.proj_t1d.weight'].shape[1]
-                new_t1d_dim = d_t1d_new - d_t1d_old
-
-                for k in ['final_state_dict', 'model_state_dict']:
-                    weight_state = checkpoint[k]
-                    updates = get_t1d_updates(model_state, weight_state, new_t1d_dim)
-                    weight_state.update(updates)
-
                 m.load_state_dict(weight_state, strict=True)
 
         if resume_train:
