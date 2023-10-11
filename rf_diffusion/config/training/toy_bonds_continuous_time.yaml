@@ -21,7 +21,7 @@ dataloader:
 experiment:
   trans_loss_weight: 1.0
   rot_loss_weight: 1.0
-  trans_x0_threshold: 0.0
+  trans_x0_threshold: 1.0
   bb_atom_loss_weight: 0.0
   bb_atom_loss_t_filter: 0.0
   dist_mat_loss_weight: 0.0
@@ -37,7 +37,7 @@ diffuser:
 rf:
   model:
     d_t1d: 614
-  ckpt_path: /net/scratch/ahern/se3_diffusion/training/covale_complex_from_str_pred_batch24_l40_fallback_2/2023-08-03_1691112266.2135339_v4znb6v8/rank_0/models/RFD_36.pt
+  ckpt_path: null
 
 extra_t1d:
   - radius_of_gyration_v2
@@ -57,8 +57,10 @@ extra_t1d_params:
     T: ${diffuser.T}
 
 reshape:
-  output_path: /net/scratch/dtischer/231010_all_atom/ops/RFD_36_cont_time.pt
+  output_path: /home/dtischer/code/rf_diffusion_train/rf_diffusion/RFD_36_cont_time.pt
 
 ckpt_load_path: /net/scratch/dtischer/231010_all_atom/ops/RFD_36_cont_time.pt
 n_write_pdb: 10
+lr: 0.005
+resume: null
 resume_scheduler: false

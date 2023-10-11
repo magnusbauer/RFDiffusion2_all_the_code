@@ -25,6 +25,8 @@ experiment:
 diffuser:
   time_type: discrete
 
-ckpt_load_path: /net/scratch/ahern/se3_diffusion/training/covale_complex_from_str_pred_batch24_l40_fallback_2/2023-08-03_1691112266.2135339_v4znb6v8/rank_0/models/RFD_36.pt
+ckpt_load_path: /home/dtischer/code/rf_diffusion_train/rf_diffusion/RFD_36.pt
 n_write_pdb: 10
+lr: 0.005
+resume: null
 resume_scheduler: false

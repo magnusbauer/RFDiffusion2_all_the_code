@@ -100,8 +100,8 @@ lr: 0.001
 l2_coeff: 0.01
 model_name: RFD
 ckpt_load_path: /net/scratch/ahern/se3_diffusion/training/covale_complex_from_str_pred_batch24_l40_fallback/2023-07-24_1690254530.7745314_v4znb6v8/rank_0/models/RFD_26.pt
-resume: v4znb6v8
-resume_scheduler: true
+resume: null
+resume_scheduler: false
 reinitialize_missing_params: false
 zero_weights: false
 n_epoch: 500

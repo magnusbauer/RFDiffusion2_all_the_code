@@ -899,15 +899,15 @@ class Trainer():
                     
                     outstr = f"Task: {task_str} | Dataset: {chosen_dataset : >12} | Epoch:[{epoch:02}/{self.conf.n_epoch}] | Batch: [{counter*self.conf.batch_size*world_size:05}/{self.n_train}] | Time: {train_time:.2f}"
 
-                    outstr += (f' | Loss: {round( float(loss), 4)} = \u03A3 ')
+                    outstr += (f' | Loss: {round( float(loss * self.accum_step), 4)} = \u03A3 ')
                     str_stack = []
                     for k, weight in list(loss_weights.items()):
                         if weight == 0:
                             continue
                         weighted = loss_dict[f'weighted.{k}']
                         str_stack.append(f'{k}: {float(weighted):4.2f}')
-                        # Hack to not log these to wandb
-                        if weighted == 0:
+                        # Hack to not log these to wandb, except for scores, we love scores.
+                        if weighted == 0 and 'score' not in k:
                             loss_dict[f'weighted.{k}'] = float('nan')
                             loss_dict[f'mean_block.{k}'] = float('nan')
                             loss_dict[f'last_block.{k}'] = float('nan')
