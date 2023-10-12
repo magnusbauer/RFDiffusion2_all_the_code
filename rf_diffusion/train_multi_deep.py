@@ -259,8 +259,8 @@ class Trainer():
         ) / (loss_mask.sum(dim=-1) + 1e-10)
 
         if self.conf.experiment.normalize_trans_x0:
-            noise_var = 1 - torch.exp(-self.conf.diffuser.r3.marginal_b_t(t))
-            noise_var = noise_var * self.conf.diffuser.r3.coordinate_scaling ** 2
+            noise_var = float(1 - torch.exp(-self.diffuser._r3_diffuser.marginal_b_t(t)))
+            # noise_var = noise_var * self.conf.diffuser.r3.coordinate_scaling ** 2
             trans_x0_loss = trans_x0_loss / noise_var
 
         loss_dict['trans_score'] = trans_score_loss * (t > self._exp_conf.trans_x0_threshold) * int(self.conf.diffuser.diffuse_trans)
@@ -843,7 +843,7 @@ class Trainer():
                                 mask_BB, mask_2d, same_chain,
                                 pred_lddts, indep.idx[None], chosen_dataset, chosen_task, is_diffused=is_diffused,
                                 seq_diffusion_mask=seq_diffusion_mask, seq_t=seq_t, xyz_in=xyz_t, is_sm=indep.is_sm, unclamp=unclamp,
-                                negative=negative, t=int(little_t))
+                                negative=negative, t=little_t)
                         # Force all model parameters to participate in loss. Truly a cursed workaround.
                         loss += 0.0 * (
                             logits_pae.mean() +
