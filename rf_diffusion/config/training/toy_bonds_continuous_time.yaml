@@ -22,6 +22,7 @@ experiment:
   trans_loss_weight: 1.0
   rot_loss_weight: 1.0
   trans_x0_threshold: 1.0
+  normalize_trans_x0: true
   bb_atom_loss_weight: 0.0
   bb_atom_loss_t_filter: 0.0
   dist_mat_loss_weight: 0.0
@@ -32,7 +33,7 @@ experiment:
 
 diffuser:
   time_type: continuous
-  t_cont_max: 0.025
+  t_cont_max: 1.0
 
 rf:
   model:

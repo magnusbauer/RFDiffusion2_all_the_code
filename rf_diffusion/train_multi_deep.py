@@ -258,6 +258,11 @@ class Trainer():
             dim=(-1, -2)
         ) / (loss_mask.sum(dim=-1) + 1e-10)
 
+        if self.conf.experiment.normalize_trans_x0:
+            noise_var = 1 - torch.exp(-self.conf.diffuser.r3.marginal_b_t(t))
+            noise_var = noise_var * self.conf.diffuser.r3.coordinate_scaling ** 2
+            trans_x0_loss = trans_x0_loss / noise_var
+
         loss_dict['trans_score'] = trans_score_loss * (t > self._exp_conf.trans_x0_threshold) * int(self.conf.diffuser.diffuse_trans)
         loss_dict['trans_x0'] = trans_x0_loss * (t <= self._exp_conf.trans_x0_threshold) * int(self.conf.diffuser.diffuse_trans)
 
@@ -996,6 +1001,10 @@ class Trainer():
                             'pymol_names': pymol_names,
                             'dataset': chosen_dataset,
                             'little_t': float(little_t),
+                            'model_out': tree.map_structure(
+                                lambda x: x.cpu() if hasattr(x, 'cpu') else x, model_out),
+                            'diffuser_out': tree.map_structure(
+                                lambda x: x.cpu() if hasattr(x, 'cpu') else x, diffuser_out),
                             'loss_dict': tree.map_structure(
                                 lambda x: x.cpu() if hasattr(x, 'cpu') else x, loss_dict)
                         }, fh)

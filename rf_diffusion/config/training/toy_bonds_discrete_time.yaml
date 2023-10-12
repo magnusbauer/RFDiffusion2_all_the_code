@@ -19,11 +19,21 @@ dataloader:
   DATAPKL_AA: /home/dtischer/code/rf_diffusion_train/rf_diffusion/aa_dataset_256.pkl
 
 experiment:
+  trans_loss_weight: 1.0
+  rot_loss_weight: 1.0
+  trans_x0_threshold: 1.0
+  normalize_trans_x0: true
+  bb_atom_loss_weight: 0.0
+  bb_atom_loss_t_filter: 0.0
+  dist_mat_loss_weight: 0.0
+  dist_mat_loss_t_filter: 0.0
+  aux_loss_weight: 0.0
   c6d_loss_weight: 0.0
   diffuse_everything: true
 
 diffuser:
   time_type: discrete
+  t_cont_max: 1.0
 
 ckpt_load_path: /home/dtischer/code/rf_diffusion_train/rf_diffusion/RFD_36.pt
 n_write_pdb: 10
