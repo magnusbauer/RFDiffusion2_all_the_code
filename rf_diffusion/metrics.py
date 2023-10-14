@@ -2,6 +2,10 @@ import torch
 from icecream import ic
 import itertools
 import bond_geometry
+import sys
+from rf_diffusion.aa_model import Indep
+import networkx as nx
+from rf2aa import chemical
 
 def calc_displacement(pred, true):
     """
@@ -87,6 +91,190 @@ def contigs(logit_s, label_s,
         'n_contig_res': n_contig_res(diffusion_mask),
     }
 
-atom_bonds = bond_geometry.calc_atom_bond_loss
-atom_bonds.accepts_indep = True
+def atom_bonds(indep, pred_xyz, is_diffused, **kwargs):
+    return bond_geometry.calc_atom_bond_loss(indep, pred_xyz, is_diffused)
 
+###################################
+# Bond geometry metrics
+###################################
+def make_chemical_graph(indep, crds):
+    G = nx.Graph()
+
+    # Add atoms as nodes
+    for i, (element_int, xyz) in enumerate(zip(indep.seq[indep.is_sm], crds[indep.is_sm, 1])):
+        element = chemical.num2aa[element_int]
+        G.add_node(i, element=element, xyz=xyz)
+
+    # Add edges if covalently bonded
+    bond_feats = indep.bond_feats[indep.is_sm][indep.is_sm]
+    is_covalently_bonded = (1 <= bond_feats) & (bond_feats <= 4)
+    src, dst = torch.where(is_covalently_bonded)
+    G.add_edges_from(zip(src.tolist(), dst.tolist()))
+
+    # Add degree of each atom
+    for n in list(G):
+        G.nodes[n]['degree'] = nx.degree(G, n)
+
+    return G
+
+def get_bond_length_MAE(indep, other_crds, true_crds):
+    # Make chemical graph
+    G_other = make_chemical_graph(indep, other_crds)
+    G_true = make_chemical_graph(indep, true_crds)
+
+    # Get all bond distances
+    geo_other = bond_geometry.gather_aa_geometries(G_other, bond_geometry.get_bond_dists)
+    geo_true = bond_geometry.gather_aa_geometries(G_true, bond_geometry.get_bond_dists)
+    dist_other, dist_true = bond_geometry.collate_and_flatten_bond_geo(geo_other, geo_true)
+    dist_other = torch.tensor(dist_other)
+    dist_true = torch.tensor(dist_true)
+
+    # Calc MAE
+    mae = (dist_other - dist_true).abs().mean()
+
+    return mae
+
+def get_pred_bond_length_MAE(indep, pred_crds, true_crds, **kwargs):
+    return get_bond_length_MAE(indep, pred_crds, true_crds)
+
+def get_input_bond_length_MAE(indep, input_crds, true_crds, **kwargs):
+    return get_bond_length_MAE(indep, input_crds, true_crds)
+
+
+###################################
+# Annotate which functions accept what arguments
+###################################
+'''
+If accepts_indep is True, the function is passed the inputs
+(indep, pred_crds, true_crds, input_crds, t, is_diffused)
+'''
+atom_bonds.accepts_indep = True
+get_pred_bond_length_MAE.accepts_indep = True
+get_input_bond_length_MAE.accepts_indep = True
+
+
+###################################
+# Metric class. Similar to Potentials class.
+###################################
+# class Metric:
+#     def _check_inputs(
+#         self, 
+#         indep: Indep, 
+#         pred_crds: torch.Tensor, 
+#         true_crds: torch.Tensor, 
+#         input_crds: torch.Tensor, 
+#         t: float, 
+#         is_diffused: torch.Tensor
+#         ):
+#         '''
+#         Inputs
+#             indep: Defines protein and/or molecule connections. 
+#             pred_crds (..., L, n_atoms, 3)
+#             true_crds (..., L, n_atoms, 3)
+#             input_crds (..., L, n_atoms, 3)
+#             t: Time in the diffusion process. Between 0 and 1.
+#             is_diffused (L,): True if the residue was diffused.
+#         '''
+#         # This just basic class and shape checks
+#         L = true_crds.shape(-2)
+#         assert (0 <= t) and (t <= 1), f't must be between 0 and 1, but was {t:.3f}'
+#         assert (pred_crds.shape[-3:] == true_crds.shape[-3:]).all()
+#         assert (input_crds.shape[-3:] == true_crds.shape[-3:]).all()
+#         assert is_diffused.dims == 1
+#         assert is_diffused.shape[0] == L
+
+#     @abstractmethod
+#     def __call__(
+#         self,
+#         indep: Indep, 
+#         pred_crds: torch.Tensor, 
+#         true_crds: torch.Tensor, 
+#         input_crds: torch.Tensor, 
+#         t: float, 
+#         is_diffused: torch.Tensor
+#         ):
+#         pass
+
+# class PredictedBondLengthMAE(Metric):
+#     def __call__(
+#         self, 
+#         indep: Indep, 
+#         pred_crds: torch.Tensor, 
+#         true_crds: torch.Tensor, 
+#         input_crds: torch.Tensor, 
+#         t: float, 
+#         is_diffused: torch.Tensor
+#         ):
+#         super()._check_inputs(indep, pred_crds, true_crds, input_crds, t, is_diffused)
+#         return get_bond_length_MAE(indep, pred_crds, true_crds)
+
+# class InputBondLengthMAE(Metric):
+#     def __call__(
+#         self, 
+#         indep: Indep, 
+#         pred_crds: torch.Tensor, 
+#         true_crds: torch.Tensor, 
+#         input_crds: torch.Tensor, 
+#         t: float, 
+#         is_diffused: torch.Tensor
+#         ):
+#         super()._check_inputs(indep, pred_crds, true_crds, input_crds, t, is_diffused)
+#         return get_bond_length_MAE(indep, input_crds, true_crds)
+
+
+###################################
+# Metric manager
+###################################
+class MetricManager:
+    def __init__(self, *metric_names):
+        '''
+        metric_names: A name (str) of a function in this module
+            that can act as a metric.
+        '''
+        self.metric_names = metric_names
+
+    def compute_all_metrics(
+        self, 
+        indep: Indep, 
+        pred_crds: torch.Tensor, 
+        true_crds: torch.Tensor, 
+        input_crds: torch.Tensor, 
+        t: float, 
+        is_diffused: torch.Tensor
+        ) -> dict:
+        '''
+        Inputs
+            indep: Defines protein and/or molecule connections. 
+            pred_crds (..., L, n_atoms, 3)
+            true_crds (..., L, n_atoms, 3)
+            input_crds (..., L, n_atoms, 3)
+            t: Time in the diffusion process. Between 0 and 1.
+            is_diffused (L,): True if the residue was diffused.
+
+        Returns
+            Dictionary of the name of the metric and what it returned.
+        '''
+        # Basic class and shape checks
+        L = true_crds.shape[-3]
+        assert (0 <= t) and (t <= 1), f't must be between 0 and 1, but was {t:.3f}'
+        assert pred_crds.shape[-3:] == true_crds.shape[-3:]
+        assert input_crds.shape[-3:] == true_crds.shape[-3:]
+        assert is_diffused.ndim == 1
+        assert is_diffused.shape[0] == L
+
+        # Evaluate each metric
+        thismodule = sys.modules[__name__]
+        metric_results = {}
+        for name in self.metric_names:
+            func = getattr(thismodule, name)
+            metric_output = func(
+                indep=indep,
+                pred_crds=pred_crds,
+                true_crds=true_crds,
+                input_crds=input_crds,
+                t=t,
+                is_diffused=is_diffused,
+            )
+            metric_results[name] = metric_output
+
+        return metric_results

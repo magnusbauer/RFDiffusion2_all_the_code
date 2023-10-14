@@ -29,11 +29,11 @@ import rf2aa.tensor_util
 from rf2aa.tensor_util import assert_equal
 from rf2aa.util_module import XYZConverter
 from rf2aa.RoseTTAFoldModel import RoseTTAFoldModule
-import loss_aa
-import metrics
-import run_inference
-import aa_model
-import atomize
+from rf_diffusion import loss_aa
+from rf_diffusion.metrics import MetricManager
+from rf_diffusion import run_inference
+from rf_diffusion import aa_model
+from rf_diffusion import atomize
 from data_loader import (
     get_train_valid_set, loader_pdb, loader_fb, loader_complex, loader_pdb_fixbb, loader_fb_fixbb, loader_complex_fixbb, loader_cn_fixbb, default_dataset_configs,
     #Dataset, DatasetComplex, 
@@ -169,7 +169,7 @@ class Trainer():
     def __init__(self, conf=None):
         self.conf=conf
         self._exp_conf = conf.experiment
-        self.metrics=[getattr(metrics, k) for k in conf.metrics]
+        self.metric_manager = MetricManager(*conf.metrics)
 
         # Initialize experiment objects
         from rf_se3_diffusion.data import se3_diffuser
@@ -197,7 +197,7 @@ class Trainer():
         rundir = os.path.join(rundir, f'{get_datetime()}_{self.wandb_run_id}')
         return rundir
 
-    def calc_loss(self, loss_weights, model_out, diffuser_out, logit_s, label_s,
+    def calc_loss(self, indep, loss_weights, model_out, diffuser_out, logit_s, label_s,
                   logit_aa_s, label_aa_s, mask_aa_s, logit_exp,
                   pred_in, pred_tors, true, mask_crds, mask_BB, mask_2d, same_chain,
                   pred_lddt, idx, dataset, chosen_task, t, xyz_in, is_diffused,
@@ -236,6 +236,9 @@ class Trainer():
         rot_score_scaling = torch.tensor(diffuser_out['rot_score_scaling'])[None].to(device)
         trans_score_scaling = torch.tensor(diffuser_out['trans_score_scaling'])[None].to(device)
 
+        is_res_resolved = ~torch.isnan(indep.xyz[:,1]).any(dim=-1)
+        is_trans_loss = (is_res_resolved & is_diffused).squeeze()
+
         # Dictionary for keeping track of losses 
         loss_dict = {}
 
@@ -254,9 +257,9 @@ class Trainer():
         gt_trans_x0 = diffuser_out['rigids_0'][..., 4:] * self.conf.diffuser.r3.coordinate_scaling
         pred_trans_x0 = model_out['rigids'][..., 4:] * self.conf.diffuser.r3.coordinate_scaling
         trans_x0_loss = torch.sum(
-            (gt_trans_x0 - pred_trans_x0)**2 * loss_mask[:,...,:,None],
+            (gt_trans_x0 - pred_trans_x0)**2 * is_trans_loss[None,None,:,None],
             dim=(-1, -2)
-        ) / (loss_mask.sum(dim=-1) + 1e-10)
+        ) / (is_trans_loss.sum() + 1e-10)
 
         if self.conf.experiment.normalize_trans_x0:
             noise_var = float(1 - torch.exp(-self.diffuser._r3_diffuser.marginal_b_t(t)))
@@ -837,7 +840,7 @@ class Trainer():
                         true_crds[:,:,14:] = 0
                         xyz_t[:] = 0
                         seq_t[:] = 0
-                        loss, loss_dict = self.calc_loss(loss_weights, model_out, diffuser_out, logit_s, c6d,
+                        loss, loss_dict = self.calc_loss(indep, loss_weights, model_out, diffuser_out, logit_s, c6d,
                                 logit_aa_s, label_aa_s, mask_aa_s, None,
                                 pred_crds, alphas, true_crds, mask_crds,
                                 mask_BB, mask_2d, same_chain,
@@ -929,21 +932,30 @@ class Trainer():
                             'self_cond': self_cond,
                             'extra_t1d': indep.extra_t1d.cpu().detach() if hasattr(indep.extra_t1d, 'cpu') else indep.extra_t1d,
                             'loss':loss.detach()})
-                        metrics = {}
-                        for m in self.metrics:
-                            with torch.no_grad():
-                                if hasattr(m, 'accepts_indep') and m.accepts_indep:
-                                    rf2aa.tensor_util.to_device(indep, 'cpu')
-                                    metrics.update(m(indep, pred_crds[-1, 0].cpu(), is_diffused.cpu()))
-				# Currently broken
-                                # metrics.update(m(logit_s, c6d,
-                                # logit_aa_s, label_aa_s, mask_aa_s, None,
-                                # pred_crds, alphas, true_crds, mask_crds,
-                                # mask_BB, mask_2d, same_chain,
-                                # pred_lddts, indep.idx[None], chosen_dataset, chosen_task, diffusion_mask=diffusion_mask,
-                                # seq_diffusion_mask=seq_diffusion_mask, seq_t=seq_t, xyz_in=xyz_t, unclamp=unclamp,
-                                # negative=negative, t=int(little_t), **self.loss_param)
-                                # **self.loss_param))
+
+                        rf2aa.tensor_util.to_device(indep, 'cpu')
+                        metrics = self.metric_manager.compute_all_metrics(
+                            indep=indep,
+                            pred_crds=pred_crds[-1, 0].cpu(),
+                            true_crds=true_crds[0, :, :3].cpu(),
+                            input_crds=torch.zeros_like(pred_crds[-1, 0]).cpu(),
+                            t=little_t/self.diffuser.T,
+                            is_diffused=is_diffused.cpu(),
+                        )
+
+                        # for m in self.metrics:
+                        #     import ipdb; ipdb.set_trace()
+                        #     with torch.no_grad():
+                        #         if getattr(m, 'accepts_indep', False):
+                        #             metrics.update(m(
+                        #                 indep=indep,
+                        #                 pred_crds=pred_crds[-1, 0].cpu(),
+                        #                 true_crds=true_crds[0].cpu(),
+                        #                 input_crds=None,
+                        #                 t=little_t,
+                        #                 is_diffused=is_diffused.cpu(),
+                        #             ))
+                                    
                         loss_dict['metrics'] = metrics
                         # loss_dict['loss_weights'] = loss_weights
                         if WANDB:

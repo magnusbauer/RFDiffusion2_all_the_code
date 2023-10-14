@@ -1,39 +1,8 @@
 defaults:
-  - RFD_36
-
-guidepost_bonds: false
-
-dataloader:
-  CROP: 10
-  USE_GUIDE_POSTS: false
-  DATASETS: pdb_aa
-  DATASET_PROB: [1.0]
-  DIFF_MASK_PROBS:
-    atomize_all_res: 1.0
-    get_closest_tip_atoms: 0.0
-    get_unconditional_diffusion_mask: 0.0
-    get_diffusion_mask_islands: 0.0
-    get_closest_tip_atoms_partial_ligand: 0.0
-    get_diffusion_mask_islands_partial_ligand: 0.0
-    get_unconditional_diffusion_mask_partial_ligand: 0.0
-  DATAPKL_AA: /home/dtischer/code/rf_diffusion_train/rf_diffusion/aa_dataset_256.pkl
-
-experiment:
-  trans_loss_weight: 1.0
-  rot_loss_weight: 1.0
-  trans_x0_threshold: 1.0
-  normalize_trans_x0: true
-  bb_atom_loss_weight: 0.0
-  bb_atom_loss_t_filter: 0.0
-  dist_mat_loss_weight: 0.0
-  dist_mat_loss_t_filter: 0.0
-  aux_loss_weight: 0.0
-  c6d_loss_weight: 0.0
-  diffuse_everything: true
+  - RFD_36_experiments
 
 diffuser:
   time_type: continuous
-  t_cont_max: 1.0
 
 rf:
   model:
@@ -44,6 +13,7 @@ extra_t1d:
   - radius_of_gyration_v2
   - relative_sasa_v2
   - little_t_embedding
+
 extra_t1d_params:
   radius_of_gyration_v2:
     low: 10
@@ -61,7 +31,3 @@ reshape:
   output_path: /home/dtischer/code/rf_diffusion_train/rf_diffusion/RFD_36_cont_time.pt
 
 ckpt_load_path: /net/scratch/dtischer/231010_all_atom/ops/RFD_36_cont_time.pt
-n_write_pdb: 10
-lr: 0.005
-resume: null
-resume_scheduler: false
