@@ -3,6 +3,10 @@ import numpy as np
 import random
 from icecream import ic
 from collections import OrderedDict
+
+import rf2aa.chemical
+
+
 class ContigMap():
     '''
     New class for doing mapping.
@@ -11,7 +15,20 @@ class ContigMap():
     Default chain outputs are inpainted chains as A (and B, C etc if multiple chains), and all fragments of receptor chain on the next one (generally B)
     Output chains can be specified. Sequence must be the same number of elements as in contig string
     '''
-    def __init__(self, parsed_pdb, contigs=None, contig_atoms=None, inpaint_seq=None, inpaint_str=None, length=None, ref_idx=None, hal_idx=None, idx_rf=None, inpaint_seq_tensor=None, inpaint_str_tensor=None, topo=False):
+    def __init__(
+            self,
+            parsed_pdb,
+            contigs=None,
+            contig_atoms=None,
+            inpaint_seq=None,
+            inpaint_str=None,
+            length=None,
+            ref_idx=None,
+            hal_idx=None,
+            idx_rf=None,
+            inpaint_seq_tensor=None,
+            inpaint_str_tensor=None,
+            topo=False):
         #sanity checks
         if contigs is None and ref_idx is None:
             sys.exit("Must either specify a contig string or precise mapping")
@@ -124,6 +141,15 @@ class ContigMap():
             if count == 100000: #contig string incompatible with this length
                 sys.exit("Contig string incompatible with --length range")
         return sampled_mask, sampled_mask_length, inpaint_chains
+    
+    def seq(self, chain, residue_idx):
+        seq_by_chain_resi = dict(zip(self.parsed_pdb['pdb_idx'], self.parsed_pdb['seq']))
+        return seq_by_chain_resi[(chain, residue_idx)]
+    
+    def atom_names(self, chain, residue_idx):
+        seq_token = self.seq(chain, residue_idx)
+        atom_names = [atom_name.strip() for atom_name in rf2aa.chemical.aa2long[seq_token][:rf2aa.chemical.NHEAVYPROT] if atom_name is not None]
+        return atom_names
 
     def expand_sampled_mask(self):
         chain_order='ABCDEFGHIJKLMNOPQRSTUVWXYZ'
@@ -164,7 +190,12 @@ class ContigMap():
                         inpaint_hal.extend([(chain_order[inpaint_chain_idx], i) for i in np.arange(inpaint_idx,inpaint_idx+len(ref_to_add))])
                         inpaint_idx += len(ref_to_add)
                         if self.contig_atoms is not None:
-                            atomize_resnum2atomnames.update({(k[0], int(k[1:])):v for k, v in self.contig_atoms.items() if (k[0], int(k[1:])) in inpaint})
+                            for k, v in self.contig_atoms.items():
+                                chain_residue = (k[0], int(k[1:]))
+                                if chain_residue in inpaint:
+                                    if v == ['all']:
+                                        v = self.atom_names(chain_residue[0], chain_residue[1])
+                                    atomize_resnum2atomnames[chain_residue] = v  
                     else:
                         inpaint.extend([('_','_')] * int(subcon.split("-")[0]))
                         inpaint_hal.extend([(chain_order[inpaint_chain_idx], i) for i in np.arange(inpaint_idx,inpaint_idx+int(subcon.split("-")[0]))])

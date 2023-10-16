@@ -1,5 +1,6 @@
 import sys
 import os
+import re
 import xmlrpc.client as xmlrpclib
 
 import glob
@@ -14,6 +15,8 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 # from tqdm.notebook import trange, tqdm
 import numpy as np
+from rf_diffusion import aa_model
+from rf_diffusion.inference.utils import parse_pdb_lines
 import rf_diffusion.parsers as parsers
 import rf_diffusion.util as util
 
@@ -25,7 +28,9 @@ from rf_diffusion.inference import utils
 from itertools import takewhile
 
 
-print('initializing analyze')
+
+
+print(f'initializing analyze, cmd: {cmd}')
 DESIGN = 'design_path'
 
 def common_prefix(strlist):
@@ -35,8 +40,9 @@ def common_prefix(strlist):
 
 def get_pdb_path(row):
     possible_paths = [
-            os.path.join(row['rundir'], 'ligmpnn/packed', f"{row['name']}_{row['mpnn_index']}.pdb"),
-            os.path.join(row['rundir'], 'ligmpnn', f"{row['name']}_{row['mpnn_index']}.pdb")
+            os.path.join(row['rundir'], 'ligmpnn/packed', f"{row['name']}_{row.get('mpnn_index', -1)}.pdb"),
+            os.path.join(row['rundir'], 'ligmpnn', f"{row['name']}_{row.get('mpnn_index')}.pdb"),
+            os.path.join(row['rundir'], f"{row['name']}.pdb")
     ]
     for p in possible_paths:
         if os.path.exists(p):
@@ -50,9 +56,15 @@ def read_metrics(df_path, add_contig_rmsd=True):
     df['run'] = df['name'].apply(lambda x: x.split('_')[0])
     # df = df[df['run'] =='run2'].reset_index()
     import re
-    df['benchmark'] = [n[n.index('_')+1:n.index('_cond')] for n in df.name]
+    try:
+        df['benchmark'] = [n[n.index('_')+1:n.index('_cond')] for n in df.name]
+    except Exception as e:
+        print('failed to get benchmark', e)
 
-    df['run'] = [n[:n.index('_')] for n in df.name]
+    try:
+        df['run'] = [n[:n.index('_')] for n in df.name]
+    except Exception as e:
+        print('failed to get run', e)
     # For backwards compatibility
     model_key = 'inference.ckpt_path'
     if model_key not in df.columns:
@@ -241,7 +253,25 @@ def get_trb(row):
     path = os.path.join(row['rundir'], f'{row["name"]}.trb')
     return np.load(path,allow_pickle=True)
 
+def get_mpnn_pdb(row):
+    name = row['name']
+    mpnn_i = row['mpnn_index']
+    possible_paths = []
+    possible_paths.append(os.path.join(row['rundir'], 'mpnn/packed', f'{name}_{mpnn_i}_1.pdb'))
+    possible_paths.append(os.path.join(row['rundir'], 'mpnn/packed', f'{name}_{mpnn_i}.pdb'))
+    possible_paths.append(os.path.join(row['rundir'], 'ligmpnn/packed', f'{name}_{mpnn_i}_1.pdb'))
+    possible_paths.append(os.path.join(row['rundir'], 'ligmpnn/packed', f'{name}_{mpnn_i}.pdb'))
+    for pdb in possible_paths:
+        if os.path.exists(pdb):
+            return pdb
+    raise Exception(f'could not find mpnn_packed pdb at any of {possible_paths}')
+
 def get_af2(row):
+
+    mpnn_pdb = get_mpnn_pdb(row)
+    head, tail = os.path.split(mpnn_pdb)
+    return os.path.join(head, 'af2', tail)
+
     mpnn_flavor = 'mpnn'
     if not pd.isna(row['inference.ligand']):
         mpnn_flavor = 'ligmpnn'
@@ -607,9 +637,9 @@ def make_row_from_traj(traj_prefix):
     synth_row['mpnn_index'] = 0
     if 'packed' in synth_row['rundir']:
         synth_row['rundir'] = os.path.dirname(synth_row['rundir'])
-        synth_row['name'] = synth_row['name'].replace('_packed', '')
+        synth_row['name'] = re.sub(r'_\d+$', '', synth_row['name'])
     if 'mpnn/' in traj_prefix:
-        synth_row['mpnn_index'] = int(traj_prefix.split('_')[-1])
+        synth_row['mpnn_index'] = int(synth_row['name'].split('_')[-1])
         synth_row['rundir'] = os.path.dirname(synth_row['rundir'])
         synth_row['name'] = '_'.join(synth_row['name'].split('_')[:-1])
         
@@ -1428,24 +1458,36 @@ def get_method(r):
     method = []
     if r['is_aa']:
         method.append('aa')
-        if r['inference.conditions.relative_sasa_v2.active']:
+        if r['inference.ckpt_path'] == '/home/ahern/projects/rf_diffusion/models/aa_v1/BFF_10_remapped.pt':
+            method.append('vanilla_ep10')
+            if r['potentials.guide_scale'] > 0:
+                method.append('potential')
+
+        elif r['inference.conditions.relative_sasa_v2.active']:
             method.append('rasa-conditioned')
     else:
         method.append('rfd')
-        if r['contigmap.shuffle']:
+        if r.get('contigmap.shuffle', False):
             method.append('shuffled')
         else:
             method.append('native')
     return '_'.join(method)
 
 
+# def add_info
 
-def parse_rfd_aa_df(df):
-    df['seed'] = df.name.apply(lambda x: int(x.split('_cond')[1].split('_')[1].split('-')[0]))
+
+def get_condition(row, key='name'):
+    return re.match('.*cond\d+', row[key])[0]
+
+
+def parse_rfd_aa_df(df, drop_missing_af2=True):
+    try:
+        df['seed'] = df.name.apply(lambda x: int(x.split('_cond')[1].split('_')[1].split('-')[0]))
+    except Exception as e:
+        print('failed to get seed', e)
 #     print(
 # data['seed'].value_counts())
-    df['source'].value_counts()
-    df['benchmark'].value_counts()
 
     # df['n_motif'] = df['contigmap.contigs'].map({
     #     "['10,A1051-1051,31,A1083-1083,26,A1110-1110,69,A1180-1180,10']": 4,
@@ -1454,8 +1496,8 @@ def parse_rfd_aa_df(df):
     # df['n_motif'].value_counts()
 
     df['is_aa'] = df['source'].apply(lambda v: v.startswith('aa_'))
+    df['condition'] = df.apply(get_condition, axis=1)
 
-    df['is_aa'].value_counts()
 
     def get_target_contig_rmsd_af2(r):
         assert r['is_aa'] in [True, False]
@@ -1464,27 +1506,29 @@ def parse_rfd_aa_df(df):
         else:
             return r['contig_rmsd_af2']
 
-    df['target_contig_rmsd_af2'] = df.apply(get_target_contig_rmsd_af2, axis=1)
+    try:
+        df['target_contig_rmsd_af2'] = df.apply(get_target_contig_rmsd_af2, axis=1)
+    except Exception as e:
+        print('failed to get target_contig_rmsd_af2', e)
 
     df['design_id'] = df['source'] + '_' + df['name']
 
-    df['missing_af2'] = df['rmsd_af2_des'].isna()
+    if drop_missing_af2:
 
-    missing_af2 = df['rmsd_af2_des'].isna()
-    print(f'{missing_af2.sum()=}')
-    # df['missing_af2'].shape
-    # df.groupby('design_id').agg({'missing_af2': 'sum'}).value_counts()
+        df['missing_af2'] = df['rmsd_af2_des'].isna()
 
-    designs = df.groupby('design_id').agg({'missing_af2': 'sum'})
-    designs['has_all_af2'] = designs['missing_af2'] == 0
-    # print(f'{designs["has_all_af2"].value_counts()=}')
-    print(f'dropping {(~designs["has_all_af2"]).sum()}/{len(designs["has_all_af2"])} designs missing any of their AF2 outputs')
-    
-    # n_drop = has_all_af2['missing_af2'] == 
-    design_ids_with_all_af2 = designs[designs['has_all_af2']]
-    # df[df['design_id'].isin(design_ids_with_all_af2.index)].shape
-    # design_ids_with_all_af2['missing
-    df = df[df['design_id'].isin(design_ids_with_all_af2.index)]
+        missing_af2 = df['rmsd_af2_des'].isna()
+        print(f'{missing_af2.sum()=}')
+        designs = df.groupby('design_id').agg({'missing_af2': 'sum'})
+        designs['has_all_af2'] = designs['missing_af2'] == 0
+        # print(f'{designs["has_all_af2"].value_counts()=}')
+        print(f'dropping {(~designs["has_all_af2"]).sum()}/{len(designs["has_all_af2"])} designs missing any of their AF2 outputs')
+        
+        # n_drop = has_all_af2['missing_af2'] == 
+        design_ids_with_all_af2 = designs[designs['has_all_af2']]
+        # df[df['design_id'].isin(design_ids_with_all_af2.index)].shape
+        # design_ids_with_all_af2['missing
+        df = df[df['design_id'].isin(design_ids_with_all_af2.index)]
     
     df = df.copy()
     df['method'] = df.apply(get_method, axis=1)
@@ -1516,3 +1560,17 @@ def OR(i):
 
 def NOT(e):
     return f'not ({e})'
+
+
+def center_entities(all_entities, pymol_selection='hetatm'):
+    for entities in all_entities:
+        first_e = list(entities.values())[0]
+        com = cmd.centerofmass(f"{first_e.name} and {pymol_selection}")
+        dx = [-e for e in com]
+        for entity in entities.values():
+            cmd.translate(dx, entity.name, -1, 0)
+
+def center_object(obj):
+    com = cmd.centerofmass(obj)
+    dx = [-e for e in com]
+    cmd.translate(dx, obj, -1, 0)

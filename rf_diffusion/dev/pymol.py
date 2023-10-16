@@ -3,8 +3,6 @@ import os
 
 import xmlrpc.client as xmlrpclib
 
-sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'RF2-allatom'))
-
 def get_cmd(pymol_url='http://chesaw.dhcp.ipd:9123'):
     cmd = xmlrpclib.ServerProxy(pymol_url)
     if 'ipd' not in pymol_url:

@@ -8,12 +8,12 @@ from icecream import ic
 from tqdm import tqdm
 import torch
 
-import dev.analyze
+import rf_diffusion.dev.analyze
 import analysis.metrics
-import aa_model
-import atomize
+from rf_diffusion import aa_model
+from rf_diffusion import atomize
 import rf2aa.chemical
-import bond_geometry
+from rf_diffusion import bond_geometry
 
 
 def main(pdb_names_file, outcsv=None):
@@ -28,7 +28,7 @@ def main(pdb_names_file, outcsv=None):
 
 # TODO: rigids
 def rigid_loss(r):
-    trb = dev.analyze.get_trb(r)
+    trb = rf_diffusion.dev.analyze.get_trb(r)
     
     def get_motif_indep(pdb, motif_i):
         indep = aa_model.make_indep(pdb)
@@ -38,7 +38,7 @@ def rigid_loss(r):
     
     
     indep_motif_native = get_motif_indep(r['inference.input_pdb'], trb['con_ref_idx0'])
-    indep_motif_des = get_motif_indep(dev.analyze.get_design_pdb(r), trb['con_hal_idx0'])
+    indep_motif_des = get_motif_indep(rf_diffusion.dev.analyze.get_design_pdb(r), trb['con_hal_idx0'])
     i_inv = torch.argsort(torch.tensor(trb['con_hal_idx0']))
     i_inv = torch.argsort(i_inv)
     aa_model.rearrange_indep(indep_motif_des, i_inv)
@@ -65,7 +65,7 @@ def get_metrics(pdbs):
     records = []
     for pdb in tqdm(pdbs):
         record = {}
-        row = dev.analyze.make_row_from_traj(pdb[:-4])
+        row = rf_diffusion.dev.analyze.make_row_from_traj(pdb[:-4])
         record['name'] = row['name']
 
         # Ligand distance
@@ -74,7 +74,7 @@ def get_metrics(pdbs):
             # (True, True),
             # (True, True)
         ]:
-            dgram = dev.analyze.get_dist_to_ligand(row, af2=af2, c_alpha=c_alpha) # [P, L]
+            dgram = rf_diffusion.dev.analyze.get_dist_to_ligand(row, af2=af2, c_alpha=c_alpha) # [P, L]
             maybe_af2 = 'af2' if af2 else 'des'
             maybe_c_alpha = 'c-alpha' if c_alpha else 'all-atom'
             # ic(dgram.shape)
@@ -84,7 +84,8 @@ def get_metrics(pdbs):
 
         # Secondary structure and radius of gyration
         record.update(analysis.metrics.calc_mdtraj_metrics(pdb))
-        record['rigid_loss'] = rigid_loss(row)
+        # Broken due to residue indexing.
+        # record['rigid_loss'] = rigid_loss(row)
 
         records.append(record)
 

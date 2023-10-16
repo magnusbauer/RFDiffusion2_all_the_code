@@ -66,7 +66,7 @@ def get_motif_spec(row, traj=False):
 def load_pdbs(pdbs, name_by_pdb):
     pymol_objects = {}
     for label, pdb in pdbs.items():
-        assert os.path.exists(pdb), f'{pdb} does not exist'
+        assert os.path.exists(pdb), f'{label}:{pdb} does not exist'
         name = name_by_pdb[pdb]
         cmd.load(pdb, name)
         pymol_objects[label] = name
@@ -129,8 +129,15 @@ def show(row, structs = {'X0'}, af2=False, des=True, des_color=None, hetatm_colo
     name = row['name']
     mpnn_i = row['mpnn_index']
     if mpnn_packed:
-        # pdbs['mpnn_packed'] = os.path.join(row['rundir'], 'ligmpnn', 'packed', f'{name}_packed_1.pdb')
-        pdbs['mpnn_packed'] = os.path.join(row['rundir'], 'ligmpnn/packed', f'{name}_{mpnn_i}.pdb')
+        possible_paths = []
+        possible_paths.append(os.path.join(row['rundir'], 'ligmpnn/packed', f'{name}_{mpnn_i}_1.pdb'))
+        possible_paths.append(os.path.join(row['rundir'], 'ligmpnn/packed', f'{name}_{mpnn_i}.pdb'))
+        for pdb in possible_paths:
+            if os.path.exists(pdb):
+                pdbs['mpnn_packed'] = pdb
+                break
+        else:
+            raise Exception(f'could not find mpnn_packed pdb at any of {possible_paths}')
     
     if rosetta_lig:
         # mpnn_i = 0

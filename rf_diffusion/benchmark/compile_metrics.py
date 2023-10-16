@@ -3,7 +3,7 @@
 # Compiles metrics from scoring runs into a single dataframe CSV
 #
 
-import os, argparse, glob
+import os, argparse, glob, re
 import numpy as np
 import pandas as pd
 from icecream import ic
@@ -80,6 +80,11 @@ def main():
 
     # MPNN and LigandMPNN metrics
     def _load_mpnn_df(mpnn_dir, df_base):
+        def strip_packing_suffix(name):
+            has_packing_suffix = re.match(r'.*\d+_\d+$', name)
+            if has_packing_suffix:
+                return re.sub(r'_\d+$', '', name)
+            return name
         df_accum = pd.DataFrame(dict(name=[]))
         for path in [
             mpnn_dir+'/af2_metrics.csv.*',
@@ -93,6 +98,8 @@ def main():
             if n_unique_names < n_names:
                 print('Dropping {n_names - n_unique_names}/{n_names} duplicates from {path}')
                 tmp.drop_duplicates('name', inplace=True)
+            if len(tmp):
+                tmp.name = tmp.name.map(strip_packing_suffix)
             df_accum = df_accum.merge(tmp, on='name', how='outer')
 
         # chemnet
@@ -125,6 +132,9 @@ def main():
                 break
         mpnn_scores = load_mpnn_scores(seq_dir)
         df_accum = df_accum.merge(mpnn_scores, on='name', how='outer')
+            
+        df_accum['name'] = df_accum.name.map(strip_packing_suffix)
+        df_accum['mpnn_index'] = df_accum.name.map(lambda x: int(x.split('_')[-1]))
         df_accum['mpnn_index'] = df_accum.name.map(lambda x: int(x.split('_')[-1]))
         df_accum['name'] = df_accum.name.map(lambda x: '_'.join(x.split('_')[:-1]))
         df_out = df_base.copy().merge(df_accum, on='name', how='right')
@@ -174,6 +184,9 @@ def main():
     for path in [
         args.datadir+'/metrics/per_sequence/csv.*',
     ]:
+        if len(glob.glob(path)) == 0:
+            continue
+
         df_s = [ pd.read_csv(fn,index_col=0) for fn in glob.glob(path) ]
         tmp = pd.concat(df_s) if len(df_s)>0 else pd.DataFrame(dict(name=[]))
         df = df.merge(tmp, on=['name', 'mpnn_index'], how='left')

@@ -57,8 +57,14 @@ def atomized_indices_atoms(atomizer, atom_names_by_res):
         within_res_atom_idxs = {atom_name.strip():i for atom_name,i in within_res_atom_idxs.items()}
         atom_names = [a.strip() for a in atom_names]
 
-        atom_i = atomized_residue_idxs[[within_res_atom_idxs[atom_name] for atom_name in atom_names]]
-        named_i.extend(atom_i.tolist())
+        for atom_name in atom_names:
+            try:
+                within_res_atom_idx = within_res_atom_idxs[atom_name]
+            except KeyError as e:
+                raise KeyError(f'{atom_name} not one of the known atoms for residue {res_i} with seq {rf2aa.chemical.num2aa[original_aa]}: {list(within_res_atom_idxs.keys())}') from e
+            atom_i = atomized_residue_idxs[within_res_atom_idx]
+            named_i.append(atom_i)
+
     return named_i
 
 def atomized_indices_res_i(atomizer, idx):

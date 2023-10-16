@@ -207,7 +207,7 @@ def wait_for_jobs(job_ids, interval=60):
 
 def step_in_scope(start_step, stop_step, current_step):
     all_steps = ['sweep', 'foldseek', 'graft', 'mpnn', 'thread_mpnn', 'score', 'metrics', 'compile', 'end']
-    steps_to_run = all_steps[all_steps.index(start_step):all_steps.index(stop_step)]
+    steps_to_run = all_steps[all_steps.index(start_step):all_steps.index(stop_step)+1]
     do_run = current_step in steps_to_run
     print(f'{"Running" if do_run else "Skipping"} step: {current_step}')
     return do_run
