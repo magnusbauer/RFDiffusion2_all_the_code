@@ -34,6 +34,10 @@ experiment:
 diffuser:
   t_cont_max: 0.025
 
+metrics:
+- get_pred_bond_length_MAE
+- get_input_bond_length_MAE
+
 n_write_pdb: 10
 lr: 0.005
 resume: null
