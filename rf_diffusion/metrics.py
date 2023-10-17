@@ -135,7 +135,6 @@ class VarianceNormalizedTransMSE():
         true_crds: torch.Tensor, 
         t: float, 
         is_diffused: torch.Tensor,
-        **kwargs
         ):
 
         # Raw mean squared error over diffused atoms
