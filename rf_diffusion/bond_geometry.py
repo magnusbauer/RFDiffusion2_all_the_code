@@ -26,6 +26,7 @@ def calc_atom_bond_loss(indep, pred_xyz, is_diffused):
             'motif': ~is_diffused
         }.items():
             mask_by_name[f'{prefix}_{k}'] = v*mask
+    mask_by_name['all'] = torch.ones_like(is_diffused).bool()
 
     bond_losses = {}
     true_xyz = indep.xyz

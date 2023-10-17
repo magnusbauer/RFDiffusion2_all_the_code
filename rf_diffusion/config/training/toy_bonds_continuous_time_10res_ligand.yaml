@@ -1,0 +1,6 @@
+defaults:
+  - toy_bonds_continuous_time_10res
+
+dataloader:
+  DATASETS: sm_complex
+  DATASET_PROB: [1.0]

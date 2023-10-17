@@ -1,0 +1,11 @@
+defaults:
+  - toy_bonds_continuous_time
+
+metrics:
+- atom_bonds
+
+experiment:
+  diffuse_everything: false
+
+dataloader:
+  max_residues: 10

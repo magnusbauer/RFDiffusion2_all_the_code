@@ -94,8 +94,8 @@ def contigs(logit_s, label_s,
         'n_contig_res': n_contig_res(diffusion_mask),
     }
 
-def atom_bonds(indep, pred_xyz, is_diffused, **kwargs):
-    return bond_geometry.calc_atom_bond_loss(indep, pred_xyz, is_diffused)
+def atom_bonds(indep, pred_crds, is_diffused, **kwargs):
+    return bond_geometry.calc_atom_bond_loss(indep, pred_crds, is_diffused)
 
 ###################################
 # Bond geometry metrics

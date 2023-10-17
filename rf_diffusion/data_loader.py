@@ -1687,6 +1687,15 @@ class DistilledDataset(data.Dataset):
                 # name, names = show.one(indep, None, 'before_deatomize_covales')
                 # show.cmd.do(f'util.cbc {name}')
 
+                if self.conf.dataloader.max_residues > -1:
+                    # Kind of hacky as it may break covales.  Only for debugging.
+                    pop = indep.is_sm.clone()
+                    residue_indices = torch.where(~indep.is_sm)[0]
+                    residue_indices = residue_indices[:self.conf.dataloader.max_residues]
+                    pop[residue_indices] = True
+                    aa_model.pop_mask(indep, pop)
+                    atom_mask = atom_mask[pop]
+
                 indep, atom_mask, metadata = aa_model.deatomize_covales(indep, atom_mask)
 
                 # Mask the independent inputs.
@@ -1707,9 +1716,6 @@ class DistilledDataset(data.Dataset):
 
                 pre_transform_length = indep.length()
                 indep, is_diffused, is_masked_seq, atomizer, _ = aa_model.transform_indep(indep, is_res_str_shown, is_atom_str_shown, self.params['USE_GUIDE_POSTS'], guidepost_bonds=self.conf.guidepost_bonds, metadata=metadata)
-
-                if self.conf.experiment.diffuse_everything:
-                    is_diffused = torch.ones_like(is_diffused, dtype=bool)
 
                 # HACK: gp indices may be lost during atomization, so we assume they are at the end of the protein.
                 is_gp = torch.full((indep.length(),), True)

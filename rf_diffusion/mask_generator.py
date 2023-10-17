@@ -339,9 +339,11 @@ def get_tip_gaussian_mask(indep, atom_mask, *args, std_dev=8, **kwargs):
     return is_motif, is_atom_motif
 
 def atomize_all_res(indep, atom_mask, *args, **kwargs):
+    is_motif = torch.zeros(indep.length()).bool()
     is_atom_motif = {}
     for i in torch.where(indep.has_heavy_atoms_and_seq(atom_mask))[0]:
-        is_atom_motif[i] = ['CA']
+        if not indep.is_sm[i]:
+            is_atom_motif[i] = []
 
     is_motif = torch.zeros(indep.length()).bool()
     return is_motif, is_atom_motif

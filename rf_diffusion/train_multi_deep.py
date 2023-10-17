@@ -883,6 +883,10 @@ class Trainer():
                 #        if p.grad is None and p.requires_grad is True:
                 #            print('Parameter not used:', n, p.shape)  # prints unused parameters. Remove them from your model
                 
+                atom_ids = np.arange(L)
+                if atomizer:
+                    atom_ids = atomize.get_res_atom_name_by_atomized_idx(atomizer)
+                ic(atom_ids, L)
 
                 log_metrics = (counter % N_PRINT_TRAIN == 0) and (rank == 0)
                 if log_metrics:
