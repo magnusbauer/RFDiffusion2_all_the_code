@@ -241,10 +241,6 @@ class Trainer():
         # Translation x0 loss
         gt_trans_x0 = diffuser_out['rigids_0'][..., 4:] * self.conf.diffuser.r3.coordinate_scaling
         pred_trans_x0 = model_out['rigids'][..., 4:] * self.conf.diffuser.r3.coordinate_scaling
-        # trans_x0_loss = torch.sum(
-        #     (gt_trans_x0 - pred_trans_x0)**2 * is_trans_loss[None,None,:,None],
-        #     dim=(-1, -2)
-        # ) / (is_trans_loss.sum() + 1e-10)
         
         # Take translation loss only over diffused atoms
         gt_trans_x0 = gt_trans_x0[:, is_diffused.squeeze()]

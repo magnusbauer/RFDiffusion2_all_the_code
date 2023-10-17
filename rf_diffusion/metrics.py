@@ -99,52 +99,6 @@ def contigs(logit_s, label_s,
 def atom_bonds(indep, pred_crds, is_diffused, point_types, **kwargs):
     return bond_geometry.calc_atom_bond_loss(indep, pred_crds, is_diffused, point_types)
 
-###################################
-# Bond geometry metrics
-###################################
-def make_chemical_graph(indep, crds):
-    G = nx.Graph()
-
-    # Add atoms as nodes
-    for i, (element_int, xyz) in enumerate(zip(indep.seq[indep.is_sm], crds[indep.is_sm, 1])):
-        element = chemical.num2aa[element_int]
-        G.add_node(i, element=element, xyz=xyz)
-
-    # Add edges if covalently bonded
-    bond_feats = indep.bond_feats[indep.is_sm][indep.is_sm]
-    is_covalently_bonded = (1 <= bond_feats) & (bond_feats <= 4)
-    src, dst = torch.where(is_covalently_bonded)
-    G.add_edges_from(zip(src.tolist(), dst.tolist()))
-
-    # Add degree of each atom
-    for n in list(G):
-        G.nodes[n]['degree'] = nx.degree(G, n)
-
-    return G
-
-def get_bond_length_MAE(indep, other_crds, true_crds):
-    # Make chemical graph
-    G_other = make_chemical_graph(indep, other_crds)
-    G_true = make_chemical_graph(indep, true_crds)
-
-    # Get all bond distances
-    geo_other = bond_geometry.gather_aa_geometries(G_other, bond_geometry.get_bond_dists)
-    geo_true = bond_geometry.gather_aa_geometries(G_true, bond_geometry.get_bond_dists)
-    dist_other, dist_true = bond_geometry.collate_and_flatten_bond_geo(geo_other, geo_true)
-    dist_other = torch.tensor(dist_other)
-    dist_true = torch.tensor(dist_true)
-
-    # Calc MAE
-    mae = (dist_other - dist_true).abs().mean()
-
-    return mae
-
-def get_pred_bond_length_MAE(indep, pred_crds, true_crds, **kwargs):
-    return get_bond_length_MAE(indep, pred_crds, true_crds)
-
-def get_input_bond_length_MAE(indep, input_crds, true_crds, **kwargs):
-    return get_bond_length_MAE(indep, input_crds, true_crds)
-
 
 ###################################
 # Metric class. Similar to Potentials class.
@@ -162,7 +116,8 @@ class Metric:
         true_crds: torch.Tensor, 
         input_crds: torch.Tensor, 
         t: float, 
-        is_diffused: torch.Tensor
+        is_diffused: torch.Tensor,
+        point_types: np.array,
         ):
         pass
 
@@ -201,10 +156,8 @@ class VarianceNormalizedPredTransMSE(Metric):
 
     def __call__(
         self,
-        indep: Indep, 
         pred_crds: torch.Tensor, 
         true_crds: torch.Tensor, 
-        input_crds: torch.Tensor, 
         t: float, 
         is_diffused: torch.Tensor,
         **kwargs
@@ -217,8 +170,6 @@ class VarianceNormalizedInputTransMSE(Metric):
 
     def __call__(
         self,
-        indep: Indep, 
-        pred_crds: torch.Tensor, 
         true_crds: torch.Tensor, 
         input_crds: torch.Tensor, 
         t: float, 
@@ -254,7 +205,6 @@ class MetricManager:
             else:
                 raise TypeError(f'Tried to use {name} as a metric, but it is neither a Metric subclass nor callable.')
 
-
     def compute_all_metrics(
         self, 
         indep: Indep, 
@@ -273,7 +223,7 @@ class MetricManager:
             input_crds (..., L, n_atoms, 3)
             t: Time in the diffusion process. Between 0 and 1.
             is_diffused (L,): True if the residue was diffused.
-
+            point_types (L,): 'L': Ligand, 'R': Residue, 'AB': Atomized backbone, 'AS': Atomized sidechain
         Returns
             Dictionary of the name of the metric and what it returned.
         '''
@@ -284,6 +234,7 @@ class MetricManager:
         assert input_crds.shape[-3:] == true_crds.shape[-3:]
         assert is_diffused.ndim == 1
         assert is_diffused.shape[0] == L
+        assert point_types.shape[0] == L
 
         # Evaluate each metric
         metric_results = {}
