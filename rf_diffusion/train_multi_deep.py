@@ -220,6 +220,7 @@ class Trainer():
             w_loss = w_loss / w_loss.sum()
             # ic(w_loss) # confirmed ascending
             return torch.sum(x * w_loss, dim=-1)
+        
         device = model_out['rigids'].device
         batch_size, _, num_res, _ = model_out['rigids'].shape
         is_diffused = is_diffused[None].to(device)
@@ -256,14 +257,18 @@ class Trainer():
         # Translation x0 loss
         gt_trans_x0 = diffuser_out['rigids_0'][..., 4:] * self.conf.diffuser.r3.coordinate_scaling
         pred_trans_x0 = model_out['rigids'][..., 4:] * self.conf.diffuser.r3.coordinate_scaling
-        trans_x0_loss = torch.sum(
-            (gt_trans_x0 - pred_trans_x0)**2 * is_trans_loss[None,None,:,None],
-            dim=(-1, -2)
-        ) / (is_trans_loss.sum() + 1e-10)
+        # trans_x0_loss = torch.sum(
+        #     (gt_trans_x0 - pred_trans_x0)**2 * is_trans_loss[None,None,:,None],
+        #     dim=(-1, -2)
+        # ) / (is_trans_loss.sum() + 1e-10)
+        
+        # Be sure to take the loss over atoms that are resolved and diffused
+        gt_trans_x0 = gt_trans_x0[:, is_trans_loss]
+        pred_trans_x0 = pred_trans_x0[:,:,is_trans_loss]
+        trans_x0_loss = loss.MSE(pred_trans_x0, gt_trans_x0)
 
         if self.conf.experiment.normalize_trans_x0:
             noise_var = float(1 - torch.exp(-self.diffuser._r3_diffuser.marginal_b_t(t)))
-            # noise_var = noise_var * self.conf.diffuser.r3.coordinate_scaling ** 2
             trans_x0_loss = trans_x0_loss / noise_var
 
         loss_dict['trans_score'] = trans_score_loss * (t > self._exp_conf.trans_x0_threshold) * int(self.conf.diffuser.diffuse_trans)
@@ -934,27 +939,15 @@ class Trainer():
                             'loss':loss.detach()})
 
                         rf2aa.tensor_util.to_device(indep, 'cpu')
-                        metrics = self.metric_manager.compute_all_metrics(
+                        metrics_inputs = dict(
                             indep=indep,
                             pred_crds=pred_crds[-1, 0].cpu(),
                             true_crds=true_crds[0, :, :3].cpu(),
-                            input_crds=torch.zeros_like(pred_crds[-1, 0]).cpu(),
+                            input_crds=xyz_prev_orig.clone()[0, :, :3].cpu(),
                             t=little_t/self.diffuser.T,
                             is_diffused=is_diffused.cpu(),
                         )
-
-                        # for m in self.metrics:
-                        #     import ipdb; ipdb.set_trace()
-                        #     with torch.no_grad():
-                        #         if getattr(m, 'accepts_indep', False):
-                        #             metrics.update(m(
-                        #                 indep=indep,
-                        #                 pred_crds=pred_crds[-1, 0].cpu(),
-                        #                 true_crds=true_crds[0].cpu(),
-                        #                 input_crds=None,
-                        #                 t=little_t,
-                        #                 is_diffused=is_diffused.cpu(),
-                        #             ))
+                        metrics = self.metric_manager.compute_all_metrics(**metrics_inputs)
                                     
                         loss_dict['metrics'] = metrics
                         # loss_dict['loss_weights'] = loss_weights
@@ -1005,6 +998,7 @@ class Trainer():
                     
                     with open(f'{prefix}_info.pkl', 'wb') as fh:
                         pickle.dump({
+                            'metrics_inputs': metrics_inputs,
                             'motif': motif_deatomized,
                             'masks_1d': masks_1d,
                             'idx': indep_true.idx,
@@ -1013,10 +1007,6 @@ class Trainer():
                             'pymol_names': pymol_names,
                             'dataset': chosen_dataset,
                             'little_t': float(little_t),
-                            'model_out': tree.map_structure(
-                                lambda x: x.cpu() if hasattr(x, 'cpu') else x, model_out),
-                            'diffuser_out': tree.map_structure(
-                                lambda x: x.cpu() if hasattr(x, 'cpu') else x, diffuser_out),
                             'loss_dict': tree.map_structure(
                                 lambda x: x.cpu() if hasattr(x, 'cpu') else x, loss_dict)
                         }, fh)
