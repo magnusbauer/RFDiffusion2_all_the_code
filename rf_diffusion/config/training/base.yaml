@@ -24,6 +24,7 @@ experiment:
   trans_loss_weight: 1.0
   rot_loss_weight: 1.0
   trans_x0_threshold: 1.0
+  normalize_trans_x0: false
   bb_atom_loss_weight: 1.0
   bb_atom_loss_t_filter: 0.25
   dist_mat_loss_weight: 1.0

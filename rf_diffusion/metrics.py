@@ -1,11 +1,14 @@
 import torch
 from icecream import ic
 import itertools
-import bond_geometry
+from rf_diffusion import bond_geometry
 import sys
 from rf_diffusion.aa_model import Indep
 import networkx as nx
 from rf2aa import chemical
+from rf_diffusion import loss
+from rf_se3_diffusion.data import r3_diffuser
+from abc import abstractmethod
 
 def calc_displacement(pred, true):
     """
@@ -142,96 +145,111 @@ def get_input_bond_length_MAE(indep, input_crds, true_crds, **kwargs):
 
 
 ###################################
-# Annotate which functions accept what arguments
-###################################
-'''
-If accepts_indep is True, the function is passed the inputs
-(indep, pred_crds, true_crds, input_crds, t, is_diffused)
-'''
-atom_bonds.accepts_indep = True
-get_pred_bond_length_MAE.accepts_indep = True
-get_input_bond_length_MAE.accepts_indep = True
-
-
-###################################
 # Metric class. Similar to Potentials class.
 ###################################
-# class Metric:
-#     def _check_inputs(
-#         self, 
-#         indep: Indep, 
-#         pred_crds: torch.Tensor, 
-#         true_crds: torch.Tensor, 
-#         input_crds: torch.Tensor, 
-#         t: float, 
-#         is_diffused: torch.Tensor
-#         ):
-#         '''
-#         Inputs
-#             indep: Defines protein and/or molecule connections. 
-#             pred_crds (..., L, n_atoms, 3)
-#             true_crds (..., L, n_atoms, 3)
-#             input_crds (..., L, n_atoms, 3)
-#             t: Time in the diffusion process. Between 0 and 1.
-#             is_diffused (L,): True if the residue was diffused.
-#         '''
-#         # This just basic class and shape checks
-#         L = true_crds.shape(-2)
-#         assert (0 <= t) and (t <= 1), f't must be between 0 and 1, but was {t:.3f}'
-#         assert (pred_crds.shape[-3:] == true_crds.shape[-3:]).all()
-#         assert (input_crds.shape[-3:] == true_crds.shape[-3:]).all()
-#         assert is_diffused.dims == 1
-#         assert is_diffused.shape[0] == L
+class Metric:
+    @abstractmethod
+    def __init__(self, conf=None):
+        pass
 
-#     @abstractmethod
-#     def __call__(
-#         self,
-#         indep: Indep, 
-#         pred_crds: torch.Tensor, 
-#         true_crds: torch.Tensor, 
-#         input_crds: torch.Tensor, 
-#         t: float, 
-#         is_diffused: torch.Tensor
-#         ):
-#         pass
+    @abstractmethod
+    def __call__(
+        self,
+        indep: Indep, 
+        pred_crds: torch.Tensor, 
+        true_crds: torch.Tensor, 
+        input_crds: torch.Tensor, 
+        t: float, 
+        is_diffused: torch.Tensor
+        ):
+        pass
 
-# class PredictedBondLengthMAE(Metric):
-#     def __call__(
-#         self, 
-#         indep: Indep, 
-#         pred_crds: torch.Tensor, 
-#         true_crds: torch.Tensor, 
-#         input_crds: torch.Tensor, 
-#         t: float, 
-#         is_diffused: torch.Tensor
-#         ):
-#         super()._check_inputs(indep, pred_crds, true_crds, input_crds, t, is_diffused)
-#         return get_bond_length_MAE(indep, pred_crds, true_crds)
+class VarianceNormalizedTransMSE():
+    '''
+    Not intended to be called directly as a metric.
+    Does not have the correct call signature.
+    '''
+    def __init__(self, conf):
+        self.r3_diffuser = r3_diffuser.R3Diffuser(conf.diffuser.r3)
 
-# class InputBondLengthMAE(Metric):
-#     def __call__(
-#         self, 
-#         indep: Indep, 
-#         pred_crds: torch.Tensor, 
-#         true_crds: torch.Tensor, 
-#         input_crds: torch.Tensor, 
-#         t: float, 
-#         is_diffused: torch.Tensor
-#         ):
-#         super()._check_inputs(indep, pred_crds, true_crds, input_crds, t, is_diffused)
-#         return get_bond_length_MAE(indep, input_crds, true_crds)
+    def __call__(
+        self,
+        other_crds: torch.Tensor, 
+        true_crds: torch.Tensor, 
+        t: float, 
+        is_diffused: torch.Tensor
+        ):
+
+        # Raw mean squared error over diffused atoms
+        true_crds = true_crds[..., is_diffused, 1, :]
+        other_crds = other_crds[..., is_diffused, 1, :]
+        mse = loss.mse(other_crds, true_crds)
+
+        # Normalize MSE by the variance of the added noise
+        noise_var = 1 - torch.exp(-self.r3_diffuser.marginal_b_t(torch.tensor(t)))
+        mse_variance_normalized = mse / noise_var
+
+        return mse_variance_normalized
+
+
+class VarianceNormalizedPredTransMSE(Metric):
+    def __init__(self, conf):
+        self.get_variance_normalized_mse = VarianceNormalizedTransMSE(conf)
+
+    def __call__(
+        self,
+        indep: Indep, 
+        pred_crds: torch.Tensor, 
+        true_crds: torch.Tensor, 
+        input_crds: torch.Tensor, 
+        t: float, 
+        is_diffused: torch.Tensor
+        ):
+
+        return self.get_variance_normalized_mse(pred_crds, true_crds, t, is_diffused)
+
+class VarianceNormalizedInputTransMSE(Metric):
+    def __init__(self, conf):
+        self.get_variance_normalized_mse = VarianceNormalizedTransMSE(conf)
+
+    def __call__(
+        self,
+        indep: Indep, 
+        pred_crds: torch.Tensor, 
+        true_crds: torch.Tensor, 
+        input_crds: torch.Tensor, 
+        t: float, 
+        is_diffused: torch.Tensor
+        ):
+
+        return self.get_variance_normalized_mse(input_crds, true_crds, t, is_diffused)
 
 
 ###################################
 # Metric manager
 ###################################
 class MetricManager:
-    def __init__(self, *metric_names):
+    def __init__(self, conf):
         '''
-        metric_names: A name (str) of a function in this module
-            that can act as a metric.
+        conf: Configuration object for training. Must have...
+            metrics: Name of class (or function) in this module to be used as a metric.
         '''
-        self.metric_names = metric_names
+        self.conf = conf
+
+        # Initialize all metrics to be used
+        thismodule = sys.modules[__name__]
+        self.metric_callables = {}
+        for name in conf.metrics:
+            obj = getattr(thismodule, name)
+            # Currently support metrics being Metric subclass or a ducktyped function with identical call signature.
+            # Might change to only supporting Metric subclasses in the future.
+            if issubclass(obj, Metric):
+                self.metric_callables[name] = obj(conf)
+            elif callable(obj):
+                self.metric_callables[name] = obj
+            else:
+                raise TypeError(f'Tried to use {name} as a metric, but it is neither a Metric subclass nor callable.')
+
 
     def compute_all_metrics(
         self, 
@@ -263,11 +281,9 @@ class MetricManager:
         assert is_diffused.shape[0] == L
 
         # Evaluate each metric
-        thismodule = sys.modules[__name__]
         metric_results = {}
-        for name in self.metric_names:
-            func = getattr(thismodule, name)
-            metric_output = func(
+        for name, callable in self.metric_callables.items():
+            metric_output = callable(
                 indep=indep,
                 pred_crds=pred_crds,
                 true_crds=true_crds,

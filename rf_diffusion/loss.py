@@ -2,11 +2,11 @@ import torch
 import numpy as np
 from opt_einsum import contract as einsum
 
-from util import rigid_from_3_points, get_mu_xt_x0
-from kinematics import get_dih
-from scoring import HbHybType
+from rf_diffusion.util import rigid_from_3_points, get_mu_xt_x0
+from rf2aa.kinematics import get_dih
+from rf2aa.scoring import HbHybType
 from icecream import ic
-from diff_util import th_min_angle 
+from rf_diffusion.diff_util import th_min_angle 
 
 torch.autograd.set_detect_anomaly(True)
 
@@ -16,11 +16,50 @@ torch.autograd.set_detect_anomaly(True)
 # 3. bond geometry loss
 # 4. predicted lddt loss
 
-def frame_distance_err(R_pred, R_true, eps=1e-8):
+def normalize_loss(x: torch.Tensor, gamma: float):
+    '''
+    Exponentially downweight losses from the structure blocks.
+
+    Args
+        x (I,): Loss from the structure predicted by each of the I structure blocks.
+        gamma: Exponenet of how heavily to downwieght the losses. 
+    '''
+    # Exponential decay
+    if x.ndim != 1:
+        return x
+    I, = x.shape
+    device = x.device
+    w_loss = torch.pow(torch.full((I,), gamma, device=device), torch.arange(I, device=device))
+    w_loss = torch.flip(w_loss, (0,))
+    w_loss = w_loss / w_loss.sum()
+
+    return torch.sum(x * w_loss, dim=-1)
+
+def mse(xyz_other: torch.Tensor, xyz_true: torch.Tensor):
+    '''
+    Mean squared error.
+
+    Args
+        xyz_other (..., n_atoms, n_dims): Coordinates to compare to.
+        xyz_true (..., n_atoms, n_dims): True coordinates.
+
+    Returns
+        mse (...,): Mean squared error
+    '''
+    return (xyz_other - xyz_true).pow(2).sum(-1).mean(-1)
+
+def frame_distance_err(R_pred, R_true):
+    '''
+    Args
+        R_pred (I, B, L, 3, 3)
+        R_true (L, 3, 3)
+    '''
 
     I,B,L = R_pred.shape[:3]
     assert len(R_true.shape) == 3
     assert B == 1
+
+    eps=1e-8
 
     true_repeated = R_true.repeat((I,B,1,1,1))
     eye_repeated  = torch.eye(3,3).repeat((I,B,L,1,1)).to(device=true_repeated.device)

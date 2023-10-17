@@ -45,8 +45,8 @@ pytimer.timer.default_logger.propagate = False
 
 
 from kinematics import xyz_to_c6d, c6d_to_bins2, xyz_to_t2d, xyz_to_bbtor, get_init_xyz
-import loss 
-from loss import *
+from rf_diffusion import loss as loss_module
+from rf_diffusion.loss import *
 import util
 from scheduler import get_stepwise_decay_schedule_with_warmup
 
@@ -169,7 +169,7 @@ class Trainer():
     def __init__(self, conf=None):
         self.conf=conf
         self._exp_conf = conf.experiment
-        self.metric_manager = MetricManager(*conf.metrics)
+        self.metric_manager = MetricManager(conf)
 
         # Initialize experiment objects
         from rf_se3_diffusion.data import se3_diffuser
@@ -207,19 +207,6 @@ class Trainer():
                   lj_lin=0.75, use_H=False, w_disp=0.0, w_motif_disp=0.0, w_ax_ang=0.0, w_frame_dist=0.0, eps=1e-6, backprop_non_displacement_on_given=False):
 
         aux_data = {}
-
-        def normalize_loss(x):
-
-            # Exponential decay
-            if x.ndim != 1:
-                return x
-            I, = x.shape
-            device = x.device
-            w_loss = torch.pow(torch.full((I,), self.conf.experiment.gamma, device=device), torch.arange(I, device=device))
-            w_loss = torch.flip(w_loss, (0,))
-            w_loss = w_loss / w_loss.sum()
-            # ic(w_loss) # confirmed ascending
-            return torch.sum(x * w_loss, dim=-1)
         
         device = model_out['rigids'].device
         batch_size, _, num_res, _ = model_out['rigids'].shape
@@ -236,9 +223,6 @@ class Trainer():
         gt_trans_score = diffuser_out['trans_score'][None].to(device)
         rot_score_scaling = torch.tensor(diffuser_out['rot_score_scaling'])[None].to(device)
         trans_score_scaling = torch.tensor(diffuser_out['trans_score_scaling'])[None].to(device)
-
-        is_res_resolved = ~torch.isnan(indep.xyz[:,1]).any(dim=-1)
-        is_trans_loss = (is_res_resolved & is_diffused).squeeze()
 
         # Dictionary for keeping track of losses 
         loss_dict = {}
@@ -262,10 +246,10 @@ class Trainer():
         #     dim=(-1, -2)
         # ) / (is_trans_loss.sum() + 1e-10)
         
-        # Be sure to take the loss over atoms that are resolved and diffused
-        gt_trans_x0 = gt_trans_x0[:, is_trans_loss]
-        pred_trans_x0 = pred_trans_x0[:,:,is_trans_loss]
-        trans_x0_loss = loss.MSE(pred_trans_x0, gt_trans_x0)
+        # Take translation loss only over diffused atoms
+        gt_trans_x0 = gt_trans_x0[:, is_diffused.squeeze()]
+        pred_trans_x0 = pred_trans_x0[:, :, is_diffused.squeeze()]
+        trans_x0_loss = loss_module.mse(pred_trans_x0, gt_trans_x0)
 
         if self.conf.experiment.normalize_trans_x0:
             noise_var = float(1 - torch.exp(-self.diffuser._r3_diffuser.marginal_b_t(t)))
@@ -283,7 +267,7 @@ class Trainer():
         ) / (has_rot_loss.sum(dim=-1) + 1e-10) # [B, I]
 
         # logging rot scores
-        unscaled_mean_rot_loss = normalize_loss(rot_loss.sum(dim=0))
+        unscaled_mean_rot_loss = loss_module.normalize_loss(rot_loss.sum(dim=0), gamma=self.conf.experiment.gamma)
         aux_data['unscaled_rot_score_mean'] = torch.clone(unscaled_mean_rot_loss.detach())
         unscaled_rot_loss = rot_loss.sum(dim=0)
         aux_data['unscaled_rot_score_over_i'] = torch.clone(unscaled_rot_loss.detach())
@@ -358,7 +342,7 @@ class Trainer():
         
         tot_loss = 0
         for k, loss in loss_dict.items():
-            mean_block_loss = normalize_loss(loss)
+            mean_block_loss = loss_module.normalize_loss(loss, gamma=self.conf.experiment.gamma)
             aux_data[f'mean_block.{k}'] = mean_block_loss
             last_block_loss = loss
             if last_block_loss.ndim == 1:
@@ -943,7 +927,7 @@ class Trainer():
                             indep=indep,
                             pred_crds=pred_crds[-1, 0].cpu(),
                             true_crds=true_crds[0, :, :3].cpu(),
-                            input_crds=xyz_prev_orig.clone()[0, :, :3].cpu(),
+                            input_crds=xyz_prev_orig[:, :3].cpu(),
                             t=little_t/self.diffuser.T,
                             is_diffused=is_diffused.cpu(),
                         )
