@@ -7,8 +7,9 @@ import numpy as np
 from rf2aa import chemical
 from typing import Iterable
 from rf_diffusion.graph_utils import ListDict, find_subgraphs
+from rf_diffusion import aa_model
 
-def calc_atom_bond_loss(indep, pred_xyz, is_diffused):
+def calc_atom_bond_loss(indep, pred_xyz, is_diffused, point_types):
     """
     Loss on distances between bonded atoms
     """
@@ -18,16 +19,19 @@ def calc_atom_bond_loss(indep, pred_xyz, is_diffused):
     # is_ligand = indep.is_sm & ~(indep.seq < rf2aa.chemical.NPROTAAS)
     mask_by_name = {}
     for k, v in {
-        'residue': ~indep.is_sm,
-        'atom': indep.is_sm,
+        'residue': point_types == aa_model.POINT_RESIDUE,
+        'atomized_sidechain': point_types == aa_model.POINT_ATOMIZED_SIDECHAIN,
+        'atomized_backbone': point_types == aa_model.POINT_ATOMIZED_BACKBONE,
+        'atomized': np.isin(point_types, [aa_model.POINT_ATOMIZED_BACKBONE, aa_model.POINT_ATOMIZED_SIDECHAIN]),
+        'ligand': point_types == aa_model.POINT_LIGAND,
+        'any': np.full(indep.length(), True),
     }.items():
         for prefix, mask in {
             'diffused': is_diffused,
-            'motif': ~is_diffused
+            'motif': ~is_diffused,
+            'any': np.full(indep.length(), True),
         }.items():
-            mask_by_name[f'{prefix}_{k}'] = v*mask
-    mask_by_name['all'] = torch.ones_like(is_diffused).bool()
-
+            mask_by_name[f'{prefix}_{k}'] = torch.tensor(v)*mask
     bond_losses = {}
     true_xyz = indep.xyz
     is_bonded = torch.triu(indep.bond_feats > 0)

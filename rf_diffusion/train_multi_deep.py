@@ -882,12 +882,16 @@ class Trainer():
                 #    for n, p in ddp_model.named_parameters():
                 #        if p.grad is None and p.requires_grad is True:
                 #            print('Parameter not used:', n, p.shape)  # prints unused parameters. Remove them from your model
-                
-                atom_ids = np.arange(L)
-                if atomizer:
-                    atom_ids = atomize.get_res_atom_name_by_atomized_idx(atomizer)
-                ic(atom_ids, L)
 
+                metrics_inputs = dict(
+                    indep=indep,
+                    pred_crds=pred_crds[-1, 0].cpu(),
+                    true_crds=true_crds[0, :, :3].cpu(),
+                    input_crds=xyz_prev_orig[:, :3].cpu(),
+                    t=little_t/self.diffuser.T,
+                    is_diffused=is_diffused.cpu(),
+                    point_types=aa_model.get_point_types(indep, atomizer)
+                )
                 log_metrics = (counter % N_PRINT_TRAIN == 0) and (rank == 0)
                 if log_metrics:
                     train_time  = time.time() - start_time
@@ -927,14 +931,6 @@ class Trainer():
                             'loss':loss.detach()})
 
                         rf2aa.tensor_util.to_device(indep, 'cpu')
-                        metrics_inputs = dict(
-                            indep=indep,
-                            pred_crds=pred_crds[-1, 0].cpu(),
-                            true_crds=true_crds[0, :, :3].cpu(),
-                            input_crds=xyz_prev_orig[:, :3].cpu(),
-                            t=little_t/self.diffuser.T,
-                            is_diffused=is_diffused.cpu(),
-                        )
                         metrics = self.metric_manager.compute_all_metrics(**metrics_inputs)
                                     
                         loss_dict['metrics'] = metrics

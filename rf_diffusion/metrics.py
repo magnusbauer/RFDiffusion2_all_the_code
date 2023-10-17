@@ -1,4 +1,6 @@
+import inspect
 import torch
+import numpy as np
 from icecream import ic
 import itertools
 from rf_diffusion import bond_geometry
@@ -94,8 +96,8 @@ def contigs(logit_s, label_s,
         'n_contig_res': n_contig_res(diffusion_mask),
     }
 
-def atom_bonds(indep, pred_crds, is_diffused, **kwargs):
-    return bond_geometry.calc_atom_bond_loss(indep, pred_crds, is_diffused)
+def atom_bonds(indep, pred_crds, is_diffused, point_types, **kwargs):
+    return bond_geometry.calc_atom_bond_loss(indep, pred_crds, is_diffused, point_types)
 
 ###################################
 # Bond geometry metrics
@@ -177,12 +179,13 @@ class VarianceNormalizedTransMSE():
         other_crds: torch.Tensor, 
         true_crds: torch.Tensor, 
         t: float, 
-        is_diffused: torch.Tensor
+        is_diffused: torch.Tensor,
+        **kwargs
         ):
 
         # Raw mean squared error over diffused atoms
-        true_crds = true_crds[..., is_diffused, 1, :]
-        other_crds = other_crds[..., is_diffused, 1, :]
+        true_crds = true_crds[..., is_diffused, 1, :] * self.r3_diffuser._r3_conf.coordinate_scaling
+        other_crds = other_crds[..., is_diffused, 1, :] * self.r3_diffuser._r3_conf.coordinate_scaling
         mse = loss.mse(other_crds, true_crds)
 
         # Normalize MSE by the variance of the added noise
@@ -203,9 +206,9 @@ class VarianceNormalizedPredTransMSE(Metric):
         true_crds: torch.Tensor, 
         input_crds: torch.Tensor, 
         t: float, 
-        is_diffused: torch.Tensor
+        is_diffused: torch.Tensor,
+        **kwargs
         ):
-
         return self.get_variance_normalized_mse(pred_crds, true_crds, t, is_diffused)
 
 class VarianceNormalizedInputTransMSE(Metric):
@@ -219,7 +222,8 @@ class VarianceNormalizedInputTransMSE(Metric):
         true_crds: torch.Tensor, 
         input_crds: torch.Tensor, 
         t: float, 
-        is_diffused: torch.Tensor
+        is_diffused: torch.Tensor,
+        **kwargs,
         ):
 
         return self.get_variance_normalized_mse(input_crds, true_crds, t, is_diffused)
@@ -243,7 +247,7 @@ class MetricManager:
             obj = getattr(thismodule, name)
             # Currently support metrics being Metric subclass or a ducktyped function with identical call signature.
             # Might change to only supporting Metric subclasses in the future.
-            if issubclass(obj, Metric):
+            if inspect.isclass(obj) and issubclass(obj, Metric):
                 self.metric_callables[name] = obj(conf)
             elif callable(obj):
                 self.metric_callables[name] = obj
@@ -258,7 +262,8 @@ class MetricManager:
         true_crds: torch.Tensor, 
         input_crds: torch.Tensor, 
         t: float, 
-        is_diffused: torch.Tensor
+        is_diffused: torch.Tensor,
+        point_types: np.array
         ) -> dict:
         '''
         Inputs
@@ -290,6 +295,7 @@ class MetricManager:
                 input_crds=input_crds,
                 t=t,
                 is_diffused=is_diffused,
+                point_types=point_types
             )
             metric_results[name] = metric_output
 

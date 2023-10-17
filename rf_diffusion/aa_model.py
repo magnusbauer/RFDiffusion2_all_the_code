@@ -222,6 +222,25 @@ def assert_valid_seq_mask(indep, is_masked_seq):
         )
         raise Exception('Sequence mask is invalid: atom indices are sequence masked.')
 
+backbone_atoms = ['N', 'C', 'CA', 'O']
+POINT_LIGAND = 'L'
+POINT_RESIDUE = 'R'
+POINT_ATOMIZED_BACKBONE = 'AB'
+POINT_ATOMIZED_SIDECHAIN = 'AS'
+def get_point_types(indep, atomizer):
+    t = np.empty(indep.length(), dtype='object')
+    t[indep.is_sm.cpu().detach()] = POINT_LIGAND
+    t[~indep.is_sm.cpu().detach()] = POINT_RESIDUE
+    res_atom_by_i = {}
+    if atomizer:
+        res_atom_by_i = atomize.get_res_atom_name_by_atomized_idx(atomizer)
+        for i, (_,  atom_name) in res_atom_by_i.items():
+            if atom_name in backbone_atoms:
+                t[i] = POINT_ATOMIZED_BACKBONE
+            else:
+                t[i] = POINT_ATOMIZED_SIDECHAIN
+    return t
+
 @dataclass
 class RFI:
     msa_latent: torch.Tensor
