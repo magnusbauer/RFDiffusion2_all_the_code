@@ -171,18 +171,19 @@ def sample_one(sampler, simple_logging=False):
         denoised_xyz_stack.append(x_t)
         seq_stack.append(seq_t)
     
-    # deatomize features, if applicable
-    if (sampler.model_adaptor.atomizer is not None):
-        indep, px0_xyz_stack, denoised_xyz_stack, seq_stack = \
-            deatomize_sampler_outputs(sampler, indep, px0_xyz_stack, denoised_xyz_stack, seq_stack)
-           
     # Flip order for better visualization in pymol
     denoised_xyz_stack = torch.stack(denoised_xyz_stack)
     denoised_xyz_stack = torch.flip(denoised_xyz_stack, [0,])
     px0_xyz_stack = torch.stack(px0_xyz_stack)
     px0_xyz_stack = torch.flip(px0_xyz_stack, [0,])
 
-    return indep, denoised_xyz_stack, px0_xyz_stack, seq_stack
+    raw = (px0_xyz_stack, denoised_xyz_stack)
+    # deatomize features, if applicable
+    if (sampler.model_adaptor.atomizer is not None):
+        indep, px0_xyz_stack, denoised_xyz_stack, seq_stack = \
+            deatomize_sampler_outputs(sampler, indep, px0_xyz_stack, denoised_xyz_stack, seq_stack)
+
+    return indep, denoised_xyz_stack, px0_xyz_stack, seq_stack, raw
 
 def deatomize_sampler_outputs(sampler, indep, px0_xyz_stack, denoised_xyz_stack, seq_stack):
     """Converts atomized residues back to residue-as-residue representation in
@@ -214,11 +215,13 @@ def deatomize_sampler_outputs(sampler, indep, px0_xyz_stack, denoised_xyz_stack,
         cond=~indep.is_sm[...,None] * (seq_ >= rf2aa.chemical.UNKINDEX)
         seq_ = torch.where(cond, alanine_one_hot, seq_)
         seq_stack_new.append(seq_)
+    denoised_xyz_stack_new = torch.stack(denoised_xyz_stack_new)
+    px0_xyz_stack_new = torch.stack(px0_xyz_stack_new)
 
     return indep, px0_xyz_stack_new, denoised_xyz_stack_new, seq_stack_new
 
 
-def save_outputs(sampler, out_prefix, indep, denoised_xyz_stack, px0_xyz_stack, seq_stack):
+def save_outputs(sampler, out_prefix, indep, denoised_xyz_stack, px0_xyz_stack, seq_stack, raw):
     log = logging.getLogger(__name__)
 
     final_seq = seq_stack[-1]
@@ -302,8 +305,14 @@ def save_outputs(sampler, out_prefix, indep, denoised_xyz_stack, px0_xyz_stack, 
     trb = dict(
         config = OmegaConf.to_container(sampler._conf, resolve=True),
         device = torch.cuda.get_device_name(torch.cuda.current_device()) if torch.cuda.is_available() else 'CPU',
-        px0_xyz_stack = px0_xyz_stack.detach().cpu().numpy(),
+        px0_xyz_stack = raw[0].detach().cpu().numpy(),
+        denoised_xyz_stack = raw[1].detach().cpu().numpy(),
         indep={k:v.detach().cpu().numpy() if hasattr(v, 'detach') else v for k,v in dataclasses.asdict(indep).items()},
+        indep_true={k:v.detach().cpu().numpy() if hasattr(v, 'detach') else v for k,v in dataclasses.asdict(sampler.indep_orig).items()},
+        t_int=np.arange(int(sampler.t_step_input), sampler.inf_conf.final_step-1, -1)[::-1],
+        t=np.arange(int(sampler.t_step_input), sampler.inf_conf.final_step-1, -1)[::-1] / sampler._conf.diffuser.T,
+        is_diffused=sampler.is_diffused,
+        point_types=aa_model.get_point_types(sampler.indep_orig, sampler.model_adaptor.atomizer)
     )
     if hasattr(sampler, 'contig_map'):
         for key, value in sampler.contig_map.get_mappings().items():

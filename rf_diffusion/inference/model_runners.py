@@ -314,6 +314,7 @@ class Sampler:
                 metadata=metadata,
                 for_partial_diffusion=for_partial_diffusion)
         self.t_step_input = self._conf.diffuser.T
+        self.indep_orig = copy.deepcopy(indep)
         if for_partial_diffusion:
             mappings = self.contig_map.get_mappings()
             # This is due to the fact that when inserting a contig, the non-motif coordinates are reset.
