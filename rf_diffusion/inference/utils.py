@@ -26,6 +26,7 @@ import rf2aa.chemical
 import rf2aa.tensor_util
 import rf_diffusion.aa_model as aa_model
 import rf_diffusion.error as error
+import rf_diffusion.parsers
 
 ###########################################################
 #### Functions which can be called outside of Denoiser ####
@@ -917,7 +918,7 @@ def preprocess(seq, xyz_t, t, T, ppi_design, binderlen, target_res, device):
 def parse_pdb(filename, **kwargs):
     '''extract xyz coords for all heavy atoms'''
     lines = open(filename,'r').readlines()
-    return parse_pdb_lines(lines, **kwargs)
+    return rf_diffusion.parsers.parse_pdb_lines_target(lines, **kwargs)
 
 def parse_a3m(filename):
 

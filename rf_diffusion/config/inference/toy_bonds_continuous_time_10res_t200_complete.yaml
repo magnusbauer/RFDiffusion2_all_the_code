@@ -1,0 +1,8 @@
+defaults:
+  - toy_bonds_continuous_time_10res_t200
+
+diffuser:
+  partial_T: null
+
+inference:
+  output_prefix: out_inference/10res_t200_complete

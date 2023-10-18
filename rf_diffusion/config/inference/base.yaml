@@ -54,6 +54,11 @@ inference:
     relative_sasa_v2:
       active: False
       rasa: -1
+    little_t_embedding: null
+  safety:
+    # Indicates that a user is carefully performing sidechain partial diffusion.
+    # We require this to be set, as unless a user is careful this causes undefined behavior.
+    sidechain_partial_diffusion: False
 
 contigmap:
   contigs: ['20', 'A3-23', '30']

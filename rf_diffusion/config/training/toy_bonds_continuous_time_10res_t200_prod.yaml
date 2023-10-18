@@ -1,0 +1,7 @@
+defaults:
+  - toy_bonds_continuous_time_10res
+
+rundir: /net/scratch/ahern/se3_diffusion/training/aa/toy_bonds/continuous_time_10res_t200_prod
+
+diffuser:
+  t_cont_max: 1.0

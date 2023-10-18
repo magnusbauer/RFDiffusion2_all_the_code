@@ -97,7 +97,7 @@ def get_motif_selectors_2(atom_names_by_res_idx):
     motif_atom_selectors = []
     for idx_pdb, atom_names in atom_names_by_res_idx.items():
         motif_resi_selectors.append(f'resi {idx_pdb}')
-        atom_sel = ' or '.join(f'name {a}' for a in atom_names)
+        atom_sel = ' or '.join([f'name {a}' for a in atom_names] + ['name placeholder'])
         motif_atom_selectors.append(f'({atom_sel})')
     
     return motif_resi_selectors, motif_atom_selectors

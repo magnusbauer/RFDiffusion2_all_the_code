@@ -665,7 +665,7 @@ class Model:
         return RFO(*self.model(**{**rfi_dict, **kwargs}))
 
 
-    def insert_contig(self, indep, contig_map, partial_T=False, metadata=None):
+    def insert_contig(self, indep, contig_map, partial_T=False, metadata=None, for_partial_diffusion=False):
         metadata = metadata or defaultdict(dict)
         o = copy.deepcopy(indep)
 
@@ -697,7 +697,8 @@ class Model:
         L_mapped = len(contig_map.hal)
         n_prot = L_mapped - n_sm
         L_in, NATOMS, _ = indep.xyz.shape
-        o.xyz = torch.full((L_mapped, NATOMS, 3), np.nan)
+        if not for_partial_diffusion:
+            o.xyz = torch.full((L_mapped, NATOMS, 3), np.nan)
 
         o.xyz[contig_map.hal_idx0] = indep.xyz[contig_map.ref_idx0]
         o.seq = torch.full((L_mapped,), MASKINDEX)
@@ -705,7 +706,8 @@ class Model:
         o.is_sm = torch.full((L_mapped,), 0).bool()
         o.is_sm[contig_map.hal_idx0] = indep.is_sm[contig_map.ref_idx0]
         o.same_chain = torch.tensor(chain_id[None, :] == chain_id[:, None])
-        o.xyz = get_init_xyz(o.xyz[None, None], o.is_sm).squeeze()
+        if not for_partial_diffusion:
+            o.xyz = get_init_xyz(o.xyz[None, None], o.is_sm).squeeze()
 
         o.bond_feats = torch.full((L_mapped, L_mapped), 0).long()
         o.bond_feats[:n_prot, :n_prot] = rf2aa.util.get_protein_bond_feats(n_prot)
@@ -746,8 +748,7 @@ class Model:
         # HACK: gp indices may be lost during atomization, so we assume they are at the end of the protein.
         is_gp = torch.full((o.length(),), True)
         is_gp[:pre_transform_length] = False
-        extra_t1d = getattr(self.conf, 'extra_t1d', [])
-        o.extra_t1d = features.get_extra_t1d_inference(o, extra_t1d, self.conf.extra_t1d_params, self.conf.inference.conditions, is_gp=is_gp)
+        o.is_gp = is_gp
         # for i, e in enumerate(o.extra_t1d.T):
         #     ic(i, e)
         # ic(self.conf.inference.conditions, extra_t1d, o.extra_t1d.shape)
@@ -942,7 +943,11 @@ class Model:
         #     indep.extra_t1d[:,:10].argmax(dim=-1),
         #     indep.extra_t1d[:,10:].argmax(dim=-1),
         # )
-        t1d = torch.cat((t1d, indep.extra_t1d[None, None, ...]), dim=-1)
+
+        extra_t1d_names = getattr(self.conf, 'extra_t1d', [])
+        t_cont = t/self.conf.diffuser.T
+        extra_t1d = features.get_extra_t1d_inference(indep, extra_t1d_names, self.conf.extra_t1d_params, self.conf.inference.conditions, is_gp=indep.is_gp, t_cont=t_cont)
+        t1d = torch.cat((t1d, extra_t1d[None, None, ...]), dim=-1)
         
         # return msa_masked, msa_full, seq[None], torch.squeeze(xyz_t, dim=0), idx, t1d, t2d, xyz_t, alpha_t
         mask_t = torch.ones(1,2,L,L).bool()

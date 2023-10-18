@@ -44,6 +44,9 @@ def get_boundary_values(style: str, T:int):
             torch.tensor([1.]),
         ])
 
+def get_little_t_embedding_inference(indep, feature_conf, feature_inference_conf, t_cont, **kwargs):
+    return get_little_t_embedding(indep, feature_conf, t_cont, **kwargs)
+
 def get_little_t_embedding(indep, feature_conf, t_cont: float=None, **kwargs):
     '''
     Args
@@ -126,6 +129,7 @@ inference_featurizers = {
     'relative_sasa': get_relative_sasa_inference,
     'radius_of_gyration_v2': v2.get_radius_of_gyration_inference,
     'relative_sasa_v2': v2.get_relative_sasa_inference,
+    'little_t_embedding': get_little_t_embedding_inference,
 }
 
 def get_extra_t1d_inference(indep, featurizer_names, params_train, params_inference, **kwargs):

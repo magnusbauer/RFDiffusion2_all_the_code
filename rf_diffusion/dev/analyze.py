@@ -16,7 +16,6 @@ import matplotlib.pyplot as plt
 # from tqdm.notebook import trange, tqdm
 import numpy as np
 from rf_diffusion import aa_model
-from rf_diffusion.inference.utils import parse_pdb_lines
 import rf_diffusion.parsers as parsers
 import rf_diffusion.util as util
 

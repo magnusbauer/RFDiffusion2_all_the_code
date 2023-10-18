@@ -1,0 +1,26 @@
+defaults:
+  - aa
+
+score_model:
+  weights_path: /net/scratch/ahern/se3_diffusion/training/aa/toy_bonds/continuous_time_10res_t200_prod/2023-10-17_1697526096.8564672_z7vyk0e6/rank_0/models/RFD_1.pt
+
+
+contigmap:
+  contigs: ['A3-12']
+  contig_atoms: "{'A3':'', 'A4':'', 'A5':'', 'A6':'', 'A7':'', 'A8':'', 'A9':'', 'A10':'', 'A11':'', 'A12':''}"
+
+diffuser:
+  partial_T: 5
+
+inference:
+  input_pdb: test_data/1qys_10res.pdb
+  state_dict_to_load: final_state_dict
+  output_prefix: out_inference/10res_unknown_t
+  design_startnum: -1
+  num_designs: 2
+
+  safety:
+    sidechain_partial_diffusion: True
+
+# Should not be necessary, but this is included in aa for vestigial reasons.
+guidepost_bonds: False

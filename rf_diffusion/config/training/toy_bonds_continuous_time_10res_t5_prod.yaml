@@ -1,0 +1,4 @@
+defaults:
+  - toy_bonds_continuous_time_10res
+
+rundir: /net/scratch/ahern/se3_diffusion/training/aa/toy_bonds/continuous_time_10res_t5_prod

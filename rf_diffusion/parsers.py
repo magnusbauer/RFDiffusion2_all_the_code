@@ -10,6 +10,7 @@ import rf_diffusion.util as util
 import gzip
 import rf2aa.util
 import rf2aa.parsers
+import rf_diffusion.error
 
 to1letter = {
     "ALA":'A', "ARG":'R', "ASN":'N', "ASP":'D', "CYS":'C',
@@ -175,7 +176,7 @@ def parse_pdb_lines_target(lines, parse_hetatom=False, ignore_het_h=True):
     if parse_hetatom:
         xyz_het, info_het = [], []
         for l in lines:
-            with error.context(l):
+            with rf_diffusion.error.context(l):
                 if l[:6]=='HETATM' and not (ignore_het_h and l[77]=='H'):
                     info_het.append(dict(
                         idx=int(l[7:11]),

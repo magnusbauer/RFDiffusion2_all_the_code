@@ -307,26 +307,34 @@ class Sampler:
         L = len(self.target_feats['pdb_idx'])
 
         indep_orig, metadata = aa_model.make_indep(self._conf.inference.input_pdb, self._conf.inference.ligand, return_metadata=True)
-        indep, self.is_diffused, self.is_seq_masked = self.model_adaptor.insert_contig(indep_orig, self.contig_map, metadata=metadata)
+        for_partial_diffusion = bool(self.diffuser_conf.partial_T)
+        indep, self.is_diffused, self.is_seq_masked = self.model_adaptor.insert_contig(
+                indep_orig, 
+                self.contig_map,
+                metadata=metadata,
+                for_partial_diffusion=for_partial_diffusion)
         self.t_step_input = self._conf.diffuser.T
-        if self.diffuser_conf.partial_T:
+        if for_partial_diffusion:
             mappings = self.contig_map.get_mappings()
-            assert indep.xyz.shape[0] ==  L + torch.sum(indep.is_sm), f"there must be a coordinate in the input PDB for each residue implied by the contig string for partial diffusion.  length of input PDB != length of contig string: {indep.xyz.shape[0]} != {L+torch.sum(indep.is_sm)}"
-            assert torch.all(self.is_diffused[indep.is_sm] == 0), f"all ligand atoms must be in the motif"
+            # This is due to the fact that when inserting a contig, the non-motif coordinates are reset.
+            if not self._conf.inference.safety.sidechain_partial_diffusion:
+                print("You better know what you're doing")
+                assert indep.xyz.shape[0] ==  L + torch.sum(indep.is_sm), f"there must be a coordinate in the input PDB for each residue implied by the contig string for partial diffusion.  length of input PDB != length of contig string: {indep.xyz.shape[0]} != {L+torch.sum(indep.is_sm)}"
+                assert torch.all(self.is_diffused[indep.is_sm] == 0), f"all ligand atoms must be in the motif"
             assert (mappings['con_hal_idx0'] == mappings['con_ref_idx0']).all(), 'all positions in the input PDB must correspond to the same index in the output pdb'
-            indep = indep_orig
         indep.seq[self.is_seq_masked] = rf2aa.chemical.MASKINDEX
         # Diffuse the contig-mapped coordinates 
-        if self.diffuser_conf.partial_T:
+        if for_partial_diffusion:
             self.t_step_input = self.diffuser_conf.partial_T
             assert self.diffuser_conf.partial_T <= self.diffuser_conf.T
         t_list = np.arange(1, self.t_step_input+1)
         atom_mask = None
         seq_one_hot = None
         rigids_0 = du.rigid_frames_from_atom_14(indep.xyz)
+        t_cont = self.t_step_input / self.diffuser_conf.T
         diffuser_out = self.diffuser.forward_marginal(
             rigids_0,
-            t=1.0,
+            t=t_cont,
             diffuse_mask=self.is_diffused.float(),
             as_tensor_7=False
         )

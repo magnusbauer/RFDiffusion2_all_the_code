@@ -58,6 +58,7 @@ class ContigMap():
             self.contigs=contigs
             if contig_atoms is not None:
                 self.contig_atoms={k:v.split(",") for k,v in eval(contig_atoms).items()}
+                self.contig_atoms={k:[e for e in v if e != ''] for k,v in self.contig_atoms.items()}
             else:
                 self.contig_atoms = None
             self.sampled_mask,self.contig_length,self.n_inpaint_chains = self.get_sampled_mask()
