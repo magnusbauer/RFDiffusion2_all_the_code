@@ -944,10 +944,7 @@ class Model:
         #     indep.extra_t1d[:,10:].argmax(dim=-1),
         # )
 
-        extra_t1d_names = getattr(self.conf, 'extra_t1d', [])
-        t_cont = t/self.conf.diffuser.T
-        extra_t1d = features.get_extra_t1d_inference(indep, extra_t1d_names, self.conf.extra_t1d_params, self.conf.inference.conditions, is_gp=indep.is_gp, t_cont=t_cont)
-        t1d = torch.cat((t1d, extra_t1d[None, None, ...]), dim=-1)
+        t1d = torch.cat((t1d, indep.extra_t1d[None, None, ...]), dim=-1)
         
         # return msa_masked, msa_full, seq[None], torch.squeeze(xyz_t, dim=0), idx, t1d, t2d, xyz_t, alpha_t
         mask_t = torch.ones(1,2,L,L).bool()

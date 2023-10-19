@@ -37,6 +37,7 @@ from openfold.utils.rigid_utils import Rigid
 from rf_se3_diffusion import rf_score
 from rf_se3_diffusion.rf_score.model import RFScore
 from rf_se3_diffusion.data import se3_diffuser
+from rf_diffusion import features
 import os
 
 import sys
@@ -688,6 +689,9 @@ class NRBStyleSelfCond(Sampler):
             tors_t_1: (L, ?) The updated torsion angles of the next  step.
             plddt: (L, 1) Predicted lDDT of x0.
         '''
+        extra_t1d_names = getattr(self._conf, 'extra_t1d', [])
+        t_cont = t/self._conf.diffuser.T
+        indep.extra_t1d = features.get_extra_t1d_inference(indep, extra_t1d_names, self._conf.extra_t1d_params, self._conf.inference.conditions, is_gp=indep.is_gp, t_cont=t_cont)
         rfi = self.model_adaptor.prepro(indep, t, self.is_diffused)
         rf2aa.tensor_util.to_device(rfi, self.device)
         seq_init = torch.nn.functional.one_hot(
