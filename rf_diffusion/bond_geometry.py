@@ -6,7 +6,7 @@ from icecream import ic
 import numpy as np
 from rf_diffusion import aa_model
 
-def calc_atom_bond_loss(indep, pred_xyz, is_diffused, point_types):
+def calc_atom_bond_loss(indep, pred_xyz, true_xyz, is_diffused, point_types):
     """
     Loss on distances between bonded atoms
     """
@@ -30,7 +30,6 @@ def calc_atom_bond_loss(indep, pred_xyz, is_diffused, point_types):
         }.items():
             mask_by_name[f'{prefix}_{k}'] = torch.tensor(v)*mask
     bond_losses = {}
-    true_xyz = indep.xyz
     is_bonded = torch.triu(indep.bond_feats > 0)
     for (a, a_mask), (b, b_mask) in itertools.combinations_with_replacement(mask_by_name.items(), 2):
         is_pair = a_mask[..., None] * b_mask[None, ...]

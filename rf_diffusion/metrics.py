@@ -1,3 +1,6 @@
+import copy
+from functools import wraps
+from collections import OrderedDict
 import inspect
 import torch
 import numpy as np
@@ -96,9 +99,28 @@ def contigs(logit_s, label_s,
         'n_contig_res': n_contig_res(diffusion_mask),
     }
 
-def atom_bonds(indep, pred_crds, is_diffused, point_types, **kwargs):
-    return bond_geometry.calc_atom_bond_loss(indep, pred_crds, is_diffused, point_types)
+def atom_bonds(indep, true_crds, pred_crds, is_diffused, point_types, **kwargs):
+    return bond_geometry.calc_atom_bond_loss(indep, true_crds, pred_crds, is_diffused, point_types)
 
+def permute_metric(metric):
+    @wraps(metric)
+    def permuted_metric(indep, pred_crds, true_crds, input_crds, **kwargs):
+        metric_by_input_permutation = {}
+        crds_by_name = OrderedDict({
+            'pred': pred_crds,
+            'true': true_crds,
+            'input': input_crds,
+        })
+        for (a, a_crds), (b, b_crds) in itertools.combinations_with_replacement(crds_by_name.items(), 2):
+            if a == b:
+                continue
+            permutation_label = f'{a}:{b}'
+            metric_by_input_permutation[permutation_label] = metric(indep, a_crds, b_crds, **kwargs)
+
+        return metric_by_input_permutation
+    return permuted_metric
+
+atom_bonds_permutations = permute_metric(atom_bonds)
 
 ###################################
 # Metric class. Similar to Potentials class.
