@@ -666,7 +666,10 @@ class Model:
 
 
     def insert_contig(self, indep, contig_map, partial_T=False, metadata=None, for_partial_diffusion=False):
-        metadata = metadata or defaultdict(dict)
+        if metadata is None:
+            print("warning, insert contig with no metadata is not handled gracefully")
+            metadata = defaultdict(dict)
+            metadata['ligand_names'] = np.array([])
         o = copy.deepcopy(indep)
 
         # Insert small mol into contig_map

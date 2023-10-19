@@ -2,6 +2,7 @@ import itertools
 import sys
 import os
 
+import addict
 import unittest
 from icecream import ic
 import torch
@@ -66,9 +67,11 @@ class TestLoss(unittest.TestCase):
                                        contig_atoms="{'A518':'CG,OD1,OD2'}",
                                        length='3-3',
                                        )
-        indep = aa_model.make_indep(test_pdb)
-        adaptor = aa_model.Model({})
-        indep_contig,is_diffused,_ = adaptor.insert_contig(indep, contig_map)
+        indep, metadata = aa_model.make_indep(test_pdb, return_metadata=True)
+
+        conf = addict.Dict()
+        adaptor = aa_model.Model(conf)
+        indep_contig,is_diffused,_ = adaptor.insert_contig(indep, contig_map, metadata=metadata)
 
         true = indep_contig.xyz
         perturbed = perturbations.se3_perturb(true)

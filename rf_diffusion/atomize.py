@@ -62,7 +62,7 @@ def atomized_indices_atoms(atomizer, atom_names_by_res):
                 within_res_atom_idx = within_res_atom_idxs[atom_name]
             except KeyError as e:
                 raise KeyError(f'{atom_name} not one of the known atoms for residue {res_i} with seq {rf2aa.chemical.num2aa[original_aa]}: {list(within_res_atom_idxs.keys())}') from e
-            atom_i = atomized_residue_idxs[within_res_atom_idx]
+            atom_i = atomized_residue_idxs[within_res_atom_idx].item()
             named_i.append(atom_i)
 
     return named_i
