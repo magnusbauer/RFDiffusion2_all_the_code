@@ -920,6 +920,8 @@ class Trainer():
                             'training_start': firstLog(),
                             't':little_t,
                             'total_examples':epoch*self.n_train+counter*world_size,
+                            'rank': rank,
+                            'item_context': item_context,
                             'dataset':chosen_dataset,
                             'task':chosen_task,
                             'self_cond': self_cond,
