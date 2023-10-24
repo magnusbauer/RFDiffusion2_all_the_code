@@ -1,10 +1,15 @@
 import itertools
 from collections import OrderedDict, defaultdict
+
+import tree
 import networkx as nx
 import torch
 from icecream import ic
 import numpy as np
+
 from rf_diffusion import aa_model
+from rf_diffusion.benchmark import compile_metrics
+
 
 def calc_atom_bond_loss(indep, pred_xyz, true_xyz, is_diffused, point_types):
     """
@@ -42,6 +47,14 @@ def calc_atom_bond_loss(indep, pred_xyz, true_xyz, is_diffused, point_types):
         bond_losses[f'{a}:{b}'] = torch.mean(torch.abs(true_dist - pred_dist))
     return bond_losses
 
+def expand_nodes_within_one_edge(G, nodes):
+    expanded_nodes = set(nodes)
+    
+    for node in nodes:
+        neighbors = list(G.neighbors(node))
+        expanded_nodes.update(neighbors)
+    
+    return expanded_nodes
 
 def find_all_rigid_groups(bond_feats):
     """
@@ -51,15 +64,24 @@ def find_all_rigid_groups(bond_feats):
     Returns:
         list of tensors, where each tensor contains the indices of atoms within the same rigid group.
     """
+    bond_feats = bond_feats.cpu().numpy()
     rigid_atom_bonds = (bond_feats>1)*(bond_feats<5)
-    any_atom_bonds = bond_feats != 0
-    rigid_edges = (rigid_atom_bonds.int() @ any_atom_bonds.int()).bool() + rigid_atom_bonds
-    rigid_atom_bonds_np = rigid_edges.cpu().numpy()
-    G = nx.from_numpy_array(rigid_atom_bonds_np)
-    connected_components = nx.connected_components(G)
-    connected_components = [cc for cc in connected_components if len(cc)>1]
+    any_atom_bonds = (bond_feats != 0) * (bond_feats<5)
+    G_rigid = nx.from_numpy_array(rigid_atom_bonds)
+    G_bonds = nx.from_numpy_array(any_atom_bonds)
+    connected_components = list(nx.connected_components(G_rigid))
+    for i, cc in enumerate(connected_components):
+        cc = expand_nodes_within_one_edge(G_bonds, cc)
+        connected_components[i] = cc
+
+    # Filter out rigids of 2 or fewer atoms as those with two atoms are captured by bond length metrics
+    connected_components = [cc for cc in connected_components if len(cc)>2]
     connected_components = [torch.tensor(list(cc)) for cc in connected_components]
     return connected_components
+
+def find_all_rigid_groups_human_readable(bond_feats, point_ids):
+    rigid_groups = find_all_rigid_groups(bond_feats)
+    return tree.map_structure(lambda i: point_ids[i], rigid_groups)
 
 def align(xyz1, xyz2, eps=1e-6):
 
@@ -86,7 +108,7 @@ def align(xyz1, xyz2, eps=1e-6):
 
     return xyz2_ + xyz1_mean
 
-def calc_rigid_loss(indep, pred_xyz, is_diffused, atomizer=None):
+def calc_rigid_loss(indep, pred_xyz, true_xyz, is_diffused, point_types):
     '''
     Params:
         indep: atomized aa_mode.Indep corresponding to the true structure
@@ -102,44 +124,70 @@ def calc_rigid_loss(indep, pred_xyz, is_diffused, atomizer=None):
         groups are determined by the motif atoms.
     '''
     rigid_groups = find_all_rigid_groups(indep.bond_feats)
-    if atomizer:
-        named_rigid_groups = [atomize.res_atom_name(atomizer, g) for g in rigid_groups]
+    group_dists = []
+    for rigid_idx in rigid_groups:
+        true_ca = true_xyz[rigid_idx, 1]
+        pred_ca = pred_xyz[rigid_idx, 1]
+        pred_ca_aligned = align(true_ca, pred_ca)
+        dist = torch.norm(pred_ca_aligned - true_ca, dim=-1)
+        group_dists.append(dist)
 
-    mask_by_name = OrderedDict()
+    mask_by_name_a = {}
     for k, v in {
-        'residue': ~indep.is_sm,
-        'atom': indep.is_sm,
+        'ligand': point_types == aa_model.POINT_LIGAND,
+        'atomized': np.isin(point_types, [aa_model.POINT_ATOMIZED_BACKBONE, aa_model.POINT_ATOMIZED_SIDECHAIN]),
     }.items():
         for prefix, mask in {
             'diffused': is_diffused,
-            'motif': ~is_diffused
+            'motif': ~is_diffused,
         }.items():
-            mask_by_name[f'{prefix}_{k}'] = v*mask
+            mask_by_name_a[f'{prefix}_{k}'] = torch.tensor(v)*mask
 
+    L = indep.length()
+    mask_by_name_coarse = {
+        'all': torch.ones(L).bool()
+    }
 
-    atom_types = torch.full((indep.length(),), -1)
+    dist_by_composition = {}
+    for prefix, mask_by_name in [
+        ('fine', mask_by_name_a),
+        ('coarse', mask_by_name_coarse),
+    ]:
+        dist_by_composition[prefix] = get_dists_by_composition(rigid_groups, group_dists, mask_by_name)
+
+    motif_idx = torch.nonzero(~is_diffused)[...,-1]
+    dist_by_composition['determined'] = []
+    for rigid_idx, dists in zip(rigid_groups, group_dists):
+        n_motif = np.in1d(rigid_idx, motif_idx).sum()
+        is_determined = n_motif >= 3
+        has_diffused = n_motif != len(rigid_idx)
+        if is_determined and has_diffused:
+            dist_by_composition['determined'].append(dists)
+
+    dist_by_composition = compile_metrics.flatten_dictionary(dist_by_composition)
+    dist_by_composition = {k:v for k,v in dist_by_composition.items() if v}
+    dist_by_composition = {k:torch.concat(v) for k,v in dist_by_composition.items()}
+    
+    out = {}
+    out['max'] = {k:max(v) for k,v in dist_by_composition.items()}
+    out['mean'] = {k:torch.mean(v) for k,v in dist_by_composition.items()}
+    return out
+
+def get_dists_by_composition(rigid_groups, group_dists, mask_by_name):
+    mask_0 = list(mask_by_name.values())[0]
+    L = len(mask_0)
+    atom_types = torch.full((L,), -1)
     for i, (mask_name, mask) in enumerate(mask_by_name.items()):
         atom_types[mask] = i
     mask_names = list(mask_by_name)
 
-    is_motif_key = np.char.startswith(np.array(mask_names), 'motif')
-    motif_keys = np.nonzero(is_motif_key)[0]
-
     dist_by_composition =  defaultdict(list)
-    for rigid_idx in rigid_groups:
+    for rigid_idx, dists in zip(rigid_groups, group_dists):
         composition = atom_types[rigid_idx].tolist()
-        n_motif = np.in1d(np.array(composition), motif_keys).sum()
         composition = tuple(sorted(list(set(composition))))
         composition_string = ':'.join(mask_names[e] for e in composition)
-        if n_motif >= 3:
-            composition_string += '_determined'
-        true_ca = indep.xyz[rigid_idx, 1]
-        pred_ca = pred_xyz[rigid_idx, 1]
-        # motif_rmsd = benchmark.util.af2_metrics.calc_rmsd(true_ca, pred_ca)
-        # pred_ca_aligned = rf2aa.util.superimpose(pred_ca[None], true_ca[None])[0]
-        pred_ca_aligned = align(true_ca, pred_ca)
-        dists = torch.norm(pred_ca_aligned - true_ca, dim=-1)
-        dist_by_composition[composition_string].append(dists.max())
+        dist_by_composition[composition_string].append(dists)
 
-    out = {k:max(v) for k,v in dist_by_composition.items()}
-    return out
+    
+    return dist_by_composition
+    

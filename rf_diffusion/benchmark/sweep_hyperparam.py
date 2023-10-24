@@ -148,7 +148,7 @@ def main(conf: HydraConfig) -> list[int]:
         for bm in to_run:
             benchmark_list.append([
                 f'inference.output_prefix={bm}',
-                benchmarks[bm].replace('inference.input_pdb=','inference.input_pdb='+input_path)
+                re.sub(r'inference.input_pdb=[^\/]', f'inference.input_pdb={input_path}', benchmarks[bm])
             ])
 
     # parse names of arguments and their value options to be passed into the design script

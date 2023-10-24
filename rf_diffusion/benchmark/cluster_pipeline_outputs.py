@@ -5,6 +5,9 @@ import os
 import sys
 import re
 import glob
+from icecream import ic
+
+import util
 from util.slurm_tools import array_submit
 import hydra
 from hydra.core.hydra_config import HydraConfig

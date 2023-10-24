@@ -97,7 +97,14 @@ class Sampler:
         self.diffuser = se3_diffuser.SE3Diffuser(self._conf.diffuser)
         self.model = RFScore(self._conf.rf.model, self.diffuser, self.device)
         
+        ema = 'unknown'
+        if self._conf.inference.state_dict_to_load == 'final_state_dict':
+            ema = False
+        elif self._conf.inference.state_dict_to_load == 'model_state_dict':
+            ema = True
+
         if 'final_state_dict' in weights_pkl:
+            ic(ema)
             model_weights = weights_pkl[self._conf.inference.state_dict_to_load] # model_state_dict | final_state_dict
         else:
             model_weights = weights_pkl['model']

@@ -4,6 +4,7 @@ defaults:
 training:
   resume: False
   lr: 0
+  skip_backward: True
   l2_coeff: 0
   resume_scheduler: False
   n_write_pdb: 1

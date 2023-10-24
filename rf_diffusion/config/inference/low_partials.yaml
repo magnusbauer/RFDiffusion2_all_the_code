@@ -1,0 +1,17 @@
+defaults:
+  - toy_bonds_continuous_time_10res
+
+score_model:
+  weights_path: /net/scratch/ahern/se3_diffusion/training/aa/toy_bonds/continuous_time_10res_t5_prod/2023-10-17_1697526110.4813647_es5c0wo9/rank_0/models/RFD_13.pt
+
+diffuser:
+  T: 2000
+  partial_T: 50
+
+extra_t1d_params:
+  little_t_embedding:
+    T: 200
+
+inference:
+  str_self_cond:
+    False

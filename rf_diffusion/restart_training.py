@@ -11,7 +11,10 @@ import rf_diffusion.train_multi_deep
 
 @hydra.main(version_base=None, config_path="config/restart", config_name="base")
 def main(conf: DictConfig) -> None:
-
+    '''
+    Restarts a training run using the config saved in the model's checkpoint.  Can also be used with the config
+    `log_all_metrics` to restart the training with no loss and log many metrics.
+    '''
     print(conf)
 
     if torch.cuda.device_count():

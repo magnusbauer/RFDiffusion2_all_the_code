@@ -3,9 +3,7 @@ import hydra
 from omegaconf import DictConfig
 from torch.utils import data
 from tqdm import tqdm
-import show
-import reshape_weights
-reshape_weights.setup_rf_diffusion_imports()
+from rf_diffusion import show
 
 from rf_diffusion import atomize
 from rf_diffusion.dev import analyze, show_tip_pa
@@ -130,6 +128,7 @@ def run(conf: DictConfig) -> None:
                 show.one(indep, None, name=name)
                 show.cmd.do(f'util.cbc {name}')
                 show.cmd.color('orange', f'{name} and hetatm and elem C')
+                show.cmd.show('licorice')
 
             if atomizer:
                 _ = atomize.deatomize(atomizer, indep)

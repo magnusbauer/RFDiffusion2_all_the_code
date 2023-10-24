@@ -122,6 +122,14 @@ def permute_metric(metric):
 
 atom_bonds_permutations = permute_metric(atom_bonds)
 
+def rigid_loss(indep, pred_crds, true_crds, is_diffused, point_types, **kwargs):
+    return bond_geometry.calc_rigid_loss(indep, pred_crds, true_crds, is_diffused, point_types)
+
+def rigid_loss_input(indep, input_crds, true_crds, is_diffused, point_types, **kwargs):
+    return bond_geometry.calc_rigid_loss(indep, input_crds, true_crds, is_diffused, point_types)
+
+# rigid_loss_permutations = permute_metric(rigid_loss)
+
 ###################################
 # Metric class. Similar to Potentials class.
 ###################################
@@ -200,6 +208,18 @@ class VarianceNormalizedInputTransMSE(Metric):
 
         return self.get_variance_normalized_mse(input_crds, true_crds, t, is_diffused)
 
+def displacement(indep, true_crds, pred_crds, is_diffused, point_types, **kwargs):
+    
+    true_crds = true_crds[..., is_diffused, 1, :]
+    other_crds = pred_crds[..., is_diffused, 1, :]
+    mse = loss.mse(other_crds, true_crds)
+    return mse
+
+
+displacement_permutations = permute_metric(displacement)
+
+def rigid_loss(indep, pred_crds, true_crds, is_diffused, point_types, **kwargs):
+    return bond_geometry.calc_rigid_loss(indep, pred_crds, true_crds, is_diffused, point_types)
 
 ###################################
 # Metric manager
@@ -262,9 +282,9 @@ class MetricManager:
         for name, callable in self.metric_callables.items():
             metric_output = callable(
                 indep=indep,
-                pred_crds=pred_crds,
-                true_crds=true_crds,
-                input_crds=input_crds,
+                pred_crds=pred_crds.cpu().detach(),
+                true_crds=true_crds.cpu().detach(),
+                input_crds=input_crds.cpu().detach(),
                 t=t,
                 is_diffused=is_diffused,
                 point_types=point_types

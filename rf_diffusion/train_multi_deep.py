@@ -847,7 +847,7 @@ class Trainer():
 
                     # if gpu != 'cpu':
                     #     print(f'DEBUG: {rank=} {gpu=} {counter=} size: {indep.xyz.shape[0]} {torch.cuda.max_memory_reserved(gpu) / 1024**3:.2f} GB reserved {torch.cuda.max_memory_allocated(gpu) / 1024**3:.2f} GB allocated {torch.cuda.get_device_properties(gpu).total_memory / 1024**3:.2f} GB total')
-                    if not torch.isnan(loss):
+                    if not torch.isnan(loss) and not self.conf.skip_backward:
                         scaler.scale(loss).backward()
                     else:
                         msg = f'NaN loss encountered, skipping: {context_msg}'
@@ -888,6 +888,9 @@ class Trainer():
                     is_diffused=is_diffused.cpu(),
                     point_types=aa_model.get_point_types(indep, atomizer)
                 )
+                pdb_dir = os.path.join(self.outdir, 'training_pdbs')
+                n_processed = self.conf.batch_size*world_size * counter
+                output_pdb_prefix = f'{pdb_dir}/epoch_{epoch}_{n_processed}_{chosen_task}_{chosen_dataset}_t_{int( little_t )}'
                 log_metrics = (counter % N_PRINT_TRAIN == 0) and (rank == 0)
                 if log_metrics:
                     train_time  = time.time() - start_time
@@ -920,18 +923,24 @@ class Trainer():
                             'training_start': firstLog(),
                             't':little_t,
                             'total_examples':epoch*self.n_train+counter*world_size,
+                            'epoch': epoch,
                             'rank': rank,
                             'item_context': item_context,
                             'dataset':chosen_dataset,
                             'task':chosen_task,
                             'self_cond': self_cond,
                             'extra_t1d': indep.extra_t1d.cpu().detach() if hasattr(indep.extra_t1d, 'cpu') else indep.extra_t1d,
-                            'loss':loss.detach()})
+                            'loss':loss.detach(),
+                            'output_pdb_prefix':output_pdb_prefix
+                        })
 
                         rf2aa.tensor_util.to_device(indep, 'cpu')
                         metrics = self.metric_manager.compute_all_metrics(**metrics_inputs)
                                     
                         loss_dict['metrics'] = metrics
+                        loss_dict['meta'] = {
+                            f'n_atomized_residues': len(masks_1d['is_atom_motif'])
+                        }
                         # loss_dict['loss_weights'] = loss_weights
                         if WANDB:
                             wandb.log(loss_dict)
@@ -948,13 +957,10 @@ class Trainer():
                 # if self.diffusion_param['seqdiff'] == 'continuous':
                 #     top1_sequence = torch.argmax(logit_aa_s[:,:20,:], dim=1)
 
-                n_processed = self.conf.batch_size*world_size * counter
                 save_pdb = np.random.randint(0,self.conf.n_write_pdb) == 0
                 if save_pdb:
                     (L,) = indep.seq.shape
-                    pdb_dir = os.path.join(self.outdir, 'training_pdbs')
                     os.makedirs(pdb_dir, exist_ok=True)
-                    prefix = f'{pdb_dir}/epoch_{epoch}_{n_processed}_{chosen_task}_{chosen_dataset}_t_{int( little_t )}'
 
                     rf2aa.tensor_util.to_device(indep, 'cpu')
                     pred_xyz = xyz_prev_orig.clone()
@@ -969,7 +975,10 @@ class Trainer():
                         indep_write.xyz[:,:14] = xyz[:,:14]
                         # if atomizer:
                         #     indep_write = atomize.deatomize(atomizer, indep_write)
-                        pymol_names = indep_write.write_pdb(f'{prefix}_{suffix}.pdb')
+                        pymol_names = indep_write.write_pdb(f'{output_pdb_prefix}_{suffix}.pdb')
+                        if atomizer:
+                            indep_write = atomize.deatomize(atomizer, indep_write)
+                            indep_write.write_pdb(f'{output_pdb_prefix}_{suffix}_deatomized.pdb')
 
                     indep_true = indep
                     motif_deatomized = None
@@ -978,7 +987,7 @@ class Trainer():
                         motif_deatomized = atomize.convert_atomized_mask(atomizer, ~is_diffused)
 
                     
-                    with open(f'{prefix}_info.pkl', 'wb') as fh:
+                    with open(f'{output_pdb_prefix}_info.pkl', 'wb') as fh:
                         pickle.dump({
                             'metrics_inputs': metrics_inputs,
                             'motif': motif_deatomized,
@@ -994,8 +1003,8 @@ class Trainer():
                         }, fh)
 
                     if self.conf.log_inputs:
-                        shutil.copy(self.pickle_counter.last_pickle, f'{prefix}_input_pickle.pkl')
-                    print(f'writing training PDBs with prefix: {prefix}')
+                        shutil.copy(self.pickle_counter.last_pickle, f'{output_pdb_prefix}_input_pickle.pkl')
+                    print(f'writing training PDBs with prefix: {output_pdb_prefix}')
 
                 # Expected epoch time logging
                 if rank == 0:

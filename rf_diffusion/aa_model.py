@@ -241,6 +241,18 @@ def get_point_types(indep, atomizer):
                 t[i] = POINT_ATOMIZED_SIDECHAIN
     return t
 
+def get_point_ids(indep, atomizer):
+    t = np.empty(indep.length(), dtype='object')
+    seq_hr = indep.human_readable_seq()
+    seq_hr = np.array(seq_hr, dtype='object')
+    t[indep.is_sm.cpu().detach()] = [f'L-{element}' for element in seq_hr[indep.is_sm.cpu().detach()]]
+    t[~indep.is_sm.cpu().detach()] = [f'R-{element}' for element in indep.idx[~indep.is_sm.cpu().detach()]]
+    if atomizer:
+        res_atom_by_i = atomize.get_res_atom_name_by_atomized_idx(atomizer)
+        for i, (res_i,  atom_name) in res_atom_by_i.items():
+            t[i] = f'A{res_i}-{atom_name}'
+    return t
+
 @dataclass
 class RFI:
     msa_latent: torch.Tensor

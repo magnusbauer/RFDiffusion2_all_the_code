@@ -4,5 +4,8 @@ defaults:
 training:
   metrics:
     - atom_bonds_permutations
+    - rigid_loss
+    - rigid_loss_input
     - VarianceNormalizedPredTransMSE
     - VarianceNormalizedInputTransMSE
+    - displacement_permutations

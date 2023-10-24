@@ -1,0 +1,12 @@
+defaults:
+    - pipeline
+
+sweep:
+    command_args: >
+      --config-name=low_partials
+      diffuser.partial_T=6|50
+      inference.state_dict_to_load=final_state_dict
+      score_model.weights_path=/net/scratch/ahern/se3_diffusion/training/aa/toy_bonds/continuous_time_10res_t5_prod/2023-10-17_1697526110.4813647_es5c0wo9/rank_0/models/RFD_5.pt|/net/scratch/ahern/se3_diffusion/training/aa/toy_bonds/continuous_time_10res_t5_prod/2023-10-17_1697526110.4813647_es5c0wo9/rank_0/models/RFD_13.pt
+    
+    num_per_condition: 1
+    num_per_job: 1

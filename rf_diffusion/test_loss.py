@@ -63,7 +63,7 @@ class TestLoss(unittest.TestCase):
         
         target_feats = inference.utils.process_target(test_pdb)
         contig_map =  contigs.ContigMap(target_feats,
-                                       contigs=['2,A518-518'],
+                                       contigs=['2,A518-518'], # Asp518
                                        contig_atoms="{'A518':'CG,OD1,OD2'}",
                                        length='3-3',
                                        )
@@ -79,9 +79,19 @@ class TestLoss(unittest.TestCase):
         cg_atomized_idx = atomize.atomized_indices_atoms(adaptor.atomizer, {2: ['CG']})
         perturbed[cg_atomized_idx,1,:] += T
 
-        rigid_losses = bond_geometry.calc_rigid_loss(indep_contig, perturbed, is_diffused)
-        self.assertLess(rigid_losses['diffused_atom'], 1e-6)
-        self.assertGreater(rigid_losses['diffused_atom:motif_atom_determined'], 1)
+        point_ids = aa_model.get_point_ids(indep_contig, adaptor.atomizer)
+        point_types = aa_model.get_point_types(indep_contig, adaptor.atomizer)
+        rigid_groups = bond_geometry.find_all_rigid_groups_human_readable(indep_contig.bond_feats, point_ids)
+        ic(rigid_groups)
+
+        rigid_losses = bond_geometry.calc_rigid_loss(indep_contig, perturbed, indep_contig.xyz, is_diffused, point_types)
+        ic(rigid_losses)
+
+        self.assertLess(rigid_losses['max']['fine.diffused_atomized'], 1e-6)
+        self.assertGreater(rigid_losses['max']['fine.diffused_atomized:motif_atomized'], 1)
+        self.assertEqual(
+            rigid_losses['max']['fine.diffused_atomized:motif_atomized'],
+            rigid_losses['max']['determined'])
 
 
 
