@@ -128,8 +128,6 @@ def rigid_loss(indep, pred_crds, true_crds, is_diffused, point_types, **kwargs):
 def rigid_loss_input(indep, input_crds, true_crds, is_diffused, point_types, **kwargs):
     return bond_geometry.calc_rigid_loss(indep, input_crds, true_crds, is_diffused, point_types)
 
-# rigid_loss_permutations = permute_metric(rigid_loss)
-
 ###################################
 # Metric class. Similar to Potentials class.
 ###################################
