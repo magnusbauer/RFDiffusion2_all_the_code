@@ -20,8 +20,6 @@ import rf_diffusion.aa_model as aa_model
 import dataclasses
 
 from rf_diffusion.kinematics import get_init_xyz
-# from rf_diffusion.diffusion import Diffuser
-# import rf_diffusion.seq_diffusion as seq_diffusion
 from rf_diffusion.contigs import ContigMap
 from rf_diffusion.inference import utils as iu
 from rf_diffusion.potentials.manager import PotentialManager
@@ -47,10 +45,6 @@ import sys
 # import data_loader 
 import rf_diffusion.model_input_logger as model_input_logger
 from rf_diffusion.model_input_logger import pickle_function_call
-
-# TOR_INDICES  = util.torsion_indices
-# TOR_CAN_FLIP = util.torsion_can_flip
-# REF_ANGLES   = util.reference_angles
 
 class Sampler:
 

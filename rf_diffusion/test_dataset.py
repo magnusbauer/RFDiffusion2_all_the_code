@@ -17,13 +17,10 @@ import torch
 
 import atomize
 from dev import analyze, show_tip_pa
-from data_loader import (
-    get_train_valid_set, loader_pdb, loader_fb, loader_complex, loader_pdb_fixbb, loader_fb_fixbb, loader_complex_fixbb, loader_cn_fixbb, default_dataset_configs,
-    #Dataset, DatasetComplex, 
-    DistilledDataset, DistributedWeightedSampler
-)
+from rf_diffusion.data_loader import get_fallback_dataset_and_dataloader
 from rf_diffusion import test_utils
 from rf2aa import tensor_util
+from rf_se3_diffusion.data import se3_diffuser
 import run_inference
 import aa_model
 import show
@@ -488,32 +485,56 @@ class Dataloader(unittest.TestCase):
 
     def test_atom_order(self):
         '''
-        Tests that amino acid atoms from the dataloader are ordered the same way as in rf2aa.chemical.aa2long
+        Tests that amino acid atoms from the dataloader are ordered the same way as in rf2aa.chemical.aa2long.
+        Checks each amino acid type MIN_AA_COUNT times in each dataset defined in conf_train.dataloader.DATASETS.
         '''
-        # Make the training loader
+        # Make the training conf
         overrides = [
             'dataloader.DATAPKL_AA=/home/dtischer/code/rf_diffusion_train/rf_diffusion/aa_dataset_256.pkl', 
-            '+dataloader.max_residues=256',
-            '+diffuser.time_type=continuous',
-            '+diffuser.t_cont_max=0.025',
         ]
         conf_train = test_utils.construct_conf_single(overrides=overrides, config_name='RFD_36')
-        train_loader = test_utils.get_dataloader(conf_train)
 
-        # Set the minimum number of examples to check
-        min_train_examples = 3
-        min_aa_count = 5
+        # Make the training dataloader
+        LOAD_PARAM = {
+            'shuffle': False,
+            'num_workers': 0,
+            'pin_memory': True
+        }
+        dataset, dataloader = get_fallback_dataset_and_dataloader(
+            conf=conf_train,
+            diffuser=se3_diffuser.SE3Diffuser(conf_train.diffuser),
+            num_example_per_epoch=conf_train.epoch_size,
+            world_size=1,
+            rank=0,
+            LOAD_PARAM=LOAD_PARAM,
+        )
+
+        # Set the minimum number of amino acids to check per dataset
+        MIN_AA_COUNT = 5
+        aa_count_tmp = {rf2aa.chemical.num2aa[aa_int]: 0 for aa_int in range(20)}
+        aa_count_by_dataset = {}
+        for dataset_name, prob in zip(conf_train.dataloader.DATASETS.split(','), conf_train.dataloader.DATASET_PROB):
+            if prob > 0:
+                aa_count_by_dataset[dataset_name] = aa_count_tmp
 
         # Sample training examples until minimum counts are statisfied
-        train_examples_count = 0
-        aa_count = {rf2aa.chemical.num2aa[aa_int]: 0 for aa_int in range(20)}
-        for indep_train, rfi_train, chosen_dataset, item, little_t, is_diffused_train, chosen_task, atomizer, masks_1d, diffuser_out, item_context in train_loader:
+        for indep_train, rfi_train, chosen_dataset, item, little_t, is_diffused_train, chosen_task, atomizer, masks_1d, diffuser_out, item_context in dataloader:
+            aa_count = aa_count_by_dataset[chosen_dataset]
+            
+            # Check if we've already seen enough of each aa in this dataset
+            if test_utils.full_count(aa_count, MIN_AA_COUNT):
+                continue
+            
+            # Check indep_train for aa atom permutations
             try:
                 item_context = eval(item_context)
-                atom_order_results = test_utils.detect_permuted_aa_atoms(indep_train, item_context)                                
+                atom_order_results = test_utils.detect_permuted_aa_atoms(indep_train, item_context)               
             except Exception as e:
                 print(f'Couldn\'t process {item_context}. Skipping.')
-                print('exception:', e)
+                if False:
+                    # For debugging
+                    print(f"Caught an exception: {type(e).__name__}: {e}")
+                    traceback.print_exc()
                 atom_order_results = {}
 
             if atom_order_results:
@@ -521,14 +542,13 @@ class Dataloader(unittest.TestCase):
                     for is_correct_order, msg in record:
                         if is_correct_order is False:
                             self.fail(msg)
-                            
+
                 # Record how many training pdbs and individual amino acids have been checked.
-                train_examples_count += 1
                 for aa3 in aa_count:
                     aa_count[aa3] += len(atom_order_results[aa3])
-            
-            enough_aa = all(map(lambda count: count >= min_aa_count, aa_count.values()))
-            if enough_aa and (train_examples_count >= min_train_examples):
+
+            if all(map(lambda aa_count: test_utils.full_count(aa_count, MIN_AA_COUNT), aa_count_by_dataset.values())):
+                # Enough aa in each dataset have been checked
                 break
 
 

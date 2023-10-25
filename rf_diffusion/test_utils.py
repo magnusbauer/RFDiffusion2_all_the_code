@@ -27,6 +27,7 @@ from rf2aa.util import kabsch
 import tree
 import numpy as np
 import rf2aa.chemical
+from rf_diffusion.data_loader import no_batch_collate_fn
 
 golden_dir = 'goldens'
 
@@ -256,10 +257,6 @@ def construct_conf_single(overrides=None, config_name='debug', inference=False):
     conf = compose(config_name=f'{config_name}.yaml', overrides=overrides, return_hydra_config=True)
     return conf
 
-def no_batch_collate_fn(data):
-    assert len(data) == 1
-    return data[0]
-
 def get_dataloader(conf: DictConfig, epoch=0) -> None:
 
     if conf.debug:
@@ -310,52 +307,19 @@ def loader_out_for_dataset(dataset, mask, overrides=[], epoch=0, config_name='de
     
     return loader_out_from_conf(conf, epoch=epoch)
 
-def construct_conf(overrides: list[str]=[], yaml_path: str='config/training/base.yaml'):
-    '''
-    Make a hydra config object from a yaml configutation file.
+# def construct_conf(overrides: list[str]=[], yaml_path: str='config/training/base.yaml'):
+#     '''
+#     Make a hydra config object from a yaml configutation file.
     
-    Inputs
-        overrides: ex - ['inference.cautious=False', 'inference.design_startnum=0']
-        yaml_path: Yaml file from which to construct the conf. Then overrides are applied.        
-    '''
-    config_path, config_name = os.path.split(yaml_path)
-    with initialize(version_base=None, config_path=config_path, job_name="test_app"):
-        conf = compose(config_name=config_name, overrides=overrides, return_hydra_config=True)
+#     Inputs
+#         overrides: ex - ['inference.cautious=False', 'inference.design_startnum=0']
+#         yaml_path: Yaml file from which to construct the conf. Then overrides are applied.        
+#     '''
+#     config_path, config_name = os.path.split(yaml_path)
+#     with initialize(version_base=None, config_path=config_path, job_name="test_app"):
+#         conf = compose(config_name=config_name, overrides=overrides, return_hydra_config=True)
         
-    return conf
-
-# def get_train_loader(conf_train):
-#     diffuser = se3_diffuser.SE3Diffuser(conf_train.diffuser)
-#     diffuser.T = conf_train.diffuser.T
-#     dataset_configs, homo = default_dataset_configs(conf_train.dataloader, debug=conf_train.debug)
-
-#     train_set = DistilledDataset(
-#         dataset_configs,
-#         conf_train.dataloader,
-#         diffuser,
-#         conf_train.preprocess, 
-#         conf_train, 
-#         homo,
-#     )
-    
-#     train_sampler = DistributedWeightedSampler(
-#         dataset_configs,
-#         dataset_options=conf_train.dataloader['DATASETS'],
-#         dataset_prob=conf_train.dataloader['DATASET_PROB'],
-#         num_example_per_epoch=conf_train.epoch_size,
-#         num_replicas=1, 
-#         rank=0, 
-#         replacement=True
-#     )
-    
-#     LOAD_PARAM = {
-#         'shuffle': False,
-#         'num_workers': 0,
-#         'pin_memory': True
-#     }
-    
-#     train_loader = data.DataLoader(train_set, sampler=train_sampler, batch_size=conf_train.batch_size, collate_fn=no_batch_collate_fn, **LOAD_PARAM)
-#     return train_loader
+#     return conf
 
 def subset_target_feats(target_feats, is_subset):
     '''
@@ -499,3 +463,9 @@ def detect_permuted_aa_atoms(indep_train, item_context: dict):
             results[aa3].append(compare_aa_atom_order(xyz_cmp, xyz_ref, aa_int))
 
     return results
+
+def full_count(aa_count, min_count):
+    '''
+    Have more than the minimum number of aa been checked?
+    '''
+    return all(map(lambda count: count >= min_count, aa_count.values()))

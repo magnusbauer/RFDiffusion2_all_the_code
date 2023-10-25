@@ -6,14 +6,8 @@ from rf_diffusion.kinematics import xyz_to_t2d
 import torch
 import torch.nn.functional as nn
 from rf_diffusion.util import get_torsions
-# from rf_diffusion.diffusion import get_beta_schedule, get_aa_schedule, get_chi_betaT
-# from rf_diffusion.diff_util import get_aa_schedule, th_interpolate_angles, th_min_angle
 from icecream import ic
 from scipy.spatial.transform import Rotation as scipy_R
-# from scipy.spatial.transform import Slerp
-# from rf_diffusion.util import torsion_indices as TOR_INDICES
-# from rf_diffusion.util import torsion_can_flip as TOR_CAN_FLIP
-# from rf_diffusion.util import reference_angles as REF_ANGLES
 from rf_diffusion.util import rigid_from_3_points
 from rf_diffusion.util_module import ComputeAllAtomCoords
 from rf_diffusion.potentials.manager import PotentialManager

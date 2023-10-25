@@ -20,12 +20,10 @@ import torch
 import copy
 import numpy as np
 from rf_diffusion.kinematics import get_init_xyz
-# import chemical
 from rf2aa.chemical import MASKINDEX
 import rf2aa.chemical
 from rf2aa import chemical
 import rf_diffusion.util as util
-#from rf_diffusion.inference.utils import parse_pdb_lines
 from rf_diffusion.parsers import parse_pdb_lines_target
 import networkx as nx
 nx.from_numpy_matrix = nx.from_numpy_array

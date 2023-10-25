@@ -34,15 +34,10 @@ from rf_diffusion.metrics import MetricManager
 from rf_diffusion import run_inference
 from rf_diffusion import aa_model
 from rf_diffusion import atomize
-from data_loader import (
-    get_train_valid_set, loader_pdb, loader_fb, loader_complex, loader_pdb_fixbb, loader_fb_fixbb, loader_complex_fixbb, loader_cn_fixbb, default_dataset_configs,
-    #Dataset, DatasetComplex, 
-    DistilledDataset, DistributedWeightedSampler, DatasetWithFallback
-)
+from rf_diffusion.data_loader import get_fallback_dataset_and_dataloader
 import error
 import pytimer.timer
 pytimer.timer.default_logger.propagate = False
-
 
 from kinematics import xyz_to_c6d, c6d_to_bins2, xyz_to_t2d, xyz_to_bbtor, get_init_xyz
 from rf_diffusion import loss as loss_module
@@ -58,14 +53,9 @@ from rf_diffusion.reshape_weights import changed_dimensions, get_t1d_updates
 
 #added for inpainting training
 from icecream import ic
-from apply_masks import mask_inputs
 import random
 import model_input_logger
 from model_input_logger import pickle_function_call
-
-# added for diffusion training 
-from diffusion import Diffuser
-from seq_diffusion import ContinuousSeqDiffuser, DiscreteSeqDiffuser
 
 # added for logging git diff
 import subprocess
@@ -74,9 +64,6 @@ import subprocess
 import torch.distributed as dist
 import torch.multiprocessing as mp
 from torch.nn.parallel import DistributedDataParallel as DDP
-#torch.backends.cudnn.benchmark = False
-#torch.backends.cudnn.deterministic = True
-#torch.autograd.set_detect_anomaly(True)
 
 global N_EXAMPLE_PER_EPOCH
 global DEBUG 
@@ -160,10 +147,6 @@ class EMA(nn.Module):
 
 def get_datetime():
     return str(date.today()) + '_' + str(time.time())
-
-def no_batch_collate_fn(data):
-    assert len(data) == 1
-    return data[0]
 
 class Trainer():
     def __init__(self, conf=None):
@@ -565,41 +548,15 @@ class Trainer():
         
         self.n_train = N_EXAMPLE_PER_EPOCH
 
-
-        dataset_configs, homo = default_dataset_configs(self.conf.dataloader, debug=DEBUG)
-        
-        print('Making train sets')
-        def get_dataset_and_sampler(dataset_configs, dataset_options, dataset_prob):
-            train_set = DistilledDataset(dataset_configs,
-                                        self.conf.dataloader, self.diffuser,
-                                        self.conf.preprocess, self.conf, homo)
-
-            train_sampler = DistributedWeightedSampler(dataset_configs,
-                                                    dataset_options=dataset_options,
-                                                    dataset_prob=dataset_prob,
-                                                    num_example_per_epoch=N_EXAMPLE_PER_EPOCH,
-                                                    num_replicas=world_size, rank=rank, replacement=True)
-
-            return train_set, train_sampler
-
-        fallback_dataset_configs = {'pdb_aa': dataset_configs['pdb_aa']}
-        train_set, train_sampler = get_dataset_and_sampler(dataset_configs,
-                                                    dataset_options=self.conf.dataloader['DATASETS'],
-                                                    dataset_prob=self.conf.dataloader['DATASET_PROB'])
-        fallback_train_set, fallback_train_sampler = get_dataset_and_sampler(fallback_dataset_configs,
-                                                    dataset_options='pdb_aa',
-                                                    dataset_prob=[1.0])
-
-        train_set = DatasetWithFallback(train_set, fallback_train_set, fallback_train_sampler)
-        
-        def set_epoch(epoch):
-            for sampler in [train_sampler, fallback_train_sampler]:
-                sampler.set_epoch(epoch)
-
-        print('THIS IS LOAD PARAM GOING INTO DataLoader inits')
-        print(LOAD_PARAM)
-
-        train_loader = data.DataLoader(train_set, sampler=train_sampler, batch_size=self.conf.batch_size, collate_fn=no_batch_collate_fn, **LOAD_PARAM)
+        # Get the fallback dataset and dataloader
+        train_set, train_loader = get_fallback_dataset_and_dataloader(
+            conf=self.conf,
+            diffuser=self.diffuser,
+            num_example_per_epoch=N_EXAMPLE_PER_EPOCH,
+            world_size=world_size,
+            rank=rank,
+            LOAD_PARAM=LOAD_PARAM,
+        )
 
         # move some global data to cuda device
         self.ti_dev = self.ti_dev.to(gpu)
@@ -614,7 +571,7 @@ class Trainer():
             return ddp_model, train_loader, optimizer, scheduler, scaler
         
         for epoch in range(loaded_epoch, self.conf.n_epoch):
-            set_epoch(epoch)
+            train_loader.sampler.set_epoch(epoch)
             
             print('Just before calling train cycle...')
             train_tot, train_loss, train_acc = self.train_cycle(ddp_model, train_loader, optimizer, scheduler, scaler, rank, gpu, world_size, epoch)

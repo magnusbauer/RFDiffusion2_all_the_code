@@ -14,7 +14,6 @@ from collections import defaultdict
 import torch
 import re
 from rf_diffusion.inference import utils as iu
-from rf_diffusion import diffusion
 import hydra
 from hydra import compose, initialize
 from rf_diffusion.inference import model_runners

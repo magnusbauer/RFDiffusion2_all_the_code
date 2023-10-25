@@ -1853,3 +1853,69 @@ class DistributedWeightedSampler(data.Sampler):
     def set_epoch(self, epoch):
         self.epoch = epoch
 
+def no_batch_collate_fn(data):
+    assert len(data) == 1
+    return data[0]
+
+def get_dataset_and_sampler(dataset_configs, dataset_options, dataset_prob, conf, diffuser, num_example_per_epoch, world_size, rank, homo):
+    dataset = DistilledDataset(
+        dataset_configs=dataset_configs,
+        params=conf.dataloader,
+        diffuser=diffuser, 
+        preprocess_param=conf.preprocess,
+        conf=conf,
+        homo=homo
+    )
+
+    sampler = DistributedWeightedSampler(
+        dataset_configs=dataset_configs,
+        dataset_options=dataset_options,
+        dataset_prob=dataset_prob,
+        num_example_per_epoch=num_example_per_epoch,
+        num_replicas=world_size, 
+        rank=rank, 
+        replacement=True
+    )
+
+    return dataset, sampler
+
+def get_fallback_dataset_and_dataloader(conf, diffuser, num_example_per_epoch, world_size, rank, LOAD_PARAM):
+    # Make primary dataset
+    primary_dataset_configs, homo = default_dataset_configs(conf.dataloader, debug=conf.debug)
+    primary_dataset, primary_sampler = get_dataset_and_sampler(
+        dataset_configs=primary_dataset_configs, 
+        dataset_options=conf.dataloader['DATASETS'], 
+        dataset_prob=conf.dataloader['DATASET_PROB'], 
+        conf=conf, 
+        diffuser=diffuser, 
+        num_example_per_epoch=num_example_per_epoch,
+        world_size=world_size, 
+        rank=rank,
+        homo=homo,
+    )
+
+    # Make secondary dataset
+    secondary_dataset_configs = {'pdb_aa': primary_dataset_configs['pdb_aa']}
+    secondary_dataset, secondary_sampler = get_dataset_and_sampler(
+        dataset_configs = secondary_dataset_configs, 
+        dataset_options='pdb_aa',
+        dataset_prob=[1.0],
+        conf=conf, 
+        diffuser=diffuser, 
+        num_example_per_epoch=num_example_per_epoch,
+        world_size=world_size, 
+        rank=rank,
+        homo=homo,
+    )
+
+    # Combine primary and secondary datasets to make the fallbacks
+    fallback_dataset = DatasetWithFallback(primary_dataset, secondary_dataset, secondary_sampler)
+    fallback_train_loader = data.DataLoader(
+        fallback_dataset, 
+        sampler=primary_sampler, 
+        batch_size=conf.batch_size, 
+        collate_fn=no_batch_collate_fn, 
+        **LOAD_PARAM
+    )
+
+    return fallback_dataset, fallback_train_loader
