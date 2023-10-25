@@ -21,6 +21,10 @@ from torch.utils import data
 from omegaconf import DictConfig
 from rf_se3_diffusion.data import se3_diffuser
 
+import urllib
+from rf_diffusion import parsers
+from rf2aa.util import kabsch
+import tree
 
 golden_dir = 'goldens'
 
@@ -303,3 +307,190 @@ def loader_out_for_dataset(dataset, mask, overrides=[], epoch=0, config_name='de
     ] + overrides, config_name=config_name)
     
     return loader_out_from_conf(conf, epoch=epoch)
+
+def construct_conf(overrides: list[str]=[], yaml_path: str='config/training/base.yaml') -> HydraConfig:
+    '''
+    Make a hydra config object from a yaml configutation file.
+    
+    Inputs
+        overrides: ex - ['inference.cautious=False', 'inference.design_startnum=0']
+        yaml_path: Yaml file from which to construct the conf. Then overrides are applied.        
+    '''
+    config_path, config_name = os.path.split(yaml_path)
+    with initialize(version_base=None, config_path=config_path, job_name="test_app"):
+        conf = compose(config_name=config_name, overrides=overrides, return_hydra_config=True)
+        
+    return conf
+
+# def get_train_loader(conf_train):
+#     diffuser = se3_diffuser.SE3Diffuser(conf_train.diffuser)
+#     diffuser.T = conf_train.diffuser.T
+#     dataset_configs, homo = default_dataset_configs(conf_train.dataloader, debug=conf_train.debug)
+
+#     train_set = DistilledDataset(
+#         dataset_configs,
+#         conf_train.dataloader,
+#         diffuser,
+#         conf_train.preprocess, 
+#         conf_train, 
+#         homo,
+#     )
+    
+#     train_sampler = DistributedWeightedSampler(
+#         dataset_configs,
+#         dataset_options=conf_train.dataloader['DATASETS'],
+#         dataset_prob=conf_train.dataloader['DATASET_PROB'],
+#         num_example_per_epoch=conf_train.epoch_size,
+#         num_replicas=1, 
+#         rank=0, 
+#         replacement=True
+#     )
+    
+#     LOAD_PARAM = {
+#         'shuffle': False,
+#         'num_workers': 0,
+#         'pin_memory': True
+#     }
+    
+#     train_loader = data.DataLoader(train_set, sampler=train_sampler, batch_size=conf_train.batch_size, collate_fn=no_batch_collate_fn, **LOAD_PARAM)
+#     return train_loader
+
+def subset_target_feats(target_feats, is_subset):
+    '''
+    is_subset (iterable[bool]): True = Include this residue in the returned subset.
+    '''
+    xyz = target_feats['xyz'][is_subset]
+    mask = target_feats['mask'][is_subset]
+    idx = target_feats['idx'][is_subset]
+    seq = target_feats['seq'][is_subset]
+    pdb_idx = [x for b, x in zip(is_subset, target_feats['pdb_idx']) if b]
+
+    subset = dict(
+        xyz=xyz,
+        mask=mask,
+        idx=idx,
+        seq=seq,
+        pdb_idx=pdb_idx
+    )
+
+    return subset
+    
+def pdbid_to_feats(pdbid: str):
+    stream = urllib.request.urlopen(f'https://files.rcsb.org/view/{pdbid.upper()}.pdb').read().decode('ascii').split('\n')
+    target_feats = parsers.parse_pdb_lines_target(stream)
+    return target_feats
+
+def is_atom_resolved(xyz: torch.Tensor):
+    '''
+    xyz (..., n_atoms, 3)
+    '''
+    is_near_ori = (xyz < 1e-3).all(-1)
+    is_nan = torch.isnan(xyz).any(-1)
+    
+    return ~(is_near_ori | is_nan)
+
+def point_correspondance(xyz1, xyz2, atol=1e-2):
+    '''
+    Finds which points have the same nd coordinates within some tolerance.
+    
+    xyz1, xyz2 (..., n_dims)
+    '''
+    return ((xyz1[:, None] - xyz2[None, :]).abs() < atol).all(-1)
+
+def compare_aa_atom_order(xyz_cmp, xyz_ref, aa_int) -> bool:
+    '''
+    Mainly intended to detect if xyz_cmp is a permutation of xyz_ref.
+    Does not do any alignment.
+
+    Inputs
+        xyz_cmp: (n_atoms, 3)
+        xyz_ref: (n_atoms, 3)
+
+    Returns
+        If all the atoms are in the same order, based on their coordinates.
+    '''
+    # Compare only resolved atoms
+    is_resolved_cmp = is_atom_resolved(xyz_cmp)
+    is_resolved_ref = is_atom_resolved(xyz_ref)
+    if not (is_resolved_cmp == is_resolved_ref).all():
+        msg = f'xyz_cmp and xyz_ref do not have the same number of resolved atoms. They cannot be compared.'
+        return False, msg
+
+    xyz_cmp = xyz_cmp[is_resolved_cmp]
+    xyz_ref = xyz_ref[is_resolved_ref]
+    same_xyz = point_correspondance(xyz_cmp, xyz_ref)
+
+    n_atoms = xyz_ref.shape[0]
+    if same_xyz.sum() != n_atoms:
+        msg = ('Not all reference atoms found a comparison atoms with similar coordinates! '
+              'No point in comparing the atom ordering')
+        return False, msg
+
+    out_of_order = same_xyz * ~torch.eye(*same_xyz.shape, dtype=bool)
+    if out_of_order.any():
+        msg = []
+        # Find out what atom_names are not ordered correctly
+        for cmp_idx0, ref_idx0 in zip(*torch.where(out_of_order)):
+            atom_name = rf2aa.chemical.aa2long[aa_int][ref_idx0]
+            aa3 = rf2aa.chemical.num2aa[aa_int]
+            msg.append(f'For {aa3}, expected {atom_name} to be at position {ref_idx0} but was at position {cmp_idx0} instead!')
+
+        return False, ' '.join(msg)
+    else:
+        msg = 'Ref and comparison atoms are in the same order.'
+        return True, msg
+    
+def detect_permuted_aa_atoms(indep_train, item_context: dict):
+    '''
+    Uses atom coordinates to infer if amino acid atoms in the indep are
+    ordered the same way as they are defined in rf2aa.chemical.
+    
+    Note: Currently could incorrectly identify an atom permutation because it
+    does not account for symmetric side chains. So far this has
+    not been a problem since the .pt files Ivan originally parsed largely have the 
+    atom order as rf2aa for symmetric atoms.
+    '''
+    # Get "ground truth" features directly from rcsb
+    pdbid, chain = item_context['sel_item']['CHAINID'].split('_')
+    target_feats = pdbid_to_feats(pdbid)
+
+    # Subset target_feats to the chain the dataloader used
+    is_subset = [ch == chain.upper() for ch, resi in target_feats['pdb_idx']]
+    target_feats = subset_target_feats(target_feats, is_subset)
+    target_feats = tree.map_structure(lambda x: torch.from_numpy(x) if isinstance(x, np.ndarray) else x, target_feats)
+
+    # align only based on amino acids
+    indep_aa_seq = torch.where(indep_train.seq < 20, indep_train.seq, torch.nan)
+    target_aa_seq = torch.where(target_feats['seq'] < 20, target_feats['seq'], torch.nan)
+    L_target = target_feats['seq'].shape[0]
+    same_aa = indep_aa_seq[:, None] == target_aa_seq[None, :]
+
+    n_aligned_res = torch.tensor([torch.diagonal(same_aa, offset).sum().item() for offset in range(L_target)])
+    offset_max_aligned_res = n_aligned_res.argmax()
+
+    results = {rf2aa.chemical.num2aa[aa_int]: [] for aa_int in range(20)}
+    if n_aligned_res[offset_max_aligned_res] < 5:
+        print(f'Fewer than 5 consecutive residues could be aligned. Skipping {item_context}')
+
+    else:
+        # Find what ref residues correspond to which cmp residues
+        is_aligned = torch.zeros(same_aa.shape, dtype=bool)
+        torch.diagonal(is_aligned, offset=offset_max_aligned_res).fill_(True)
+        is_aligned = is_aligned & same_aa
+        indep_idx0, target_idx0 = torch.where(is_aligned)
+
+        # Align indep xyz to target xyz based on CA xyz
+        indep_ca_xyz = indep_train.xyz[indep_idx0, 1]
+        target_ca_xyz = target_feats['xyz'][target_idx0, 1]
+        rmsd, U = kabsch(indep_ca_xyz, target_ca_xyz)  # aligns indep to target xyz
+        indep_xyz_aligned = (indep_train.xyz - indep_ca_xyz.mean(0)) @ U + target_ca_xyz.mean(0)
+
+        # For each align amino acid, compare the atom coordinates to see if any of them are purmuted!
+        for indep_i, target_i in zip(indep_idx0, target_idx0):
+            xyz_cmp = indep_xyz_aligned[indep_i]
+            xyz_ref = target_feats['xyz'][target_i]
+            aa_int = target_feats['seq'][target_i]
+            aa3 = rf2aa.chemical.num2aa[aa_int]
+            results[aa3].append(compare_aa_atom_order(xyz_cmp, xyz_ref, aa_int))
+
+    return results

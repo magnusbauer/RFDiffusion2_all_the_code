@@ -22,11 +22,12 @@ from data_loader import (
     #Dataset, DatasetComplex, 
     DistilledDataset, DistributedWeightedSampler
 )
-import test_utils
+from rf_diffusion import test_utils
 from rf2aa import tensor_util
 import run_inference
 import aa_model
 import show
+import rf2aa.chemical
 
 cmd = analyze.cmd
 
@@ -484,58 +485,59 @@ class Dataloader(unittest.TestCase):
         golden_name = 'indep-extra-t1d-time-embedding'
         test_utils.assert_matches_golden(self, golden_name, indep, rewrite=REWRITE, custom_comparator=self.cmp)
 
-    # def test_covale_simple_mask_0(self):
-    #     dataset = 'sm_compl_covale'
-    #     mask = 'get_diffusion_mask_simple'
-    #     loader_out = self.indep_for_dataset(dataset, mask, epoch=0)
-    #     indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context = loader_out
+    def test_atom_order(self):
+        '''
+        Tests that amino acid atoms from the dataloader are ordered the same way as in rf2aa.chemical.aa2long
+        '''
+        # Make the training loader
+        f_train_yaml = 'config/training/RFD_36.yaml'
+        overrides = [
+            'dataloader.DATAPKL_AA=aa_dataset_256_subsampled_10.pkl', 
+            '+dataloader.max_residues=256',
+            '+diffuser.time_type=continuous',
+            '+diffuser.t_cont_max=0.025',
+        ]
+        conf_train = test_utils.construct_conf(yaml_path=f_train_yaml, overrides=overrides)
+        train_loader test_utils.get_dataloader(conf_train)
 
-    #     print(item_context)
-    #     ic(indep.chains())
-    #     ic(indep.is_sm)
-    #     ic(indep.is_sm.sum())
-    #     sm_bond_feats = indep.bond_feats[indep.is_sm]
-    #     inter_bond_feats = sm_bond_feats[:, ~indep.is_sm]
-    #     ic(inter_bond_feats)
-    #     ic(inter_bond_feats.nonzero())
-    #     for i in inter_bond_feats.nonzero():
-    #         # print(i)
-    #         # print(inter_bond_feats.shape)
-    #         print(i, inter_bond_feats[i[0], i[1]])
-    #     ic(inter_bond_feats.any())
-    #     ic(~is_diffused)
-        
-    #     golden_name = f'indep_{dataset}-{mask}'
-    #     cmp = partial(tensor_util.cmp, atol=1e-20, rtol=1e-5)
-    #     show(indep, atomizer)
-    #     test_utils.assert_matches_golden(self, golden_name, indep, rewrite=REWRITE, custom_comparator=cmp)
+        # Sample several training examples
+        min_train_examples = 10
+        min_aa = 100
 
-    # def test_covale_simple_mask_1(self):
-    #     dataset = 'sm_compl_covale'
-    #     mask = 'get_diffusion_mask_simple'
-    #     loader_out = self.indep_for_dataset(dataset, mask, epoch=5)
-    #     indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context = loader_out
+        train_examples_count = 0
+        aa_count = {rf2aa.chemical.num2aa[aa_int]: 0 for aa_int in range(20)}
+        for i, (indep_train, rfi_train, chosen_dataset, item, little_t, is_diffused_train, chosen_task, atomizer, masks_1d, diffuser_out, item_context) in enumerate(train_loader):
+            print('Loaded example:', i)
+            try:
+                item_context = eval(item_context)
+                atom_order_results = test_utils.detect_permuted_aa_atoms(indep_train, item_context)
+                for aa3, record in atom_order_results.items():
+                    for is_correct_order, msg in record:
+                        if not is_correct_order:
+                            pass
+                            #print(msg)
+                            #self.fail(msg)
+                            
+                # Record how many training pdbs and individual amino acids have been checked.
+                train_examples_count += 1
+                
+                for aa_int in range(20):
+                    aa3 = rf2aa.chemical.num2aa[aa_int]
+                    aa_count[aa3] += len(atom_order_results[aa3])
+                    
+                print('updated my numbers')
+            
+            except: # Exception as e:
+                print(f'Couldn\'t process {item_context}. Skipping.')
+            
+            print('train_examples_count:', train_examples_count)
+            enough_aa = all(map(lambda count: count >= min_aa, aa_count.values()))
+            if enough_aa and (train_examples_count >= min_train_examples):
+                print('DONEEEE!!')
+                break
 
-    #     print(item_context)
-    #     ic(indep.chains())
-    #     ic(indep.is_sm)
-    #     ic(indep.is_sm.sum())
-    #     sm_bond_feats = indep.bond_feats[indep.is_sm]
-    #     inter_bond_feats = sm_bond_feats[:, ~indep.is_sm]
-    #     ic(inter_bond_feats)
-    #     ic(inter_bond_feats.nonzero())
-    #     for i in inter_bond_feats.nonzero():
-    #         # print(i)
-    #         # print(inter_bond_feats.shape)
-    #         print(i, inter_bond_feats[i[0], i[1]])
-    #     ic(inter_bond_feats.any())
-    #     ic(~is_diffused)
-        
-    #     golden_name = f'indep_{dataset}-{mask}'
-    #     cmp = partial(tensor_util.cmp, atol=1e-20, rtol=1e-5)
-    #     show(indep, atomizer)
-    #     show_diffused(indep, is_diffused, 'true')
-    #     test_utils.assert_matches_golden(self, golden_name, indep, rewrite=REWRITE, custom_comparator=cmp)
+
+
 
 if __name__ == '__main__':
         unittest.main()
