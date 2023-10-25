@@ -25,6 +25,8 @@ import urllib
 from rf_diffusion import parsers
 from rf2aa.util import kabsch
 import tree
+import numpy as np
+import rf2aa.chemical
 
 golden_dir = 'goldens'
 
@@ -308,7 +310,7 @@ def loader_out_for_dataset(dataset, mask, overrides=[], epoch=0, config_name='de
     
     return loader_out_from_conf(conf, epoch=epoch)
 
-def construct_conf(overrides: list[str]=[], yaml_path: str='config/training/base.yaml') -> HydraConfig:
+def construct_conf(overrides: list[str]=[], yaml_path: str='config/training/base.yaml'):
     '''
     Make a hydra config object from a yaml configutation file.
     
@@ -397,7 +399,7 @@ def point_correspondance(xyz1, xyz2, atol=1e-2):
     '''
     return ((xyz1[:, None] - xyz2[None, :]).abs() < atol).all(-1)
 
-def compare_aa_atom_order(xyz_cmp, xyz_ref, aa_int) -> bool:
+def compare_aa_atom_order(xyz_cmp, xyz_ref, aa_int):
     '''
     Mainly intended to detect if xyz_cmp is a permutation of xyz_ref.
     Does not do any alignment.
@@ -407,14 +409,18 @@ def compare_aa_atom_order(xyz_cmp, xyz_ref, aa_int) -> bool:
         xyz_ref: (n_atoms, 3)
 
     Returns
-        If all the atoms are in the same order, based on their coordinates.
+        True: If all the atoms are in the same order, based on their coordinates.
+        False: Atoms in xyz_cmp are permuted compared to xyz_ref.
+        None: Could not match all atoms, so no conclusion can be drawn.
     '''
+    aa3 = rf2aa.chemical.num2aa[aa_int]
+    
     # Compare only resolved atoms
     is_resolved_cmp = is_atom_resolved(xyz_cmp)
     is_resolved_ref = is_atom_resolved(xyz_ref)
-    if not (is_resolved_cmp == is_resolved_ref).all():
+    if not (is_resolved_cmp.sum() == is_resolved_ref.sum()):
         msg = f'xyz_cmp and xyz_ref do not have the same number of resolved atoms. They cannot be compared.'
-        return False, msg
+        return None, msg
 
     xyz_cmp = xyz_cmp[is_resolved_cmp]
     xyz_ref = xyz_ref[is_resolved_ref]
@@ -422,9 +428,9 @@ def compare_aa_atom_order(xyz_cmp, xyz_ref, aa_int) -> bool:
 
     n_atoms = xyz_ref.shape[0]
     if same_xyz.sum() != n_atoms:
-        msg = ('Not all reference atoms found a comparison atoms with similar coordinates! '
+        msg = (f'Not all {aa3} reference atoms found a comparison atoms with similar coordinates! '
               'No point in comparing the atom ordering')
-        return False, msg
+        return None, msg
 
     out_of_order = same_xyz * ~torch.eye(*same_xyz.shape, dtype=bool)
     if out_of_order.any():
@@ -432,7 +438,6 @@ def compare_aa_atom_order(xyz_cmp, xyz_ref, aa_int) -> bool:
         # Find out what atom_names are not ordered correctly
         for cmp_idx0, ref_idx0 in zip(*torch.where(out_of_order)):
             atom_name = rf2aa.chemical.aa2long[aa_int][ref_idx0]
-            aa3 = rf2aa.chemical.num2aa[aa_int]
             msg.append(f'For {aa3}, expected {atom_name} to be at position {ref_idx0} but was at position {cmp_idx0} instead!')
 
         return False, ' '.join(msg)

@@ -20,8 +20,8 @@ import rf_diffusion.aa_model as aa_model
 import dataclasses
 
 from rf_diffusion.kinematics import get_init_xyz
-from rf_diffusion.diffusion import Diffuser
-import rf_diffusion.seq_diffusion as seq_diffusion
+# from rf_diffusion.diffusion import Diffuser
+# import rf_diffusion.seq_diffusion as seq_diffusion
 from rf_diffusion.contigs import ContigMap
 from rf_diffusion.inference import utils as iu
 from rf_diffusion.potentials.manager import PotentialManager
@@ -48,9 +48,9 @@ import sys
 import rf_diffusion.model_input_logger as model_input_logger
 from rf_diffusion.model_input_logger import pickle_function_call
 
-TOR_INDICES  = util.torsion_indices
-TOR_CAN_FLIP = util.torsion_can_flip
-REF_ANGLES   = util.reference_angles
+# TOR_INDICES  = util.torsion_indices
+# TOR_CAN_FLIP = util.torsion_can_flip
+# REF_ANGLES   = util.reference_angles
 
 class Sampler:
 
@@ -282,22 +282,6 @@ class Sampler:
             L = len(target_feats["pdb_idx"])
             self.contig_conf.contigs = [f'{L}-{L}']
         return ContigMap(target_feats, **self.contig_conf)
-
-    def construct_denoiser(self, L, visible):
-        """Make length-specific denoiser."""
-        # TODO: Denoiser seems redundant. Combine with diffuser.
-        denoise_kwargs = OmegaConf.to_container(self.diffuser_conf)
-        denoise_kwargs.update(OmegaConf.to_container(self.denoiser_conf))
-        aa_decode_steps = min(denoise_kwargs['aa_decode_steps'], denoise_kwargs['partial_T'] or 999)
-        denoise_kwargs.update({
-            'L': L,
-            'diffuser': self.diffuser,
-            'seq_diffuser': self.seq_diffuser,
-            'potential_manager': self.potential_manager,
-            'visible': visible,
-            'aa_decode_steps': aa_decode_steps,
-        })
-        return iu.Denoise(**denoise_kwargs)
 
     def sample_init(self, return_forward_trajectory=False):
         """Initial features to start the sampling process.

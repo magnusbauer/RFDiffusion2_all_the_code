@@ -22,7 +22,7 @@ import torch
 from omegaconf import DictConfig, OmegaConf
 import hydra
 import logging
-from rf_diffusion.util import writepdb_multi, writepdb
+# from rf_diffusion.util import writepdb_multi, writepdb
 from icecream import ic
 from hydra.core.hydra_config import HydraConfig
 import numpy as np

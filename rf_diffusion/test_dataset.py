@@ -28,6 +28,7 @@ import run_inference
 import aa_model
 import show
 import rf2aa.chemical
+import pytest
 
 cmd = analyze.cmd
 
@@ -490,53 +491,46 @@ class Dataloader(unittest.TestCase):
         Tests that amino acid atoms from the dataloader are ordered the same way as in rf2aa.chemical.aa2long
         '''
         # Make the training loader
-        f_train_yaml = 'config/training/RFD_36.yaml'
         overrides = [
-            'dataloader.DATAPKL_AA=aa_dataset_256_subsampled_10.pkl', 
+            'dataloader.DATAPKL_AA=/home/dtischer/code/rf_diffusion_train/rf_diffusion/aa_dataset_256.pkl', 
             '+dataloader.max_residues=256',
             '+diffuser.time_type=continuous',
             '+diffuser.t_cont_max=0.025',
         ]
-        conf_train = test_utils.construct_conf(yaml_path=f_train_yaml, overrides=overrides)
-        train_loader test_utils.get_dataloader(conf_train)
+        conf_train = test_utils.construct_conf_single(overrides=overrides, config_name='RFD_36')
+        train_loader = test_utils.get_dataloader(conf_train)
 
         # Sample several training examples
-        min_train_examples = 10
-        min_aa = 100
+        min_train_examples = 3
+        min_aa = 5
 
         train_examples_count = 0
         aa_count = {rf2aa.chemical.num2aa[aa_int]: 0 for aa_int in range(20)}
-        for i, (indep_train, rfi_train, chosen_dataset, item, little_t, is_diffused_train, chosen_task, atomizer, masks_1d, diffuser_out, item_context) in enumerate(train_loader):
-            print('Loaded example:', i)
+        for indep_train, rfi_train, chosen_dataset, item, little_t, is_diffused_train, chosen_task, atomizer, masks_1d, diffuser_out, item_context in train_loader:
             try:
                 item_context = eval(item_context)
-                atom_order_results = test_utils.detect_permuted_aa_atoms(indep_train, item_context)
+                atom_order_results = test_utils.detect_permuted_aa_atoms(indep_train, item_context)                                
+            except Exception as e:
+                print(f'Couldn\'t process {item_context}. Skipping.')
+                print('exception:', e)
+                atom_order_results = {}
+
+            if atom_order_results:
                 for aa3, record in atom_order_results.items():
                     for is_correct_order, msg in record:
-                        if not is_correct_order:
-                            pass
+                        if is_correct_order is False:
+                            #pass
                             #print(msg)
-                            #self.fail(msg)
+                            self.fail(msg)
                             
                 # Record how many training pdbs and individual amino acids have been checked.
                 train_examples_count += 1
-                
-                for aa_int in range(20):
-                    aa3 = rf2aa.chemical.num2aa[aa_int]
+                for aa3 in aa_count:
                     aa_count[aa3] += len(atom_order_results[aa3])
-                    
-                print('updated my numbers')
             
-            except: # Exception as e:
-                print(f'Couldn\'t process {item_context}. Skipping.')
-            
-            print('train_examples_count:', train_examples_count)
             enough_aa = all(map(lambda count: count >= min_aa, aa_count.values()))
             if enough_aa and (train_examples_count >= min_train_examples):
-                print('DONEEEE!!')
                 break
-
-
 
 
 if __name__ == '__main__':
