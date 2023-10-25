@@ -500,10 +500,11 @@ class Dataloader(unittest.TestCase):
         conf_train = test_utils.construct_conf_single(overrides=overrides, config_name='RFD_36')
         train_loader = test_utils.get_dataloader(conf_train)
 
-        # Sample several training examples
+        # Set the minimum number of examples to check
         min_train_examples = 3
-        min_aa = 5
+        min_aa_count = 5
 
+        # Sample training examples until minimum counts are statisfied
         train_examples_count = 0
         aa_count = {rf2aa.chemical.num2aa[aa_int]: 0 for aa_int in range(20)}
         for indep_train, rfi_train, chosen_dataset, item, little_t, is_diffused_train, chosen_task, atomizer, masks_1d, diffuser_out, item_context in train_loader:
@@ -519,8 +520,6 @@ class Dataloader(unittest.TestCase):
                 for aa3, record in atom_order_results.items():
                     for is_correct_order, msg in record:
                         if is_correct_order is False:
-                            #pass
-                            #print(msg)
                             self.fail(msg)
                             
                 # Record how many training pdbs and individual amino acids have been checked.
@@ -528,7 +527,7 @@ class Dataloader(unittest.TestCase):
                 for aa3 in aa_count:
                     aa_count[aa3] += len(atom_order_results[aa3])
             
-            enough_aa = all(map(lambda count: count >= min_aa, aa_count.values()))
+            enough_aa = all(map(lambda count: count >= min_aa_count, aa_count.values()))
             if enough_aa and (train_examples_count >= min_train_examples):
                 break
 
