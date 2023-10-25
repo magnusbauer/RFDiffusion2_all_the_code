@@ -43,7 +43,7 @@ def run(conf: DictConfig) -> None:
     model = RFScore(conf.rf.model, diffuser, device).to(device)
 
     map_location = {"cuda:%d"%0: "cpu"}
-    checkpoint = torch.load(conf.rf.ckpt_path, map_location=map_location)
+    checkpoint = torch.load(conf.ckpt_load_path, map_location=map_location)
 
     # Handle loading from str pred weights
     model_name = getattr(checkpoint.get('model'), '__name__', '')

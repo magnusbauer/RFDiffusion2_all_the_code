@@ -1,0 +1,50 @@
+defaults:
+  - RFD_36
+
+guidepost_bonds: false
+dataloader:
+  USE_GUIDE_POSTS: false
+
+ckpt_load_path: /home/ahern/projects/aa_diffusion_data/models/rf2a_25c_414_t1d-114.pt
+experiment:
+  trans_loss_weight: 1.0
+  rot_loss_weight: 1.0
+  trans_x0_threshold: 1.0
+  normalize_trans_x0: true
+  bb_atom_loss_weight: 0.0
+  bb_atom_loss_t_filter: 0.0
+  dist_mat_loss_weight: 0.0
+  dist_mat_loss_t_filter: 0.0
+  aux_loss_weight: 0.0
+  c6d_loss_weight: 0.0
+
+extra_t1d:
+  - radius_of_gyration_v2
+  - relative_sasa_v2
+  - sinusoidal_timestep_embedding
+
+extra_t1d_params:
+  sinusoidal_timestep_embedding:
+    embedding_dim: 20
+    max_positions: 10000
+
+diffuser:
+  time_type: continuous
+  t_cont_max: 1.0
+
+metrics:
+  - atom_bonds_permutations
+  - rigid_loss
+  - rigid_loss_input
+  - VarianceNormalizedPredTransMSE
+  - VarianceNormalizedInputTransMSE
+  - displacement_permutations
+
+n_write_pdb: 10
+lr: 0.01
+resume: null
+resume_scheduler: false
+
+rf:
+  model:
+    d_t1d: 114

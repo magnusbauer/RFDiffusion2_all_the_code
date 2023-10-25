@@ -179,7 +179,7 @@ dataloader:
   VAL_COMPL: /projects/ml/RoseTTAComplex/val_lists/xaa
   VAL_NEG: /projects/ml/RoseTTAComplex/val_lists/xaa.neg
   VAL_PDB: /projects/ml/TrRosetta/PDB-2021AUG02/val/xaa
-  max_residues: 256
+  max_residues: -1
 data:
   samples_per_eval_length: 1
   num_eval_lengths: 1

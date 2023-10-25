@@ -1,3 +1,4 @@
+import math
 import torch
 from icecream import ic
 import rf_diffusion.conditions.v2 as v2
@@ -91,12 +92,32 @@ def radius_of_gyration_xyz(xyz):
 def get_relative_sasa(indep, relative_sasa=None, **kwargs):
     return sasa.noised_relative_sasa(indep, relative_sasa.std_std)
 
+
+def get_sinusoidal_timestep_embedding_training(indep, feature_conf, t_cont: float=None, **kwargs):
+    emb = get_sinusoidal_timestep_embedding(torch.tensor([t_cont]), feature_conf.embedding_dim, feature_conf.max_positions)
+    return emb.tile((indep.length(),1))
+
+def get_sinusoidal_timestep_embedding(timesteps, embedding_dim, max_positions):
+    # Adapted from https://github.com/hojonathanho/diffusion/blob/master/diffusion_tf/nn.py
+    assert (embedding_dim % 2 == 0)
+    assert ((0 <= timesteps) * (1 >= timesteps)).all()
+    assert len(timesteps.shape) == 1
+    timesteps = timesteps * max_positions
+    half_dim = embedding_dim // 2
+    emb = math.log(max_positions) / (half_dim - 1)
+    emb = torch.exp(torch.arange(half_dim, dtype=torch.float32, device=timesteps.device) * -emb)
+    emb = timesteps.float()[:, None] * emb[None, :]
+    emb = torch.cat([torch.sin(emb), torch.cos(emb)], dim=1)
+    assert emb.shape == (timesteps.shape[0], embedding_dim)
+    return emb
+
 featurizers = {
     'radius_of_gyration': get_radius_of_gyration,
     'relative_sasa': get_relative_sasa,
     'radius_of_gyration_v2': v2.get_radius_of_gyration,
     'relative_sasa_v2': v2.get_relative_sasa,
     'little_t_embedding': get_little_t_embedding,
+    'sinusoidal_timestep_embedding': get_sinusoidal_timestep_embedding_training,
 }
 
 def get_radius_of_gyration_inference(indep, feature_conf, is_gp=None):
