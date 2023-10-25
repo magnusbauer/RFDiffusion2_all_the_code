@@ -20,6 +20,7 @@ diffuser:
     cache_dir: .cache/
   T: 200
   time_type: discrete
+  t_cont_max: 1.0
 experiment:
   trans_loss_weight: 1.0
   rot_loss_weight: 1.0
@@ -178,6 +179,7 @@ dataloader:
   VAL_COMPL: /projects/ml/RoseTTAComplex/val_lists/xaa
   VAL_NEG: /projects/ml/RoseTTAComplex/val_lists/xaa.neg
   VAL_PDB: /projects/ml/TrRosetta/PDB-2021AUG02/val/xaa
+  max_residues: 256
 data:
   samples_per_eval_length: 1
   num_eval_lengths: 1

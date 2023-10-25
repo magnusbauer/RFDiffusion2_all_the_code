@@ -1,3 +1,6 @@
+defaults:
+  - base
+
 ddp_backend: gloo
 inference:
   str_self_cond: true
