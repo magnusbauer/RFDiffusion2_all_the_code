@@ -488,7 +488,7 @@ def get_diffusion_mask(
     if not indep.is_sm.any():
         get_mask = sm_mask_fallback.get(get_mask, get_mask)
 
-    return get_mask(indep, atom_mask, low_prop=low_prop, high_prop=high_prop, broken_prop=broken_prop)
+    return get_mask(indep, atom_mask, low_prop=low_prop, high_prop=high_prop, broken_prop=broken_prop), get_mask.__name__
 
 
 def generate_sm_mask(prot_masks, is_sm):
@@ -733,6 +733,7 @@ def generate_masks(indep, task, loader_params, chosen_dataset, full_chain=None, 
     '''
 
     L = indep.length()
+    mask_name = None
 
     input_seq_mask = torch.ones(L).bool()
     input_str_mask = torch.ones(L).bool()
@@ -773,7 +774,7 @@ def generate_masks(indep, task, loader_params, chosen_dataset, full_chain=None, 
         # Plumbing hack
         indep.metadata = metadata
     
-        diffusion_mask, is_atom_motif = get_diffusion_mask(
+        (diffusion_mask, is_atom_motif), mask_name = get_diffusion_mask(
             indep,
             atom_mask,
             low_prop=loader_params['MASK_MIN_PROPORTION'],
@@ -1008,6 +1009,7 @@ def generate_masks(indep, task, loader_params, chosen_dataset, full_chain=None, 
                 'loss_str_mask':loss_str_mask,
                 'loss_str_mask_2d':loss_str_mask_2d,
                 'is_atom_motif': is_atom_motif,
+                'mask_name': mask_name
                 }
     
     return mask_dict

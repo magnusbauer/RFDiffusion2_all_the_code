@@ -153,8 +153,8 @@ def get_atom_selector(obj, ch, idx, atom_names):
     return f'({obj} and chain {ch} and resi {idx} and ({atom_sel}))'
 
 
-def color_selectors(selectors, carbon=True, verbose=False, des_color=None, hetatm_color=None):
-    palette = PymolPalette(cmd, 'Pastel1', 0, 9)
+def color_selectors(selectors, carbon=True, verbose=False, des_color=None, hetatm_color=None, palette_name='Pastel1', palette_n_colors=9):
+    palette = PymolPalette(cmd, palette_name, 0, palette_n_colors)
     # if not carbon:
     #     selectors = [AND([s, carbon]) for s in selectors]
     for j,sel in enumerate(selectors.values()):

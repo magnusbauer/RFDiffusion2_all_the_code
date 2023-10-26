@@ -1,5 +1,11 @@
+'''Shows the dataset used for training.  Uses a training config
+
+Example usage: python show_dataset.py --config-name=prod_1024 zero_weights=True debug=True wandb=False show_dataset.n=5 
+'''
 from icecream import ic
 import hydra
+import numpy as np
+import torch
 from omegaconf import DictConfig
 from torch.utils import data
 from tqdm import tqdm
@@ -13,6 +19,21 @@ from rf_diffusion.data_loader import (
     DistilledDataset, DistributedWeightedSampler
 )
 from rf_se3_diffusion.data import se3_diffuser
+from rf_diffusion import aa_model
+
+import rf_diffusion.dev.show_tip_row
+# from rf_diffusion.dev.show_tip_row import OR, AND, NOT
+
+def AND(*i):
+    i = [f'({e})' for e in i]
+    return '('+ ' and '.join(i) + ')'
+
+def OR(*i):
+    i = [f'({e})' for e in i]
+    return '(' + ' or '.join(i) +')'
+
+def NOT(e):
+    return f'not ({e})'
 
 cmd = analyze.cmd
 
@@ -104,9 +125,8 @@ def run(conf: DictConfig) -> None:
         'num_workers': 0,
         'pin_memory': True
     }
-    n_validate=conf.show_dataset.n
     train_loader = data.DataLoader(train_set, sampler=train_sampler, batch_size=conf.batch_size, collate_fn=no_batch_collate_fn, **LOAD_PARAM)
-    counter = 0
+    counter = -1
 
     show_tip_pa.clear()
     cmd.set('grid_mode', 1)
@@ -120,18 +140,62 @@ def run(conf: DictConfig) -> None:
             chosen_dataset, index = item_context['chosen_dataset'], item_context['index']
             ic('loader out', chosen_dataset, index)
             bonds = indep.metadata['covale_bonds']
-            name = f'{chosen_dataset}_true_bonds_{len(bonds)}_{show.get_counter()}'
+            name = f'dataset-{chosen_dataset}_mask-{masks_1d["mask_name"]}_true_bonds_{len(bonds)}_{show.get_counter()}'
             print(name)
             if conf.show_dataset.show_diffused:
                 show.color_diffused(indep, is_diffused, name=name)
             if conf.show_dataset.show:
-                show.one(indep, None, name=name)
+                # if conf.show_dataset.only_index != -1 and conf.show_dataset.counter != 
+                _, pymol_1d = show.one(indep, None, name=name)
                 show.cmd.do(f'util.cbc {name}')
                 show.cmd.color('orange', f'{name} and hetatm and elem C')
-                show.cmd.show('licorice')
+
+                point_types = aa_model.get_point_types(indep, atomizer)
+                mask_by_name = {}
+                for point_category, point_mask in {
+                    'residue': point_types == aa_model.POINT_RESIDUE,
+                    'atomized': np.isin(point_types, [aa_model.POINT_ATOMIZED_BACKBONE, aa_model.POINT_ATOMIZED_SIDECHAIN]),
+                    'ligand': point_types == aa_model.POINT_LIGAND,
+                }.items():
+                    for diffused_category, diffused_mask in {
+                        'diffused': is_diffused,
+                        'motif': ~is_diffused,
+                    }.items():
+                        mask_by_name[f'{point_category}_{diffused_category}'] = torch.tensor(point_mask)*diffused_mask
+
+                selectors = {}
+                for mask_name, mask in mask_by_name.items():
+                    selectors[mask_name] = AND(name, OR('id 99999', *pymol_1d[mask]))
+                palette = rf_diffusion.dev.show_tip_row.color_selectors(selectors, palette_name='Paired', palette_n_colors=12)
 
             if atomizer:
                 _ = atomize.deatomize(atomizer, indep)
+
+            if conf.show_dataset.n == counter+1:
+                break
+        if conf.show_dataset.n == counter+1:
+            break
+
+
+    def label_selectors(selectors, palette):
+        label_pos_top = [20,0,0]
+        for i,s in enumerate(selectors):
+            cmd.set('label_size', -3)
+            label_pos = label_pos_top
+            label_pos[1] -= 4
+            cmd.pseudoatom(s,'', 'PS1','PSD', '1', 'P',
+                    'PSDO', 'PS', -1.0, 1, 0.0, 0.0, '',
+                    '', label_pos)
+            cmd.set('grid_slot', 0, s)
+            cmd.do(f'label {s}, "{s}"')
+            color = palette.name(i)
+            cmd.set('label_color', color, s)
+        return list(selectors.keys())
+    
+    if conf.show_dataset.show:
+        pseudoatoms = label_selectors(selectors, palette)
+        for pseudoatom_name in pseudoatoms:
+            cmd.set('grid_slot', counter+2, pseudoatom_name)
 
             # print('-------------------------------------------------------------------------------')
 
