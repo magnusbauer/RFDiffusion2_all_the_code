@@ -6,8 +6,9 @@ from icecream import ic
 from rf_diffusion.dev import analyze, show_tip_pa, show_tip_row
 import rf_diffusion.atomize as atomize
 import rf_diffusion.aa_model as aa_model
+from rf_diffusion.dev import pymol
 
-cmd = analyze.cmd
+cmd = pymol.cmd
 
 counter = 1
 

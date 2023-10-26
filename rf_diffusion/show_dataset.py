@@ -9,8 +9,14 @@ import torch
 from omegaconf import DictConfig
 from torch.utils import data
 from tqdm import tqdm
-from rf_diffusion import show
 
+
+from rf_diffusion.dev import pymol
+pymol.init(pymol_url='http://chesaw.dhcp.ipd:9123')
+
+cmd = pymol.cmd
+
+from rf_diffusion import show
 from rf_diffusion import atomize
 from rf_diffusion.dev import analyze, show_tip_pa
 from rf_diffusion.data_loader import (
@@ -34,8 +40,6 @@ def OR(*i):
 
 def NOT(e):
     return f'not ({e})'
-
-cmd = analyze.cmd
 
 def no_batch_collate_fn(data):
     assert len(data) == 1
