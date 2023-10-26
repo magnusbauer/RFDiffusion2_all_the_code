@@ -489,9 +489,9 @@ class Dataloader(unittest.TestCase):
         Checks each amino acid type MIN_AA_COUNT times in each dataset defined in conf_train.dataloader.DATASETS.
         '''
         # Make the training conf
-        overrides = [
-            'dataloader.DATAPKL_AA=/home/dtischer/code/rf_diffusion_train/rf_diffusion/aa_dataset_256.pkl', 
-        ]
+        import rf_diffusion
+        pkg_dir = rf_diffusion.__path__[0]
+        overrides = [f'dataloader.DATAPKL_AA={pkg_dir}/test_data/aa_dataset_256.pkl']
         conf_train = test_utils.construct_conf_single(overrides=overrides, config_name='RFD_36')
 
         # Make the training dataloader
@@ -543,7 +543,7 @@ class Dataloader(unittest.TestCase):
                         if is_correct_order is False:
                             self.fail(msg)
 
-                # Record how many training pdbs and individual amino acids have been checked.
+                # Record how many individual amino acids have been checked.
                 for aa3 in aa_count:
                     aa_count[aa3] += len(atom_order_results[aa3])
 
