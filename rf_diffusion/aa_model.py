@@ -999,9 +999,9 @@ class Model:
         dist_matrix = rf2aa.data_loader.get_bond_distances(indep.bond_feats)
         
         t1d = torch.tile(t1d, (1,2,1,1))
-        # This is messed up for extra_t1d
-        t1d[0,1,:,NAATOKENS-1] = -1
-        # ic(t1d[0,:,:4,NAATOKENS-1]) # Should look like [[conf, -1], [conf, -1], ...], 0 < conf < 1
+        # Xt template is at index 0, Self-conditioning template is at index 1 (if self conditioning is active)
+        t1d[0,1,:,NAATOKENS-1] = -1 # This distiniguishes the templates to the model.
+        # ic(t1d[0,:,:4,NAATOKENS-1]) # Will look like [[conf, -1], [conf, -1], ...], 0 < conf < 1
 
         # Note: should be batched
         rfi = RFI(
