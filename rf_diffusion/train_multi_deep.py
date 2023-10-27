@@ -889,7 +889,8 @@ class Trainer():
                             'self_cond': self_cond,
                             'extra_t1d': indep.extra_t1d.cpu().detach() if hasattr(indep.extra_t1d, 'cpu') else indep.extra_t1d,
                             'loss':loss.detach(),
-                            'output_pdb_prefix':output_pdb_prefix
+                            'output_pdb_prefix':output_pdb_prefix,
+                            'use_guideposts': masks_1d['use_guidposts'],
                         })
 
                         rf2aa.tensor_util.to_device(indep, 'cpu')

@@ -8,7 +8,13 @@ import assertpy
 import copy
 import torch
 from icecream import ic
+from collections import defaultdict
 import Bio.PDB.SASA
+# Monkey patch for bug in Biopython
+monkey_patch_atomic_radii = defaultdict(lambda: 2.0)
+monkey_patch_atomic_radii.update(Bio.PDB.SASA.ATOMIC_RADII)
+Bio.PDB.SASA.ATOMIC_RADII = monkey_patch_atomic_radii
+
 import tree
 np.int = np.int64
 

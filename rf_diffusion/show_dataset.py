@@ -142,14 +142,14 @@ def run(conf: DictConfig) -> None:
             indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context = loader_out
             item_context = eval(item_context)
             chosen_dataset, index = item_context['chosen_dataset'], item_context['index']
-            ic('loader out', chosen_dataset, index)
             bonds = indep.metadata['covale_bonds']
-            name = f'dataset-{chosen_dataset}_mask-{masks_1d["mask_name"]}_true_bonds_{len(bonds)}_{show.get_counter()}'
+            # ic(torch.nonzero(indep.bond_feats == 6))
+            # ic(torch.nonzero(indep.bond_feats == 7))
+            name = f'dataset-{chosen_dataset}_mask-{masks_1d["mask_name"]}_gp-{masks_1d["use_guideposts"]}_bonds_{len(bonds)}_{show.get_counter()}'
             print(name)
             if conf.show_dataset.show_diffused:
                 show.color_diffused(indep, is_diffused, name=name)
             if conf.show_dataset.show:
-                # if conf.show_dataset.only_index != -1 and conf.show_dataset.counter != 
                 _, pymol_1d = show.one(indep, None, name=name)
                 show.cmd.do(f'util.cbc {name}')
                 show.cmd.color('orange', f'{name} and hetatm and elem C')

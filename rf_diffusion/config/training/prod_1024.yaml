@@ -1,10 +1,10 @@
 defaults:
   - RFD_36
 
-guidepost_bonds: false
+guidepost_bonds: true
 dataloader:
   USE_GUIDE_POSTS: false
-  P_IS_GUIDEPOST_EXAMPLE: 1.0
+  P_IS_GUIDEPOST_EXAMPLE: 0.5
   DIFF_MASK_PROBS:
     get_unconditional_diffusion_mask: 0.15
     get_unconditional_diffusion_mask_partial_ligand: 0.15
