@@ -60,6 +60,9 @@ def main(conf: HydraConfig) -> list[int]:
 
     @memoize_to_disk(os.path.join(conf.datadir, 'filenames_by_ligand_presence'))
     def categorize_by_ligand_presence():
+        '''
+        Categorizes a list of PDBs by presence/absence of any ligand.  Caches to disk.
+        '''
         filenames_by_ligand_presence = defaultdict(list)
         print(f'Categorizing {len(filenames)} PDBs by presence/absence of ligand')
         for fn in tqdm.tqdm(filenames):
@@ -74,18 +77,17 @@ def main(conf: HydraConfig) -> list[int]:
         conf_for_mpnn_flavor = copy.deepcopy(conf)
         conf_for_mpnn_flavor.use_ligand = use_ligand
         return run_mpnn(conf_for_mpnn_flavor, filenames)
-    
-    
+
 
 def get_binary(in_proc):
-    in_apptainer = os.path.exists('/.singularity.d/Singularity')
-    ic(in_apptainer)
-    # if in_apptainer and in_proc:
-    #     return 'python -u'
     return '/usr/bin/apptainer exec --nv --bind /databases:/databases --bind /net/software/:/net/software/ --bind /projects:/projects /software/containers/mlfold.sif python -u'
 
 def run_mpnn(conf, filenames):
-
+    '''
+    Takes a folder of pdb & trb files, generates MPNN features (fixing AAs at
+    contig positions), makes list of MPNN jobs on batches of those designs,
+    and optionally submits slurm array job and outputs job ID.
+    '''
 
     model_type = 'protein_mpnn'
     mpnn_flavor = 'mpnn'
@@ -96,7 +98,6 @@ def run_mpnn(conf, filenames):
     mpnn_folder = conf.datadir+f'/{mpnn_flavor}/'
     os.makedirs(mpnn_folder, exist_ok=True)
 
-    
     # skip designs that have already been done
     ic(conf.cautious, conf.chunk)
     if conf.cautious:
@@ -117,10 +118,6 @@ def run_mpnn(conf, filenames):
         # run parser script
         job_fn = conf.datadir + f'/jobs.{mpnn_flavor}.parse.list'
         job_list_file = open(job_fn, 'w') if conf.slurm.submit else sys.stdout
-        # if conf.use_ligand:
-        #     parse_script = f'{script_dir}/util/parse_multiple_chains_ligand.py'
-        # else:
-        #     parse_script = f'{script_dir}/util/parse_multiple_chains.py'
         parse_script = f'{script_dir}/util/parse_multiple_chains_v2.py'
         for i in range(0, len(filenames), conf.chunk):
             with open(mpnn_folder+f'parse_multiple_chains.list.{i}','w') as outf:
@@ -147,21 +144,10 @@ def run_mpnn(conf, filenames):
     job_list_file = open(job_fn, 'w') if conf.slurm.submit else sys.stdout
 
     for i in range(0, len(filenames), conf.chunk):
-        # print(f'{get_binary(conf.slurm.in_proc)} {mpnn_script} '\
-        #       f'--model_name "{model_name}" '\
-        #       f'--jsonl_path {mpnn_folder}pdbs_{i}.jsonl '\
-        #       f'--fixed_positions_jsonl {mpnn_folder}pdbs_position_fixed_{i}.jsonl '\
-        #       f'--out_folder {mpnn_folder} '\
-        #       f'--num_seq_per_target  {conf.num_seq_per_target} '\
-        #       f'--sampling_temp="0.1" '\
-        #       f'--batch_size {8 if conf.num_seq_per_target > 8 else conf.num_seq_per_target} '\
-        #       f'--omit_AAs XC',
-        #       file=job_list_file)
 
         print(f'{get_binary(conf.slurm.in_proc)} {mpnn_script} '\
             f'--pdb_path_multi {mpnn_folder}pdbs_position_fixed_{i}.jsonl '\
             f'--fixed_residues_multi {mpnn_folder}pdbs_position_fixed_{i}.jsonl '\
-            # f'--fixed_residues "{" ".join(fixed_pos)}" '\
             f'--model_type {model_type} '\
             f'--pack_side_chains 1 '\
             f'--out_folder {mpnn_folder} '\
