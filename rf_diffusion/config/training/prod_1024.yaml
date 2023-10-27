@@ -56,6 +56,7 @@ log_every_n_examples: 4
 lr: 0.01
 resume: null
 resume_scheduler: false
+pseudobatch: 64
 
 rf:
   model:
