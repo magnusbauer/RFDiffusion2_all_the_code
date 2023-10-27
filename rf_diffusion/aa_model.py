@@ -219,6 +219,11 @@ def assert_valid_seq_mask(indep, is_masked_seq):
             ))
         )
         raise Exception('Sequence mask is invalid: atom indices are sequence masked.')
+    
+def get_atom_names(seq):
+    atom_names = rf2aa.chemical.aa2long[seq][:rf2aa.chemical.NHEAVYPROT]
+    return [a.strip() for a in atom_names if a != None]
+
 
 backbone_atoms = ['N', 'C', 'CA', 'O']
 POINT_LIGAND = 'L'

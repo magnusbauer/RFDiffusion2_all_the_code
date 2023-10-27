@@ -1705,9 +1705,8 @@ class DistilledDataset(data.Dataset):
 
                 pre_transform_length = indep.length()
                 use_guideposts = (torch.rand(1) < self.params["P_IS_GUIDEPOST_EXAMPLE"]).item()
-
-                indep, is_diffused, is_masked_seq, atomizer, _ = aa_model.transform_indep(indep, is_res_str_shown, is_atom_str_shown, use_guideposts, guidepost_bonds=self.conf.guidepost_bonds, metadata=metadata)
                 masks_1d['use_guideposts'] = use_guideposts
+                indep, is_diffused, is_masked_seq, atomizer, _ = aa_model.transform_indep(indep, is_res_str_shown, is_atom_str_shown, use_guideposts, guidepost_bonds=self.conf.guidepost_bonds, metadata=metadata)
 
                 # HACK: gp indices may be lost during atomization, so we assume they are at the end of the protein.
                 is_gp = torch.full((indep.length(),), True)

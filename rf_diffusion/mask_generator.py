@@ -21,7 +21,7 @@ def make_covale_compatible(get_mask):
     @wraps(get_mask)
     def out_get_mask(indep, atom_mask, *args, **kwargs):
         is_motif, is_atom_motif = get_mask(indep, atom_mask, *args, **kwargs)
-        covale_res_i = torch.tensor([res_i for (res_i, atom_name), lig_i, _ in indep.metadata['covale_bonds']])
+        covale_res_i = torch.tensor([res_i for (res_i, atom_name), lig_i, _ in indep.metadata['covale_bonds']]).tolist()
         is_atom_motif = is_atom_motif or {}
         for res_i in covale_res_i:
             if res_i not in is_atom_motif:
@@ -29,11 +29,20 @@ def make_covale_compatible(get_mask):
         motif_idx = is_motif.nonzero()[:,0].numpy()
         covalently_modified_res_motif = set(motif_idx).intersection(set(covale_res_i))
         for res_i in covalently_modified_res_motif:
-            seq = indep.seq[res_i]
-            atom_names = np.array(rf2aa.chemical.aa2long[seq], dtype=np.str_)
-            atom_mask_i = atom_mask[res_i]
+            seq_token = indep.seq[res_i]
+            atom_names = rf2aa.chemical.aa2long[seq_token][:rf2aa.chemical.NHEAVYPROT]
+            atom_names = [a if a is None else a.strip() for a in atom_names]
+            atom_names = np.array(atom_names, dtype=np.str_)
+            n_atoms_expected = (atom_names != 'None').sum()
+            n_atoms_occupied = atom_mask[res_i].sum()
+            if n_atoms_expected != n_atoms_occupied:
+                # TODO: Make this an expected exception type that can be caught by the fallback dataloader
+                # for a less scary warning.
+                raise Exception(f'residue {res_i} should have {n_atoms_expected} but has {n_atoms_occupied}')
+            atom_mask_i = atom_mask[res_i].numpy()
             atom_names = atom_names[atom_mask_i]
-            is_atom_motif[res_i] = atom_names
+            is_atom_motif[res_i] = atom_names.tolist()
+            is_motif[res_i] = False
         return is_motif, is_atom_motif
     return out_get_mask
 
@@ -300,7 +309,7 @@ def get_tip_gaussian_mask(indep, atom_mask, *args, std_dev=8, **kwargs):
     assert not indep.is_sm.any()
     is_valid_for_atomization = indep.has_heavy_atoms_and_seq(atom_mask)
     if not is_valid_for_atomization.any():
-        ic('No valid residues for atomization, falling back to unconditional generation')
+        ic('No valid residues for atomization in tip_gaussian_mask, falling back to unconditional generation')
         is_motif = torch.zeros(indep.length()).bool()
         is_motif[indep.is_sm] = True
         return is_motif, None
@@ -473,6 +482,19 @@ def partially_mask_ligand(get_mask, ligand_mask_low=0.0, ligand_mask_high=1.0):
         return is_motif, is_atom_motif
     return out_get_mask
 
+def clean_mask(get_mask, ligand_mask_low=0.0, ligand_mask_high=1.0):
+    '''
+    Cleans a mask so that is_motif is False for atom-motif residues.
+    '''
+    @wraps(get_mask)
+    def out_get_mask(indep, atom_mask, *args, **kwargs):
+        is_motif, is_atom_motif = get_mask(indep, atom_mask, *args, **kwargs)
+        for k in is_atom_motif.keys():
+            assert not indep.is_sm[k]
+            is_motif[k] = False
+        return is_motif, is_atom_motif
+    return out_get_mask
+
 get_diffusion_mask_simple = make_covale_compatible(make_sm_compatible(_get_diffusion_mask_simple))
 get_diffusion_mask_islands = make_covale_compatible(make_sm_compatible(_get_diffusion_mask_islands))
 get_triple_contact = make_sm_compatible(_get_triple_contact)
@@ -507,7 +529,7 @@ def get_diffusion_mask(
     if not indep.is_sm.any():
         get_mask = sm_mask_fallback.get(get_mask, get_mask)
 
-    return get_mask(indep, atom_mask, low_prop=low_prop, high_prop=high_prop, broken_prop=broken_prop), get_mask.__name__
+    return get_mask(indep, atom_mask, low_prop=low_prop, high_prop=high_prop, broken_prop=broken_prop), get_mask.name
 
 
 def generate_sm_mask(prot_masks, is_sm):
@@ -789,7 +811,9 @@ def generate_masks(indep, task, loader_params, chosen_dataset, full_chain=None, 
         thismodule = sys.modules[__name__]
         mask_probs = OrderedDict()
         for k, v in loader_params['DIFF_MASK_PROBS'].items():
-            mask_probs[getattr(thismodule, k)] = float(v)
+            f = getattr(thismodule, k)
+            f.name = k
+            mask_probs[f] = float(v)
         # Plumbing hack
         indep.metadata = metadata
     
