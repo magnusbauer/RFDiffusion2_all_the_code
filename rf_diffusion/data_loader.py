@@ -1756,6 +1756,7 @@ class DatasetWithFallback(data.Dataset):
                  fallback_sampler):
             self.dataset = dataset
             self.fallback_dataset = fallback_dataset
+            self.fallback_sampler = fallback_sampler
             self.fallback_iter = itertools.cycle(fallback_sampler.__iter__())
         
     def __getitem__(self, index):
@@ -1911,7 +1912,7 @@ def get_fallback_dataset_and_dataloader(conf, diffuser, num_example_per_epoch, w
     # Combine primary and secondary datasets to make the fallbacks
     fallback_dataset = DatasetWithFallback(primary_dataset, secondary_dataset, secondary_sampler)
     fallback_train_loader = data.DataLoader(
-        fallback_dataset, 
+        dataset=fallback_dataset, 
         sampler=primary_sampler, 
         batch_size=conf.batch_size, 
         collate_fn=no_batch_collate_fn, 

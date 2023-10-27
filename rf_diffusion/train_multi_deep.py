@@ -572,6 +572,7 @@ class Trainer():
         
         for epoch in range(loaded_epoch, self.conf.n_epoch):
             train_loader.sampler.set_epoch(epoch)
+            train_loader.dataset.fallback_sampler.set_epoch(epoch)
             
             print('Just before calling train cycle...')
             train_tot, train_loss, train_acc = self.train_cycle(ddp_model, train_loader, optimizer, scheduler, scaler, rank, gpu, world_size, epoch)
