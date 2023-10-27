@@ -70,7 +70,6 @@ global DEBUG
 global WANDB
 USE_AMP = False
 
-N_PRINT_TRAIN = 1 
 #BATCH_SIZE = 1 * torch.cuda.device_count()
 
 class ReturnTrueOnFirstInvocation:
@@ -539,12 +538,13 @@ class Trainer():
         os.makedirs(self.outdir, exist_ok=True)
         
         if rank == 0:
-            # save git diff from most recent commit
-            gitdiff_fn = open(f'{self.outdir}/git_diff.txt','w')
-            git_diff = subprocess.Popen(["git diff"], cwd = os.getcwd(), shell = True, stdout = gitdiff_fn, stderr = subprocess.PIPE)
-            print('Saved git diff between current state and last commit')
-            if WANDB:
-                wandb.save(os.path.join(os.getcwd(), self.outdir, 'git_diff.txt'))
+            print(f'Saving git diff between current state and last commit and git log to {self.outdir}')
+            for cmd in ['pwd', 'git log', 'git diff']:
+                path = f'{self.outdir}/{"_".join(cmd.split())}.txt'
+                with open(path, 'w') as fh:
+                    subprocess.Popen([cmd], cwd = os.getcwd(), shell=True, stdout=fh, stderr=subprocess.PIPE)
+                if WANDB:
+                    wandb.save(os.path.join(os.getcwd(), path))
         
         self.n_train = N_EXAMPLE_PER_EPOCH
 
@@ -849,7 +849,7 @@ class Trainer():
                 pdb_dir = os.path.join(self.outdir, 'training_pdbs')
                 n_processed = self.conf.batch_size*world_size * counter
                 output_pdb_prefix = f'{pdb_dir}/epoch_{epoch}_{n_processed}_{chosen_task}_{chosen_dataset}_t_{int( little_t )}'
-                log_metrics = (counter % N_PRINT_TRAIN == 0) and (rank == 0)
+                log_metrics = (counter % self.conf.log_every_n_examples == 0) and (rank == 0)
                 if log_metrics:
                     train_time  = time.time() - start_time
                     
@@ -890,7 +890,7 @@ class Trainer():
                             'extra_t1d': indep.extra_t1d.cpu().detach() if hasattr(indep.extra_t1d, 'cpu') else indep.extra_t1d,
                             'loss':loss.detach(),
                             'output_pdb_prefix':output_pdb_prefix,
-                            'use_guideposts': masks_1d['use_guidposts'],
+                            'use_guideposts': masks_1d['use_guideposts'],
                         })
 
                         rf2aa.tensor_util.to_device(indep, 'cpu')

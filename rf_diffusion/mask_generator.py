@@ -482,7 +482,15 @@ def partially_mask_ligand(get_mask, ligand_mask_low=0.0, ligand_mask_high=1.0):
         return is_motif, is_atom_motif
     return out_get_mask
 
-def clean_mask(get_mask, ligand_mask_low=0.0, ligand_mask_high=1.0):
+def completely_mask_ligand(get_mask):
+    @wraps(get_mask)
+    def out_get_mask(indep, atom_mask, *args, **kwargs):
+        is_motif, is_atom_motif = get_mask(indep, atom_mask, *args, **kwargs)
+        is_motif[indep.is_sm] = False
+        return is_motif, is_atom_motif
+    return out_get_mask
+
+def clean_mask(get_mask):
     '''
     Cleans a mask so that is_motif is False for atom-motif residues.
     '''
@@ -506,6 +514,7 @@ get_unconditional_diffusion_mask = make_covale_compatible(make_sm_compatible(_ge
 get_atomized_islands = atomize_and_diffuse_motif(make_sm_compatible(
         partial(_get_diffusion_mask_islands, n_islands_max=2, island_len_min=10, island_len_max=15)))
 
+get_unconditional_diffusion_mask_free_ligand = completely_mask_ligand(get_unconditional_diffusion_mask)
 get_diffusion_mask_islands_partial_ligand = partially_mask_ligand(get_diffusion_mask_islands)
 get_tip_gaussian_mask_partial_ligand = partially_mask_ligand(get_tip_gaussian_mask)
 get_closest_tip_atoms_partial_ligand = partially_mask_ligand(get_closest_tip_atoms)

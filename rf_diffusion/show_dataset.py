@@ -91,6 +91,7 @@ def no_batch_collate_fn(data):
     # cmd.alter('name CA', 'vdw=2.0')
     # cmd.set('sphere_transparency', 0.1)
     # cmd.show('spheres', 'name CA')
+from rf_diffusion.data_loader import get_fallback_dataset_and_dataloader
 
 @hydra.main(version_base=None, config_path="config/training", config_name="base")
 def run(conf: DictConfig) -> None:
@@ -99,28 +100,6 @@ def run(conf: DictConfig) -> None:
         ic.configureOutput(includeContext=True)
     diffuser = se3_diffuser.SE3Diffuser(conf.diffuser)
     diffuser.T = conf.diffuser.T
-    dataset_configs, homo = default_dataset_configs(conf.dataloader, debug=conf.debug)
-
-    for k, dataset_conf in dataset_configs.items():
-        print(f'{k:<20}: {len(dataset_conf.ids)}')
-
-    print('Making train sets')
-    train_set = DistilledDataset(dataset_configs,
-                                    conf.dataloader, diffuser,
-                                    conf.preprocess, conf, homo)
-    
-    
-    train_sampler = DistributedWeightedSampler(dataset_configs,
-                                                dataset_options=conf.dataloader['DATASETS'],
-                                                dataset_prob=conf.dataloader['DATASET_PROB'],
-                                                num_example_per_epoch=conf.epoch_size,
-                                                num_replicas=1, rank=0, replacement=True)
-    set_epoch = train_sampler.set_epoch
-    ic(conf.show_dataset)
-    if conf.use_nonechucks:
-        import nonechucks as nc
-        train_set = nc.SafeDataset(train_set)
-        train_sampler = nc.SafeSampler(train_set, train_sampler)
     
     # mp.cpu_count()-1
     LOAD_PARAM = {
@@ -129,13 +108,24 @@ def run(conf: DictConfig) -> None:
         'num_workers': 0,
         'pin_memory': True
     }
-    train_loader = data.DataLoader(train_set, sampler=train_sampler, batch_size=conf.batch_size, collate_fn=no_batch_collate_fn, **LOAD_PARAM)
+
+    # Get the fallback dataset and dataloader
+    train_set, train_loader = get_fallback_dataset_and_dataloader(
+        conf=conf,
+        diffuser=diffuser,
+        num_example_per_epoch=conf.epoch_size,
+        world_size=1,
+        rank=0,
+        LOAD_PARAM=LOAD_PARAM,
+    )
+
     counter = -1
 
     show_tip_pa.clear()
     cmd.set('grid_mode', 1)
     for epoch in range(0, conf.n_epoch):
-        set_epoch(epoch)
+        train_loader.sampler.set_epoch(epoch)
+        train_loader.dataset.fallback_sampler.set_epoch(epoch)
         for i, loader_out in enumerate(train_loader):
             ic(epoch, i)
             counter += 1

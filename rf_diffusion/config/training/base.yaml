@@ -115,6 +115,7 @@ pseudobatch: 32
 log_inputs: False
 metrics:
 - atom_bonds
+log_every_n_examples: 1
 n_write_pdb: 30
 saves_per_epoch: 2
 preprocess:
