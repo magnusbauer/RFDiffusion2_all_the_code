@@ -438,15 +438,17 @@ def make_atomized(get_mask, min_atomized_residues=1, max_atomized_residues=5):
     return out_get_mask
 
 
-def no_structure(get_mask, ligand_mask_low=0.0, ligand_mask_high=1.0):
+def atomize_and_diffuse_motif(get_mask):
     @wraps(get_mask)
     def out_get_mask(indep, atom_mask, *args, **kwargs):
         is_motif, is_atom_motif = get_mask(indep, atom_mask, *args, **kwargs)
         is_motif[indep.is_sm] = False
         motif_idx = is_motif.nonzero()[:,0].tolist()
-        is_atom_motif = is_atom_motif or {}
+        is_atom_motif = {}
+        is_valid_for_atomization = indep.has_heavy_atoms_and_seq(atom_mask)
         for res_i in motif_idx + list(is_atom_motif.keys()):
-            is_atom_motif[res_i] = []
+            if is_valid_for_atomization[res_i]:
+                is_atom_motif[res_i] = []
         is_motif[:] = False
         return is_motif, is_atom_motif
     return out_get_mask
@@ -479,7 +481,7 @@ atomize_get_triple_contact = make_atomized(get_triple_contact)
 atomize_get_double_contact = make_atomized(get_double_contact)
 get_unconditional_diffusion_mask = make_covale_compatible(make_sm_compatible(_get_unconditional_diffusion_mask))
 
-get_atomized_islands = no_structure(make_sm_compatible(
+get_atomized_islands = atomize_and_diffuse_motif(make_sm_compatible(
         partial(_get_diffusion_mask_islands, n_islands_max=2, island_len_min=10, island_len_max=15)))
 
 get_diffusion_mask_islands_partial_ligand = partially_mask_ligand(get_diffusion_mask_islands)
