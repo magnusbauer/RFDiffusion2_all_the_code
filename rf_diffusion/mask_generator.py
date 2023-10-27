@@ -510,6 +510,8 @@ get_diffusion_mask_islands_partial_ligand = partially_mask_ligand(get_diffusion_
 get_tip_gaussian_mask_partial_ligand = partially_mask_ligand(get_tip_gaussian_mask)
 get_closest_tip_atoms_partial_ligand = partially_mask_ligand(get_closest_tip_atoms)
 get_unconditional_diffusion_mask_partial_ligand = partially_mask_ligand(get_unconditional_diffusion_mask)
+get_tip_gaussian_mask.name = 'get_tip_gaussian_mask'
+get_tip_gaussian_mask_partial_ligand.name = 'get_tip_gaussian_mask_partial_ligand'
 
 sm_mask_fallback = {
     get_closest_tip_atoms: get_tip_gaussian_mask,

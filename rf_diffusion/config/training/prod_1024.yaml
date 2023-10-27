@@ -8,11 +8,11 @@ dataloader:
   DIFF_MASK_PROBS:
     get_unconditional_diffusion_mask: 0.15
     get_unconditional_diffusion_mask_partial_ligand: 0.15
-    get_diffusion_mask_islands: 0.15
-    get_diffusion_mask_islands_partial_ligand: 0.15
+    get_diffusion_mask_islands: 0.1
+    get_diffusion_mask_islands_partial_ligand: 0.1
     get_closest_tip_atoms: 0.15
     get_closest_tip_atoms_partial_ligand: 0.15
-    get_atomized_islands: 0.1
+    get_atomized_islands: 0.2
 
 ckpt_load_path: /home/ahern/projects/aa_diffusion_data/models/rf2a_25c_414_t1d-114.pt
 experiment:
