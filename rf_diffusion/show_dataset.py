@@ -170,8 +170,15 @@ def run(conf: DictConfig) -> None:
         if conf.show_dataset.n == counter+1:
             break
 
-
     def label_selectors(selectors, palette):
+        '''
+        Creates labels with the names 'selectors' in pymol around the origin in the colors of the input 'palette'.
+        Params:
+            selectors: iteratable of string labels
+            palette: rf_diffusion.dev.show_tip_row.PymolPalette
+        Returns:
+            list of pseudoatom names
+        '''
         label_pos_top = [20,0,0]
         for i,s in enumerate(selectors):
             cmd.set('label_size', -3)
@@ -191,7 +198,6 @@ def run(conf: DictConfig) -> None:
         for pseudoatom_name in pseudoatoms:
             cmd.set('grid_slot', counter+2, pseudoatom_name)
 
-            # print('-------------------------------------------------------------------------------')
 
 if __name__ == "__main__":
     run()
