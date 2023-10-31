@@ -220,8 +220,8 @@ def assert_valid_seq_mask(indep, is_masked_seq):
         )
         raise Exception('Sequence mask is invalid: atom indices are sequence masked.')
     
-def get_atom_names(seq):
-    atom_names = rf2aa.chemical.aa2long[seq][:rf2aa.chemical.NHEAVYPROT]
+def get_atom_names(seq_token):
+    atom_names = rf2aa.chemical.aa2long[seq_token][:rf2aa.chemical.NHEAVYPROT]
     return [a.strip() for a in atom_names if a != None]
 
 
@@ -1303,6 +1303,40 @@ def is_occupied(indep, atom_mask):
     pop = rf2aa.util.get_prot_sm_mask(atom_mask, indep.seq)
     return pop
 
+def reindex_dict(d, pop):
+    '''
+    Returns a new dictionary with a binary mask applied to the index.
+
+    Params:
+        d: Dictionary of {index: ....}
+        pop: binary mask
+    Returns:
+        Dictionary with keys not present in pop removed and the remaining reindexed.
+    '''
+    new_indices = (pop.cumsum(dim=0) - 1).tolist()
+    def shift(k):
+        return new_indices[k]
+    return {shift(k): v for k, v in d.items() if pop[k]}
+
+
+def reindex_covales(covales, pop):
+    '''
+    Returns a new dictionary with a binary mask applied to the index.
+
+    Params:
+        d: Dictionary of {index: ....}
+        pop: binary mask
+    Returns:
+        Dictionary with keys not present in pop removed and the remaining reindexed.
+    '''
+    for (i, atom_name), sm_i, _ in covales:
+        assert pop[i]
+        assert pop[sm_i]
+    new_indices = (pop.cumsum(dim=0) - 1).tolist()
+    def shift(k):
+        return new_indices[k]
+    return [((shift(i), atom_name), shift(sm_i), bond_type) for (i, atom_name), sm_i, bond_type in covales]
+
 def pop_mask(indep, pop, break_chirals=False):
     n_atoms = indep.is_sm.sum()
     assertpy.assert_that(len(indep.atom_frames)).is_equal_to(n_atoms)
@@ -1985,6 +2019,7 @@ def transform_indep(indep, is_res_str_shown, is_atom_str_shown, use_guideposts, 
     atomized_i = atomize.atomized_indices_atoms(atomizer, atom_names_by_res)
     ligand_bond_recipient = torch.tensor([b for _, b, _ in metadata['covale_bonds']])
     ligand_bond_recipient = atomize.atomized_indices_res_i(atomizer, ligand_bond_recipient)
+
     ligand_bond_type = [c for _, _, c in metadata['covale_bonds']]
     for atom_i, ligand_i, bond_type in zip(atomized_i, ligand_bond_recipient, ligand_bond_type):
         # Uncomment to view the covale bond added here.

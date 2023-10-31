@@ -11,9 +11,10 @@ dataloader:
     get_unconditional_diffusion_mask_partial_ligand: 0.05
     get_diffusion_mask_islands: 0.1
     get_diffusion_mask_islands_partial_ligand: 0.1
-    get_closest_tip_atoms: 0.15
-    get_closest_tip_atoms_partial_ligand: 0.15
-    get_atomized_islands: 0.2
+    get_closest_tip_atoms: 0.1
+    get_closest_tip_atoms_partial_ligand: 0.1
+    get_atomized_islands: 0.1
+    get_entirely_atomized: 0.2
 
 ckpt_load_path: /home/ahern/projects/aa_diffusion_data/models/rf2a_25c_414_t1d-114.pt
 experiment:
@@ -40,7 +41,7 @@ extra_t1d_params:
 
 diffuser:
   time_type: continuous
-  t_cont_max: 1.0
+  t_distribution: low_t_heavy
 
 metrics:
   - atom_bonds_permutations
@@ -50,9 +51,13 @@ metrics:
   - VarianceNormalizedInputTransMSE
   - displacement_permutations
 
+expensive_metrics:
+  - rigid_loss
+  - rigid_loss_input
+
 saves_per_epoch: 1
-n_write_pdb: 20
-log_every_n_examples: 4
+n_write_pdb: 2
+log_every_n_examples: 2
 lr: 0.01
 resume: null
 resume_scheduler: false

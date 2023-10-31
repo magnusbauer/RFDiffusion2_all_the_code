@@ -65,7 +65,7 @@ def main(
         ):
     '''
     Finds n true pdbs from a training run and kicks off partial diffusion trajectories for them, in which they are
-    fully atomized using the config inference/partials_from_training.
+    fully atomized using the config benchmark/partials_from_training.
     '''
     true_pdbs = glob.glob(os.path.join(restart_dir, 'rank_0/training_pdbs/*_true_deatomized.pdb'))
     ic(len(true_pdbs))

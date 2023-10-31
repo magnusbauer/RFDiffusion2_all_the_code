@@ -816,7 +816,7 @@ class Trainer():
                     timer.checkpoint('loss backwards')
                     if counter%self.accum_step == 0:
                         if rank == 0:
-                            ic('ACCUMULATING')
+                            ic(f'ACCUMULATING {counter=}')
                         # gradient clipping
                         scaler.unscale_(optimizer)
                         torch.nn.utils.clip_grad_norm_(ddp_model.parameters(), 0.2)

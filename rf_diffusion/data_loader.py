@@ -44,6 +44,7 @@ from rf_diffusion import atomize
 from rf_diffusion import error
 from rf_diffusion import show
 from rf_diffusion import features
+from rf_diffusion import distributions
 
 
 USE_DEFAULT = '__USE_DEFAULT__'
@@ -1691,6 +1692,12 @@ class DistilledDataset(data.Dataset):
                 run_inference.seed_all(mask_gen_seed) # Reseed the RNGs for test stability.
                 masks_1d = mask_generator.generate_masks(indep, task, self.params, chosen_dataset, None, atom_mask=atom_mask[:, :rf2aa.chemical.NHEAVYPROT], metadata=metadata)
 
+                aa_model.pop_mask(indep, masks_1d['pop'])
+                atom_mask = atom_mask[masks_1d['pop']]
+                masks_1d['input_str_mask'] = masks_1d['input_str_mask'][masks_1d['pop']]
+                masks_1d['is_atom_motif'] = aa_model.reindex_dict(masks_1d['is_atom_motif'], masks_1d['pop'])
+                metadata['covale_bonds'] = aa_model.reindex_covales(metadata['covale_bonds'], masks_1d['pop'])
+
                 is_res_str_shown = masks_1d['input_str_mask']
                 is_atom_str_shown = masks_1d['is_atom_motif']
 
@@ -1716,7 +1723,8 @@ class DistilledDataset(data.Dataset):
                     t_cont = None
                     t = random.randint(1, self.conf.diffuser.T)
                 elif self.conf.diffuser.time_type == 'continuous':
-                    t_cont = random.random() * self.conf.diffuser.t_cont_max
+                    distribution = getattr(distributions, self.conf.diffuser.t_distribution)
+                    t_cont = distribution.rvs(1)[0]
                     t =  t_cont * self.conf.diffuser.T
                 else:
                     raise ValueError(f"Invalid option: {self.conf.diffuser.time_type}. Please choose from <'discrete', 'continuous'>.")
@@ -1753,17 +1761,21 @@ class DatasetWithFallback(data.Dataset):
     def __init__(self,
                  dataset,
                  fallback_dataset,
-                 fallback_sampler):
+                 fallback_sampler,
+                 use_fallback=True):
             self.dataset = dataset
             self.fallback_dataset = fallback_dataset
             self.fallback_sampler = fallback_sampler
             self.fallback_iter = itertools.cycle(fallback_sampler.__iter__())
+            self.use_fallback = use_fallback
         
     def __getitem__(self, index):
         try:
             return self.dataset[index]
         except Exception as e:
             fallback_index = next(self.fallback_iter)
+            if not self.use_fallback:
+                raise e
             print(f'WARNING: dataset.__getitem__ raised exception, falling back to fallback_dataset[{fallback_index}]: {traceback.format_exc()}')
             return self.fallback_dataset[fallback_index]
 
@@ -1910,7 +1922,7 @@ def get_fallback_dataset_and_dataloader(conf, diffuser, num_example_per_epoch, w
     )
 
     # Combine primary and secondary datasets to make the fallbacks
-    fallback_dataset = DatasetWithFallback(primary_dataset, secondary_dataset, secondary_sampler)
+    fallback_dataset = DatasetWithFallback(primary_dataset, secondary_dataset, secondary_sampler, use_fallback=conf.dataloader.use_fallback)
     fallback_train_loader = data.DataLoader(
         dataset=fallback_dataset, 
         sampler=primary_sampler, 
