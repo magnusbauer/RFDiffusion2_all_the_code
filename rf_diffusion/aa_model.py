@@ -1305,7 +1305,7 @@ def is_occupied(indep, atom_mask):
 
 def reindex_dict(d, pop):
     '''
-    Returns a new dictionary with a binary mask applied to the index.
+    Reindexes a dictionary keyed on index after popping a mask.
 
     Params:
         d: Dictionary of {index: ....}
@@ -1321,13 +1321,13 @@ def reindex_dict(d, pop):
 
 def reindex_covales(covales, pop):
     '''
-    Returns a new dictionary with a binary mask applied to the index.
+    Reindex covalent bonds after popping a mask.
 
     Params:
-        d: Dictionary of {index: ....}
+        d: List of tuples: [((index, atom_name), small_molecule_index, bond_type), ...]
         pop: binary mask
     Returns:
-        Dictionary with keys not present in pop removed and the remaining reindexed.
+        List of tuples: [((index, atom_name), small_molecule_index, bond_type), ...]
     '''
     for (i, atom_name), sm_i, _ in covales:
         assert pop[i]
