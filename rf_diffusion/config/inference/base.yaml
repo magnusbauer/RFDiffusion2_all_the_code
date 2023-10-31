@@ -55,6 +55,7 @@ inference:
       active: False
       rasa: -1
     little_t_embedding: null
+    sinusoidal_timestep_embedding: null
   safety:
     # Indicates that a user is carefully performing sidechain partial diffusion.
     # We require this to be set, as unless a user is careful this causes undefined behavior.

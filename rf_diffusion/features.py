@@ -92,6 +92,8 @@ def radius_of_gyration_xyz(xyz):
 def get_relative_sasa(indep, relative_sasa=None, **kwargs):
     return sasa.noised_relative_sasa(indep, relative_sasa.std_std)
 
+def get_sinusoidal_timestep_embedding_inference(indep, feature_conf, feature_inference_conf, t_cont, **kwargs):
+    return get_sinusoidal_timestep_embedding_training(indep, feature_conf, t_cont)
 
 def get_sinusoidal_timestep_embedding_training(indep, feature_conf, t_cont: float=None, **kwargs):
     emb = get_sinusoidal_timestep_embedding(torch.tensor([t_cont]), feature_conf.embedding_dim, feature_conf.max_positions)
@@ -151,6 +153,7 @@ inference_featurizers = {
     'radius_of_gyration_v2': v2.get_radius_of_gyration_inference,
     'relative_sasa_v2': v2.get_relative_sasa_inference,
     'little_t_embedding': get_little_t_embedding_inference,
+    'sinusoidal_timestep_embedding': get_sinusoidal_timestep_embedding_inference,
 }
 
 def get_extra_t1d_inference(indep, featurizer_names, params_train, params_inference, **kwargs):
