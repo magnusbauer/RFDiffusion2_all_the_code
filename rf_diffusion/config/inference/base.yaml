@@ -123,6 +123,8 @@ diffuser:
   T: 200
   partial_T: null    
   aa_decode_steps: 40
+  so3:
+    use_cached_score: false
 
 seq_diffuser:
   s_b0: null

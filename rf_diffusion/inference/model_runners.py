@@ -76,17 +76,20 @@ class Sampler:
             self._conf.score_model.weights_path, use_torch=True,
                 map_location=self.device)
         
-        weights_conf = weights_pkl['conf']
         # WIP: if the conf must be read from a different checkpoint for backwards compatibility
-        # conf_pkl = du.read_pkl(
-        #     self._conf.score_model.conf_pkl_path, use_torch=True,
-        #         map_location=self.device)
+        if hasattr( self._conf.score_model, 'conf_pkl_path') and self._conf.score_model.conf_pkl_path:
+            print(f'WARNING: READING CONF FROM NON-MODEL PICKLE: {self._conf.score_model.conf_pkl_path} THIS SHOULD ONLY BE DONE FOR DEBUGGING PURPOSES')
+            weights_conf = du.read_pkl(
+                self._conf.score_model.conf_pkl_path, use_torch=True,
+                    map_location=self.device)['conf']
+        else:
+            weights_conf = weights_pkl['conf']
 
         # Merge base experiment config with checkpoint config.
         OmegaConf.set_struct(self._conf, False)
-        OmegaConf.set_struct(weights_pkl['conf'], False)
+        OmegaConf.set_struct(weights_conf, False)
         self._conf = OmegaConf.merge(
-            weights_pkl['conf'], self._conf)
+            weights_conf, self._conf)
 
         self.diffuser = se3_diffuser.SE3Diffuser(self._conf.diffuser)
         self.model = RFScore(self._conf.rf.model, self.diffuser, self.device)

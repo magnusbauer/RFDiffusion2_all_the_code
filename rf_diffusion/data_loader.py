@@ -1720,8 +1720,8 @@ class DistilledDataset(data.Dataset):
                 is_gp[:pre_transform_length] = False
 
                 if self.conf.diffuser.time_type == 'discrete':
-                    t_cont = None
                     t = random.randint(1, self.conf.diffuser.T)
+                    t_cont = t / self.conf.diffuser.T
                 elif self.conf.diffuser.time_type == 'continuous':
                     distribution = getattr(distributions, self.conf.diffuser.t_distribution)
                     t_cont = distribution.rvs(1)[0]
