@@ -1303,7 +1303,7 @@ def is_occupied(indep, atom_mask):
     pop = rf2aa.util.get_prot_sm_mask(atom_mask, indep.seq)
     return pop
 
-def reindex_dict(d, pop):
+def reindex_dict(d, pop: torch.tensor):
     '''
     Reindexes a dictionary keyed on index after popping a mask.
 
@@ -1319,12 +1319,12 @@ def reindex_dict(d, pop):
     return {shift(k): v for k, v in d.items() if pop[k]}
 
 
-def reindex_covales(covales, pop):
+def reindex_covales(covales, pop: torch.tensor):
     '''
     Reindex covalent bonds after popping a mask.
 
     Params:
-        d: List of tuples: [((index, atom_name), small_molecule_index, bond_type), ...]
+        covales: List of tuples: [((index, atom_name), small_molecule_index, bond_type), ...]
         pop: binary mask
     Returns:
         List of tuples: [((index, atom_name), small_molecule_index, bond_type), ...]
