@@ -462,6 +462,10 @@ class Trainer():
     #   - if slurm, assume 1 job launched per GPU
     #   - if interactive, launch one job for each GPU on node
     def run_model_training(self, world_size):
+	is_ddp = (not self.conf.interactive and "SLURM_NTASKS" in os.environ and "SLURM_PROCID" in os.environ)
+        if is_ddp:
+            world_size = int(os.environ["SLURM_NTASKS"])
+            rank = int (os.environ["SLURM_PROCID"])
         if ('MASTER_ADDR' not in os.environ or os.environ['MASTER_ADDR'] == ''):
             if world_size <= 1:
                 os.environ['MASTER_ADDR'] = 'localhost'
@@ -473,7 +477,7 @@ class Trainer():
             assertpy.assert_that(world_size).is_less_than(2)
             os.environ['MASTER_PORT'] = f'{random.randint(12000, 12200)}'
 
-        if (not self.conf.interactive and "SLURM_NTASKS" in os.environ and "SLURM_PROCID" in os.environ):
+        if is_ddp:
             world_size = int(os.environ["SLURM_NTASKS"])
             rank = int (os.environ["SLURM_PROCID"])
             print ("Launched from slurm", rank, world_size)
@@ -1068,4 +1072,5 @@ def run(conf: DictConfig) -> None:
     train.run_model_training(torch.cuda.device_count())
 
 if __name__ == "__main__":
+    # master_addr_set('MASTER_ADDR' not in os.environ or os.environ['MASTER_ADDR'] == '')
     run()
