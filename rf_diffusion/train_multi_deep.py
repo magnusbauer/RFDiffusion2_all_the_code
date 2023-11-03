@@ -818,16 +818,19 @@ class Trainer():
                         else:
                             raise Exception(msg)
                     timer.checkpoint('loss backwards')
+                    grad_norm = np.nan
                     if counter%self.accum_step == 0:
                         if rank == 0:
-                            ic(f'ACCUMULATING {counter=}')
+                            print(f'ACCUMULATING {counter=}')
                         # gradient clipping
                         scaler.unscale_(optimizer)
-                        torch.nn.utils.clip_grad_norm_(ddp_model.parameters(), 0.2)
+                        grad_norm=torch.nn.utils.clip_grad_norm_(ddp_model.parameters(), 0.2)
+                        grad_norm = grad_norm.cpu().detach().item()
                         scaler.step(optimizer)
                         scale = scaler.get_scale()
                         scaler.update()
-                        skip_lr_sched = (scale != scaler.get_scale())
+                        new_scale = scaler.get_scale()
+                        skip_lr_sched = (scale != new_scale)
                         optimizer.zero_grad()
                         if not skip_lr_sched:
                             scheduler.step()
@@ -853,11 +856,10 @@ class Trainer():
                 pdb_dir = os.path.join(self.outdir, 'training_pdbs')
                 n_processed = self.conf.batch_size*world_size * counter
                 output_pdb_prefix = f'{pdb_dir}/epoch_{epoch}_{n_processed}_{chosen_task}_{chosen_dataset}_t_{int( little_t )}'
-                log_metrics = (counter % self.conf.log_every_n_examples == 0) and (rank == 0)
+                log_metrics = self.conf.log_every_n_examples and (counter % self.conf.log_every_n_examples == 0) and (rank == 0)
                 if log_metrics:
                     train_time  = time.time() - start_time
                     
-
                     if 'diff' in chosen_task:
                         task_str = f'diff_t{int(little_t)}'
                     else:
@@ -896,6 +898,9 @@ class Trainer():
                             'output_pdb_prefix':output_pdb_prefix,
                             'use_guideposts': masks_1d['use_guideposts'],
                             'mask_name': masks_1d['mask_name'],
+                            'grad_norm': grad_norm,
+                            'lr': scheduler.get_last_lr()[0],
+                            'length': indep.length(),
                         })
 
                         rf2aa.tensor_util.to_device(indep, 'cpu')
@@ -913,15 +918,9 @@ class Trainer():
                 if torch.cuda.is_available():
                     torch.cuda.reset_peak_memory_stats()
                     torch.cuda.empty_cache()
-		# TODO: Use these when writing output PDBs
-                # logits_argsort = torch.argsort(logit_aa_s, dim=1, descending=True)
-                # top1_sequence = (logits_argsort[:, :1])
-                # top1_sequence = torch.clamp(top1_sequence, 0,19)
+                timer.checkpoint('logging')
 
-                # if self.diffusion_param['seqdiff'] == 'continuous':
-                #     top1_sequence = torch.argmax(logit_aa_s[:,:20,:], dim=1)
-
-                save_pdb = np.random.randint(0,self.conf.n_write_pdb) == 0
+                save_pdb = self.conf.n_write_pdb and (counter % self.conf.n_write_pdb == 0) and (rank == 0)
                 if save_pdb:
                     (L,) = indep.seq.shape
                     os.makedirs(pdb_dir, exist_ok=True)
@@ -943,14 +942,18 @@ class Trainer():
                         if atomizer:
                             indep_write = atomize.deatomize(atomizer, indep_write)
                             indep_write.write_pdb(f'{output_pdb_prefix}_{suffix}_deatomized.pdb')
+                timer.checkpoint('pdb writing')
 
+                log_metrics_inputs = self.conf.log_metrics_inputs_every_n_examples and (counter % self.conf.log_metrics_inputs_every_n_examples == 0) and (rank == 0)
+                if log_metrics_inputs:
                     indep_true = indep
                     motif_deatomized = None
                     if atomizer:
-                        # indep_true = atomize.deatomize(atomizer, indep_true)
                         motif_deatomized = atomize.convert_atomized_mask(atomizer, ~is_diffused)
+                    if not save_pdb:
+                        pymol_names = "not available, did not write pdb"
+                        os.makedirs(pdb_dir, exist_ok=True)
 
-                    
                     with open(f'{output_pdb_prefix}_info.pkl', 'wb') as fh:
                         pickle.dump({
                             'metrics_inputs': metrics_inputs,
@@ -962,13 +965,13 @@ class Trainer():
                             'pymol_names': pymol_names,
                             'dataset': chosen_dataset,
                             'little_t': float(little_t),
-                            'loss_dict': tree.map_structure(
-                                lambda x: x.cpu() if hasattr(x, 'cpu') else x, loss_dict)
+                            # Redundant.
+                            # 'loss_dict': tree.map_structure(
+                            #     lambda x: x.cpu() if hasattr(x, 'cpu') else x, loss_dict)
                         }, fh)
 
                     if self.conf.log_inputs:
                         shutil.copy(self.pickle_counter.last_pickle, f'{output_pdb_prefix}_input_pickle.pkl')
-                    print(f'writing training PDBs with prefix: {output_pdb_prefix}')
 
                 # Expected epoch time logging
                 if rank == 0:
@@ -978,7 +981,8 @@ class Trainer():
                     expected_epoch_time = int(self.n_train / mean_rate)
                     m, s = divmod(expected_epoch_time, 60)
                     h, m = divmod(m, 60)
-                    print(f'Expected time per epoch of size ({self.n_train}) (h:m:s) based off {n_processed} measured pseudo batch times: {h:d}:{m:02d}:{s:.0f}')
+                    print(f'Expected time per epoch of size ({self.n_train}) (h:m:s) based off {counter} measured pseudo batch times: {h:d}:{m:02d}:{s:.0f} ' \
+                          f'Examples / (GPU second): {mean_rate / world_size:.4f}')
 
                 if self.conf.saves_per_epoch and rank==0:
                     n_processed_next = self.conf.batch_size*world_size * (counter+1)
@@ -988,7 +992,7 @@ class Trainer():
                         if n_processed <= save_before_n and n_processed_next > save_before_n:
                             self.save_model(f'{epoch + fraction:.2f}', ddp_model, optimizer, scheduler, scaler)
                             break
-                timer.checkpoint('logging')
+                timer.checkpoint('metrics inputs logging')
                 timer.restart()
                 if rank == 0 and (counter % self.conf.timing_summary_every) == 0:
                     timer.summary()

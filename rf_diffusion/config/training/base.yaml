@@ -117,6 +117,7 @@ log_inputs: False
 metrics:
 - atom_bonds
 log_every_n_examples: 1
+log_metrics_inputs_every_n_examples: 30
 n_write_pdb: 30
 saves_per_epoch: 2
 preprocess:
