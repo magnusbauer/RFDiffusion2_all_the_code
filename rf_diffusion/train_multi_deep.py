@@ -462,7 +462,7 @@ class Trainer():
     #   - if slurm, assume 1 job launched per GPU
     #   - if interactive, launch one job for each GPU on node
     def run_model_training(self, world_size):
-	is_ddp = (not self.conf.interactive and "SLURM_NTASKS" in os.environ and "SLURM_PROCID" in os.environ)
+        is_ddp = (not self.conf.interactive and "SLURM_NTASKS" in os.environ and "SLURM_PROCID" in os.environ)
         if is_ddp:
             world_size = int(os.environ["SLURM_NTASKS"])
             rank = int (os.environ["SLURM_PROCID"])
