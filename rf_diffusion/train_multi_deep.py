@@ -749,6 +749,7 @@ class Trainer():
                                         rfi,
                                         torch.tensor([little_t/self.conf.diffuser.T]),
                                         use_checkpoint=True)
+                        model_out['rigids'].retain_grad()
 
                         timer.checkpoint('model forward')
                         logit_s, logit_aa_s, logits_pae, logits_pde, p_bind, pred_crds, alphas, px0_allatom, pred_lddts, _, _, _, _ = model_out['rfo'].unsafe_astuple()
@@ -889,6 +890,8 @@ class Trainer():
                     outstr += '  '.join(str_stack)
                     if rank == 0:
                         sys.stdout.write(outstr+'\n')
+
+                    r3_grad = model_out['rigids'].grad[...,4:].detach().cpu()
                     loss_dict.update({
                         'training_start': firstLog(),
                         't':little_t,
@@ -908,6 +911,8 @@ class Trainer():
                         'lr': scheduler.get_last_lr()[0],
                         'length': indep.length(),
                         'save_pdb': save_pdb,
+                        'r3_grad_norm': torch.linalg.vector_norm(r3_grad).item(),
+                        'r3_grad_max': torch.linalg.vector_norm(r3_grad, ord=torch.inf).item(),
                     })
 
                     rf2aa.tensor_util.to_device(indep, 'cpu')
@@ -943,8 +948,6 @@ class Trainer():
                     ]:
                         indep_write = copy.deepcopy(indep)
                         indep_write.xyz[:,:14] = xyz[:,:14]
-                        # if atomizer:
-                        #     indep_write = atomize.deatomize(atomizer, indep_write)
                         pymol_names = indep_write.write_pdb(f'{output_pdb_prefix}_{suffix}.pdb')
                         if atomizer:
                             indep_write = atomize.deatomize(atomizer, indep_write)
