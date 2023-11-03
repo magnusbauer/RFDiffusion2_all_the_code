@@ -1,0 +1,68 @@
+defaults:
+  - RFD_36
+
+# guidepost_bonds: true
+# dataloader:
+#   USE_GUIDE_POSTS: false
+#   P_IS_GUIDEPOST_EXAMPLE: 0.5
+#   DIFF_MASK_PROBS:
+#     get_unconditional_diffusion_mask: 0.125
+#     get_unconditional_diffusion_mask_free_ligand: 0.125
+#     get_unconditional_diffusion_mask_partial_ligand: 0.05
+#     get_diffusion_mask_islands: 0.1
+#     get_diffusion_mask_islands_partial_ligand: 0.1
+#     get_closest_tip_atoms: 0.1
+#     get_closest_tip_atoms_partial_ligand: 0.1
+#     get_atomized_islands: 0.1
+#     get_entirely_atomized: 0.2
+
+ckpt_load_path: /home/ahern/projects/aa_diffusion_data/models/rf2a_25c_414_t1d-114.pt
+# experiment:
+#   trans_loss_weight: 1.0
+#   rot_loss_weight: 1.0
+#   trans_x0_threshold: 1.0
+#   normalize_trans_x0: true
+#   bb_atom_loss_weight: 0.0
+#   bb_atom_loss_t_filter: 0.0
+#   dist_mat_loss_weight: 0.0
+#   dist_mat_loss_t_filter: 0.0
+#   aux_loss_weight: 0.0
+#   c6d_loss_weight: 0.0
+
+extra_t1d:
+  - radius_of_gyration_v2
+  - relative_sasa_v2
+  - sinusoidal_timestep_embedding
+
+extra_t1d_params:
+  sinusoidal_timestep_embedding:
+    embedding_dim: 20
+    max_positions: 10000
+
+# diffuser:
+#   time_type: continuous
+#   t_distribution: low_t_heavy
+
+metrics:
+  - atom_bonds_permutations
+  - VarianceNormalizedPredTransMSE
+  - VarianceNormalizedInputTransMSE
+  - displacement_permutations
+
+saves_per_epoch: 2
+n_write_pdb: 8
+log_every_n_examples: 1
+log_metrics_inputs_every_n_examples: 8
+resume: null
+resume_scheduler: false
+scheduler:
+  n_warmup_steps: 500
+pseudobatch: 24 # Changed from 48
+log_inputs: false
+
+rf:
+  model:
+    d_t1d: 114
+
+rundir: /net/scratch/ahern/se3_diffusion/training/rfd_36_recap
+wandb_prefix: 'rfd_36_recap_'

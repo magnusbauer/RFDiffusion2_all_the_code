@@ -1,5 +1,6 @@
 import sys, os
 import tree
+import datetime
 import master_addr
 import wandb
 import hydra
@@ -145,7 +146,7 @@ class EMA(nn.Module):
             return self.shadow(*args, **kwargs)
 
 def get_datetime():
-    return str(date.today()) + '_' + str(time.time())
+    return datetime.datetime.now().strftime("%Y-%m-%d_%H:%M:%S.%f")
 
 class Trainer():
     def __init__(self, conf=None):
@@ -173,10 +174,11 @@ class Trainer():
         self.active_fn = nn.Softmax(dim=1)
 
         self.wandb_run_id = 'no_wandb'
+        self.wandb_group = 'no_wandb_group'
     
-    def make_rundir(self):
+    def make_rundir(self, wandb_name):
         rundir = self.conf.rundir or '.'
-        rundir = os.path.join(rundir, f'{get_datetime()}_{self.wandb_run_id}')
+        rundir = os.path.join(rundir, wandb_name)
         return rundir
 
     def calc_loss(self, indep, loss_weights, model_out, diffuser_out, logit_s, label_s,
@@ -492,30 +494,6 @@ class Trainer():
 
     def train_model(self, rank, world_size, return_setup=False):
 
-        if WANDB and rank == 0:
-            print('initializing wandb')
-            resume = None
-            name=self.conf.wandb_prefix
-            id = None
-            if self.conf.resume:
-                name=None
-                id=self.conf.resume
-                resume='must'
-            wandb.init(
-                    project="fancy-pants ",
-                    entity="bakerlab", 
-                    name=name,
-                    id=id,
-                    resume=resume)
-            print(f'{wandb.run.id=}')
-            self.wandb_run_id = wandb.run.id
-
-            # wandb.config.update(all_param)
-            wandb.config = self.conf
-        
-        self.rundir = self.make_rundir()
-
-
         self.accum_step = self.conf.pseudobatch / world_size
         ic(self.accum_step)
         #print ("running ddp on rank %d, world_size %d"%(rank, world_size))
@@ -533,10 +511,36 @@ class Trainer():
         else:
             gpu = 'cpu'
         
-        # obj_list = [self.rundir]
-        obj_list = [self.rundir]
+        date_string = get_datetime()
+        obj_list = [date_string]
         dist.broadcast_object_list(obj_list, 0)
-        self.rundir = obj_list[0]
+        date_string = obj_list[0]
+        wandb_name = self.conf.wandb_prefix + date_string
+        self.rundir = self.make_rundir(wandb_name)
+
+        if WANDB:
+            print(f'initializing wandb on rank {rank}')
+            resume = None
+            resume = 'never'
+            id = None
+            if self.conf.resume:
+                wandb_name=None
+                id=self.conf.resume
+                resume='must'
+            
+            wandb.init(
+                project="fancy-pants ",
+                entity="bakerlab",
+                group=wandb_name,
+                name=f'{wandb_name}_rank_{rank}',
+                id=id,
+                resume=resume
+            )
+            print(f'{wandb.run.id=}')
+            self.wandb_run_id = wandb.run.id
+            self.wandb_group = wandb_name
+            wandb.config = self.conf
+
         self.outdir = os.path.join(self.rundir, f'rank_{rank}')
         print(f'{rank=} {self.outdir=}')
         os.makedirs(self.outdir, exist_ok=True)
@@ -600,6 +604,7 @@ class Trainer():
                     'scaler_state_dict': scaler.state_dict(),
                     'conf':self.conf,
                     'wandb_run_id':self.wandb_run_id,
+                    'wandb_group':self.wandb_group,
                     'rundir': self.rundir,
                     },
                     model_path)
@@ -627,7 +632,7 @@ class Trainer():
         # define optimizer and scheduler
         opt_params = add_weight_decay(ddp_model, self.conf.l2_coeff)
         optimizer = torch.optim.AdamW(opt_params, lr=self.conf.lr)
-        scheduler = get_stepwise_decay_schedule_with_warmup(optimizer, 0, 10000, 0.95) # for fine-tuning
+        scheduler = get_stepwise_decay_schedule_with_warmup(optimizer, self.conf.scheduler.n_warmup_steps, 10000, 0.95) # for fine-tuning
         scaler = torch.cuda.amp.GradScaler(enabled=USE_AMP)
        
         # load model
@@ -855,8 +860,10 @@ class Trainer():
                 )
                 pdb_dir = os.path.join(self.outdir, 'training_pdbs')
                 n_processed = self.conf.batch_size*world_size * counter
+                can_log=True
                 output_pdb_prefix = f'{pdb_dir}/epoch_{epoch}_{n_processed}_{chosen_task}_{chosen_dataset}_t_{int( little_t )}'
-                log_metrics = self.conf.log_every_n_examples and (counter % self.conf.log_every_n_examples == 0) and (rank == 0)
+                log_metrics = self.conf.log_every_n_examples and (counter % self.conf.log_every_n_examples == 0) and can_log
+                save_pdb = self.conf.n_write_pdb and (counter % self.conf.n_write_pdb == 0) and can_log
                 if log_metrics:
                     train_time  = time.time() - start_time
                     
@@ -880,47 +887,47 @@ class Trainer():
                             loss_dict[f'mean_block.{k}'] = float('nan')
                             loss_dict[f'last_block.{k}'] = float('nan')
                     outstr += '  '.join(str_stack)
-                    sys.stdout.write(outstr+'\n')
-                    
                     if rank == 0:
-                        loss_dict.update({
-                            'training_start': firstLog(),
-                            't':little_t,
-                            'total_examples':epoch*self.n_train+counter*world_size,
-                            'epoch': epoch,
-                            'rank': rank,
-                            'item_context': item_context,
-                            'dataset':chosen_dataset,
-                            'task':chosen_task,
-                            'self_cond': self_cond,
-                            'extra_t1d': indep.extra_t1d.cpu().detach() if hasattr(indep.extra_t1d, 'cpu') else indep.extra_t1d,
-                            'loss':loss.detach() * self.accum_step,
-                            'output_pdb_prefix':output_pdb_prefix,
-                            'use_guideposts': masks_1d['use_guideposts'],
-                            'mask_name': masks_1d['mask_name'],
-                            'grad_norm': grad_norm,
-                            'lr': scheduler.get_last_lr()[0],
-                            'length': indep.length(),
-                        })
+                        sys.stdout.write(outstr+'\n')
+                    loss_dict.update({
+                        'training_start': firstLog(),
+                        't':little_t,
+                        'total_examples':epoch*self.n_train+counter*world_size,
+                        'epoch': epoch,
+                        'rank': rank,
+                        'item_context': item_context,
+                        'dataset':chosen_dataset,
+                        'task':chosen_task,
+                        'self_cond': self_cond,
+                        'extra_t1d': indep.extra_t1d.cpu().detach() if hasattr(indep.extra_t1d, 'cpu') else indep.extra_t1d,
+                        'loss':loss.detach() * self.accum_step,
+                        'output_pdb_prefix':output_pdb_prefix,
+                        'use_guideposts': masks_1d['use_guideposts'],
+                        'mask_name': masks_1d['mask_name'],
+                        'grad_norm': grad_norm,
+                        'lr': scheduler.get_last_lr()[0],
+                        'length': indep.length(),
+                        'save_pdb': save_pdb,
+                    })
 
-                        rf2aa.tensor_util.to_device(indep, 'cpu')
-                        metrics = self.metric_manager.compute_all_metrics(**metrics_inputs)
-                                    
-                        loss_dict['metrics'] = metrics
-                        loss_dict['meta'] = {
-                            f'n_atomized_residues': len(masks_1d['is_atom_motif'])
-                        }
-                        # loss_dict['loss_weights'] = loss_weights
-                        if WANDB:
-                            wandb.log(loss_dict)
-                    sys.stdout.flush()
+                    rf2aa.tensor_util.to_device(indep, 'cpu')
+                    metrics = self.metric_manager.compute_all_metrics(**metrics_inputs)
+                                
+                    loss_dict['metrics'] = metrics
+                    loss_dict['meta'] = {
+                        f'n_atomized_residues': len(masks_1d['is_atom_motif'])
+                    }
+                    # loss_dict['loss_weights'] = loss_weights
+                    if WANDB:
+                        wandb.log(loss_dict)
+                    if rank == 0:
+                        sys.stdout.flush()
                 
                 if torch.cuda.is_available():
                     torch.cuda.reset_peak_memory_stats()
                     torch.cuda.empty_cache()
                 timer.checkpoint('logging')
 
-                save_pdb = self.conf.n_write_pdb and (counter % self.conf.n_write_pdb == 0) and (rank == 0)
                 if save_pdb:
                     (L,) = indep.seq.shape
                     os.makedirs(pdb_dir, exist_ok=True)
@@ -944,7 +951,7 @@ class Trainer():
                             indep_write.write_pdb(f'{output_pdb_prefix}_{suffix}_deatomized.pdb')
                 timer.checkpoint('pdb writing')
 
-                log_metrics_inputs = self.conf.log_metrics_inputs_every_n_examples and (counter % self.conf.log_metrics_inputs_every_n_examples == 0) and (rank == 0)
+                log_metrics_inputs = self.conf.log_metrics_inputs_every_n_examples and (counter % self.conf.log_metrics_inputs_every_n_examples == 0) and can_log
                 if log_metrics_inputs:
                     indep_true = indep
                     motif_deatomized = None
@@ -981,7 +988,7 @@ class Trainer():
                     expected_epoch_time = int(self.n_train / mean_rate)
                     m, s = divmod(expected_epoch_time, 60)
                     h, m = divmod(m, 60)
-                    print(f'Expected time per epoch of size ({self.n_train}) (h:m:s) based off {counter} measured pseudo batch times: {h:d}:{m:02d}:{s:.0f} ' \
+                    print(f'Expected time per epoch of size ({self.n_train}) (h:m:s) based off {counter} measured pseudo batch times: {h:d}:{m:02d}:{s:.0f}   ' \
                           f'Examples / (GPU second): {mean_rate / world_size:.4f}')
 
                 if self.conf.saves_per_epoch and rank==0:

@@ -107,6 +107,8 @@ model_name: RFD
 ckpt_load_path: /home/rohith/rf2a-fd3/models/rf2a_25c_414.pt
 resume: null
 resume_scheduler: True
+scheduler:
+  n_warmup_steps: 0
 reinitialize_missing_params: False
 zero_weights: false
 n_epoch: 500

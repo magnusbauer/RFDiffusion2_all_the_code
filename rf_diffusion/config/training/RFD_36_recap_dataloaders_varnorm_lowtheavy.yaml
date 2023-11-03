@@ -45,32 +45,24 @@ diffuser:
 
 metrics:
   - atom_bonds_permutations
-  # - rigid_loss
-  # - rigid_loss_input
   - VarianceNormalizedPredTransMSE
   - VarianceNormalizedInputTransMSE
   - displacement_permutations
 
-expensive_metrics:
-  - rigid_loss
-  - rigid_loss_input
-
-saves_per_epoch: 1
-
-saves_per_epoch: 1
+saves_per_epoch: 2
 n_write_pdb: 8
 log_every_n_examples: 1
 log_metrics_inputs_every_n_examples: 8
-lr: 0.01
 resume: null
 resume_scheduler: false
 scheduler:
   n_warmup_steps: 500
-pseudobatch: 64
+pseudobatch: 24 # Changed from 48
 log_inputs: false
 
 rf:
   model:
     d_t1d: 114
 
-rundir: /net/scratch/ahern/se3_diffusion/training/prod_1024
+rundir: /net/scratch/ahern/se3_diffusion/training/rfd_36_recap_dataloaders_varnorm_lowtheavy
+wandb_prefix: 'rfd_36_recap_dataloaders_varnorm_lowtheavy'
