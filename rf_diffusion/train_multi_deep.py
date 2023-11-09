@@ -21,7 +21,7 @@ import time
 import torch
 import torch.nn as nn
 from torch.utils import data
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 
 import rf2aa.chemical
 import rf2aa.data_loader
@@ -37,6 +37,9 @@ from rf_diffusion import run_inference
 from rf_diffusion import aa_model
 from rf_diffusion import atomize
 from rf_diffusion.data_loader import get_fallback_dataset_and_dataloader
+from rf_diffusion.benchmark.util.hydra_utils import construct_conf
+import rf_diffusion
+PKG_DIR = rf_diffusion.__path__[0]
 import error
 import pytimer.timer
 pytimer.timer.default_logger.propagate = False
@@ -590,9 +593,38 @@ class Trainer():
             print('Just before calling train cycle...')
             train_tot, train_loss, train_acc = self.train_cycle(ddp_model, train_loader, optimizer, scheduler, scaler, rank, gpu, world_size, epoch)
             if rank == 0: # save model
-                self.save_model(epoch+1, ddp_model, optimizer, scheduler, scaler)
+                model_path = self.save_model(epoch+1, ddp_model, optimizer, scheduler, scaler)
 
         dist.destroy_process_group()
+
+    @staticmethod
+    def benchmark_model(model_path):
+        # Make dir for benchmark results
+        benchmark_dir = f'{model_path.replace(".pt", "")}_benchmark'
+        os.makedirs(benchmark_dir, exist_ok=True)
+
+        # Make overrides
+        overrides=[
+            f'sweep.command_args: --config-name aa score_model.weights_path={model_path}',
+            f'outdir={benchmark_dir}'
+        ]
+
+        # Dump a yaml file for the benchmarking pipeline
+        conf = construct_conf(
+            overrides=overrides,
+            config_name=f'{PKG_DIR}/benchmark/configs/training_benchmarks.yaml', 
+            inference=True
+        )
+        yaml_path = f'{benchmark_dir}/pipeline.yaml'
+        OmegaConf.save(conf, yaml_path)
+
+        # Submit slurm job to run the benchmarking pipeline
+        config_path, config_name = os.path.split(yaml_path)
+        cmd_sbatch = f'{PKG_DIR}/benchmark/pipeline.py --config-path=config_path --config-name=config_name'
+        proc = subprocess.run(cmd_sbatch, shell=True, stdout=subprocess.PIPE)
+        slurm_job = re.findall(r'\d+', str(proc.stdout))[0]
+        slurm_job = int(slurm_job)
+        print(f'Submitted slurm job {slurm_job} to benchmark model checkpoint {model_path}.')
 
     def save_model(self, suffix, ddp_model, optimizer, scheduler, scaler):
         #save every epoch     
@@ -613,6 +645,7 @@ class Trainer():
                     'rundir': self.rundir,
                     },
                     model_path)
+        return model_path
 
     def init_model(self, device):
         from rf_se3_diffusion.rf_score.model import RFScore

@@ -307,20 +307,6 @@ def loader_out_for_dataset(dataset, mask, overrides=[], epoch=0, config_name='de
     
     return loader_out_from_conf(conf, epoch=epoch)
 
-# def construct_conf(overrides: list[str]=[], yaml_path: str='config/training/base.yaml'):
-#     '''
-#     Make a hydra config object from a yaml configutation file.
-    
-#     Inputs
-#         overrides: ex - ['inference.cautious=False', 'inference.design_startnum=0']
-#         yaml_path: Yaml file from which to construct the conf. Then overrides are applied.        
-#     '''
-#     config_path, config_name = os.path.split(yaml_path)
-#     with initialize(version_base=None, config_path=config_path, job_name="test_app"):
-#         conf = compose(config_name=config_name, overrides=overrides, return_hydra_config=True)
-        
-#     return conf
-
 def subset_target_feats(target_feats, is_subset):
     '''
     is_subset (iterable[bool]): True = Include this residue in the returned subset.
