@@ -1,4 +1,5 @@
 import sys, os
+import traceback
 import tree
 import datetime
 import master_addr
@@ -232,7 +233,7 @@ class Trainer():
         trans_x0_loss = loss_module.mse(pred_trans_x0, gt_trans_x0)
 
         if self.conf.experiment.normalize_trans_x0:
-            noise_var = float(1 - torch.exp(-self.diffuser._r3_diffuser.marginal_b_t(t)))
+            noise_var = float(1 - torch.exp(-self.diffuser._r3_diffuser.marginal_b_t(t)) + 1/self.conf.experiment.normalize_trans_x0_max_scaling)
             trans_x0_loss = trans_x0_loss / noise_var
 
         loss_dict['trans_score'] = trans_score_loss * (t > self._exp_conf.trans_x0_threshold) * int(self.conf.diffuser.diffuse_trans)
@@ -304,7 +305,11 @@ class Trainer():
         dist_mat_loss = torch.sum(
             (gt_pair_dists - pred_pair_dists)**2 * pair_dist_mask,
             dim=(-2, -1))
-        dist_mat_loss /= (torch.sum(pair_dist_mask, dim=(1, 2)) - num_res)
+        dist_mat_loss_normalization = (torch.sum(pair_dist_mask, dim=(1, 2)) - num_res)
+        if dist_mat_loss_normalization == 0:
+            dist_mat_loss = 0
+        else:
+            dist_mat_loss /= dist_mat_loss_normalization
         dist_mat_loss *= t < self._exp_conf.dist_mat_loss_t_filter
         loss_dict['dist_mat'] = dist_mat_loss
 
@@ -524,8 +529,8 @@ class Trainer():
             resume = 'never'
             id = None
             if self.conf.resume:
-                wandb_name=None
-                id=self.conf.resume
+                wandb_name=resume
+                # id=self.conf.resume
                 resume='must'
             
             wandb.init(
@@ -819,6 +824,8 @@ class Trainer():
                         scaler.scale(loss).backward()
                     else:
                         msg = f'NaN loss encountered, skipping: {context_msg}'
+                        weighted_losses = {k:v for k,v in loss_dict.items() if k.startswith('weighted') and v != 0}
+                        msg += f" weighted_losses: {weighted_losses}"
                         if not DEBUG:
                             print(msg)
                         else:
@@ -857,7 +864,8 @@ class Trainer():
                     input_crds=xyz_prev_orig[:, :3].cpu(),
                     t=little_t/self.diffuser.T,
                     is_diffused=is_diffused.cpu(),
-                    point_types=aa_model.get_point_types(indep, atomizer)
+                    point_types=aa_model.get_point_types(indep, atomizer),
+                    pred_crds_stack=pred_crds[:, 0].cpu()
                 )
                 pdb_dir = os.path.join(self.outdir, 'training_pdbs')
                 n_processed = self.conf.batch_size*world_size * counter
@@ -891,7 +899,12 @@ class Trainer():
                     if rank == 0:
                         sys.stdout.write(outstr+'\n')
 
-                    r3_grad = model_out['rigids'].grad[...,4:].detach().cpu()
+                    try:
+                        r3_grad = model_out['rigids'].grad[...,4:].detach().cpu()
+                    except Exception as e:
+                        r3_grad = torch.tensor(0.0)
+                        print(f'WARNING: getting r3_grad raised exception: {format_exception(e)}')
+
                     loss_dict.update({
                         'training_start': firstLog(),
                         't':little_t,
@@ -1079,6 +1092,9 @@ def make_trainer(conf):
     train = Trainer(
                     conf=conf)
     return train
+
+def format_exception(e: Exception) -> str:
+    return "".join(traceback.format_exception(type(e), e, e.__traceback__))
 
 @hydra.main(version_base=None, config_path="config/training", config_name="base")
 def run(conf: DictConfig) -> None:

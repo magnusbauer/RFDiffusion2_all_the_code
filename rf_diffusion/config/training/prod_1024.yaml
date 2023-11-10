@@ -28,6 +28,7 @@ experiment:
   dist_mat_loss_t_filter: 0.0
   aux_loss_weight: 0.0
   c6d_loss_weight: 0.0
+  normalize_trans_x0_max_scaling: 100
 
 extra_t1d:
   - radius_of_gyration_v2
@@ -41,7 +42,7 @@ extra_t1d_params:
 
 diffuser:
   time_type: continuous
-  t_distribution: low_t_heavy
+  t_distribution: uniform
 
 metrics:
   - atom_bonds_permutations
@@ -56,17 +57,14 @@ expensive_metrics:
   - rigid_loss_input
 
 saves_per_epoch: 1
-
-saves_per_epoch: 1
-n_write_pdb: 8
+n_write_pdb: 40
 log_every_n_examples: 1
-log_metrics_inputs_every_n_examples: 8
-lr: 0.01
+log_metrics_inputs_every_n_examples: 40
 resume: null
 resume_scheduler: false
 scheduler:
   n_warmup_steps: 500
-pseudobatch: 64
+pseudobatch: 56
 log_inputs: false
 
 rf:
@@ -74,3 +72,4 @@ rf:
     d_t1d: 114
 
 rundir: /net/scratch/ahern/se3_diffusion/training/prod_1024
+wandb_prefix: 'prod_1024'

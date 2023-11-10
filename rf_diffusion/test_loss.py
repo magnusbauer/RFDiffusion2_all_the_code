@@ -14,6 +14,7 @@ import contigs
 import bond_geometry
 import perturbations
 import atomize
+import metrics
 
 # def is_se3_invariant(loss, true, pred):
 
@@ -92,6 +93,9 @@ class TestLoss(unittest.TestCase):
         self.assertEqual(
             rigid_losses['max']['fine.diffused_atomized:motif_atomized'],
             rigid_losses['max']['determined'])
+        
+        bond_lengths = metrics.true_bond_lengths(indep_contig, indep_contig.xyz)
+        ic(bond_lengths)
 
 
 

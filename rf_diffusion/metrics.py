@@ -14,6 +14,8 @@ from rf2aa import chemical
 from rf_diffusion import loss
 from rf_se3_diffusion.data import r3_diffuser
 from abc import abstractmethod
+from rf2aa import chemical
+from data import utils as du
 
 def calc_displacement(pred, true):
     """
@@ -214,10 +216,52 @@ def displacement(indep, true_crds, pred_crds, is_diffused, point_types, **kwargs
     return mse
 
 
+def true_bond_lengths(indep, true_crds, **kwargs):
+    out = {}
+    for bond_label, bond_type in zip(
+            chemical.btype_labels[1:],
+            chemical.num2btype[1:]
+    ):
+        is_bonded = torch.triu(indep.bond_feats == bond_type)
+        i, j = torch.where(is_bonded)
+        true_dist = torch.norm(true_crds[i,1]-true_crds[j,1],dim=-1)
+        d = {
+            'mean': torch.mean(true_dist) if true_dist.numel() else torch.nan,
+            'min': torch.min(true_dist) if true_dist.numel() else torch.nan,
+            'max': torch.max(true_dist) if true_dist.numel() else torch.nan,
+        }
+        out[bond_label] = d
+    return out
+
 displacement_permutations = permute_metric(displacement)
 
-def rigid_loss(indep, pred_crds, true_crds, is_diffused, point_types, **kwargs):
-    return bond_geometry.calc_rigid_loss(indep, pred_crds, true_crds, is_diffused, point_types)
+def rotations_input(indep, input_crds, true_crds, is_diffused, **kwargs):
+    return rotations(indep, input_crds, true_crds, is_diffused)
+
+def rotations(indep, pred_crds, true_crds, is_diffused, **kwargs):
+
+    pred_crds = pred_crds[~indep.is_sm * is_diffused]
+    true_crds = true_crds[~indep.is_sm * is_diffused]
+
+    rigid_pred = get_rigids(pred_crds)
+    rigid_true = get_rigids(true_crds)
+
+    rot_pred = rigid_pred.get_rots()
+    rot_true = rigid_true.get_rots()
+
+    omega = rot_true.angle_between_rotations(rot_pred) # [I, L]
+
+    o = {}
+    omega_i = omega
+    o['omega'] = {
+        'mean': torch.mean(omega_i) if omega_i.numel() else torch.nan,
+        'max': torch.max(omega_i) if omega_i.numel() else torch.nan,
+        'min': torch.min(omega_i) if omega_i.numel() else torch.nan,
+    }
+    return o
+
+def get_rigids(atom14):
+    return du.rigid_frames_from_atom_14(atom14)
 
 ###################################
 # Metric manager
@@ -252,7 +296,8 @@ class MetricManager:
         input_crds: torch.Tensor, 
         t: float, 
         is_diffused: torch.Tensor,
-        point_types: np.array
+        point_types: np.array,
+        pred_crds_stack: torch.Tensor, 
         ) -> dict:
         '''
         Inputs
@@ -285,7 +330,8 @@ class MetricManager:
                 input_crds=input_crds.cpu().detach(),
                 t=t,
                 is_diffused=is_diffused,
-                point_types=point_types
+                point_types=point_types,
+                pred_crds_stack=pred_crds_stack,
             )
             metric_results[name] = metric_output
 

@@ -1940,7 +1940,8 @@ def transform_indep(indep, is_res_str_shown, is_atom_str_shown, use_guideposts, 
     indep = copy.deepcopy(indep)
     use_atomize = is_atom_str_shown is not None
     # use_atomize = is_atom_str_shown is not None and len(is_atom_str_shown) > 0
-    is_diffused = is_masked_seq = ~is_res_str_shown
+    is_diffused = ~is_res_str_shown
+    is_masked_seq = ~is_res_str_shown
     atomizer = None
     gp_to_ptn_idx0 = None
 

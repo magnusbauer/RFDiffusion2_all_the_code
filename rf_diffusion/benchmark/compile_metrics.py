@@ -141,26 +141,18 @@ def main():
         return df_out
 
     # MPNN metrics
-    if os.path.exists(args.datadir+'/mpnn/'):
-        df_mpnn = _load_mpnn_df(args.datadir+'/mpnn/', df_base)
-        if df_mpnn.shape[1] > df_base.shape[1]: # were there designs that we added metrics for?
-            df_mpnn['mpnn'] = True
-            df_mpnn['ligmpnn'] = False
-            df_all_list.append(df_mpnn)
-        # n_missing = df_mpnn['contig_rmsd_atomized'].isna().sum()
-        # assertpy.assert_that(n_missing).is_equal_to(0)
-
-    # LigandMPNN metrics
-    if os.path.exists(args.datadir+'/ligmpnn/'):
-        mpnn_dir = args.datadir+'/ligmpnn/'
-        packed_dir = os.path.join(mpnn_dir,'packed')
-        if os.path.exists(packed_dir):
-            mpnn_dir = packed_dir
-        df_ligmpnn = _load_mpnn_df(mpnn_dir, df_base)
-        if df_ligmpnn.shape[1] > df_base.shape[1]: # were there designs that we added metrics for?
-            df_ligmpnn['mpnn'] = False
-            df_ligmpnn['ligmpnn'] = True
-            df_all_list.append(df_ligmpnn)
+    for flavor in ['mpnn', 'ligmpnn']:
+        mpnn_dir = f'{args.datadir}/{flavor}/'
+        if os.path.exists(mpnn_dir):
+            packed_dir = os.path.join(mpnn_dir,'packed')
+            if os.path.exists(packed_dir):
+                mpnn_dir = packed_dir
+            df_ligmpnn = _load_mpnn_df(mpnn_dir, df_base)
+            if df_ligmpnn.shape[1] > df_base.shape[1]: # were there designs that we added metrics for?
+                df_ligmpnn['mpnn'] = False
+                df_ligmpnn['ligmpnn'] = False
+                df_ligmpnn[flavor] = True
+                df_all_list.append(df_ligmpnn)
 
     # concatenate all designs into one list
     df = pd.concat(df_all_list)

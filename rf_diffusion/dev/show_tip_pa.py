@@ -132,6 +132,7 @@ def show(row, structs = {'X0'}, af2=False, des=True, des_color=None, hetatm_colo
         possible_paths = []
         possible_paths.append(os.path.join(row['rundir'], 'ligmpnn/packed', f'{name}_{mpnn_i}_1.pdb'))
         possible_paths.append(os.path.join(row['rundir'], 'ligmpnn/packed', f'{name}_{mpnn_i}.pdb'))
+        possible_paths.append(os.path.join(row['rundir'], 'mpnn/packed', f'{name}_{mpnn_i}_1.pdb'))
         for pdb in possible_paths:
             if os.path.exists(pdb):
                 pdbs['mpnn_packed'] = pdb

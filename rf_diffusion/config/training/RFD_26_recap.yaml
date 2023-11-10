@@ -1,0 +1,36 @@
+defaults:
+  - RFD_26
+
+metrics:
+- true_bond_lengths
+- displacement_permutations
+- VarianceNormalizedPredTransMSE
+- VarianceNormalizedInputTransMSE
+- rotations
+- rotations_input
+
+ckpt_load_path: /home/ahern/projects/aa_diffusion_data/models/rf2a_25c_414_t1d_94.pt
+
+diffuser:
+  so3:
+    use_cached_score: true
+  time_type: discrete
+
+dataloader:
+  P_IS_GUIDEPOST_EXAMPLE: 1
+  use_fallback: true
+  max_residues: -1
+
+scheduler:
+  n_warmup_steps: 0
+
+preprocess:
+  annotate_termini: true
+
+experiment:
+  normalize_trans_x0: false
+
+skip_backward: false
+log_every_n_examples: 1
+log_metrics_inputs_every_n_examples: 30
+n_write_pdb: 30

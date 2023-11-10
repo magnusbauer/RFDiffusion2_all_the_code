@@ -73,10 +73,12 @@ def main(conf: HydraConfig) -> list[int]:
         return filenames_by_ligand_presence
         
     filenames_by_ligand_presence = categorize_by_ligand_presence()
+    job_ids = []
     for use_ligand, filenames in filenames_by_ligand_presence.items():
         conf_for_mpnn_flavor = copy.deepcopy(conf)
         conf_for_mpnn_flavor.use_ligand = use_ligand
-        return run_mpnn(conf_for_mpnn_flavor, filenames)
+        job_ids.extend(run_mpnn(conf_for_mpnn_flavor, filenames))
+    return job_ids
 
 
 def get_binary(in_proc):

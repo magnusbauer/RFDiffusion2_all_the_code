@@ -491,18 +491,24 @@ def partially_mask_ligand(get_mask, ligand_mask_low=0.0, ligand_mask_high=1.0):
     @wraps(get_mask)
     def out_get_mask(indep, atom_mask, *args, **kwargs):
         is_motif, is_atom_motif, *extra_ret = get_mask(indep, atom_mask, *args, **kwargs)
-        is_motif[indep.is_sm] = True
+        is_motif[indep.is_sm] = False
         abs_from_sm_i = indep.is_sm.nonzero()[:, 0]
         G = nx.from_numpy_matrix(indep.bond_feats[indep.is_sm,:][:,indep.is_sm].detach().cpu().numpy())
         cc = list(nx.connected_components(G))
         for component in cc:
             n_atoms = len(component)
             mask_frac = np.random.uniform(low=ligand_mask_low, high=ligand_mask_high)
-            to_mask = np.random.choice(list(component), int(np.floor(mask_frac*n_atoms)))
-            to_mask_abs = abs_from_sm_i[to_mask]
-            if to_mask_abs.any():
-                assertpy.assert_that(indep.is_sm[to_mask_abs].all()).is_true()
-            is_motif[to_mask_abs] = False
+            random_node = np.random.choice(list(component), 1)[0]
+            component_sorted = [random_node]
+            for depth, nodes_at_depth in nx.bfs_successors(G, random_node):
+                component_sorted.extend(nodes_at_depth)
+            n_closest = int(np.floor(mask_frac*n_atoms))
+            to_show = component_sorted[:n_closest]
+
+            to_show_abs = abs_from_sm_i[to_show]
+            if to_show_abs.any():
+                assertpy.assert_that(indep.is_sm[to_show_abs].all()).is_true()
+            is_motif[to_show_abs] = True
         return is_motif, is_atom_motif, *extra_ret
     return out_get_mask
 

@@ -92,6 +92,7 @@ def combine(*df_paths, names=None):
         root, _ = os.path.splitext(os.path.abspath(p))
         root = root.split('/')[-3]
         df['source'] = names[i] if names else root
+        df['design_id'] = df['source'] + '_' + df['name']
         to_cat.append(df)
     return pd.concat(to_cat)
 

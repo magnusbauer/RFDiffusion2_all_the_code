@@ -277,7 +277,12 @@ def add_pymol_name(data, keys):
     def f(row):
         pymol_prefix = []
         for k in keys:
-            v = row[k]
+            if k == 'model':
+                v = row['score_model.weights_path']
+                v = f"{v.split('/')[-4].split('202')[0]}_{v.split('/')[-1]}"
+            else:
+                v = row[k]
+                             
             if k == 'score_model.weights_path':
                 v = v.split('/')[-1]
             if k == 'inference.input_pdb':
@@ -286,6 +291,7 @@ def add_pymol_name(data, keys):
             v = str(v)
             v = v.replace('.', '_')
             v = v.replace(',', '_')
+            v = v.replace(' ', '_')
             if k == 'rundir':
                 vs = v.split('/')
                 if 'out' in vs:
@@ -362,6 +368,7 @@ def main(path,
             keys = [key]
         else:
             keys = [k for k in sweeps.keys() if k not in ['contigmap.contig_atoms']]
+        ic(keys)
         add_pymol_name(data, keys)
     if clear:
         show_tip_pa.clear()
