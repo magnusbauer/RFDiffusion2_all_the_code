@@ -17,7 +17,8 @@ from rf_diffusion.benchmark.util import slurm_tools
 
 import rf_diffusion
 PKG_DIR = rf_diffusion.__path__[0]
-mpnn_script = os.path.join(PKG_DIR, 'fused_mpnn/run.py')
+REPO_DIR = os.path.dirname(PKG_DIR)
+mpnn_script = os.path.join(REPO_DIR, 'fused_mpnn/run.py')
 
 def memoize_to_disk(file_name):
     file_name = file_name + '.memo'

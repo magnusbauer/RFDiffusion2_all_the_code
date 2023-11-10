@@ -594,6 +594,8 @@ class Trainer():
             train_tot, train_loss, train_acc = self.train_cycle(ddp_model, train_loader, optimizer, scheduler, scaler, rank, gpu, world_size, epoch)
             if rank == 0: # save model
                 model_path = self.save_model(epoch+1, ddp_model, optimizer, scheduler, scaler)
+                if self.conf.benchmark_checkpoints:
+                    self.benchmark_model(model_path)
 
         dist.destroy_process_group()
 
@@ -606,7 +608,7 @@ class Trainer():
         # Make overrides
         overrides=[
             f'sweep.command_args="--config-name=aa score_model.weights_path={model_path}"',
-            f'outdir={benchmark_dir}'
+            f'outdir={benchmark_dir}',
         ]
 
         # Dump a yaml file to be used by the pipeline slurm job
@@ -623,7 +625,6 @@ class Trainer():
             f'sbatch -t 96:00:00 -J auto_benchmarking -o {benchmark_dir}/slurm-%j.out --export PYTHONPATH={REPO_DIR} '
             f'--wrap "{PKG_DIR}/benchmark/pipeline.py --config-path={config_path} --config-name={config_name}"'
         )
-        print(cmd_sbatch)
         proc = subprocess.run(cmd_sbatch, shell=True, stdout=subprocess.PIPE)
         slurm_job = re.findall(r'\d+', str(proc.stdout))[0]
         slurm_job = int(slurm_job)
