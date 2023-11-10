@@ -2,7 +2,7 @@ import sys, os
 import traceback
 import tree
 import datetime
-import master_addr
+from rf_diffusion import master_addr
 import wandb
 import hydra
 import shutil
@@ -18,6 +18,7 @@ from datetime import date
 from contextlib import ExitStack
 import assertpy
 import time 
+import re
 import torch
 import torch.nn as nn
 from torch.utils import data
@@ -40,17 +41,17 @@ from rf_diffusion.data_loader import get_fallback_dataset_and_dataloader
 from rf_diffusion.benchmark.util.hydra_utils import construct_conf
 import rf_diffusion
 PKG_DIR = rf_diffusion.__path__[0]
-import error
+REPO_DIR = os.path.dirname(PKG_DIR)
+from rf_diffusion import error
 import pytimer.timer
 pytimer.timer.default_logger.propagate = False
 
-from kinematics import xyz_to_c6d, c6d_to_bins2, xyz_to_t2d, xyz_to_bbtor, get_init_xyz
 from rf_diffusion import loss as loss_module
 from rf_diffusion.loss import *
 import util
 from scheduler import get_stepwise_decay_schedule_with_warmup
 
-import rotation_conversions as rot_conv
+from rf_diffusion import rotation_conversions as rot_conv
 from rf_diffusion import test_utils
 from openfold.utils import rigid_utils as ru
 from rf_se3_diffusion.data import all_atom
@@ -59,8 +60,7 @@ from rf_diffusion.reshape_weights import changed_dimensions, get_t1d_updates
 #added for inpainting training
 from icecream import ic
 import random
-import model_input_logger
-from model_input_logger import pickle_function_call
+from rf_diffusion.model_input_logger import pickle_function_call
 
 # added for logging git diff
 import subprocess
@@ -605,22 +605,25 @@ class Trainer():
 
         # Make overrides
         overrides=[
-            f'sweep.command_args: --config-name aa score_model.weights_path={model_path}',
+            f'sweep.command_args="--config-name=aa score_model.weights_path={model_path}"',
             f'outdir={benchmark_dir}'
         ]
 
-        # Dump a yaml file for the benchmarking pipeline
+        # Dump a yaml file to be used by the pipeline slurm job
         conf = construct_conf(
             overrides=overrides,
-            config_name=f'{PKG_DIR}/benchmark/configs/training_benchmarks.yaml', 
-            inference=True
+            yaml_path=f'{PKG_DIR}/benchmark/configs/training_benchmarks.yaml',
         )
-        yaml_path = f'{benchmark_dir}/pipeline.yaml'
-        OmegaConf.save(conf, yaml_path)
+        benchmark_yaml = f'{benchmark_dir}/pipeline.yaml'
+        OmegaConf.save(conf, benchmark_yaml)
 
-        # Submit slurm job to run the benchmarking pipeline
-        config_path, config_name = os.path.split(yaml_path)
-        cmd_sbatch = f'{PKG_DIR}/benchmark/pipeline.py --config-path=config_path --config-name=config_name'
+        # Submit slurm job to run the pipeline
+        config_path, config_name = os.path.split(benchmark_yaml)
+        cmd_sbatch = (
+            f'sbatch -t 96:00:00 -J auto_benchmarking -o {benchmark_dir}/slurm-%j.out --export PYTHONPATH={REPO_DIR} '
+            f'--wrap "{PKG_DIR}/benchmark/pipeline.py --config-path={config_path} --config-name={config_name}"'
+        )
+        print(cmd_sbatch)
         proc = subprocess.run(cmd_sbatch, shell=True, stdout=subprocess.PIPE)
         slurm_job = re.findall(r'\d+', str(proc.stdout))[0]
         slurm_job = int(slurm_job)

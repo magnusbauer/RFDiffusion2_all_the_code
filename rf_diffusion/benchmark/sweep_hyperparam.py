@@ -10,7 +10,9 @@ import pandas as pd
 import hydra
 from hydra.core.hydra_config import HydraConfig
 
-script_dir = os.path.dirname(os.path.realpath(__file__))+'/'
+import rf_diffusion
+PKG_DIR = rf_diffusion.__path__[0]
+
 from icecream import ic 
 from rf_diffusion.benchmark.util import slurm_tools
 import assertpy
@@ -129,16 +131,16 @@ def main(conf: HydraConfig) -> list[int]:
 
     # default design script
     if conf.command is None:
-        conf.command = os.path.abspath(script_dir+'../run_inference.py')
+        conf.command = f'{PKG_DIR}/run_inference.py'
 
     # parse pre-defined benchmarks
     print('This is benchmarks json')
     print(conf.benchmark_json)
     if not conf.benchmark_json.startswith('/'):
-        conf.benchmark_json =script_dir+conf.benchmark_json
+        conf.benchmark_json =f'{PKG_DIR}/benchmark/{conf.benchmark_json}'
     with open(conf.benchmark_json) as f: 
         benchmarks = json.load(f)
-    input_path = script_dir+'input/' # prepend path to input pdbs in current repo
+    input_path = f'{PKG_DIR}/benchmark/input/' # prepend path to input pdbs in current repo
     benchmark_list = []
     if conf.benchmarks is not None:
         if conf.benchmarks == 'all':

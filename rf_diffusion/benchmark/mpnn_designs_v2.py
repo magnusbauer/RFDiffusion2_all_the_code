@@ -13,12 +13,11 @@ from icecream import ic
 import pickle
 import hydra
 from hydra.core.hydra_config import HydraConfig
+from rf_diffusion.benchmark.util import slurm_tools
 
-script_dir = os.path.dirname(os.path.realpath(__file__))
-sys.path.append(os.path.join(script_dir,'util'))
-import slurm_tools
-package_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), '../..')
-mpnn_script = os.path.join(package_dir, 'fused_mpnn/run.py')
+import rf_diffusion
+PKG_DIR = rf_diffusion.__path__[0]
+mpnn_script = os.path.join(PKG_DIR, 'fused_mpnn/run.py')
 
 def memoize_to_disk(file_name):
     file_name = file_name + '.memo'
@@ -120,7 +119,7 @@ def run_mpnn(conf, filenames):
         # run parser script
         job_fn = conf.datadir + f'/jobs.{mpnn_flavor}.parse.list'
         job_list_file = open(job_fn, 'w') if conf.slurm.submit else sys.stdout
-        parse_script = f'{script_dir}/util/parse_multiple_chains_v2.py'
+        parse_script = f'{PKG_DIR}/benchmark/util/parse_multiple_chains_v2.py'
         for i in range(0, len(filenames), conf.chunk):
             with open(mpnn_folder+f'parse_multiple_chains.list.{i}','w') as outf:
                 for fn in filenames[i:i+conf.chunk]:

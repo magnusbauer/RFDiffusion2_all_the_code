@@ -15,6 +15,7 @@ def slurm_submit(cmd, p='cpu', c=1, mem=2, gres=None, J=None, wait_for=[], hold_
         f'-o {log_file} ' \
         f'--export PYTHONPATH={os.environ["PYTHONPATH"]} '
     cmd_sbatch += ' '.join([f'{"--"+k if len(k)>1 else "-"+k} {v}' for k,v in kwargs.items() if v is not None])
+    print(f'{cmd_sbatch=}')
 
     proc = subprocess.run(cmd_sbatch, shell=True, stdout=subprocess.PIPE)
     slurm_job = re.findall(r'\d+', str(proc.stdout))[0]
