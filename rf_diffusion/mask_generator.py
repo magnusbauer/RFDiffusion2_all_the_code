@@ -488,6 +488,10 @@ def atomize_and_diffuse_motif(get_mask):
 
 
 def partially_mask_ligand(get_mask, ligand_mask_low=0.0, ligand_mask_high=1.0):
+    '''
+    Only show a contiguous portion of a ligand.
+    The fraction to mask is sampled from Uniform(ligand_mask_low, ligand_mask_high).
+    '''
     @wraps(get_mask)
     def out_get_mask(indep, atom_mask, *args, **kwargs):
         is_motif, is_atom_motif, *extra_ret = get_mask(indep, atom_mask, *args, **kwargs)

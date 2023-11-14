@@ -217,6 +217,9 @@ def displacement(indep, true_crds, pred_crds, is_diffused, point_types, **kwargs
 
 
 def true_bond_lengths(indep, true_crds, **kwargs):
+    '''
+    Calculates the min, max, and mean bond lengths for each bond type.
+    '''
     out = {}
     for bond_label, bond_type in zip(
             chemical.btype_labels[1:],
@@ -239,6 +242,9 @@ def rotations_input(indep, input_crds, true_crds, is_diffused, **kwargs):
     return rotations(indep, input_crds, true_crds, is_diffused)
 
 def rotations(indep, pred_crds, true_crds, is_diffused, **kwargs):
+    '''
+    Calculates the min, max, and mean angles between predicted/true frames.
+    '''
 
     pred_crds = pred_crds[~indep.is_sm * is_diffused]
     true_crds = true_crds[~indep.is_sm * is_diffused]
