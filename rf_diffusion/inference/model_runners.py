@@ -307,8 +307,9 @@ class Sampler:
         if for_partial_diffusion:
             mappings = self.contig_map.get_mappings()
             # This is due to the fact that when inserting a contig, the non-motif coordinates are reset.
-            if not self._conf.inference.safety.sidechain_partial_diffusion:
-                print("You better know what you're doing")
+            if self._conf.inference.safety.sidechain_partial_diffusion:
+                print("You better know what you're doing when doing partial diffusion with sidechains")
+            else:
                 assert indep.xyz.shape[0] ==  L + torch.sum(indep.is_sm), f"there must be a coordinate in the input PDB for each residue implied by the contig string for partial diffusion.  length of input PDB != length of contig string: {indep.xyz.shape[0]} != {L+torch.sum(indep.is_sm)}"
                 assert torch.all(self.is_diffused[indep.is_sm] == 0), f"all ligand atoms must be in the motif"
             assert (mappings['con_hal_idx0'] == mappings['con_ref_idx0']).all(), 'all positions in the input PDB must correspond to the same index in the output pdb'

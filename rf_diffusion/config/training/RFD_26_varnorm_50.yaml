@@ -1,0 +1,63 @@
+defaults:
+  - RFD_26_recap
+
+metrics:
+- true_bond_lengths
+- displacement_permutations
+- VarianceNormalizedPredTransMSE
+- VarianceNormalizedInputTransMSE
+- rotations
+- rotations_input
+
+ckpt_load_path: /home/ahern/projects/aa_diffusion_data/models/rf2a_25c_414_t1d-114.pt
+
+diffuser:
+  so3:
+    use_cached_score: true
+  time_type: continuous
+  t_distribution: uniform
+
+guidepost_bonds: true
+dataloader:
+  USE_GUIDE_POSTS: false
+  P_IS_GUIDEPOST_EXAMPLE: 0.5
+  DIFF_MASK_PROBS:
+    get_unconditional_diffusion_mask: 0.125
+    get_unconditional_diffusion_mask_free_ligand: 0.125
+    get_unconditional_diffusion_mask_partial_ligand: 0.05
+    get_diffusion_mask_islands: 0.1
+    get_diffusion_mask_islands_partial_ligand: 0.1
+    get_closest_tip_atoms: 0.1
+    get_closest_tip_atoms_partial_ligand: 0.1
+    get_atomized_islands: 0.1
+    get_entirely_atomized: 0.2
+
+scheduler:
+  n_warmup_steps: 1000
+
+preprocess:
+  annotate_termini: true
+
+experiment:
+  normalize_trans_x0: true
+  normalize_trans_x0_max_scaling: 50
+
+extra_t1d:
+  - radius_of_gyration_v2
+  - relative_sasa_v2
+  - sinusoidal_timestep_embedding
+
+extra_t1d_params:
+  sinusoidal_timestep_embedding:
+    embedding_dim: 20
+    max_positions: 10000
+
+rf:
+  model:
+    d_t1d: 114
+
+rundir: /net/scratch/ahern/se3_diffusion/training/rfd_26_varnorm_50
+wandb_prefix: 'rfd_26_varnorm_50'
+
+benchmark:
+  pipeline_yaml: 'training_benchmarks.yaml'

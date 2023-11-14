@@ -5,6 +5,7 @@ import datetime
 from rf_diffusion import master_addr
 import wandb
 import hydra
+from hydra.core.global_hydra import GlobalHydra
 import shutil
 import collections
 import copy
@@ -594,15 +595,17 @@ class Trainer():
             train_tot, train_loss, train_acc = self.train_cycle(ddp_model, train_loader, optimizer, scheduler, scaler, rank, gpu, world_size, epoch)
             if rank == 0: # save model
                 model_path = self.save_model(epoch+1, ddp_model, optimizer, scheduler, scaler)
-                if self.conf.benchmark_checkpoints:
-                    self.benchmark_model(model_path)
+                if self.conf.benchmark:
+                    self.benchmark_model(model_path, self.conf.benchmark)
 
         dist.destroy_process_group()
 
     @staticmethod
-    def benchmark_model(model_path):
+    def benchmark_model(model_path, benchmark_config):
         # Make dir for benchmark results
-        benchmark_dir = f'{model_path.replace(".pt", "")}_benchmark'
+        model_dir, model_tail = os.path.split(model_path)
+        model_name, _ = os.path.splitext(model_tail)
+        benchmark_dir = os.path.join(model_dir, 'auto_benchmark', model_name, 'out')
         os.makedirs(benchmark_dir, exist_ok=True)
 
         # Make overrides
@@ -614,7 +617,7 @@ class Trainer():
         # Dump a yaml file to be used by the pipeline slurm job
         conf = construct_conf(
             overrides=overrides,
-            yaml_path=f'{PKG_DIR}/benchmark/configs/training_benchmarks.yaml',
+            yaml_path=f'{PKG_DIR}/benchmark/configs/{benchmark_config["pipeline_yaml"]}',
         )
         benchmark_yaml = f'{benchmark_dir}/pipeline.yaml'
         OmegaConf.save(conf, benchmark_yaml)
@@ -622,7 +625,7 @@ class Trainer():
         # Submit slurm job to run the pipeline
         config_path, config_name = os.path.split(benchmark_yaml)
         cmd_sbatch = (
-            f'sbatch -t 96:00:00 -J auto_benchmarking -o {benchmark_dir}/slurm-%j.out --export PYTHONPATH={REPO_DIR} '
+            f'sbatch -t 96:00:00 -J autobench_{model_name} -o {benchmark_dir}/slurm-%j.out --export PYTHONPATH={REPO_DIR} '
             f'--wrap "{PKG_DIR}/benchmark/pipeline.py --config-path={config_path} --config-name={config_name}"'
         )
         proc = subprocess.run(cmd_sbatch, shell=True, stdout=subprocess.PIPE)
@@ -1135,6 +1138,10 @@ def format_exception(e: Exception) -> str:
 
 @hydra.main(version_base=None, config_path="config/training", config_name="base")
 def run(conf: DictConfig) -> None:
+
+    # Necessary to compose another contextual config (i.e. benchmarking config).
+    GlobalHydra.instance().clear()
+
     train = make_trainer(conf=conf)
     train.run_model_training(torch.cuda.device_count())
 

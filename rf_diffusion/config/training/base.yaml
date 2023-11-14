@@ -209,4 +209,4 @@ restart_timer: False
 pin_memory: True
 num_workers: 1
 skip_backward: False
-benchmark_checkpoints: True
+benchmark: null
