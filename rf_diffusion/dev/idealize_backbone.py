@@ -36,13 +36,14 @@ def rewrite(path, outpath):
 
     ligands = aa_model.get_ligands(stream)
     indep, metadata = aa_model.make_indep(path, ','.join(ligands), center=False, return_metadata=True)
-    xyz = indep.xyz[~indep.is_sm]
-    idx = indep.idx[~indep.is_sm]
+    is_protein = rf2aa.util.is_protein(indep.seq)
+    xyz = indep.xyz[is_protein]
+    idx = indep.idx[is_protein]
     L = xyz.shape[0]
     ala_seq = torch.zeros((L,))
     xyz = rf2aa.util.idealize_reference_frame(ala_seq[None], xyz[None])[0]
     xyz_ideal = get_o(xyz, idx)
-    indep.xyz[~indep.is_sm, :4] = xyz_ideal
+    indep.xyz[is_protein, :4] = xyz_ideal
     indep.write_pdb(outpath, ligand_name_arr=metadata['ligand_names'])
 
 def get_o(xyz, idx):
