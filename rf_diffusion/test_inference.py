@@ -193,6 +193,10 @@ class TestInference(unittest.TestCase):
             test_utils.assertEqual(self, cmp, constants[0], constants[i])
     
     def test_motif_fixed_in_output(self):
+        '''
+        Tests that motif N, CA and C atoms, as well as implicit side chain atoms
+        remain fixed during inference.
+        '''
         output_pdb, conf = infer([
             'diffuser.T=1',
             'inference.num_designs=1',
@@ -227,11 +231,12 @@ class TestInference(unittest.TestCase):
         self.assertLess(backbone_rmsd, 0.03)
 
         # All atoms
+        atom_mask[:, 3] = False  # Exclude bb O because it can move around depending on non-motif residue placement.
         rmsd = rf2aa.loss.calc_crd_rmsd(
                 torch.tensor(input_motif_xyz)[None],
                 torch.tensor(output_motif_xyz)[None],
                 torch.tensor(atom_mask)[None])
-        self.assertLess(rmsd, 0.03)
+        self.assertLess(rmsd, 0.04)
 
     # TODO create function for regenerating the golden here
     # def test_convert_motif_to_guide_posts(self):

@@ -185,6 +185,33 @@ def sample_one(sampler, simple_logging=False):
 
     return indep, denoised_xyz_stack, px0_xyz_stack, seq_stack, raw
 
+def add_implicit_side_chain_atoms(seq, act_on_residue, xyz, xyz_with_sc):
+    '''
+    Copies the coordinates of side chain atoms (in residues marked "True" 
+    in `act_on_residue`) in `xyz_with_sc` to `xyz`.
+
+    Inputs
+    ------------
+        seq (L,)
+        act_on_residue (L,): Only residues marked True will have side chain atoms added.
+        xyz (..., L, n_atoms, 3)
+        xyz_with_sc (L, n_atoms, 3)
+
+    '''
+    # Shape checks
+    L, n_atoms = xyz_with_sc.shape[:2]
+    assert xyz.shape[-3:] == xyz_with_sc.shape
+    assert len(seq) == L
+    assert len(act_on_residue) == L
+
+    replace_sc_atom = rf2aa.util.allatom_mask[seq][:, :n_atoms]
+    replace_sc_atom[:, :5] = False  # Does not add cb, since that can be calculated from N, CA and C
+    replace_sc_atom[~act_on_residue] = False
+
+    xyz[..., replace_sc_atom, :] = xyz_with_sc[replace_sc_atom]
+
+    return xyz
+
 def deatomize_sampler_outputs(sampler, indep, px0_xyz_stack, denoised_xyz_stack, seq_stack):
     """Converts atomized residues back to residue-as-residue representation in
     the outputs of a single design trajectory.
@@ -237,6 +264,11 @@ def save_outputs(sampler, out_prefix, indep, denoised_xyz_stack, px0_xyz_stack, 
     # replace mask and unknown tokens in the final seq with alanine
     final_seq = torch.where((final_seq == 20) | (final_seq==21), 0, final_seq)
     seq_design = final_seq.clone()
+
+    # Add back any (implicit) side chain atoms
+    denoised_xyz_stack = add_implicit_side_chain_atoms(seq_design, ~sampler.is_diffused, denoised_xyz_stack, sampler.indep_orig.xyz)
+    px0_xyz_stack = add_implicit_side_chain_atoms(seq_design, ~sampler.is_diffused, px0_xyz_stack, sampler.indep_orig.xyz)
+
     xyz_design = px0_xyz_stack[0].clone()
     gp_contig_mappings = {}
     # If using guideposts, infer their placement from the final pX0 prediction.
