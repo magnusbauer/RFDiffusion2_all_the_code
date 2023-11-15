@@ -709,14 +709,10 @@ class NRBStyleSelfCond(Sampler):
                 assert not rfi.xyz[0,:,:3,:].isnan().any(), f'{t}: {rfi.xyz[0,:,:3,:]}'
                 model_out = self.model.forward_from_rfi(rfi, torch.tensor([t/self._conf.diffuser.T]).to(rfi.xyz.device), use_checkpoint=False)
 
-        px0 = all_atom.atom37_from_rigid(Rigid.from_tensor_7(model_out['rigids']))
-
         now = datetime.now()
         current_time = now.strftime("%H:%M:%S")
         # self._log.info(
         #         f'{current_time}: Timestep {t}')
-        
-
 
         rigids_t = du.rigid_frames_from_atom_14(rfi.xyz)
         # ic(self._conf.denoiser.noise_scale, do_self_cond)

@@ -293,10 +293,18 @@ def save_outputs(sampler, out_prefix, indep, denoised_xyz_stack, px0_xyz_stack, 
     os.makedirs(os.path.dirname(traj_prefix), exist_ok=True)
 
     out = f'{traj_prefix}_Xt-1_traj.pdb'
+    denoised_xyz_stack[:, ~indep.is_sm] = idealize_backbone.idealize_bb_atoms(
+        xyz=denoised_xyz_stack[:, ~indep.is_sm],
+        idx=indep.idx[~indep.is_sm]
+    )
     aa_model.write_traj(out, denoised_xyz_stack, final_seq, indep.bond_feats, ligand_name_arr=sampler.contig_map.ligand_names, chain_Ls=chain_Ls, idx_pdb=indep.idx)
     xt_traj_path = os.path.abspath(out)
 
     out=f'{traj_prefix}_pX0_traj.pdb'
+    px0_xyz_stack[:, ~indep.is_sm] = idealize_backbone.idealize_bb_atoms(
+        xyz=px0_xyz_stack[:, ~indep.is_sm],
+        idx=indep.idx[~indep.is_sm]
+    )
     aa_model.write_traj(out, px0_xyz_stack, final_seq, indep.bond_feats, chain_Ls=chain_Ls, ligand_name_arr=sampler.contig_map.ligand_names, idx_pdb=indep.idx)
     x0_traj_path = os.path.abspath(out)
 
