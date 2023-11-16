@@ -178,7 +178,7 @@ def sample_one(sampler, simple_logging=False):
     px0_xyz_stack = torch.flip(px0_xyz_stack, [0,])
     raw = (px0_xyz_stack, denoised_xyz_stack)
 
-    # Add back any (implicit) side chain atoms
+    # Add back any (implicit) side chain atoms from the motif
     denoised_xyz_stack = add_implicit_side_chain_atoms(
         seq=indep.seq,
         act_on_residue=~sampler.is_diffused,
@@ -197,6 +197,17 @@ def sample_one(sampler, simple_logging=False):
     if (sampler.model_adaptor.atomizer is not None):
         indep, px0_xyz_stack, denoised_xyz_stack, seq_stack = \
             deatomize_sampler_outputs(sampler, indep, px0_xyz_stack, denoised_xyz_stack, seq_stack)
+
+    # Idealize protein backbone
+    is_protein = rf2aa.util.is_protein(indep.seq)
+    denoised_xyz_stack[:, is_protein] = idealize_backbone.idealize_bb_atoms(
+        xyz=denoised_xyz_stack[:, is_protein],
+        idx=indep.idx[is_protein]
+    )
+    px0_xyz_stack[:, is_protein] = idealize_backbone.idealize_bb_atoms(
+        xyz=px0_xyz_stack[:, is_protein],
+        idx=indep.idx[is_protein]
+    )
 
     return indep, denoised_xyz_stack, px0_xyz_stack, seq_stack, raw
 
@@ -335,19 +346,10 @@ def save_outputs(sampler, out_prefix, indep, denoised_xyz_stack, px0_xyz_stack, 
     os.makedirs(os.path.dirname(traj_prefix), exist_ok=True)
 
     out = f'{traj_prefix}_Xt-1_traj.pdb'
-    is_protein = rf2aa.util.is_protein(indep.seq)
-    denoised_xyz_stack[:, is_protein] = idealize_backbone.idealize_bb_atoms(
-        xyz=denoised_xyz_stack[:, is_protein],
-        idx=indep.idx[is_protein]
-    )
     aa_model.write_traj(out, denoised_xyz_stack, final_seq, indep.bond_feats, ligand_name_arr=sampler.contig_map.ligand_names, chain_Ls=chain_Ls, idx_pdb=indep.idx)
     xt_traj_path = os.path.abspath(out)
 
     out=f'{traj_prefix}_pX0_traj.pdb'
-    px0_xyz_stack[:, is_protein] = idealize_backbone.idealize_bb_atoms(
-        xyz=px0_xyz_stack[:, is_protein],
-        idx=indep.idx[is_protein]
-    )
     aa_model.write_traj(out, px0_xyz_stack, final_seq, indep.bond_feats, chain_Ls=chain_Ls, ligand_name_arr=sampler.contig_map.ligand_names, idx_pdb=indep.idx)
     x0_traj_path = os.path.abspath(out)
 

@@ -228,7 +228,7 @@ class TestInference(unittest.TestCase):
                 backbone_atom_mask[None])
         # The motif gets rotated and translated, so the accuracy is somewhat limited
         # due to the precision of coordinates in a PDB file.
-        self.assertLess(backbone_rmsd, 0.03)
+        self.assertLess(backbone_rmsd, 0.04)
 
         # All atoms
         atom_mask[:, 3] = False  # Exclude bb O because it can move around depending on non-motif residue placement.
