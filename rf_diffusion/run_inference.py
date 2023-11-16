@@ -176,8 +176,23 @@ def sample_one(sampler, simple_logging=False):
     denoised_xyz_stack = torch.flip(denoised_xyz_stack, [0,])
     px0_xyz_stack = torch.stack(px0_xyz_stack)
     px0_xyz_stack = torch.flip(px0_xyz_stack, [0,])
-
     raw = (px0_xyz_stack, denoised_xyz_stack)
+
+    # Add back any (implicit) side chain atoms
+    denoised_xyz_stack = add_implicit_side_chain_atoms(
+        seq=indep.seq,
+        act_on_residue=~sampler.is_diffused,
+        xyz=denoised_xyz_stack,
+        xyz_with_sc=sampler.indep_orig.xyz[..., :14, :],
+    )
+    px0_xyz_stack_filler = add_implicit_side_chain_atoms(
+        seq=indep.seq,
+        act_on_residue=~sampler.is_diffused,
+        xyz=px0_xyz_stack[..., :36, :],
+        xyz_with_sc=sampler.indep_orig.xyz,
+    )
+    px0_xyz_stack[..., :36, :] = px0_xyz_stack_filler
+
     # deatomize features, if applicable
     if (sampler.model_adaptor.atomizer is not None):
         indep, px0_xyz_stack, denoised_xyz_stack, seq_stack = \
@@ -264,11 +279,6 @@ def save_outputs(sampler, out_prefix, indep, denoised_xyz_stack, px0_xyz_stack, 
     # replace mask and unknown tokens in the final seq with alanine
     final_seq = torch.where((final_seq == 20) | (final_seq==21), 0, final_seq)
     seq_design = final_seq.clone()
-
-    # Add back any (implicit) side chain atoms
-    denoised_xyz_stack = add_implicit_side_chain_atoms(seq_design, ~sampler.is_diffused, denoised_xyz_stack, sampler.indep_orig.xyz)
-    px0_xyz_stack = add_implicit_side_chain_atoms(seq_design, ~sampler.is_diffused, px0_xyz_stack, sampler.indep_orig.xyz)
-
     xyz_design = px0_xyz_stack[0].clone()
     gp_contig_mappings = {}
     # If using guideposts, infer their placement from the final pX0 prediction.
@@ -325,7 +335,7 @@ def save_outputs(sampler, out_prefix, indep, denoised_xyz_stack, px0_xyz_stack, 
     os.makedirs(os.path.dirname(traj_prefix), exist_ok=True)
 
     out = f'{traj_prefix}_Xt-1_traj.pdb'
-    is_protein = rf2aa.util.is_protein[indep.seq]
+    is_protein = rf2aa.util.is_protein(indep.seq)
     denoised_xyz_stack[:, is_protein] = idealize_backbone.idealize_bb_atoms(
         xyz=denoised_xyz_stack[:, is_protein],
         idx=indep.idx[is_protein]
