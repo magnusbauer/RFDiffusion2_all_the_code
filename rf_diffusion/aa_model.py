@@ -759,7 +759,25 @@ class Model:
 
         o.same_chain = same_chain_with_covale(o.same_chain, metadata['covale_bonds'])
 
-        use_guideposts = self.conf.dataloader.USE_GUIDE_POSTS
+        # Check if self.conf.inference.contig_as_guidepost is compatible with how the model was trained
+        guidepost_mismatch = False
+        if 'P_IS_GUIDEPOST_EXAMPLE' in self.conf.dataloader:
+            if abs(self.conf.dataloader.P_IS_GUIDEPOST_EXAMPLE - self.conf.inference.contig_as_guidepost) == 1:
+                guidepost_mismatch = True
+                trained_only_with_guidepost = bool(self.conf.dataloader.P_IS_GUIDEPOST_EXAMPLE)
+        elif 'USE_GUIDE_POSTS' in self.conf.dataloader:
+            if self.conf.dataloader.USE_GUIDE_POSTS != self.conf.inference.contig_as_guidepost:
+                guidepost_mismatch = True
+                trained_only_with_guidepost = self.conf.dataloader.USE_GUIDE_POSTS
+
+        if guidepost_mismatch:
+            raise ValueError(
+                f'The model was only trained {"with" if trained_only_with_guidepost else "without"} guideposts '
+                f'but it is trying to be run {"with" if self.conf.inference.contig_as_guidepost else "without"} guideposts. '
+                f'Please use a different checkpoint or set `inference.contig_as_guidepost={str(trained_only_with_guidepost)}`'              
+            )
+
+        use_guideposts = self.conf.inference.contig_as_guidepost
         pre_transform_length = o.length()
         o, is_diffused, is_seq_masked, self.atomizer, contig_map.gp_to_ptn_idx0 = transform_indep(o, is_res_str_shown, is_atom_str_shown, use_guideposts, 'anywhere', self.conf.guidepost_bonds, metadata=metadata)
         # o.extra_t1d = torch.zeros((o.length(),0))
