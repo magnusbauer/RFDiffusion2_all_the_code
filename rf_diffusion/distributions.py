@@ -38,6 +38,7 @@ class MixtureModel(stats.rv_continuous):
         return rvs
 
 uniform = stats.uniform(loc=0, scale = 1)
+uniform_low = stats.uniform(loc=0, scale = 0.025)
 low_t_heavy = MixtureModel([
                               stats.uniform(loc=0, scale = 0.025),
                               stats.uniform(loc=0, scale = 1)],

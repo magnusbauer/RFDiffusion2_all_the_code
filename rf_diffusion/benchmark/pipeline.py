@@ -42,7 +42,7 @@ def main(conf: HydraConfig) -> None:
 
     global IN_PROC
     IN_PROC = conf.in_proc
-
+    ic(conf.outdir)
 
     if step_in_scope(conf.start_step, conf.stop_step, 'sweep'):
         jobid_sweep = main_sweep(conf.sweep)

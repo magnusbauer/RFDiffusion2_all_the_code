@@ -37,7 +37,7 @@ import copy
 from rf_diffusion import atomize
 from rf_diffusion.dev import idealize_backbone
 from tqdm import trange
-# ic.configureOutput(includeContext=True)
+ic.configureOutput(includeContext=True)
 
 def make_deterministic(seed=0):
     torch.use_deterministic_algorithms(True)

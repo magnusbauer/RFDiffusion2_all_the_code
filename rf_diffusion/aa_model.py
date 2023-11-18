@@ -1491,6 +1491,7 @@ def diffuse(conf, diffuser, indep, is_diffused, t):
         as_tensor_7=False
     )
     diffuser_out['rigids_0'] = rigids_0.to_tensor_7()[None]
+    diffuser_out['rigids_0_raw'] = rigids_0
     xT = all_atom.atom37_from_rigid(diffuser_out['rigids_t'])
     indep.xyz = xT[:,:14]
     return indep, diffuser_out

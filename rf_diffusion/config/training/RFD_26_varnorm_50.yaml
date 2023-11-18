@@ -16,6 +16,7 @@ diffuser:
     use_cached_score: true
   time_type: continuous
   t_distribution: uniform
+  type: diffusion
 
 guidepost_bonds: true
 dataloader:
@@ -41,6 +42,11 @@ preprocess:
 experiment:
   normalize_trans_x0: true
   normalize_trans_x0_max_scaling: 50
+  # FM losses
+  fm_translation_loss_weight: 0
+  fm_rotation_loss_weight: 0
+  fm_bb_atom: 0
+  fm_dist_mat: 0
 
 extra_t1d:
   - radius_of_gyration_v2
@@ -61,3 +67,5 @@ wandb_prefix: 'rfd_26_varnorm_50'
 
 benchmark:
   pipeline_yaml: 'training_benchmarks.yaml'
+
+fm: null

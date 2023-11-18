@@ -37,6 +37,7 @@ from rf_se3_diffusion.rf_score.model import RFScore
 from rf_se3_diffusion.data import se3_diffuser
 from rf_diffusion import features
 import os
+import noisers
 
 import sys
 
@@ -91,7 +92,7 @@ class Sampler:
         self._conf = OmegaConf.merge(
             weights_conf, self._conf)
 
-        self.diffuser = se3_diffuser.SE3Diffuser(self._conf.diffuser)
+        self.diffuser = noisers.get(self._conf.diffuser)
         self.model = RFScore(self._conf.rf.model, self.diffuser, self.device)
         
         ema = 'unknown'
@@ -725,6 +726,7 @@ class NRBStyleSelfCond(Sampler):
             dt=1/self._conf.diffuser.T,
             center=self._conf.denoiser.center,
             noise_scale=self._conf.denoiser.noise_scale,
+            rigid_pred=model_out['rigids_raw'][:,-1]
         )
         x_t_1 = all_atom.atom37_from_rigid(rigids_t)
         x_t_1 = x_t_1[0,:,:14]
