@@ -1,0 +1,11 @@
+defaults:
+  - fm_unconditional_prot
+
+rundir: /net/scratch/ahern/se3_diffusion/training/fm_unconditional_prot_noaux
+wandb_prefix: 'fm_unconditional_prot_noaux'
+
+experiment:
+  # FM losses
+  fm_bb_atom: 0
+  fm_dist_mat: 0
+

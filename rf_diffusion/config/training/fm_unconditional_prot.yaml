@@ -1,0 +1,84 @@
+defaults:
+  - RFD_26_varnorm_50
+
+# guidepost_bonds: true
+dataloader:
+  # USE_GUIDE_POSTS: false
+  # P_IS_GUIDEPOST_EXAMPLE: 0.5
+  DIFF_MASK_PROBS:
+    get_unconditional_diffusion_mask: 1.0
+    get_unconditional_diffusion_mask_free_ligand: 0
+    get_unconditional_diffusion_mask_partial_ligand: 0
+    get_diffusion_mask_islands: 0
+    get_diffusion_mask_islands_partial_ligand: 0
+    get_closest_tip_atoms: 0
+    get_closest_tip_atoms_partial_ligand: 0
+    get_atomized_islands: 0
+    get_entirely_atomized: 0
+
+  DATASETS: pdb_aa
+  DATASET_PROB:
+    - 1.0
+# experiment:
+#   normalize_trans_x0: true
+#   normalize_trans_x0_max_scaling: 50
+
+
+rundir: /net/scratch/ahern/se3_diffusion/training/fm_unconditional_prot
+wandb_prefix: 'fm_unconditional_prot'
+
+# benchmark:
+#   pipeline_yaml: 'unconditional_prot.yaml'
+
+diffuser:
+  type: flow_matching
+  min_t: 1e-2
+  rots:
+    train_schedule: linear
+    sample_schedule: exp
+    exp_rate: 10
+  trans:
+    train_schedule: linear
+    sample_schedule: linear
+  sampling:
+    num_timesteps: 100
+  r3:
+    coordinate_scaling: 0.1
+  # TODO: make continuous with bookends i.e. [0, 0.999]
+  time_type: continuous
+  t_distribution: uniform
+  # Vestigial
+  T: 200
+  # self_condition: ${model.edge_features.self_condition}
+
+fm:
+  t_normalize_clip: 0.9
+  # Redundant with diffuser.r3.coordinate_scaling here
+  # and with experiment.bb_atom_scale in frame-flow
+  trans_scale: 0.1
+
+experiment:
+  # Defaults from RFD_26
+  trans_loss_weight: 0
+  rot_loss_weight: 0
+  trans_x0_threshold: 0
+  bb_atom_loss_weight: 0
+  dist_mat_loss_weight: 0
+  # bb_atom_loss_weight: 1.0
+  # bb_atom_loss_t_filter: 0.75 # CHANGED FROM 0.25 in accordance with frame-flow
+  # dist_mat_loss_weight: 1.0
+  # dist_mat_loss_t_filter: 0.75 # CHANGED FROM 0.25 in accordance with frame-flow
+  aux_loss_weight: 0
+  c6d_loss_weight: 0.0
+
+  # FM losses
+  fm_translation_loss_weight: 2.0
+  fm_rotation_loss_weight: 1.0
+  fm_bb_atom: 1.0
+  fm_dist_mat: 1.0
+  aux_loss_ti_pass: 0.25
+
+scheduler:
+  n_warmup_steps: 500
+
+benchmark: null

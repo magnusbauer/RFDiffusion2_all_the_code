@@ -1,0 +1,43 @@
+defaults:
+  - fm_unconditional_prot_noaux
+
+rundir: /net/scratch/ahern/se3_diffusion/training/fm
+wandb_prefix: 'fm'
+
+experiment:
+  # FM losses
+  fm_bb_atom: 0
+  fm_dist_mat: 0
+
+guidepost_bonds: true
+dataloader:
+  USE_GUIDE_POSTS: false
+  P_IS_GUIDEPOST_EXAMPLE: 0.5
+  DATAPKL_AA: aa_dataset_256.pkl
+  DATASETS: pdb_aa,compl,sm_complex,sm_compl_covale,metal_compl,sm_compl_asmb,sm_compl_multi
+  DATASET_PROB:
+  - 0.4
+  - 0.2
+  - 0.15
+  - 0.1
+  - 0.05
+  - 0.05
+  - 0.05
+  DIFF_MASK_PROBS:
+    get_unconditional_diffusion_mask: 0.125
+    get_unconditional_diffusion_mask_free_ligand: 0.125
+    get_unconditional_diffusion_mask_partial_ligand: 0.05
+    get_diffusion_mask_islands: 0.1
+    get_diffusion_mask_islands_partial_ligand: 0.1
+    get_closest_tip_atoms: 0.1
+    get_closest_tip_atoms_partial_ligand: 0.1
+    get_atomized_islands: 0.1
+    get_entirely_atomized: 0.2
+
+
+# TODO: make continuous with bookends i.e. [0, 0.999]
+diffuser:
+  t_distribution: uniform_t999
+
+benchmark:
+  pipeline_yaml: 'training_benchmarks.yaml'
