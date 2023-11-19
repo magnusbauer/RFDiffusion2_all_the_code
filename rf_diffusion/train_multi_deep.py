@@ -220,6 +220,7 @@ class Trainer():
         # Dictionary for keeping track of losses 
         loss_dict = {}
         if self.conf.fm:
+            loss_mask = is_diffused.clone()
             # Invert the 0 -> ground truth to 0 -> pure noise convention for fm
             ti = 1 - t
             rigids_1 = diffuser_out['rigids_0_raw']
@@ -249,11 +250,13 @@ class Trainer():
             loss_dict['fm_translation'] = trans_loss
 
             # Rotation VF loss
+            rot_loss_mask = loss_mask * ~is_sm
+            rot_loss_denom = torch.sum(rot_loss_mask, dim=-1) * 3
             rots_vf_error = (gt_rot_vf - pred_rots_vf) / norm_scale
             rots_vf_loss = torch.sum(
-                rots_vf_error ** 2 * loss_mask[..., None],
+                rots_vf_error ** 2 * rot_loss_mask[..., None],
                 dim=(-1, -2)
-            ) / loss_denom
+            ) / rot_loss_denom
             loss_dict['fm_rotation'] = rots_vf_loss
 
             # ------------------ Auxiliary losses ------------------ #

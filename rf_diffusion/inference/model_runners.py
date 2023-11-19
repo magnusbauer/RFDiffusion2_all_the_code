@@ -37,7 +37,7 @@ from rf_se3_diffusion.rf_score.model import RFScore
 from rf_se3_diffusion.data import se3_diffuser
 from rf_diffusion import features
 import os
-import noisers
+from rf_diffusion import noisers
 
 import sys
 

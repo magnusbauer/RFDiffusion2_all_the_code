@@ -1,8 +1,8 @@
 import torch
+import copy
 from icecream import ic
 
-# from openfold.utils import rigid_utils as ru
-from se3_flow_matching.openfold.utils import rigid_utils as ru
+from openfold.utils import rigid_utils as ru
 
 from rf_se3_diffusion.data import se3_diffuser
 from se3_flow_matching.data import interpolant
@@ -32,10 +32,16 @@ class NormalizingFlow(interpolant.Interpolant):
     
 
     def forward(self, rigids_1, t):
+        '''
+        Parameters:
+            rigids_1: Rigid [L]
+            t: float in [0, 1]
+            is_diffused: bool [L]
+        Returns:
+            rigids_t: Rigid [L]
+        '''
         assert t.ndim == 0, t
         t = t[None, None]
-        # self.set_device(t.device)
-        # self.set_device(t.device)
         trans_1 = rigids_1.get_trans()[None]
         B, N, _ = trans_1.shape
         res_mask = torch.ones((B, N))
@@ -59,10 +65,16 @@ class NormalizingFlow(interpolant.Interpolant):
             self,
             rigids_0,
             t,
+            diffuse_mask,
             **kwargs,
     ):
+        is_diffused = diffuse_mask.bool()
+        assert isinstance(rigids_0, ru.Rigid)
         ti = torch.tensor(1 - t, dtype=torch.float32)
-        rigids_t = self.forward(rigids_0, ti)
+        rigids_t = copy.deepcopy(rigids_0)
+        rigids_t_diffused = self.forward(rigids_0[is_diffused], ti)
+        rigids_t_diffused = ru.Rigid(trans=rigids_t_diffused.get_trans(), rots=rigids_t_diffused.get_rots())
+        rigids_t[is_diffused] = rigids_t_diffused
         L, _ = rigids_0.get_trans().shape
         # May need to re-insert batch dimension?
         return {
@@ -84,6 +96,26 @@ class NormalizingFlow(interpolant.Interpolant):
         return torch.zeros_like(trans_0)
     
     def reverse(
+            self,
+            rigid_t,
+            rigid_pred,
+            t,
+            dt,
+            diffuse_mask,
+            **kwargs
+    ):
+        is_diffused = torch.tensor(diffuse_mask[0]).bool() # [L]
+        rigid_t_2_diffused = self.reverse_all(
+            rigid_t[:, is_diffused],
+            rigid_pred[:, is_diffused],
+            t,
+            dt,
+        )
+        rigid_t_2 = copy.deepcopy(rigid_t)
+        rigid_t_2[:, is_diffused] = rigid_t_2_diffused
+        return rigid_t_2
+    
+    def reverse_all(
             self,
             rigid_t,
             rigid_pred,

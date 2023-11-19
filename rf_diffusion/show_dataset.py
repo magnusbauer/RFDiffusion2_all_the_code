@@ -130,40 +130,49 @@ def run(conf: DictConfig) -> None:
             ic(epoch, i)
             counter += 1
             indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context = loader_out
+            # # For testing deatomization
+            # if atomizer:
+            #     _ = atomize.deatomize(atomizer, indep)
             item_context = eval(item_context)
             chosen_dataset, index = item_context['chosen_dataset'], item_context['index']
-            bonds = indep.metadata['covale_bonds']
-            # ic(torch.nonzero(indep.bond_feats == 6))
-            # ic(torch.nonzero(indep.bond_feats == 7))
-            name = f'dataset-{chosen_dataset}_mask-{masks_1d["mask_name"]}_gp-{masks_1d["use_guideposts"]}_bonds_{len(bonds)}_{show.get_counter()}'
-            print(name)
-            if conf.show_dataset.show_diffused:
-                show.color_diffused(indep, is_diffused, name=name)
-            if conf.show_dataset.show:
-                _, pymol_1d = show.one(indep, None, name=name)
-                show.cmd.do(f'util.cbc {name}')
-                show.cmd.color('orange', f'{name} and hetatm and elem C')
+            for xyz_label, xyz in [
+                    ('true', indep.xyz),
+                    ('input', rfi.xyz[0,:,:14])
+            ]:
+                indep.xyz = xyz
+                bonds = indep.metadata['covale_bonds']
+                # ic(torch.nonzero(indep.bond_feats == 6))
+                # ic(torch.nonzero(indep.bond_feats == 7))
+                name = f'{xyz_label}_dataset-{chosen_dataset}_mask-{masks_1d["mask_name"]}_gp-{masks_1d["use_guideposts"]}_bonds_{len(bonds)}_{show.get_counter()}'
+                print(name)
+                if conf.show_dataset.show_diffused:
+                    show.color_diffused(indep, is_diffused, name=name)
+                if conf.show_dataset.show:
+                    _, pymol_1d = show.one(indep, None, name=name)
+                    show.cmd.do(f'util.cbc {name}')
+                    show.cmd.color('orange', f'{name} and hetatm and elem C')
 
-                point_types = aa_model.get_point_types(indep, atomizer)
-                mask_by_name = {}
-                for point_category, point_mask in {
-                    'residue': point_types == aa_model.POINT_RESIDUE,
-                    'atomized': np.isin(point_types, [aa_model.POINT_ATOMIZED_BACKBONE, aa_model.POINT_ATOMIZED_SIDECHAIN]),
-                    'ligand': point_types == aa_model.POINT_LIGAND,
-                }.items():
-                    for diffused_category, diffused_mask in {
-                        'diffused': is_diffused,
-                        'motif': ~is_diffused,
+                    point_types = aa_model.get_point_types(indep, atomizer)
+                    mask_by_name = {}
+                    for point_category, point_mask in {
+                        'residue': point_types == aa_model.POINT_RESIDUE,
+                        'atomized': np.isin(point_types, [aa_model.POINT_ATOMIZED_BACKBONE, aa_model.POINT_ATOMIZED_SIDECHAIN]),
+                        'ligand': point_types == aa_model.POINT_LIGAND,
                     }.items():
-                        mask_by_name[f'{point_category}_{diffused_category}'] = torch.tensor(point_mask)*diffused_mask
+                        for diffused_category, diffused_mask in {
+                            'diffused': is_diffused,
+                            'motif': ~is_diffused,
+                        }.items():
+                            mask_by_name[f'{point_category}_{diffused_category}'] = torch.tensor(point_mask)*diffused_mask
 
-                selectors = {}
-                for mask_name, mask in mask_by_name.items():
-                    selectors[mask_name] = AND(name, OR('id 99999', *pymol_1d[mask]))
-                palette = rf_diffusion.dev.show_tip_row.color_selectors(selectors, palette_name='Paired', palette_n_colors=12)
+                    if conf.show_dataset.show_only_backbone:
+                        show.show_backbone_spheres(f'{name} and not hetatm')
 
-            if atomizer:
-                _ = atomize.deatomize(atomizer, indep)
+                    selectors = {}
+                    for mask_name, mask in mask_by_name.items():
+                        selectors[mask_name] = AND(name, OR('id 99999', *pymol_1d[mask]))
+                    palette = rf_diffusion.dev.show_tip_row.color_selectors(selectors, palette_name='Paired', palette_n_colors=12)
+
 
             if conf.show_dataset.n == counter+1:
                 break
@@ -196,7 +205,7 @@ def run(conf: DictConfig) -> None:
     if conf.show_dataset.show:
         pseudoatoms = label_selectors(selectors, palette)
         for pseudoatom_name in pseudoatoms:
-            cmd.set('grid_slot', counter+2, pseudoatom_name)
+            cmd.set('grid_slot', show.counter+1, pseudoatom_name)
 
 
 if __name__ == "__main__":
