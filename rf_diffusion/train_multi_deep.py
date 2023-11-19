@@ -239,7 +239,7 @@ class Trainer():
             gt_rot_vf = so3_utils.calc_rot_vf(
                 rotmats_t, gt_rotmats_1.type(torch.float32))
 
-            loss_denom = torch.sum(loss_mask, dim=-1) * 3
+            loss_denom = torch.sum(loss_mask, dim=-1) * 3 + eps
 
             # Translation VF loss
             trans_error = (gt_trans_1 - pred_trans_1) / norm_scale * self.conf.fm.trans_scale
@@ -251,7 +251,7 @@ class Trainer():
 
             # Rotation VF loss
             rot_loss_mask = loss_mask * ~is_sm
-            rot_loss_denom = torch.sum(rot_loss_mask, dim=-1) * 3
+            rot_loss_denom = torch.sum(rot_loss_mask, dim=-1) * 3 + eps
             rots_vf_error = (gt_rot_vf - pred_rots_vf) / norm_scale
             rots_vf_loss = torch.sum(
                 rots_vf_error ** 2 * rot_loss_mask[..., None],
