@@ -5,7 +5,7 @@
 import os
 import sys
 import glob
-from util.slurm_tools import array_submit
+from rf_diffusion.benchmark.util.slurm_tools import array_submit
 import hydra
 from hydra.core.hydra_config import HydraConfig
 

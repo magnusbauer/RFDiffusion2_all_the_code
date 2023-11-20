@@ -7,8 +7,8 @@ import re
 import glob
 from icecream import ic
 
-import util
-from util.slurm_tools import array_submit
+# from rf_diffusion.benchmark import util
+from rf_diffusion.benchmark.util.slurm_tools import array_submit
 import hydra
 from hydra.core.hydra_config import HydraConfig
 

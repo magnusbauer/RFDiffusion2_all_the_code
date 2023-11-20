@@ -9,13 +9,13 @@ import copy
 from icecream import ic
 import hydra
 from hydra.core.hydra_config import HydraConfig
-from sweep_hyperparam import main as main_sweep
-from cluster_pipeline_outputs import main as main_cluster
-from chunkify_foldseek_pdb import main as main_foldseek
-import mpnn_designs
-import mpnn_designs_v2
-from score_designs import main as main_score
-import add_metrics
+from rf_diffusion.benchmark.sweep_hyperparam import main as main_sweep
+from rf_diffusion.benchmark.cluster_pipeline_outputs import main as main_cluster
+from rf_diffusion.benchmark.chunkify_foldseek_pdb import main as main_foldseek
+from rf_diffusion.benchmark import mpnn_designs
+from rf_diffusion.benchmark import mpnn_designs_v2
+from rf_diffusion.benchmark.score_designs import main as main_score
+from rf_diffusion.benchmark import add_metrics
 script_dir = os.path.dirname(os.path.realpath(__file__))+'/'
 IN_PROC = False
     
