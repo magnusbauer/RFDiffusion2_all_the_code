@@ -125,7 +125,6 @@ class TestRegression(unittest.TestCase):
             'inference.contig_as_guidepost=True',
             "contigmap.contigs=['20,A62-68,A88-92']",
             'contigmap.length=null',
-            'inference.guidepost_xyz_as_design=True'
         ])
 
         pdb_contents = inference.utils.parse_pdb(pdb)
@@ -145,6 +144,7 @@ class TestInference(unittest.TestCase):
             f'diffuser.T={T}',
             'inference.num_designs=1',
             'inference.output_prefix=tmp/test_1',
+            'inference.contig_as_guidepost=False',
         ])
 
         func_sig = signature(RoseTTAFoldModule.forward)
@@ -170,6 +170,7 @@ class TestInference(unittest.TestCase):
         
         is_motif = 1
         def constant(mapped_call):
+            ic(mapped_call['xyz'].shape)
             c = {}
             c['xyz'] = mapped_call['xyz'][0,is_motif]
             is_sidechain_torsion = torch.ones(3*rf2aa.chemical.NTOTALDOFS).bool()

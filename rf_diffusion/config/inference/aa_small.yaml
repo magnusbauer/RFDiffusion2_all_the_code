@@ -5,8 +5,12 @@ inference:
   output_prefix: debug/aa_small
   model_runner: NRBStyleSelfCond
   input_pdb: 'benchmark/input/gaa.pdb'
+  guidepost_xyz_as_design: True
+  guidepost_xyz_as_design_bb: [True]
 
 contigmap:
   contigs: ['1,A518-518,1']
   length: 3-3
 
+diffuser:
+  type: diffusion
