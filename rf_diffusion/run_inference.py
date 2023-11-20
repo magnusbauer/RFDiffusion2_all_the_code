@@ -293,7 +293,7 @@ def save_outputs(sampler, out_prefix, indep, denoised_xyz_stack, px0_xyz_stack, 
     xyz_design = px0_xyz_stack[0].clone()
     gp_contig_mappings = {}
     # If using guideposts, infer their placement from the final pX0 prediction.
-    if sampler._conf.dataloader.USE_GUIDE_POSTS:
+    if sampler._conf.inference.contig_as_guidepost:
         gp_to_contig_idx0 = sampler.contig_map.gp_to_ptn_idx0  # map from gp_idx0 to the ptn_idx0 in the contig string.
         is_gp = torch.zeros_like(indep.seq, dtype=bool)
         is_gp[list(gp_to_contig_idx0.keys())] = True
@@ -374,7 +374,7 @@ def save_outputs(sampler, out_prefix, indep, denoised_xyz_stack, px0_xyz_stack, 
     if sampler.model_adaptor.atomizer:
         motif_deatomized = atomize.convert_atomized_mask(sampler.model_adaptor.atomizer, ~sampler.is_diffused)
         trb['motif'] = motif_deatomized
-    if sampler._conf.dataloader.USE_GUIDE_POSTS:
+    if sampler._conf.inference.contig_as_guidepost:
         # Store the literal location of the guide post residues
         for k in ['con_hal_pdb_idx', 'con_hal_idx0', 'sampled_mask']:
             trb[k+'_literal'] = copy.deepcopy(trb[k])
