@@ -70,6 +70,7 @@ class TestAtomization(unittest.TestCase):
                 self.fail(f'{contig_kwargs=} {atomize_indices=} {diff=}')
             
             # For visual inspection
+            os.makedirs('tmp', exist_ok=True)
             indep_deatomized.write_pdb(f'tmp/test_deatomized.pdb')
 
 def cmp_pretty(got, want, **kwargs):
