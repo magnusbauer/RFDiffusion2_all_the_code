@@ -730,6 +730,8 @@ class NRBStyleSelfCond(Sampler):
         )
         x_t_1 = all_atom.atom37_from_rigid(rigids_t)
         x_t_1 = x_t_1[0,:,:14]
+        # Replace the xyzs of the motif
+        x_t_1[~self.is_diffused.bool(), :14] = indep.xyz[~self.is_diffused.bool(), :14]
         seq_t_1 = seq_t
         tors_t_1 = torch.ones((self.is_diffused.shape[-1], 10, 2))
 

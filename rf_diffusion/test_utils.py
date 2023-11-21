@@ -7,6 +7,7 @@ import subprocess
 from pathlib import Path
 import yaml
 import unittest
+import dataclasses
 import pickle
 import hydra
 from hydra import compose, initialize
@@ -28,6 +29,8 @@ import tree
 import numpy as np
 import rf2aa.chemical
 from rf_diffusion.data_loader import no_batch_collate_fn
+import rf_diffusion
+from rf_diffusion import aa_model
 
 golden_dir = 'goldens'
 
@@ -64,6 +67,14 @@ def assert_matches_golden(t, name, got, rewrite=False, processor_specific=False,
         raise Exception(f'golden at {p} does not exist, please generate it')
     # want = p.read_text()
     want = read(p)
+    ic(
+        type(want),
+        type(got),
+    )
+    if isinstance(got, rf_diffusion.aa_model.Indep):
+        # Remove metadata
+        want = aa_model.Indep(**dataclasses.asdict(want))
+        got = aa_model.Indep(**dataclasses.asdict(got))
     if custom_comparator:
         diff = custom_comparator(got, want)
         if not diff:

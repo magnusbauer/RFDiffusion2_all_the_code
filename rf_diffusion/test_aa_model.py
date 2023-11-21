@@ -254,7 +254,9 @@ class AAModelTestCase(unittest.TestCase):
         noncovale = 'benchmark/input/3l0f.pdb'
         ligand_name = 'CYC'
 
-        conf = test_utils.construct_conf(inference=True) 
+        conf = test_utils.construct_conf(inference=True)
+        conf.inference.contig_as_guidepost=True
+        conf.dataloader.P_IS_GUIDEPOST_EXAMPLE=0.5
         adaptor = aa_model.Model(conf)
         d = defaultdict(dict)
         for name, input_pdb in [

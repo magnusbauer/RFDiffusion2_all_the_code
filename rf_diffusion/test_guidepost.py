@@ -37,9 +37,13 @@ class TestGuidepost(unittest.TestCase):
             contig_map =  contigs.ContigMap(target_feats,
                                         **contig_kwargs
                                         )
-            indep = make_indep(test_pdb, ligand)
-            adaptor = Model({})
-            indep, _, _ = adaptor.insert_contig(indep, contig_map)
+            indep, metadata = make_indep(test_pdb, ligand, return_metadata=True)
+            conf = test_utils.construct_conf_single(
+                    inference=True,
+                    config_name='base_training_base_inference',
+                    overrides=['inference.contig_as_guidepost=False'])
+            adaptor = Model(conf)
+            indep, _, _ = adaptor.insert_contig(indep, contig_map, metadata=metadata)
             ic(indep.chirals.shape)
             indep.xyz = atomize.set_nonexistant_atoms_to_nan(indep.xyz, indep.seq)
             indep_init = copy.deepcopy(indep)

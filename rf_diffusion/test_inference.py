@@ -67,6 +67,7 @@ class TestRegression(unittest.TestCase):
             'diffuser.T=1',
             'inference.num_designs=1',
             'inference.output_prefix=tmp/test_0',
+            'inference.contig_as_guidepost=True',
         ])
 
         func_sig = signature(RoseTTAFoldModule.forward)
@@ -170,8 +171,9 @@ class TestInference(unittest.TestCase):
         
         is_motif = 1
         def constant(mapped_call):
-            ic(mapped_call['xyz'].shape)
             c = {}
+            # Technically only the first 3 indices are used by the network, but helpful to check to understand
+            # inconsistencies in the alpha tensor computed from these coordinates.
             c['xyz'] = mapped_call['xyz'][0,is_motif]
             is_sidechain_torsion = torch.ones(3*rf2aa.chemical.NTOTALDOFS).bool()
             is_sidechain_torsion[0:2] = False

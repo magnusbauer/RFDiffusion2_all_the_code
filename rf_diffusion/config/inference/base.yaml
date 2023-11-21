@@ -60,6 +60,7 @@ inference:
     # Indicates that a user is carefully performing sidechain partial diffusion.
     # We require this to be set, as unless a user is careful this causes undefined behavior.
     sidechain_partial_diffusion: False
+  flexible_ligand: False
 
 contigmap:
   contigs: ['20', 'A3-23', '30']

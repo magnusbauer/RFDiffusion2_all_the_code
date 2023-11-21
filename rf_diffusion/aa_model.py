@@ -665,6 +665,38 @@ def add_fake_frame_legs(xyz, is_atom):
     xyz[is_atom, 2] += torch.normal(torch.zeros_like(xyz[is_atom, 2]), std=1.0)
     return xyz
 
+def conf_supports_guideposts(conf):
+    supports_guideposts = False
+    supports_no_guideposts = True
+    ic(conf.dataloader.P_IS_GUIDEPOST_EXAMPLE)
+    if 'P_IS_GUIDEPOST_EXAMPLE' in conf.dataloader:
+        if conf.dataloader.P_IS_GUIDEPOST_EXAMPLE > 0:
+            supports_guideposts = True
+        if conf.dataloader.P_IS_GUIDEPOST_EXAMPLE < 1:
+            supports_guideposts = True
+    elif 'USE_GUIDE_POSTS' in conf.dataloader:
+        supports_guideposts = conf.dataloader.USE_GUIDE_POSTS
+        supports_no_guideposts = not conf.dataloader.USE_GUIDE_POSTS
+    return supports_guideposts, supports_no_guideposts
+
+def validate_guideposting_strategy(conf):
+    supports_guideposts, supports_no_guideposts = conf_supports_guideposts(conf)
+    ic(supports_guideposts, supports_no_guideposts)
+    if conf.inference.contig_as_guidepost:
+        guidepost_mismatch = not supports_guideposts
+    else:
+        guidepost_mismatch = supports_no_guideposts
+
+    is_valid = (conf.inference.contig_as_guidepost and supports_guideposts or 
+                not conf.inference.contig_as_guidepost and supports_no_guideposts)
+
+    if not is_valid:
+        raise ValueError(
+            f'The model was only trained {"with" if not conf.inference.contig_as_guidepost else "without"} guideposts '
+            f'but it is trying to be run {"with" if conf.inference.contig_as_guidepost else "without"} guideposts. '
+            f'Please use a different checkpoint or set `inference.contig_as_guidepost={not conf.inference.contig_as_guidepost}`'
+        )
+
 class Model:
 
     def __init__(self, conf):
@@ -746,6 +778,8 @@ class Model:
 
         is_diffused_prot = ~torch.from_numpy(contig_map.inpaint_str)
         is_diffused_sm = torch.zeros(n_sm).bool()
+        if self.conf.inference.flexible_ligand:
+            is_diffused_sm = torch.ones(n_sm).bool()
         is_diffused = torch.cat((is_diffused_prot, is_diffused_sm))
         is_atom_str_shown = contig_map.atomize_indices2atomname
         # The motifs for atomization are double-counted.
@@ -760,26 +794,10 @@ class Model:
         o.same_chain = same_chain_with_covale(o.same_chain, metadata['covale_bonds'])
 
         # Check if self.conf.inference.contig_as_guidepost is compatible with how the model was trained
-        guidepost_mismatch = False
-        if 'P_IS_GUIDEPOST_EXAMPLE' in self.conf.dataloader:
-            if abs(self.conf.dataloader.P_IS_GUIDEPOST_EXAMPLE - self.conf.inference.contig_as_guidepost) == 1:
-                guidepost_mismatch = True
-                trained_only_with_guidepost = bool(self.conf.dataloader.P_IS_GUIDEPOST_EXAMPLE)
-        elif 'USE_GUIDE_POSTS' in self.conf.dataloader:
-            if self.conf.dataloader.USE_GUIDE_POSTS != self.conf.inference.contig_as_guidepost:
-                guidepost_mismatch = True
-                trained_only_with_guidepost = self.conf.dataloader.USE_GUIDE_POSTS
+        validate_guideposting_strategy(self.conf)
 
-        if guidepost_mismatch:
-            raise ValueError(
-                f'The model was only trained {"with" if trained_only_with_guidepost else "without"} guideposts '
-                f'but it is trying to be run {"with" if self.conf.inference.contig_as_guidepost else "without"} guideposts. '
-                f'Please use a different checkpoint or set `inference.contig_as_guidepost={str(trained_only_with_guidepost)}`'              
-            )
-
-        use_guideposts = self.conf.inference.contig_as_guidepost
         pre_transform_length = o.length()
-        o, is_diffused, is_seq_masked, self.atomizer, contig_map.gp_to_ptn_idx0 = transform_indep(o, is_res_str_shown, is_atom_str_shown, use_guideposts, 'anywhere', self.conf.guidepost_bonds, metadata=metadata)
+        o, is_diffused, is_seq_masked, self.atomizer, contig_map.gp_to_ptn_idx0 = transform_indep(o, is_res_str_shown, is_atom_str_shown, self.conf.inference.contig_as_guidepost, 'anywhere', self.conf.guidepost_bonds, metadata=metadata)
         # o.extra_t1d = torch.zeros((o.length(),0))
         # HACK: gp indices may be lost during atomization, so we assume they are at the end of the protein.
         is_gp = torch.full((o.length(),), True)
@@ -2033,6 +2051,7 @@ def transform_indep(indep, is_res_str_shown, is_atom_str_shown, use_guideposts, 
     atom_names_by_res = OrderedDict()
     for a, _, _ in metadata['covale_bonds']:
         res_i, atom_name = a
+        res_i = int(res_i)
         if res_i not in atom_names_by_res:
             atom_names_by_res[res_i] = []
         atom_names_by_res[res_i].append(atom_name)

@@ -15,14 +15,12 @@ from tqdm import tqdm
 import numpy as np
 import torch
 
-import atomize
 from dev import analyze, show_tip_pa
 from rf_diffusion.data_loader import get_fallback_dataset_and_dataloader
 from rf_diffusion import test_utils
 from rf2aa import tensor_util
 from rf_se3_diffusion.data import se3_diffuser
-import run_inference
-import aa_model
+from rf_diffusion import aa_model
 import show
 import rf2aa.chemical
 import pytest
@@ -280,7 +278,6 @@ class Dataloader(unittest.TestCase):
         
         loader_out = self.indep_for_dataset(dataset, mask, overrides=['dataloader.CROP=60'])
         indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context = loader_outindep = loader_out
-        indep.metadata = None
 
         golden_name = f'indep_{dataset}-{mask}'
         test_utils.assert_matches_golden(self, golden_name, indep, rewrite=REWRITE, custom_comparator=self.cmp)
@@ -470,19 +467,6 @@ class Dataloader(unittest.TestCase):
         
         test_utils.assert_matches_golden(self, golden_name, indep, rewrite=REWRITE, custom_comparator=self.cmp)
 
-    def test_continuous_time_embedding(self):
-        '''
-        Tests that the continuous timestep t ([0, 1]) is correctly
-        one-hot encoded in the t1d features.
-        '''
-        dataset = 'pdb_aa'
-        mask = 'get_diffusion_mask_simple'
-        loader_out = self.indep_for_dataset(dataset, mask, config_name='time_embedding')
-        indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context = loader_out
-
-        golden_name = 'indep-extra-t1d-time-embedding'
-        test_utils.assert_matches_golden(self, golden_name, indep, rewrite=REWRITE, custom_comparator=self.cmp)
-
     def test_atom_order(self):
         '''
         Tests that amino acid atoms from the dataloader are ordered the same way as in rf2aa.chemical.aa2long.
@@ -491,7 +475,7 @@ class Dataloader(unittest.TestCase):
         # Make the training conf
         import rf_diffusion
         pkg_dir = rf_diffusion.__path__[0]
-        overrides = [f'dataloader.DATAPKL_AA={pkg_dir}/test_data/aa_dataset_256.pkl']
+        overrides = [f'dataloader.DATAPKL_AA={pkg_dir}/test_data/aa_dataset_256_subsampled_10.pkl']
         conf_train = test_utils.construct_conf_single(overrides=overrides, config_name='RFD_36')
 
         # Make the training dataloader

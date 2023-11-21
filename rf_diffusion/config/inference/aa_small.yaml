@@ -8,6 +8,9 @@ inference:
   guidepost_xyz_as_design: True
   guidepost_xyz_as_design_bb: [True]
 
+dataloader:
+  P_IS_GUIDEPOST_EXAMPLE: 0.5
+
 contigmap:
   contigs: ['1,A518-518,1']
   length: 3-3
