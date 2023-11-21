@@ -67,10 +67,6 @@ def assert_matches_golden(t, name, got, rewrite=False, processor_specific=False,
         raise Exception(f'golden at {p} does not exist, please generate it')
     # want = p.read_text()
     want = read(p)
-    ic(
-        type(want),
-        type(got),
-    )
     if isinstance(got, rf_diffusion.aa_model.Indep):
         # Remove metadata
         want = aa_model.Indep(**dataclasses.asdict(want))

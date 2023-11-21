@@ -46,6 +46,12 @@ def get_trb(conf):
 
 class TestRegression(unittest.TestCase):
 
+    def setUp(self) -> None:
+        # Some other test is leaving a global hydra initialized, so we clear it here.
+        if hydra.core.global_hydra.GlobalHydra().is_initialized():
+            hydra.core.global_hydra.GlobalHydra().clear()
+        return super().setUp()
+
     def tearDown(self):
         hydra.core.global_hydra.GlobalHydra.instance().clear()
     

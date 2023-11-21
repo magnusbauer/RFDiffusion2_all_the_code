@@ -22,6 +22,7 @@ diffuser:
   T: 200
   time_type: discrete
   t_distribution: uniform
+  type: diffusion
 experiment:
   trans_loss_weight: 1.0
   rot_loss_weight: 1.0
@@ -39,6 +40,10 @@ experiment:
   warm_start: null
   early_ckpt_after: 2
   keep_only_last_ckpt: false
+  fm_translation_loss_weight: 0.0
+  fm_rotation_loss_weight: 0.0
+  fm_bb_atom: 0.0
+  fm_dist_mat: 0.0
 rf:
   model:
     n_extra_block: 4
@@ -211,3 +216,5 @@ pin_memory: True
 num_workers: 1
 skip_backward: False
 benchmark: null
+
+fm: null

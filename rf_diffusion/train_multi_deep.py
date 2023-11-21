@@ -885,9 +885,8 @@ class Trainer():
                 assert little_t > 0
                 assert N_cycle == 1, 'cycling not implemented'
                 i_cycle = N_cycle-1
-                assert(( self.conf['prob_self_cond'] == 0 ) ^ \
-                    ( self.conf.inference['str_self_cond'] )), \
-                    'prob_self_cond must be > 0 for str_self_cond to be active'
+                if self.conf.inference['str_self_cond']:
+                    assert self.conf['prob_self_cond'] > 0, 'prob_self_cond must be > 0 for str_self_cond to be active'
 
                 # Checking whether this example was of poor quality and the dataloader just returned None - NRB
                 if indep.seq.shape[0] == 0:

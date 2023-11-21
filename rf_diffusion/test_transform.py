@@ -16,6 +16,7 @@ from rf2aa import tensor_util
 import guide_posts as gp
 import aa_model
 import test_utils
+import addict
 from argparse import Namespace
 ic.configureOutput(includeContext=True)
 
@@ -45,19 +46,21 @@ class TestTransform(unittest.TestCase):
             contig_map =  contigs.ContigMap(target_feats,
                                         **contig_kwargs
                                         )
-            indep = make_indep(test_pdb, ligand)
-            adaptor = Model({})
-            indep, _, _ = adaptor.insert_contig(indep, contig_map) # ['ASP', 'GLN', 'VAL', 'PRO']
+            indep, metadata = aa_model.make_indep(test_pdb, ligand=ligand, return_metadata=True)
+            conf = addict.Dict()
+            adaptor = aa_model.Model(conf)
+            indep, is_diffused, _ = adaptor.insert_contig(indep, contig_map, metadata=metadata) # ['ASP', 'GLN', 'VAL', 'PRO']
+
             indep.xyz = atomize.set_nonexistant_atoms_to_nan(indep.xyz, indep.seq)
             indep_init = copy.deepcopy(indep)
             is_res_str_shown = torch.zeros(indep.length()).bool()
             is_res_str_shown[res_str_shown_idx] = True
             n_res_shown = is_res_str_shown.sum()
-            indep, is_diffused, is_masked_seq, atomizer, _ = aa_model.transform_indep(indep, is_res_str_shown, is_atom_str_shown, True)
+            indep, is_diffused, is_masked_seq, atomizer, _ = aa_model.transform_indep(indep, is_res_str_shown, is_atom_str_shown, True, metadata=metadata)
             is_diffused_deatomized = atomize.convert_atomized_mask(atomizer, is_diffused)
 
             n_ligand = indep_init.is_sm.sum()
-            n_motif = sum(len(v) for v in is_atom_str_shown.values()) + n_res_shown + n_ligand
+            n_motif = sum(len(v) for v in is_atom_str_shown.values()) + n_res_shown
             n_valine = 7
             assertpy.assert_that(indep.length()).is_equal_to(n_valine + indep_init.length() + n_res_shown)
             assertpy.assert_that((~is_diffused).sum()).is_equal_to(n_motif)
@@ -81,12 +84,14 @@ class TestTransform(unittest.TestCase):
             indep_deatomized = atomize.deatomize(atomizer, indep)
             n_gp = len(is_atom_str_shown) + n_res_shown
             want_same_chain = torch.ones(indep_deatomized.length()).bool()
-            want_same_chain[-n_gp:] = False
+            # No longer testing, as same_chain is not considered by the network.
+            # want_same_chain[-n_gp:] = False
             want_same_chain[indep_deatomized.is_sm] = False
             assertpy.assert_that(indep_deatomized.same_chain[0].tolist()).is_equal_to(want_same_chain.tolist())
             is_gp = torch.zeros(indep_deatomized.length()).bool()
             is_gp[-n_gp:] = True
             aa_model.pop_mask(indep_deatomized, ~is_gp)
+            delattr(indep_init, 'is_gp')
 
             diff = test_utils.cmp_pretty(indep_deatomized, indep_init)
             if diff:

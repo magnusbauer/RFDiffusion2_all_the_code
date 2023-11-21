@@ -1,0 +1,5 @@
+# Base inference Configuration.
+defaults:
+  - training_base
+  # - ../training/base
+  - base

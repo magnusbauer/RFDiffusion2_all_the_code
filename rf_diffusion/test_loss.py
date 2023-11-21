@@ -29,35 +29,37 @@ class TestLoss(unittest.TestCase):
                                        contig_atoms="{'A518':'CA,C,N,O,CB,CG,OD1,OD2'}",
                                        length='3-3',
                                        )
-        indep = aa_model.make_indep(test_pdb)
-        adaptor = aa_model.Model({})
-        indep_contig,is_diffused,_ = adaptor.insert_contig(indep, contig_map)
-
+        indep, metadata = aa_model.make_indep(test_pdb, return_metadata=True)
+        conf = addict.Dict()
+        adaptor = aa_model.Model(conf)
+        indep_contig, is_diffused, _ = adaptor.insert_contig(indep, contig_map, metadata=metadata)
+        point_types = aa_model.get_point_types(indep_contig, adaptor.atomizer)
         true = indep_contig.xyz
 
-        perturbed = perturbations.se3_perturb(true)
+        def simplify(bond_losses):
+            for k, v in list(bond_losses.items()):
+                for e in k.split(':'):
+                    if e.startswith('any') or e.endswith('any') or e.endswith('atomized_backbone') or e.endswith('atomized_sidechain') or e.endswith('ligand'):
+                        bond_losses.pop(k)
+                        break
+        
+        def assert_all_zero(bond_losses):
+            zero_losses = {k:v for k,v in bond_losses.items() if torch.isnan(v) or v < 1e-6}
+            assert len(zero_losses) == len(bond_losses)
 
-        expected_losses = list(f'{a}:{b}' for a,b in itertools.combinations_with_replacement(
-            ['diffused_residue', 'motif_atom'], 2))
-        bond_losses = bond_geometry.calc_atom_bond_loss(indep_contig, perturbed, is_diffused)
-        for k in expected_losses:
-            self.assertLess(bond_losses.pop(k), 1e-6, msg=k)
-        for k, v in bond_losses.items():
-            self.assertTrue(torch.isnan(v), msg=k)
+        perturbed = perturbations.se3_perturb(true)
+        bond_losses = bond_geometry.calc_atom_bond_loss(indep_contig, perturbed, indep_contig.xyz, is_diffused, point_types)
+        assert_all_zero(bond_losses)
         
         perturbed = true.clone()
         T = torch.tensor([1,1,1])
         perturbed[-1,1,:] += T
-        bond_losses = bond_geometry.calc_atom_bond_loss(indep_contig, perturbed, is_diffused)
-        should_change = 'motif_atom:motif_atom'
+        bond_losses = bond_geometry.calc_atom_bond_loss(indep_contig, perturbed, indep_contig.xyz, is_diffused, point_types)
+        simplify(bond_losses)
+        should_change = 'motif_atomized:motif_atomized'
         bond_loss = bond_losses.pop(should_change)
         self.assertGreater(bond_loss, 0.1)
-        for k in expected_losses:
-            if k == should_change:
-                continue
-            self.assertLess(bond_losses.pop(k), 1e-6, msg=k)
-        for k, v in bond_losses.items():
-            self.assertTrue(torch.isnan(v), msg=k)
+        assert_all_zero(bond_losses)
 
     def test_rigid_loss(self):
         test_pdb = 'benchmark/input/gaa.pdb'

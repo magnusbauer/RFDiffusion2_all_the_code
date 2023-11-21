@@ -10,9 +10,9 @@ inference:
   str_self_cond: False
 
 dataloader:
-  DATAPKL_AA: test_fake_allatom_dataset.pkl
-  DATASETS: pdb_aa,sm_complex
-  DATASET_PROB: [0.0,1.0]
+  DATAPKL_AA: aa_dataset_256_subsampled_10.pkl
+  DATASETS: sm_complex
+  DATASET_PROB: [1.0]
   CROP: 60
 
 experiment:

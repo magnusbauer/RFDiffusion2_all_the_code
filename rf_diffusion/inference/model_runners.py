@@ -122,7 +122,6 @@ class Sampler:
 
         # TODO: Add symmetrization RMSD check here
         if self._conf.seq_diffuser.seqdiff is None:
-            ic('Doing AR Sequence Decoding')
             self.seq_diffuser = None
 
             assert(self._conf.preprocess.seq_self_cond is False), 'AR decoding does not make sense with sequence self cond'

@@ -144,7 +144,7 @@ def find_third_contact(contacts):
                 return torch.tensor([i,j,k])
     return None
 
-def get_sm_contacts(
+def _get_sm_contacts(
         indep, atom_mask,
     d_beyond_closest = 1.5,
     n_beyond_closest = 2,
@@ -190,7 +190,7 @@ def get_sm_contacts(
     picked_distances = dist_conf.min(-1)[0].min(-1)[0]
     #ic(is_motif, n_sample, picked_distances, dist_cutoff, indices)
 
-    return is_motif, None
+    return is_motif, {}
 
 def get_triple_contact_atomize(*args, **kwargs):
     raise Exception('not implemented')
@@ -549,6 +549,7 @@ def no_pop(get_mask):
         return is_motif, is_atom_motif, pop
     return out_get_mask
 
+get_sm_contacts = no_pop(_get_sm_contacts)
 get_diffusion_mask_simple = no_pop(make_covale_compatible(make_sm_compatible(_get_diffusion_mask_simple)))
 get_diffusion_mask_islands = no_pop(make_covale_compatible(make_sm_compatible(_get_diffusion_mask_islands)))
 get_triple_contact = no_pop(make_sm_compatible(_get_triple_contact))

@@ -668,7 +668,6 @@ def add_fake_frame_legs(xyz, is_atom):
 def conf_supports_guideposts(conf):
     supports_guideposts = False
     supports_no_guideposts = True
-    ic(conf.dataloader.P_IS_GUIDEPOST_EXAMPLE)
     if 'P_IS_GUIDEPOST_EXAMPLE' in conf.dataloader:
         if conf.dataloader.P_IS_GUIDEPOST_EXAMPLE > 0:
             supports_guideposts = True
@@ -681,7 +680,6 @@ def conf_supports_guideposts(conf):
 
 def validate_guideposting_strategy(conf):
     supports_guideposts, supports_no_guideposts = conf_supports_guideposts(conf)
-    ic(supports_guideposts, supports_no_guideposts)
     if conf.inference.contig_as_guidepost:
         guidepost_mismatch = not supports_guideposts
     else:
