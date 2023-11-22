@@ -10,3 +10,6 @@
 [submodule "fused_mpnn"]
 	path = fused_mpnn
 	url = https://git.ipd.uw.edu/justas/fused_mpnn.git
+[submodule "lib/se3_flow_matching"]
+	path = lib/se3_flow_matching
+	url = git@github.com:baker-laboratory/frame-flow.git
