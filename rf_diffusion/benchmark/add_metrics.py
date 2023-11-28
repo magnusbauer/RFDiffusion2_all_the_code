@@ -55,7 +55,7 @@ def main(conf: HydraConfig) -> list[int]:
         ('design', backbone_filenames),
         ('sequence', sequence_filenames),
     ]:
-        job_fn = conf.datadir + '/jobs.metrics_per_{cohort}.list'
+        job_fn = conf.datadir + f'/jobs.metrics_per_{cohort}.list'
         job_list_file = open(job_fn, 'w') if conf.slurm.submit else sys.stdout
         for i in np.arange(0,len(filenames),conf.chunk):
             tmp_fn = f'{conf.datadir}/{conf.tmp_pre}.metrics_per_{cohort}.{i}'

@@ -61,6 +61,7 @@ inference:
     # We require this to be set, as unless a user is careful this causes undefined behavior.
     sidechain_partial_diffusion: False
   flexible_ligand: False
+  center_motif: True
 
 contigmap:
   contigs: ['20', 'A3-23', '30']
@@ -68,6 +69,7 @@ contigmap:
   inpaint_str: null
   inpaint_seq: null
   length: null
+  shuffle: null
 
 model:
   n_extra_block: 4

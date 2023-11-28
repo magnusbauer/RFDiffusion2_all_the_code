@@ -170,6 +170,13 @@ def sample_one(sampler, simple_logging=False):
         px0_xyz_stack.append(px0)
         denoised_xyz_stack.append(x_t)
         seq_stack.append(seq_t)
+
+    if sampler.t_step_input == 0:
+        # Null-case: no diffusion performed.
+        px0_xyz_stack.append(sampler.indep_orig.xyz)
+        denoised_xyz_stack.append(indep.xyz)
+        alanine_one_hot = torch.nn.functional.one_hot(torch.tensor(torch.zeros((indep.length(),), dtype=int)), rf2aa.chemical.NAATOKENS)
+        seq_stack.append(alanine_one_hot)
     
     # Flip order for better visualization in pymol
     denoised_xyz_stack = torch.stack(denoised_xyz_stack)

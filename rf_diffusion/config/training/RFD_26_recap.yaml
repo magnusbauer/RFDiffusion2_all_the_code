@@ -20,6 +20,7 @@ dataloader:
   P_IS_GUIDEPOST_EXAMPLE: 1
   use_fallback: true
   max_residues: -1
+  use_validation_config: 0
 
 scheduler:
   n_warmup_steps: 0

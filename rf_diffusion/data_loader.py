@@ -1381,10 +1381,18 @@ def default_dataset_configs(loader_param, debug=False):
         if v is not None:
             dataloader_params[k_rf2aa] = v
 
-    train_ID_dict, _, weights_dict, train_dict, _, homo, chid2hash, chid2taxid = \
+    train_ID_dict, valid_ID_dict, weights_dict, train_dict, valid_dict, homo, chid2hash, chid2taxid = \
             rf2aa.data_loader.get_train_valid_set({**rf2aa.data_loader.default_dataloader_params, \
             **dataloader_params},
             no_match_okay=debug, diffusion_training=True, add_negatives=False)
+
+    if loader_param.use_validation_config:
+        train_ID_dict = valid_ID_dict
+        train_dict = valid_dict
+        weights_dict = {}
+        ic(list(train_ID_dict.keys()))
+        for k in ['pdb', 'compl', 'sm_compl', 'sm_compl_covale', 'sm_compl_asmb', 'sm_compl_multi', 'metal_compl']:
+            weights_dict[k] = torch.full(train_ID_dict[k].shape, 0.5)
 
     #all the pdb sets use the default rf2aa loader_pdb, but the fixbb adaptor will not be applied to the seq2str task
     pdb_config = WeightedDataset(train_ID_dict["pdb"], train_dict["pdb"], {
@@ -1419,14 +1427,14 @@ def default_dataset_configs(loader_param, debug=False):
         weights_dict["compl"])
     
     # neg_config = WeightedDataset(neg_IDs, neg_dict, loader_complex, neg_weights)
-    fb_config = WeightedDataset(train_ID_dict["fb"], train_dict["fb"], {
-                        'seq2str':      rf2aa.data_loader.loader_fb,
-                        'str2seq':      rf2aa.data_loader.loader_fb, 
-                        'str2seq_full': rf2aa.data_loader.loader_fb, 
-                        'hal':          rf2aa.data_loader.loader_fb, 
-                        'hal_ar':       rf2aa.data_loader.loader_fb,
-                        'diff':         rf2aa.data_loader.loader_fb},
-                        weights_dict["fb"])
+    # fb_config = WeightedDataset(train_ID_dict["fb"], train_dict["fb"], {
+    #                     'seq2str':      rf2aa.data_loader.loader_fb,
+    #                     'str2seq':      rf2aa.data_loader.loader_fb, 
+    #                     'str2seq_full': rf2aa.data_loader.loader_fb, 
+    #                     'hal':          rf2aa.data_loader.loader_fb, 
+    #                     'hal_ar':       rf2aa.data_loader.loader_fb,
+    #                     'diff':         rf2aa.data_loader.loader_fb},
+    #                     weights_dict["fb"])
     # cn_config = WeightedDataset(cn_IDs, cn_dict, {
     #                     'seq2str':      None,
     #                     'str2seq':      loader_cn_fixbb,
@@ -1447,7 +1455,7 @@ def default_dataset_configs(loader_param, debug=False):
         'pdb': pdb_config,
         'compl': compl_config,
         # 'negative': neg_config,
-        'fb': fb_config,
+        # 'fb': fb_config,
         # 'cn': cn_config,
         # AA configs
         'pdb_aa': pdb_aa_config,

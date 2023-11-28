@@ -303,7 +303,7 @@ class MetricManager:
         t: float, 
         is_diffused: torch.Tensor,
         point_types: np.array,
-        pred_crds_stack: torch.Tensor, 
+        pred_crds_stack: torch.Tensor = None,
         ) -> dict:
         '''
         Inputs

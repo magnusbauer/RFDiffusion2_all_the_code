@@ -14,6 +14,7 @@ from rf_diffusion import aa_model
 from rf_diffusion import atomize
 import rf2aa.chemical
 from rf_diffusion import bond_geometry
+from rf_diffusion.dev import benchmark as bm
 
 
 def main(pdb_names_file, outcsv=None):
@@ -68,19 +69,24 @@ def get_metrics(pdbs):
         row = rf_diffusion.dev.analyze.make_row_from_traj(pdb[:-4])
         record['name'] = row['name']
 
+        traj_metrics = bm.get_inference_metrics_base(bm.get_trb_path(row), regenerate_cache=False)
+        traj_t0_metrics = traj_metrics[traj_metrics.t==traj_metrics.t.min()]
+        assert len(traj_t0_metrics) == 1
+        traj_t0_metrics = traj_t0_metrics.iloc[0].to_dict()
+        record.update(traj_t0_metrics)
+
         # Ligand distance
-        for af2, c_alpha in [
-            (False, True),
-            # (True, True),
-            # (True, True)
-        ]:
-            dgram = rf_diffusion.dev.analyze.get_dist_to_ligand(row, af2=af2, c_alpha=c_alpha) # [P, L]
-            maybe_af2 = 'af2' if af2 else 'des'
-            maybe_c_alpha = 'c-alpha' if c_alpha else 'all-atom'
-            # ic(dgram.shape)
-            # ic(dgram.min(-1)[0]).shape
-            record[f'ligand_dist_{maybe_af2}_{maybe_c_alpha}'] = dgram.min(-1)[0].tolist() # [P]
-            record[f'ligand_dist_{maybe_af2}_{maybe_c_alpha}_min'] = dgram.min().item()
+        if row['inference.ligand']:
+            for af2, c_alpha in [
+                (False, True),
+                # (True, True),
+                # (True, True)
+            ]:
+                dgram = rf_diffusion.dev.analyze.get_dist_to_ligand(row, af2=af2, c_alpha=c_alpha) # [P, L]
+                maybe_af2 = 'af2' if af2 else 'des'
+                maybe_c_alpha = 'c-alpha' if c_alpha else 'all-atom'
+                record[f'ligand_dist_{maybe_af2}_{maybe_c_alpha}'] = dgram.min(-1)[0].tolist() # [P]
+                record[f'ligand_dist_{maybe_af2}_{maybe_c_alpha}_min'] = dgram.min().item()
 
         # Secondary structure and radius of gyration
         record.update(analysis.metrics.calc_mdtraj_metrics(pdb))

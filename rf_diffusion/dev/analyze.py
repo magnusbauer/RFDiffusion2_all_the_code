@@ -48,6 +48,15 @@ def get_pdb_path(row):
             return p
     raise Exception(f'pdb not found in {possible_paths} ')
 
+def get_epoch(row):
+    ckpt = row['score_model.weights_path']
+    ckpt = ckpt.split('_')[-1]
+    ckpt = ckpt[:-3]
+    return float(ckpt)
+
+def get_source(rundir):
+    return os.path.basename(rundir.removesuffix('/').removesuffix('out'))
+
 def read_metrics(df_path, add_contig_rmsd=True):
     df = pd.read_csv(df_path)
     df['method'] = 'placeholder_method'
@@ -75,6 +84,8 @@ def read_metrics(df_path, add_contig_rmsd=True):
     
     df['pdb_path'] = df.apply(get_pdb_path, axis=1)
     df['des_color'] = 'rainbow'
+    df['epoch'] = df.apply(get_epoch, axis=1)
+    df['seed'] = df.name.apply(lambda x: int(x.split('_cond')[1].split('_')[1].split('-')[0]))
 
     #get_epoch  = lambda x: re.match('.*_(\w+).*', x).groups()[0]
 
@@ -91,7 +102,12 @@ def combine(*df_paths, names=None):
         #_, base = os.path.split(p)
         root, _ = os.path.splitext(os.path.abspath(p))
         root = root.split('/')[-3]
-        df['source'] = names[i] if names else root
+        df['metrics_path'] = p
+        if names:
+            df['source'] = names[i]
+        else:
+            df['source'] = df['rundir'].map(get_source)
+
         df['design_id'] = df['source'] + '_' + df['name']
         to_cat.append(df)
     return pd.concat(to_cat)

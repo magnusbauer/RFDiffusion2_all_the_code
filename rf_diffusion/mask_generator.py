@@ -4,7 +4,7 @@ import copy
 
 import torch
 import scipy.stats
-import kinematics
+from rf_diffusion import kinematics
 import numpy as np
 from icecream import ic
 import rf2aa.util
@@ -285,7 +285,7 @@ def tip_crd(indep, i):
     tip_idx_within_res = next(i for i, atom_name in enumerate(rf2aa.chemical.aa2long[aa]) if atom_name.strip() == tip_atom_name)
     return indep.xyz[i, tip_idx_within_res]
 
-def _get_tip_gaussian_mask(indep, atom_mask, *args, std_dev=8, **kwargs):
+def _get_tip_gaussian_mask(indep, atom_mask, *args, std_dev=8, show_tip=False, **kwargs):
     '''
     Params:
         indep: aa_model.Indep, a description of a protein complex
@@ -340,7 +340,10 @@ def _get_tip_gaussian_mask(indep, atom_mask, *args, std_dev=8, **kwargs):
             probs[:4] = 1e-6
         probs = probs.astype('float64')
         probs /= probs.sum()
-        seed_atom = np.random.choice(np.arange(n_atoms), 1, p=probs)[0]
+        if show_tip:
+            seed_atom = n_atoms - 1
+        else:
+            seed_atom = np.random.choice(np.arange(n_atoms), 1, p=probs)[0]
         n_bonds = np.random.randint(1, 3)
         atom_names = get_atom_names_within_n_bonds(indep.seq[i], seed_atom, n_bonds)
         assertpy.assert_that(atom_names).does_not_contain(None)
@@ -887,6 +890,7 @@ def generate_masks(indep, task, loader_params, chosen_dataset, full_chain=None, 
             broken_prop=loader_params['MASK_BROKEN_PROPORTION'],
             crop=loader_params['CROP']-20, # -20 for buffer.
             diff_mask_probs=mask_probs,
+            show_tip=loader_params.get('show_tip', False),
             ) 
         # ic(is_atom_motif, torch.nonzero(diffusion_mask), diffusion_mask.sum())
         input_str_mask = diffusion_mask.clone()

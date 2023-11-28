@@ -296,12 +296,19 @@ class Sampler:
         L = len(self.target_feats['pdb_idx'])
 
         indep_orig, metadata = aa_model.make_indep(self._conf.inference.input_pdb, self._conf.inference.ligand, return_metadata=True)
-        for_partial_diffusion = bool(self.diffuser_conf.partial_T)
+        for_partial_diffusion = self.diffuser_conf.partial_T != None
         indep, self.is_diffused, self.is_seq_masked = self.model_adaptor.insert_contig(
                 indep_orig, 
                 self.contig_map,
                 metadata=metadata,
                 for_partial_diffusion=for_partial_diffusion)
+        
+        #ic(
+        #    aa_model.what_is_diffused(indep, self.is_diffused, self.model_adaptor.atomizer)
+        #)
+        
+        if self._conf.inference.center_motif:
+            indep.xyz -= aa_model.motif_c_alpha_com(indep.xyz, self.is_diffused)
         self.t_step_input = self._conf.diffuser.T
         self.indep_orig = copy.deepcopy(indep)
         if for_partial_diffusion:
@@ -312,7 +319,7 @@ class Sampler:
             else:
                 assert indep.xyz.shape[0] ==  L + torch.sum(indep.is_sm), f"there must be a coordinate in the input PDB for each residue implied by the contig string for partial diffusion.  length of input PDB != length of contig string: {indep.xyz.shape[0]} != {L+torch.sum(indep.is_sm)}"
                 assert torch.all(self.is_diffused[indep.is_sm] == 0), f"all ligand atoms must be in the motif"
-            assert (mappings['con_hal_idx0'] == mappings['con_ref_idx0']).all(), 'all positions in the input PDB must correspond to the same index in the output pdb'
+            assert (mappings['con_hal_idx0'] == mappings['con_ref_idx0']).all(), f"all positions in the input PDB must correspond to the same index in the output pdb: {list(zip(mappings['con_hal_idx0'], mappings['con_ref_idx0']))=}"
         indep.seq[self.is_seq_masked] = rf2aa.chemical.MASKINDEX
         # Diffuse the contig-mapped coordinates 
         if for_partial_diffusion:

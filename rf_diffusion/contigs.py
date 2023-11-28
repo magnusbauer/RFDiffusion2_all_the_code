@@ -28,7 +28,24 @@ class ContigMap():
             idx_rf=None,
             inpaint_seq_tensor=None,
             inpaint_str_tensor=None,
-            topo=False):
+            topo=False,
+            shuffle=False,
+            intersperse='10-100',
+            ):
+        
+        if shuffle:
+            shuffled_contig_list = np.array(contigs[0].strip().split(','))
+            print(f'{length=}')
+            print(f'before shuffle: {contigs=}')
+            print(f'{shuffled_contig_list=}')
+            is_motif = np.array([e[0].isalpha() for e in shuffled_contig_list])
+            motifs = shuffled_contig_list[is_motif]
+            np.random.shuffle(motifs)
+            shuffled_contig_list[is_motif] = motifs
+            shuffled_contig_list[~is_motif] = intersperse
+            contigs = [','.join(shuffled_contig_list)]
+            print(f'after shuffle: {contigs=}')
+
         #sanity checks
         if contigs is None and ref_idx is None:
             sys.exit("Must either specify a contig string or precise mapping")

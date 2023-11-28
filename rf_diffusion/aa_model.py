@@ -202,6 +202,20 @@ class Indep:
     def human_readable_2d_symmetric_mask(self, mask):
         assertpy.assert_that((mask.T == mask).all()).is_true()
         return self.human_readable_2d_mask(torch.triu(mask))
+    
+    def is_contiguous_protein_monomer(self):
+        idx_jump = self.idx[1:] - self.idx[:-1]
+        contiguous = (idx_jump == 1).all().item()
+        return (self.terminus_type[0] == N_TERMINUS and
+                self.terminus_type[self.length()-1] == C_TERMINUS and
+                not self.is_sm.any() and
+                contiguous
+                )
+
+def what_is_diffused(indep, is_diffused, atomizer):
+    point_ids = get_point_ids(indep, atomizer)
+    return list(zip(point_ids, is_diffused.tolist()))
+
 
 def human_readable_seq(seq):
     return [rf2aa.chemical.num2aa[s] for s in seq]
@@ -507,6 +521,14 @@ def parse_ligand(pdb, ligand):
     return xyz_sm[0], seq_sm, atom_frames, chirals, bond_feats
     # if chirals.numel() !=0:
     #     chirals[:,:-1] += protein_L
+
+def get_atom_mask(pdb):
+    with open(pdb, 'r') as fh:
+        stream = fh.readlines()
+    target_feats = parse_pdb_lines_target(stream, parse_hetatom=True)
+    _, mask_prot, _, _ = target_feats['xyz'], target_feats['mask'], target_feats['idx'], target_feats['seq']
+    mask_prot[:,14:] = False
+    return mask_prot
 
 def make_indep(pdb, ligand='', center=True, return_metadata=False):
     # self.target_feats = iu.process_target(self.inf_conf.input_pdb, parse_hetatom=True, center=False)
@@ -1484,6 +1506,10 @@ def rearrange_indep(indep, from_i):
     indep.atom_frames[:,:,0] = atom_frames_relative_i_new
     indep.is_sm = is_sm_new
 
+def motif_c_alpha_com(xyz, is_diffused):
+    if torch.sum(~is_diffused) == 0:
+        return xyz[:,1,:].mean(dim=0)
+    return xyz[~is_diffused,1,:].mean(dim=0)
     
 def centre(indep, is_diffused):
     xyz = indep.xyz
