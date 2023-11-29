@@ -1,0 +1,17 @@
+defaults:
+  - pipeline
+
+sweep:
+  command_args: >
+    --config-name=aa
+    diffuser.T=2
+    inference.input_pdb=gaa.pdb
+    inference.ligand=LG1
+    inference.contig_as_guidepost=True
+    contigmap.contigs="[\"4-4,A518-519\"]"
+    contigmap.length=6-6
+  num_per_condition: 1
+  num_per_job: 1
+
+outdir: /net/scratch/ahern/se3_diffusion/benchmarks/${now:%Y-%m-%d}_${now:%H-%M-%S}_test_config
+in_proc: True

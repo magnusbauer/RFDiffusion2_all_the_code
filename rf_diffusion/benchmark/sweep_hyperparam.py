@@ -175,8 +175,9 @@ def main(conf: HydraConfig) -> list[int]:
         return os.path.join(os.path.dirname(conf.out), 'input', os.path.basename(input_pdb))
     if 'inference.input_pdb' in df:
         for input_pdb in df['inference.input_pdb'].unique():
+            if not input_pdb.startswith('/'):
+                input_pdb = os.path.join(input_path, input_pdb)
             shutil.copyfile(input_pdb, get_input_copy_path(input_pdb))
-    
         df['inference.input_pdb'] = df['inference.input_pdb'].apply(get_input_copy_path)
 
     out_dir, basename = os.path.split(conf.out)
