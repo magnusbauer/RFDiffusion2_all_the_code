@@ -476,7 +476,7 @@ class Dataloader(unittest.TestCase):
         import rf_diffusion
         pkg_dir = rf_diffusion.__path__[0]
         overrides = [f'dataloader.DATAPKL_AA={pkg_dir}/test_data/aa_dataset_256_subsampled_10.pkl']
-        conf_train = test_utils.construct_conf_single(overrides=overrides, config_name='RFD_36')
+        conf_train = test_utils.construct_conf_single(overrides=overrides, config_name='base')
 
         # Make the training dataloader
         LOAD_PARAM = {

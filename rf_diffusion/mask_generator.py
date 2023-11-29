@@ -395,7 +395,7 @@ def _get_triple_contact(xyz, low_prop, high_prop, broken_prop, xyz_less_than=6, 
     L = xyz.shape[0]
     return sample_around_contact(L, indices, len_low, len_high)
 
-def _get_diffusion_mask_simple(xyz, low_prop, high_prop, broken_prop, crop=None):
+def _get_diffusion_mask_simple(xyz, low_prop, high_prop, broken_prop, crop=None, **kwargs):
     """
     Function to make a diffusion mask.
     Options:

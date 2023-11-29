@@ -32,7 +32,9 @@ def combine_selectors(objs, selectors):
 def get_motif_spec(row, traj=False):
     trb = analyze.get_trb(row)
     if traj and 'motif' in trb:
-        is_atom_motif = {k:list() for k in trb['motif_by_gp'].keys()}
+        is_atom_motif = {}
+        if 'motif_by_gp' in trb:
+            is_atom_motif.update({k:list() for k in trb['motif_by_gp'].keys()})
         is_atom_motif.update(trb['motif'])
     else:
         is_atom_motif = trb.get('atomize_indices2atomname', {})
