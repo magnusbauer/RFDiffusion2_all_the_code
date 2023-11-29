@@ -1,6 +1,6 @@
 datadir: ${hydra:runtime.cwd}
 filenames: null
-chunk: 1000
+chunk: 50
 tmp_pre: add_metrics.list
 
 slurm:
