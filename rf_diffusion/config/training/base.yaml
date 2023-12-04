@@ -193,6 +193,7 @@ dataloader:
   P_IS_GUIDEPOST_EXAMPLE: 1.0
   use_fallback: true
   use_validation_config: False
+  mask: {}
 data:
   samples_per_eval_length: 1
   num_eval_lengths: 1
