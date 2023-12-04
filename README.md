@@ -8,7 +8,7 @@ git submodule init
 git submodule update --init
 
 ## Temporary hack
-export PYTHONPATH="${PYTHONPATH}:PKG_DIR/lib/se3_flow_matching"
+export PYTHONPATH="${PYTHONPATH}:PKG_DIR:PKG_DIR/lib/se3_flow_matching"
 
 cd rf_diffusion
 

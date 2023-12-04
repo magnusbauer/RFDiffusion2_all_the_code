@@ -1,11 +1,6 @@
 #!/net/software/containers/users/dtischer/shebang_rf_se3_diffusion_dev.sh
 
 import os
-# import sys
-# script_dir = os.path.dirname(os.path.realpath(__file__))
-# sys.path.append(os.path.join(script_dir, '..'))
-# sys.path.append(os.path.join(script_dir, '../..'))
-
 
 import pandas as pd
 import fire
@@ -14,9 +9,7 @@ from tqdm import tqdm
 import torch
 
 from rf_diffusion.dev import analyze
-# import analysis.metrics
 from rf_diffusion.inference import utils
-# import rf2aa.util
 
 
 def main(pdb_names_file, outcsv=None):
@@ -28,38 +21,6 @@ def main(pdb_names_file, outcsv=None):
     print(f'Outputting computed metrics to {outcsv}')
     os.makedirs(os.path.dirname(outcsv), exist_ok=True)
     df.to_csv(outcsv)
-
-# def get_protein_bond_feats(seq):
-
-#     for i, res in enumerate(seq):
-#         for j, bond in enumerate(rf2aa.chemical.aabonds[res]):
-#             start_idx = rf2aa.chemical.aabondsaa2long[res].index(bond[0])
-#             end_idx = aa2long[res].index(bond[1])
-#             if (i, start_idx) not in ra2ind or (i, end_idx) not in ra2ind:
-#                 #skip bonds with atoms that aren't observed in the structure
-#                 continue
-#             start_idx = ra2ind[(i, start_idx)]
-#             end_idx = ra2ind[(i, end_idx)]
-
-#             # maps the 2d index of the start and end indices to btype
-#             bond_feats[start_idx, end_idx] = aabtypes[res][j]
-#             bond_feats[end_idx, start_idx] = aabtypes[res][j]
-
-# def get_motif(row, mpnn=True):
-
-#     if mpnn:
-#         design_pdb = dev.analyze.get_design_pdb(row)
-#     else:
-#         design_pdb = dev.analze.get_diffusion_pdb(row)
-#     ic(design_pdb)
-#     design_info = utils.process_target(design_pdb, center=False, parse_hetatom=True)
-#     # des = design_info['xyz_27']
-#     # hydrogens = des[:, 14:]
-#     # ic(type(hydrogens))
-#     # has_hydrogen = (~torch.isnan(hydrogens)).any()
-#     # ic(has_hydrogen)
-#     des = design_info['xyz_27']
-#     mask = design_info['mask_27']
 
 def get_metrics(pdbs):
     records = []
@@ -75,32 +36,11 @@ def get_metrics(pdbs):
         design_pdb = analyze.get_design_pdb(row)
         ic(design_pdb)
         design_info = utils.process_target(design_pdb, center=False, parse_hetatom=True)
-        # des = design_info['xyz_27']
-        # hydrogens = des[:, 14:]
-        # ic(type(hydrogens))
-        # has_hydrogen = (~torch.isnan(hydrogens)).any()
-        # ic(has_hydrogen)
         des = design_info['xyz_27']
         mask = design_info['mask_27']
         des[~mask] = torch.nan
         dgram = torch.sqrt(torch.sum((des[None, None,:,:,:] - des[:,:,None,None, :]) ** 2, dim=-1))
         dgram = torch.nan_to_num(dgram, 999)
-        # ic(dgram.shape)
-        
-        # is_n = torch.full_like(dgram, False)
-        # is_n[:,:,:,0] = True
-        # is_n[:,0,:,:] = True
-        # is_c = torch.full_like(dgram, False)
-        # is_c[:,1,:,1] = True
-        # is_c[:,1,:,1] = True
-        # is_cn = torch.full_like(dgram, False)
-        # is_cn = torch.
-        # L = des.shape[0]
-        # res_diff = (torch.arange(L)[None, :] - torch.arange(L)[None, :])
-        # is_upstream_neighbor = res_diff == 1
-        # is_downstream_neighbor = res_diff == -1
-        # is_peptide_bond = 
-
 
         # Ignore backbone-backbone distance, as ligandmpnn is not responsible for this.
         bb2bb = torch.full(dgram.shape, False)

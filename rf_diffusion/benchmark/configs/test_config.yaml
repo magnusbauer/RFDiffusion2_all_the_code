@@ -13,5 +13,5 @@ sweep:
   num_per_condition: 1
   num_per_job: 1
 
-outdir: /net/scratch/ahern/se3_diffusion/benchmarks/${now:%Y-%m-%d}_${now:%H-%M-%S}_test_config
+outdir: /net/scratch/${oc.env:USER}/se3_diffusion/benchmarks/${now:%Y-%m-%d}_${now:%H-%M-%S}_test_config
 in_proc: True
