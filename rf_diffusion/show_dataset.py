@@ -137,7 +137,7 @@ def run(conf: DictConfig) -> None:
             chosen_dataset, index = item_context['chosen_dataset'], item_context['index']
             for xyz_label, xyz in [
                     ('true', indep.xyz),
-                    ('input', rfi.xyz[0,:,:14])
+                    # ('input', rfi.xyz[0,:,:14])
             ]:
                 indep.xyz = xyz
                 bonds = indep.metadata['covale_bonds']

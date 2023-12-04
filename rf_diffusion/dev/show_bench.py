@@ -226,7 +226,7 @@ class PymolObj:
     def self_selectors(self):
         # return show_tip_pa.combine_selectors([self.name], 
         o = {}
-        for k in self.selectors.items():
+        for k, _ in self.selectors.items():
             o[k] = self[k]
         return o        
 

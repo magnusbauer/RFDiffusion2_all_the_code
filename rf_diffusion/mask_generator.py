@@ -16,6 +16,7 @@ from collections import OrderedDict
 import rf_diffusion.aa_model as aa_model
 from functools import partial
 from rf_diffusion import error
+from rf_diffusion import tip_atoms
 
 
 def make_covale_compatible(get_mask):
@@ -279,11 +280,16 @@ def get_atom_names_within_n_bonds(res, source_node, n_bonds):
     return atom_names
 
 def tip_crd(indep, i):
+    '''Returns the internal index of the tip atom of residue index i'''
+    tip_idx_within_res = tip_idx(indep, i)
+    return indep.xyz[i, tip_idx_within_res]
+
+def tip_idx(indep, i):
     '''Returns the coordinates of the tip atom of residue index i'''
     aa = indep.seq[i]
     tip_atom_name = rf2aa.chemical.aa2tip[aa].strip()
     tip_idx_within_res = next(i for i, atom_name in enumerate(rf2aa.chemical.aa2long[aa]) if atom_name.strip() == tip_atom_name)
-    return indep.xyz[i, tip_idx_within_res]
+    return tip_idx_within_res
 
 def _get_tip_gaussian_mask(indep, atom_mask, *args, std_dev=8, show_tip=False, **kwargs):
     '''
@@ -346,6 +352,43 @@ def _get_tip_gaussian_mask(indep, atom_mask, *args, std_dev=8, show_tip=False, *
             seed_atom = np.random.choice(np.arange(n_atoms), 1, p=probs)[0]
         n_bonds = np.random.randint(1, 3)
         atom_names = get_atom_names_within_n_bonds(indep.seq[i], seed_atom, n_bonds)
+        assertpy.assert_that(atom_names).does_not_contain(None)
+        is_atom_motif[i] = atom_names
+
+    is_motif = torch.zeros(indep.length()).bool()
+    return is_motif, is_atom_motif
+
+def _get_tip_mask(indep, atom_mask, *args,
+                  n_atomize_min=1,
+                  n_atomize_max=8,
+                  p_tip=0.8,
+                  bond_inclusion_p=0.5,
+                  unconditional=False,
+                   **kwargs):
+    # assert not indep.is_sm.any()
+    is_valid_for_atomization = indep.has_heavy_atoms_and_seq(atom_mask)
+    if not is_valid_for_atomization.any():
+        ic('No valid residues for atomization in _get_tip_mask, falling back to unconditional generation')
+        is_motif = torch.zeros(indep.length()).bool()
+        is_motif[indep.is_sm] = True
+        return is_motif, None
+    valid_idx = is_valid_for_atomization.nonzero()[:,0]
+    
+    n_atomize = random.randint(n_atomize_min, n_atomize_max)
+    atomize_i = np.random.choice(valid_idx, n_atomize, replace=False)
+
+    is_atom_motif = {}
+    for i in atomize_i:
+        if unconditional:
+            atom_names = []
+        else:
+            if np.random.rand() < p_tip:
+                seed_atom = tip_atoms.choose_furthest_from_oxygen(indep.seq[i])
+            else:
+                n_atoms = atom_mask[i].sum()
+                seed_atom = np.random.choice(np.arange(n_atoms), 1)[0]
+            n_bonds = np.random.default_rng().geometric(p=1-bond_inclusion_p) - 1
+            atom_names = get_atom_names_within_n_bonds(indep.seq[i], seed_atom, n_bonds)
         assertpy.assert_that(atom_names).does_not_contain(None)
         is_atom_motif[i] = atom_names
 
@@ -561,6 +604,10 @@ atomize_get_triple_contact = no_pop(make_atomized(get_triple_contact))
 atomize_get_double_contact = no_pop(make_atomized(get_double_contact))
 get_unconditional_diffusion_mask = no_pop(make_covale_compatible(make_sm_compatible(_get_unconditional_diffusion_mask)))
 get_tip_gaussian_mask = no_pop(_get_tip_gaussian_mask)
+get_tip_mask = no_pop(make_covale_compatible(_get_tip_mask))
+get_tip_mask_unconditional = no_pop(make_covale_compatible(partial(_get_tip_mask, unconditional=True)))
+get_tip_mask_unconditional_free_ligand = no_pop(completely_mask_ligand(make_covale_compatible(partial(_get_tip_mask, unconditional=True))))
+get_tip_mask_unconditional_partial_ligand = no_pop(partially_mask_ligand(make_covale_compatible(_get_tip_mask)))
 get_closest_tip_atoms = no_pop(_get_closest_tip_atoms)
 
 get_atomized_islands = no_pop(make_covale_compatible(atomize_and_diffuse_motif(make_sm_compatible(
@@ -568,6 +615,7 @@ get_atomized_islands = no_pop(make_covale_compatible(atomize_and_diffuse_motif(m
 
 get_unconditional_diffusion_mask_free_ligand = no_pop(completely_mask_ligand(get_unconditional_diffusion_mask))
 get_diffusion_mask_islands_partial_ligand = no_pop(partially_mask_ligand(get_diffusion_mask_islands))
+get_diffusion_mask_islands_free_ligand = no_pop(completely_mask_ligand(get_diffusion_mask_islands))
 get_tip_gaussian_mask_partial_ligand = no_pop(partially_mask_ligand(_get_tip_gaussian_mask))
 get_closest_tip_atoms_partial_ligand = no_pop(partially_mask_ligand(_get_closest_tip_atoms))
 get_unconditional_diffusion_mask_partial_ligand = no_pop(partially_mask_ligand(get_unconditional_diffusion_mask))
@@ -891,6 +939,7 @@ def generate_masks(indep, task, loader_params, chosen_dataset, full_chain=None, 
             crop=loader_params['CROP']-20, # -20 for buffer.
             diff_mask_probs=mask_probs,
             show_tip=loader_params.get('show_tip', False),
+            **loader_params.mask,
             ) 
         # ic(is_atom_motif, torch.nonzero(diffusion_mask), diffusion_mask.sum())
         input_str_mask = diffusion_mask.clone()
