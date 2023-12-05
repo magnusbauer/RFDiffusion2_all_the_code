@@ -1,8 +1,3 @@
-[submodule "RF2-allatom"]
-	path = RF2-allatom
-    url = https://git.ipd.uw.edu/jue/RF2-allatom.git
-    update = checkout
-    branch = main
 [submodule "rf_se3_diffusion"]
 	path = rf_se3_diffusion
 	url = git@github.com:w-ahern/rf_se3_diffusion.git
@@ -13,3 +8,6 @@
 [submodule "lib/se3_flow_matching"]
 	path = lib/se3_flow_matching
 	url = git@github.com:baker-laboratory/frame-flow.git
+[submodule "lib/rf2aa"]
+	path = lib/rf2aa
+	url = git@github.com:baker-laboratory/rf_all_atom.git
