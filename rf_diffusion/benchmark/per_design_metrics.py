@@ -1,6 +1,12 @@
 #!/net/software/containers/users/dtischer/shebang_rf_se3_diffusion_dev.sh
 
 import os
+import sys
+
+# Hack for autobenching
+PKG_DIR = os.path.abspath(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+SE3_DIR = os.path.join(PKG_DIR, 'lib/se3_flow_matching')
+sys.path.append(SE3_DIR)
 
 import pandas as pd
 import fire
