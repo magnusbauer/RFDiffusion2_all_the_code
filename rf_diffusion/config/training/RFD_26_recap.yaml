@@ -36,5 +36,5 @@ log_every_n_examples: 1
 log_metrics_inputs_every_n_examples: 30
 n_write_pdb: 30
 
-rundir: /net/scratch/ahern/se3_diffusion/training/rfd_26_recap
+rundir: /net/scratch/${oc.env:USER}/se3_diffusion/training/rfd_26_recap
 wandb_prefix: 'rfd_26_recap'

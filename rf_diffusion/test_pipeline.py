@@ -99,7 +99,7 @@ class TestBenchmark(unittest.TestCase):
         
         This is why in the pipeline we do not use tee for outputting logs when running in_proc.
         '''
-        job = '''python raise_exception.py | tee /home/ahern/benchmarks/aa_diffusion/tip_atoms/220420_tip_pilot_2/out/run_cond1_0.log'''
+        job = '''python raise_exception.py | tee /tmp/trash.log'''
         print(f'running job: {job}')
         proc = subprocess.run(job, shell=True)
         print(f'{proc=}') 

@@ -102,7 +102,7 @@ epoch_size: 25600
 prob_self_cond: 0.5
 seq_self_cond: false
 sequence_decode: true
-rundir: /net/scratch/ahern/se3_diffusion/training/default
+rundir: /net/scratch/${oc.env:USER}/se3_diffusion/training/default
 interactive: false
 batch_size: 1
 verbose_checks: false
