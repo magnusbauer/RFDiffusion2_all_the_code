@@ -8,6 +8,3 @@ inference:
   align_motif: False
   str_self_cond: True
   state_dict_to_use: model_state_dict
-
-score_model:
-  weights_path: /net/scratch/ahern/se3_diffusion/training/covale_complex_from_str_pred_batch24_l40_fallback/2023-07-24_1690254530.7745314_v4znb6v8/rank_0/models/RFD_17.pt

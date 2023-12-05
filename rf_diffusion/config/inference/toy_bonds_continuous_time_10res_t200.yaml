@@ -1,8 +1,8 @@
 defaults:
   - toy_bonds_continuous_time_10res
 
-score_model:
-  weights_path: /net/scratch/ahern/se3_diffusion/training/aa/toy_bonds/continuous_time_10res_t200_prod/2023-10-17_1697526096.8564672_z7vyk0e6/rank_0/models/RFD_1.50.pt
+#score_model:
+#  weights_path: /net/scratch/ahern/se3_diffusion/training/aa/toy_bonds/continuous_time_10res_t200_prod/2023-10-17_1697526096.8564672_z7vyk0e6/rank_0/models/RFD_1.50.pt
 
 inference:
   output_prefix: out_inference/10res_t200

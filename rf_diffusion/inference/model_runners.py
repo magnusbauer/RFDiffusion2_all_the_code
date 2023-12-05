@@ -38,6 +38,7 @@ from rf_se3_diffusion.data import se3_diffuser
 from rf_diffusion import features
 import os
 from rf_diffusion import noisers
+from rf_diffusion.config import config_format
 
 import sys
 
@@ -72,13 +73,13 @@ class Sampler:
         self.initialized=True
 
         # Assemble config from the checkpoint
-        ic(self._conf.score_model.weights_path)
+        ic(self._conf.inference.ckpt_path)
         weights_pkl = du.read_pkl(
-            self._conf.score_model.weights_path, use_torch=True,
+            self._conf.inference.ckpt_path, use_torch=True,
                 map_location=self.device)
-        
+
         # WIP: if the conf must be read from a different checkpoint for backwards compatibility
-        if hasattr( self._conf.score_model, 'conf_pkl_path') and self._conf.score_model.conf_pkl_path:
+        if hasattr( self._conf, 'score_model') and hasattr( self._conf.score_model, 'conf_pkl_path') and self._conf.score_model.conf_pkl_path:
             print(f'WARNING: READING CONF FROM NON-MODEL PICKLE: {self._conf.score_model.conf_pkl_path} THIS SHOULD ONLY BE DONE FOR DEBUGGING PURPOSES')
             weights_conf = du.read_pkl(
                 self._conf.score_model.conf_pkl_path, use_torch=True,
@@ -91,6 +92,7 @@ class Sampler:
         OmegaConf.set_struct(weights_conf, False)
         self._conf = OmegaConf.merge(
             weights_conf, self._conf)
+        config_format.alert_obsolete_options(self._conf)
 
         self.diffuser = noisers.get(self._conf.diffuser)
         self.model = RFScore(self._conf.rf.model, self.diffuser, self.device)

@@ -184,7 +184,7 @@ def transform_file_path(file_path):
     return f'{formatted_date}_{formatted_epoch}'
     
 def get_epoch(row):
-    ckpt = row['score_model.weights_path']
+    ckpt = row['inference.ckpt_path']
     ckpt = ckpt.split('_')[-1]
     ckpt = ckpt[:-3]
     return float(ckpt)
@@ -278,12 +278,12 @@ def add_pymol_name(data, keys):
         pymol_prefix = []
         for k in keys:
             if k == 'model':
-                v = row['score_model.weights_path']
+                v = row['inference.ckpt_path']
                 v = f"{v.split('/')[-4].split('202')[0]}_{v.split('/')[-1]}"
             else:
                 v = row[k]
                              
-            if k == 'score_model.weights_path':
+            if k == 'inference.ckpt_path':
                 v = v.split('/')[-1]
             if k == 'inference.input_pdb':
                 v = v.split('/')[-1]

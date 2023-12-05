@@ -13,4 +13,4 @@ export PYTHONPATH="${PYTHONPATH}:PKG_DIR:PKG_DIR/lib/se3_flow_matching"
 cd rf_diffusion
 
 ## Verify tests pass
-apptainer exec /net/scratch/dtischer/trash/v1.sif pytest --disable-warnings -s -m "not nondeterministic"
+apptainer exec /software/containers/users/dtischer/rf_diffusion_aa.sif pytest --disable-warnings -s -m "not nondeterministic"

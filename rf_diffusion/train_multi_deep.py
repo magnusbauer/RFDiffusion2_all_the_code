@@ -758,7 +758,7 @@ class Trainer():
 
         # Make overrides
         overrides=[
-            f'sweep.command_args="--config-name=aa score_model.weights_path={model_path}"',
+            f'sweep.command_args="--config-name=aa inference.ckpt_path={model_path}"',
             f'outdir={benchmark_dir}',
         ]
 

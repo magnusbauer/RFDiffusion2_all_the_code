@@ -10,9 +10,6 @@ inference:
   contig_as_guidepost: False
   str_self_cond: 1
 
-score_model:
-  weights_path: /net/scratch/ahern/se3_diffusion/training/fm/fm2023-11-18_20:09:38.198221/rank_0/models/RFD_22.pt
-
 dataloader:
   P_IS_GUIDEPOST_EXAMPLE: 0.5
 

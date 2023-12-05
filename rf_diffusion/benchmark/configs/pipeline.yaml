@@ -17,7 +17,7 @@ af2_unmpnned: False
 graft: False
 
 sweep:
-  command_args: --config-name=aa score_model.weights_path=/net/scratch/ahern/se3_diffusion/training/from_scratch_4_resume_ep16/train_session2023-06-29_1688072531.6048305/models/RFD_30.pt
+  command_args: --config-name=aa inference.ckpt_path=/net/scratch/ahern/se3_diffusion/training/from_scratch_4_resume_ep16/train_session2023-06-29_1688072531.6048305/models/RFD_30.pt
   out: ${outdir}/run
   slurm:
     in_proc: ${in_proc}

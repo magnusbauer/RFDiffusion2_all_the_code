@@ -1,6 +1,8 @@
 defaults:
   - aa
 
+deterministic: True
+
 inference:
   num_designs: 1
   design_startnum: -1

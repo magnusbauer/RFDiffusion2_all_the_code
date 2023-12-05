@@ -49,7 +49,7 @@ def get_pdb_path(row):
     raise Exception(f'pdb not found in {possible_paths} ')
 
 def get_epoch(row):
-    ckpt = row['score_model.weights_path']
+    ckpt = row['inference.ckpt_path']
     ckpt = ckpt.split('_')[-1]
     ckpt = ckpt[:-3]
     return float(ckpt)
