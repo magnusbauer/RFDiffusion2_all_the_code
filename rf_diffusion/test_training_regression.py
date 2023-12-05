@@ -226,7 +226,7 @@ class Loss(unittest.TestCase):
                 print(f'grad shapes: {tensor_util.info(grads)}')
                 print(f'grad (min, max): {tensor_util.minmax(grads)}')
                 print(f'loss: {loss}')
-                cmp = partial(tensor_util.cmp, atol=1e-5, rtol=0.1)
+                cmp = partial(tensor_util.cmp, atol=5e-5, rtol=1e-2)
                 # More stringent for running on the same architecture.
                 # cmp = partial(tensor_util.cmp, atol=1e-20, rtol=1e-5)
                 test_utils.assert_matches_golden(self, golden_name, grads, rewrite=REWRITE, custom_comparator=cmp)
