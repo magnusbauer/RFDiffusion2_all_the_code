@@ -6,6 +6,7 @@ cautious: False
 v2: True
 regen_jobs: True
 unsafe_skip_parsing: False
+pack_motif: False
 # outdir: ${.datadir}
 outdirs: 
   # - ${..datadir}

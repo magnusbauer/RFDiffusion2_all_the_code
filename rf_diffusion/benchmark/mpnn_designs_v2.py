@@ -159,6 +159,7 @@ def run_mpnn(conf, filenames):
             f'--zero_indexed 1 '\
             f'--packed_suffix "" '\
             f'--omit_AA XC ',
+            f'--repack_everything {1 if conf.pack_motif else 0}',
             f'--force_hetatm 1',
             file=job_list_file)
     if conf.slurm.submit: job_list_file.close()

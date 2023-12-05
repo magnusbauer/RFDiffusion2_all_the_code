@@ -7,13 +7,14 @@ inference:
   input_pdb: 'benchmark/input/gaa.pdb'
   guidepost_xyz_as_design: True
   guidepost_xyz_as_design_bb: [True]
+  contig_as_guidepost: False
+  str_self_cond: 1
+
+score_model:
+  weights_path: /net/scratch/ahern/se3_diffusion/training/fm/fm2023-11-18_20:09:38.198221/rank_0/models/RFD_22.pt
 
 dataloader:
   P_IS_GUIDEPOST_EXAMPLE: 0.5
 
 contigmap:
-  contigs: ['1,A518-518,1']
-  length: 3-3
-
-diffuser:
-  type: diffusion
+  contigs: ['10,A518-518,1']

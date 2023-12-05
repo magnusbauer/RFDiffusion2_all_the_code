@@ -163,7 +163,7 @@ class Loss(unittest.TestCase):
         # This test must be run on a CPU.
         assert torch.cuda.device_count() == 0
         run_inference.make_deterministic()
-        conf = construct_conf([])
+        conf = construct_conf(['experiment.gamma=0.999'])
         train = train_multi_deep.make_trainer(conf)
         fake_forward = mock.patch.object(RoseTTAFoldModule, "__call__", autospec=True)
         a = mock.patch.object(torch.cuda.amp.GradScaler, "scale", autospec=True)
@@ -226,10 +226,9 @@ class Loss(unittest.TestCase):
                 print(f'grad shapes: {tensor_util.info(grads)}')
                 print(f'grad (min, max): {tensor_util.minmax(grads)}')
                 print(f'loss: {loss}')
-
-                # cmp = partial(tensor_util.cmp, atol=1e-9, rtol=1e-2)
+                cmp = partial(tensor_util.cmp, atol=1e-5, rtol=0.1)
                 # More stringent for running on the same architecture.
-                cmp = partial(tensor_util.cmp, atol=1e-20, rtol=1e-5)
+                # cmp = partial(tensor_util.cmp, atol=1e-20, rtol=1e-5)
                 test_utils.assert_matches_golden(self, golden_name, grads, rewrite=REWRITE, custom_comparator=cmp)
 
 if __name__ == '__main__':

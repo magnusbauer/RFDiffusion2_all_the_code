@@ -1,4 +1,5 @@
 import unittest
+import pytest
 from unittest import mock
 import subprocess
 from pathlib import Path
@@ -56,10 +57,12 @@ class TestRegression(unittest.TestCase):
         hydra.core.global_hydra.GlobalHydra.instance().clear()
     
     # Example regression test.
+    @pytest.mark.slow
+    @pytest.mark.nondeterministic
     def test_t2(self):
         run_inference.make_deterministic()
         pdb, _ = infer([
-            'diffuser.T=2',
+            'diffuser.T=10',
             'inference.num_designs=1',
             'inference.output_prefix=tmp/test_0',
         ])
@@ -99,16 +102,15 @@ class TestRegression(unittest.TestCase):
         cmp = partial(tensor_util.cmp, atol=5e-2, rtol=0)
         test_utils.assert_matches_golden(self, 'rfi_regression', mapped_calls, rewrite=REWRITE, custom_comparator=cmp)
         
-
+    @pytest.mark.slow
     def test_partial_sidechain(self):
         run_inference.make_deterministic()
         pdb, _ = infer([
-            'diffuser.T=2',
+            'diffuser.T=10',
             'inference.num_designs=1',
             'inference.output_prefix=tmp/test_3',
-            "contigmap.contigs=['1,A518-518,1']",
+            "contigmap.contigs=['9,A518-518,1']",
             "+contigmap.contig_atoms=\"{'A518':'CG,OD1,OD2'}\"",
-            'contigmap.length=3-3'
         ])
         pdb_contents = inference.utils.parse_pdb(pdb)
         # The network exhibits chaotic behavior when coordinates corresponding to chiral gradients are updated,
@@ -117,15 +119,15 @@ class TestRegression(unittest.TestCase):
         cmp = partial(tensor_util.cmp, atol=10, rtol=0)
         test_utils.assert_matches_golden(self, 'partial_sc', pdb_contents, rewrite=REWRITE, custom_comparator=cmp)
 
+    @pytest.mark.slow
+    @pytest.mark.nondeterministic
     def test_guidepost(self):
         '''
         Tests that predictions with guide posts flag are correct.
         '''
         run_inference.make_deterministic()
         pdb, conf = infer([
-            'diffuser.T=2',
-            'inference.ckpt_path=/home/rohith/rf_diffusion/BFF_2_gp_test.pt',
-            'inference.state_dict_to_load=final_state_dict',
+            'diffuser.T=10',
             'inference.input_pdb=test_data/1qys.pdb',
             'inference.num_designs=1',
             'inference.output_prefix=tmp/test_gp',
@@ -152,6 +154,7 @@ class TestInference(unittest.TestCase):
             'inference.num_designs=1',
             'inference.output_prefix=tmp/test_1',
             'inference.contig_as_guidepost=False',
+            'inference.str_self_cond=0',
         ])
 
         func_sig = signature(RoseTTAFoldModule.forward)
@@ -175,7 +178,7 @@ class TestInference(unittest.TestCase):
                 argument_map = tensor_util.cpu(argument_map)
                 mapped_calls.append(argument_map)
         
-        is_motif = 1
+        is_motif = 10
         def constant(mapped_call):
             c = {}
             # Technically only the first 3 indices are used by the network, but helpful to check to understand
