@@ -1,3 +1,4 @@
+from rf_diffusion.dev import pymol
 import fire
 import glob
 from icecream import ic
@@ -340,6 +341,7 @@ def main(path,
          key=None,
          ):
     ic(pymol_url)
+    pymol.init(pymol_url)
     # cmd = analyze.get_cmd(pymol_url)
     # analyze.cmd = cmd
     # show_tip_pa.cmd = cmd

@@ -1,0 +1,16 @@
+defaults:
+  - pipeline
+
+sweep:
+  command_args: >
+    --config-name=aa
+    inference.ckpt_path=
+      /net/scratch/ahern/se3_diffusion/training/fm_tip_resume_24/fm_tip_resume_242023-12-03_14:20:34.490797/rank_0/models/RFD_30.pt
+    contigmap.length=150-150
+    diffuser.T=50
+  benchmark_json: training_benchmarks.json
+  benchmarks: tip_4_lig_retroaldolase_pa
+  num_per_condition: 2
+  num_per_job: 2
+
+outdir: /net/scratch/${oc.env:USER}/se3_diffusion/benchmarks/${now:%Y-%m-%d}_${now:%H-%M-%S}_retroaldolase_demo

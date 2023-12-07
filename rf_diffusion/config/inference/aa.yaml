@@ -8,3 +8,4 @@ inference:
   align_motif: False
   str_self_cond: True
   state_dict_to_use: model_state_dict
+  deterministic: True

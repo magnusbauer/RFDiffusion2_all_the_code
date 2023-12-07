@@ -24,17 +24,20 @@ class XMLRPCWrapperProxy(object):
             all_args += tuple(f'{k}={v}' for k,v in kw.items())
             raise Exception(f"cmd.{self.name}('{','.join(all_args)})'") from e
 
-def get_cmd(pymol_url='http://chesaw.dhcp.ipd:9123'):
+def get_cmd(pymol_url='http://localhost:9123'):
     cmd = xmlrpclib.ServerProxy(pymol_url)
     if 'ipd' not in pymol_url:
         make_network_cmd(cmd)
     return cmd
 
 cmd = None
-def init(pymol_url='http://chesaw.dhcp.ipd:9123'):
+def init(pymol_url='http://localhost:9123'):
     global cmd
-    cmd = get_cmd(pymol_url)
-    cmd = XMLRPCWrapperProxy(cmd)
+    cmd_inner = get_cmd(pymol_url)
+    if cmd is None:
+        cmd = XMLRPCWrapperProxy(cmd_inner)
+    else:
+        cmd.wrapped = cmd_inner
     
 
 def make_network_cmd(cmd):
