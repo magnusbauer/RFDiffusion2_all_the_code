@@ -1,0 +1,12 @@
+defaults:
+  - retroaldolase_demo
+
+sweep:
+  num_per_condition: 1
+  num_per_job: 1
+
+in_proc: true
+start_step: sweep
+stop_step: sweep
+
+outdir: ${hydra:runtime.cwd}/demo_outputs/${now:%Y-%m-%d}_${now:%H-%M-%S}_retroaldolase
