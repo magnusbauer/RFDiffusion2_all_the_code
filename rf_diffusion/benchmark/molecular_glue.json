@@ -1,0 +1,3 @@
+{
+    "molecular_glue_whole_target": "contigmap.has_termini=[False,True] inference.contig_as_guidepost=False inference.input_pdb=6m91.pdb contigmap.contigs=[\\'A256-548_80\\'] inference.ligand=J97 contigmap.length=null"
+}

@@ -1,0 +1,18 @@
+defaults:
+  - pipeline
+
+sweep:
+  command_args: >
+    --config-name=aa
+    inference.ckpt_path=
+      /net/scratch/ahern/se3_diffusion/training/fm_tip_resume_24/fm_tip_resume_242023-12-03_14:20:34.490797/rank_0/models/RFD_30.pt
+    diffuser.T=50
+  benchmark_json: molecular_glue.json
+  benchmarks: all
+  num_per_condition: 1
+  num_per_job: 1
+in_proc: 1
+start_step: sweep
+stop_step: sweep
+
+outdir: /net/scratch/${oc.env:USER}/se3_diffusion/benchmarks/${now:%Y-%m-%d}_${now:%H-%M-%S}_molecular_glue_demo
