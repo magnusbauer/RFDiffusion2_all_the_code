@@ -26,7 +26,7 @@ class XMLRPCWrapperProxy(object):
 
 def get_cmd(pymol_url='http://localhost:9123'):
     cmd = xmlrpclib.ServerProxy(pymol_url)
-    if 'ipd' not in pymol_url:
+    if not  ('ipd' in pymol_url or 'localhost' in pymol_url):
         make_network_cmd(cmd)
     return cmd
 
