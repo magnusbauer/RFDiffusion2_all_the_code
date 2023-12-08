@@ -356,7 +356,7 @@ class TestTwoChains(unittest.TestCase):
         indep, metadata = aa_model.make_indep(input_pdb, ligand_name, return_metadata=True)
         target_feats = inference.utils.process_target(input_pdb)
         contig_map =  contigs.ContigMap(target_feats,
-                                    contigs=['A441-450;10'])
+                                    contigs=['A441-450_10'])
         
         indep_contig,is_diffused,_ = adaptor.insert_contig(indep, contig_map, metadata=metadata)
 
@@ -381,7 +381,7 @@ class TestTwoChains(unittest.TestCase):
         indep, metadata = aa_model.make_indep(input_pdb, ligand_name, return_metadata=True)
         target_feats = inference.utils.process_target(input_pdb)
         contig_map = contigs.ContigMap(target_feats,
-                                    contigs=['3;3;A441-443,A445-447'])
+                                    contigs=['3_3_A441-443,A445-447'])
 
         indep_contig, is_diffused, _ = adaptor.insert_contig(indep, contig_map, metadata=metadata)
 
@@ -403,7 +403,7 @@ class TestTwoChains(unittest.TestCase):
         indep, metadata = aa_model.make_indep(input_pdb, ligand_name, return_metadata=True)
         target_feats = inference.utils.process_target(input_pdb)
         contig_map = contigs.ContigMap(target_feats,
-                                    contigs=['A441-443;3;A445-447'])
+                                    contigs=['A441-443_3_A445-447'])
 
         indep_contig, is_diffused, _ = adaptor.insert_contig(indep, contig_map, metadata=metadata)
 

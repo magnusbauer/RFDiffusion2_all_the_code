@@ -7,7 +7,7 @@ inference:
   ligand: ANP
 
 contigmap:
-  contigs: ['A441-450;10']
+  contigs: ['A441-450_10']
   has_termini: [True,True]
 
 dataloader:

@@ -35,7 +35,7 @@ class TestContigs(unittest.TestCase):
         run_inference.seed_all()
         target_feats = inference.utils.process_target(input_pdb)
         contig_map =  contigs.ContigMap(target_feats,
-                                    contigs=['10;A441-450'],
+                                    contigs=['10_A441-450'],
                                     has_termini=[True, True]
                                     )
 
@@ -86,7 +86,7 @@ class TestContigs(unittest.TestCase):
         run_inference.seed_all()
         target_feats = inference.utils.process_target(input_pdb)
         contig_map =  contigs.ContigMap(target_feats,
-                                    contigs=['A441-450;10'],
+                                    contigs=['A441-450_10'],
                                     has_termini=[True, True]
                                     )
 
@@ -110,7 +110,7 @@ class TestContigs(unittest.TestCase):
         run_inference.seed_all()
         target_feats = inference.utils.process_target(input_pdb)
         contig_map =  contigs.ContigMap(target_feats,
-                                    contigs=['10;A441-450'],
+                                    contigs=['10_A441-450'],
                                     has_termini=[True, True]
                                     )
 
@@ -134,7 +134,7 @@ class TestContigs(unittest.TestCase):
         run_inference.seed_all()
         target_feats = inference.utils.process_target(input_pdb)
         contig_map = contigs.ContigMap(target_feats,
-                                    contigs=['A441-443,A445-447;3;3'],
+                                    contigs=['A441-443,A445-447_3_3'],
                                     has_termini=[True, True, False])
 
         # Extract the required chain termini from the chains attribute
@@ -156,7 +156,7 @@ class TestContigs(unittest.TestCase):
         run_inference.seed_all()
         target_feats = inference.utils.process_target(input_pdb)
         contig_map = contigs.ContigMap(target_feats,
-                                    contigs=['3;3;A441-443,A445-447'],
+                                    contigs=['3_3_A441-443,A445-447'],
                                     has_termini=[True, True, False])
 
         # Extract the required chain termini from the chains attribute
@@ -178,7 +178,7 @@ class TestContigs(unittest.TestCase):
         run_inference.seed_all()
         target_feats = inference.utils.process_target(input_pdb)
         contig_map = contigs.ContigMap(target_feats,
-                                    contigs=['3;3;A441-443,A445-447'],
+                                    contigs=['3_3_A441-443,A445-447'],
                                     has_termini=[True, True, False])
 
         # Extract chain letters and indices from contig_map.hal
