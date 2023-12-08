@@ -21,11 +21,12 @@ apptainer exec /software/containers/users/dtischer/rf_diffusion_aa.sif pytest --
 ## Running inference
 To run a simple pipeline with no mpnn/scoring for the tip atom case:
 
-`/software/containers/users/dtischer/rf_diffusion_aa.sif rf_diffusion/benchmark/pipeline.py --config-name=retroaldolase_demo_nodigs`
+`/software/containers/users/dtischer/rf_diffusion_aa.sif rf_diffusion/benchmark/pipeline.py --config-name=demo_design_only`
 
 This will print the directory the designs are created in:
-ic| conf.outdir: '/tmp/USERNAME/DATE_retroaldolase_demo'
+ic| conf.outdir: OUTDIR
 
+Once the pipeline finishes (check sjobs for an array job named `sweep_hyperparameters`), view the designs:
 
 ## Viewing designs
 First, start pymol:
@@ -38,10 +39,15 @@ Find your hostname with
 `hostname -I`
 
 Then run:
-`/software/containers/users/dtischer/rf_diffusion_aa.sif rf_diffusion/dev/show_bench.py --clear=True 'DATE/*.pdb' --pymol_url=http://HOSTNAME:9123`
+`/software/containers/users/dtischer/rf_diffusion_aa.sif rf_diffusion/dev/show_bench.py --clear=True 'OUTDIR/*.pdb' --pymol_url=http://HOSTNAME:9123`
 
-You should see an enzyme like this render in your pymol session:
+You should see multiple designs (such as this enzyme design) render in your pymol session:
 ![retroaldolase_demo](images/demo_output_retroaldolase.png)
 
 To render some of the nice colors, you may need to add the files in `pymol_config` to your `.pymolrc`
+
+## Running inference (OUTSIDE OF DIGS)
+To run a simple pipeline with no mpnn/scoring for the tip atom case:
+
+`/software/containers/users/dtischer/rf_diffusion_aa.sif rf_diffusion/benchmark/pipeline.py --config-name=retroaldolase_demo_nodigs`
 
