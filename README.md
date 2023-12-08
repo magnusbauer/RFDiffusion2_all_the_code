@@ -7,7 +7,7 @@ git submodule init
 
 git submodule update --init
 
-## Temporary hack
+## Temporary hack to set the python path
 export PYTHONPATH="${PYTHONPATH}:PKG_DIR"
 
 cd rf_diffusion
@@ -17,9 +17,10 @@ apptainer exec /software/containers/users/dtischer/rf_diffusion_aa.sif pytest --
 
 
 # Simple inference pipeline run
-
 ## Running inference
-To run a simple pipeline with no mpnn/scoring for the tip atom case:
+To run a demo of some of the inference capabilities, including enzyme design from tip atoms, enzyme design from tip atoms of unknown sequence position, ligand binder design, traditional contiguous motif scaffolding, and molecular glue design (binder to protein:small_molecule complex).  (See `PKG_DIR/rf_diffusion/benchmark/demo.json` for how these tasks are declared)
+
+cd PKG DIR
 
 `/software/containers/users/dtischer/rf_diffusion_aa.sif rf_diffusion/benchmark/pipeline.py --config-name=demo_design_only`
 
