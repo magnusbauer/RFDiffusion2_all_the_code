@@ -1,0 +1,14 @@
+defaults:
+  - aa
+
+guidepost_bonds: False
+inference:
+  input_pdb: ./rf_diffusion/benchmark/input/2j0l.pdb
+  ligand: ANP
+
+contigmap:
+  contigs: ['A441-450;10']
+  has_termini: [True,True]
+
+dataloader:
+  USE_GUIDE_POSTS: False

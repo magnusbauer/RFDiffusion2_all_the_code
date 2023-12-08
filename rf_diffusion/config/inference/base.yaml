@@ -65,6 +65,7 @@ contigmap:
   inpaint_seq: null
   length: null
   shuffle: null
+  has_termini: [True]
 
 model:
   n_extra_block: 4

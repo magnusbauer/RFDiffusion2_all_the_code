@@ -8,6 +8,7 @@ import assertpy
 import rf_diffusion.aa_model as aa_model
 import rf2aa.util
 import rf2aa.chemical
+import numpy as np
 
 def set_nonexistant_atoms_to_nan(xyz, seq, H_exists=False):
     atom_mask = rf2aa.util.allatom_mask[seq]

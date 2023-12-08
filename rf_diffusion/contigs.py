@@ -23,6 +23,7 @@ class ContigMap():
             inpaint_seq=None,
             inpaint_str=None,
             length=None,
+            has_termini=None,
             ref_idx=None,
             hal_idx=None,
             idx_rf=None,
@@ -61,6 +62,7 @@ class ContigMap():
                 self.length = [int(length.split("-")[0]),int(length.split("-")[1])+1]
         else:
             self.length = None
+        self.has_termini=has_termini,
         self.ref_idx = ref_idx
         self.hal_idx=hal_idx
         self.idx_rf=idx_rf
@@ -80,7 +82,7 @@ class ContigMap():
                 self.contig_atoms = None
             self.sampled_mask,self.contig_length,self.n_inpaint_chains = self.get_sampled_mask()
             self.receptor_chain = self.chain_order[self.n_inpaint_chains]
-            self.receptor, self.receptor_hal, self.receptor_rf, self.inpaint, self.inpaint_hal, self.inpaint_rf, self.atomize_resnum2atomnames = self.expand_sampled_mask()
+            self.receptor, self.receptor_hal, self.receptor_rf, self.inpaint, self.inpaint_hal, self.inpaint_rf, self.atomize_resnum2atomnames, self.chains = self.expand_sampled_mask()
             self.ref = self.inpaint + self.receptor
             self.hal = self.inpaint_hal + self.receptor_hal
             self.rf = self.inpaint_rf + self.receptor_rf 
@@ -120,8 +122,7 @@ class ContigMap():
         count = 0
         while length_compatible is False:
             inpaint_chains=0
-            contig_list = self.contigs[0].strip().split()
-            assert len(contig_list) == 1, f'contig_list with >1 element not curently supported: {contig_list}'
+            contig_list = self.contigs[0].strip().split(';')
             sampled_mask = []
             sampled_mask_length = 0
             for con in contig_list:
@@ -171,6 +172,7 @@ class ContigMap():
 
     def expand_sampled_mask(self):
         chain_order='ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+        chains=[]
         receptor = []
         inpaint = []
         receptor_hal = []
@@ -182,44 +184,29 @@ class ContigMap():
         inpaint_chain_break = []
         atomize_resnum2atomnames = {}
         for con in self.sampled_mask:
-            if (all([i[0].isalpha() for i in con.split(",")[:-1]]) and con.split(",")[-1] == '0') or self.topo is True:
-                #receptor chain
-                subcons = con.split(",")[:-1]
-                assert all([i[0] == subcons[0][0] for i in subcons]), "If specifying fragmented receptor in a single block of the contig string, they MUST derive from the same chain"
-                assert all(int(subcons[i].split("-")[0][1:]) < int(subcons[i+1].split("-")[0][1:]) for i in range(len(subcons)-1)), "If specifying multiple fragments from the same chain, pdb indices must be in ascending order!"
-                for idx, subcon in enumerate(subcons):
-                    ref_to_add = [(subcon[0], i) for i in np.arange(int(subcon.split("-")[0][1:]),int(subcon.split("-")[1])+1)]
-                    receptor.extend(ref_to_add)
-                    receptor_hal.extend([(self.receptor_chain,i) for i in np.arange(receptor_idx, receptor_idx+len(ref_to_add))])
-                    receptor_idx += len(ref_to_add)
+            inpaint_chain_idx += 1
+            prev_inpaint_len=len(inpaint)
+            for subcon in con.split(","):
+                subcon=subcon.split("/")[0]
+                if subcon[0].isalpha(): # this is a part of the motif because the first element of the contig is the chain letter
+                    ref_to_add=[(subcon[0], i) for i in np.arange(int(subcon.split("-")[0][1:]),int(subcon.split("-")[1])+1)]
+                    inpaint.extend(ref_to_add)
+                    inpaint_hal.extend([(chain_order[inpaint_chain_idx], i) for i in np.arange(inpaint_idx,inpaint_idx+len(ref_to_add))])
+                    inpaint_idx += len(ref_to_add)
                     if self.contig_atoms is not None:
-                        atomize_resnum2atomnames.update({(k[0], int(k[1:])):v for k, v in self.contig_atoms.items() if (k[0], int(k[1:])) in receptor})
-                    if idx != len(subcons)-1:
-                        idx_jump = int(subcons[idx+1].split("-")[0][1:]) - int(subcon.split("-")[1]) -1 
-                        receptor_chain_break.append((receptor_idx-1,idx_jump)) #actual chain break in pdb chain
-                    else:
-                        receptor_chain_break.append((receptor_idx-1,200)) #200 aa chain break 
-            else:
-                inpaint_chain_idx += 1
-                for subcon in con.split(","):
-                    if subcon[0].isalpha(): # this is a part of the motif because the first element of the contig is the chain letter
-                        ref_to_add=[(subcon[0], i) for i in np.arange(int(subcon.split("-")[0][1:]),int(subcon.split("-")[1])+1)]
-                        inpaint.extend(ref_to_add)
-                        inpaint_hal.extend([(chain_order[inpaint_chain_idx], i) for i in np.arange(inpaint_idx,inpaint_idx+len(ref_to_add))])
-                        inpaint_idx += len(ref_to_add)
-                        if self.contig_atoms is not None:
-                            for k, v in self.contig_atoms.items():
-                                chain_residue = (k[0], int(k[1:]))
-                                if chain_residue in inpaint:
-                                    if v == ['all']:
-                                        v = self.atom_names(chain_residue[0], chain_residue[1])
-                                    atomize_resnum2atomnames[chain_residue] = v  
-                    else:
-                        inpaint.extend([('_','_')] * int(subcon.split("-")[0]))
-                        inpaint_hal.extend([(chain_order[inpaint_chain_idx], i) for i in np.arange(inpaint_idx,inpaint_idx+int(subcon.split("-")[0]))])
-                        inpaint_idx += int(subcon.split("-")[0])
-                inpaint_chain_break.append((inpaint_idx-1,200))
-
+                        for k, v in self.contig_atoms.items():
+                            chain_residue = (k[0], int(k[1:]))
+                            if chain_residue in inpaint:
+                                if v == ['all']:
+                                    v = self.atom_names(chain_residue[0], chain_residue[1])
+                                atomize_resnum2atomnames[chain_residue] = v  
+                else:
+                    inpaint.extend([('_','_')] * int(subcon.split("-")[0]))
+                    inpaint_hal.extend([(chain_order[inpaint_chain_idx], i) for i in np.arange(inpaint_idx,inpaint_idx+int(subcon.split("-")[0]))])
+                    inpaint_idx += int(subcon.split("-")[0])
+            chains.append((inpaint_chain_idx,prev_inpaint_len,len(inpaint),inpaint_idx))
+            inpaint_idx = inpaint_idx + 32
+            inpaint_chain_break.append((inpaint_idx-1,200))
     
         if self.topo is True or inpaint_hal == []:
             receptor_hal = [(i[0], i[1]) for i in receptor_hal]
@@ -234,7 +221,7 @@ class ContigMap():
         for ch_break in receptor_chain_break[:-1]:
             receptor_rf[ch_break[0]:] += ch_break[1]
     
-        return receptor, receptor_hal, receptor_rf.tolist(), inpaint, inpaint_hal, inpaint_rf.tolist(), atomize_resnum2atomnames
+        return receptor, receptor_hal, receptor_rf.tolist(), inpaint, inpaint_hal, inpaint_rf.tolist(), atomize_resnum2atomnames, chains
 
     def get_inpaint_seq_str(self, inpaint_s):
         '''

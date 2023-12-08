@@ -15,6 +15,7 @@ import bond_geometry
 import perturbations
 import atomize
 import metrics
+import test_utils
 
 # def is_se3_invariant(loss, true, pred):
 
@@ -30,7 +31,7 @@ class TestLoss(unittest.TestCase):
                                        length='3-3',
                                        )
         indep, metadata = aa_model.make_indep(test_pdb, return_metadata=True)
-        conf = addict.Dict()
+        conf = test_utils.construct_conf(inference=True)
         adaptor = aa_model.Model(conf)
         indep_contig, is_diffused, _ = adaptor.insert_contig(indep, contig_map, metadata=metadata)
         point_types = aa_model.get_point_types(indep_contig, adaptor.atomizer)
@@ -72,7 +73,7 @@ class TestLoss(unittest.TestCase):
                                        )
         indep, metadata = aa_model.make_indep(test_pdb, return_metadata=True)
 
-        conf = addict.Dict()
+        conf = test_utils.construct_conf(inference=True) 
         adaptor = aa_model.Model(conf)
         indep_contig,is_diffused,_ = adaptor.insert_contig(indep, contig_map, metadata=metadata)
 

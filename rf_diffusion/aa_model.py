@@ -741,8 +741,6 @@ class Model:
 
         # Insert small mol into contig_map
         all_chains = set(ch for ch,_ in contig_map.hal)
-        # Not yet implemented due to index shifting
-        assert_that(len(all_chains)).is_equal_to(1)
         next_unused_chain = (e for e in contig_map.chain_order if e not in all_chains)
         n_sm = indep.is_sm.sum()
         is_sm_idx0 = torch.nonzero(indep.is_sm, as_tuple=True)[0].tolist()
@@ -793,8 +791,18 @@ class Model:
         o.idx = torch.tensor([i for _, i in contig_map.hal])
 
         o.terminus_type = torch.zeros(L_mapped)
-        o.terminus_type[0] = N_TERMINUS
-        o.terminus_type[n_prot-1] = C_TERMINUS
+
+        assert len(self.conf.contigmap.has_termini) == contig_map.n_inpaint_chains, "Please specify in contigmap.has_termini for which chains you want to have the termini present."
+
+        for use_termini, (chain_number, chain_start, chain_end, chain_idx) in zip(self.conf.contigmap.has_termini,contig_map.chains):
+            
+            if not chain_end>=L_mapped:
+                o.bond_feats[chain_end][chain_end - 1] = 0
+                o.bond_feats[chain_end - 1][chain_end] = 0
+
+            if use_termini:
+                o.terminus_type[chain_start] = N_TERMINUS
+                o.terminus_type[chain_end-1] = C_TERMINUS
 
         is_diffused_prot = ~torch.from_numpy(contig_map.inpaint_str)
         is_diffused_sm = torch.zeros(n_sm).bool()
@@ -818,7 +826,6 @@ class Model:
 
         pre_transform_length = o.length()
         o, is_diffused, is_seq_masked, self.atomizer, contig_map.gp_to_ptn_idx0 = transform_indep(o, is_res_str_shown, is_atom_str_shown, self.conf.inference.contig_as_guidepost, 'anywhere', self.conf.guidepost_bonds, metadata=metadata)
-        # o.extra_t1d = torch.zeros((o.length(),0))
         # HACK: gp indices may be lost during atomization, so we assume they are at the end of the protein.
         is_gp = torch.full((o.length(),), True)
         is_gp[:pre_transform_length] = False

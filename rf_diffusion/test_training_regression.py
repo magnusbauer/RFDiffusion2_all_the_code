@@ -50,10 +50,16 @@ class TestDistributed(unittest.TestCase):
 
 class ModelInputs(unittest.TestCase):
 
+    def setUp(self) -> None:
+        hydra.core.global_hydra.GlobalHydra.instance().clear()
+        if torch.distributed.is_initialized():
+            torch.distributed.destroy_process_group()
+        super().setUp()
+
     def tearDown(self) -> None:
         hydra.core.global_hydra.GlobalHydra().clear()
         torch.distributed.destroy_process_group()
-        return super().tearDown()
+        return super().setUp()
 
     def test_self_cond_tp1(self):
         os.environ['MASTER_PORT'] = '12320'
@@ -69,7 +75,7 @@ class ModelInputs(unittest.TestCase):
                        call_number=2)
 
     def test_atomize_regression(self):
-        os.environ['MASTER_PORT'] = '12322'
+        os.environ['MASTER_PORT'] = '12326'
         run_regression(self,
                        [
                             'dataloader.DIFF_MASK_PROBS=null',

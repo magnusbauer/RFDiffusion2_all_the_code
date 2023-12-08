@@ -47,7 +47,7 @@ class TestTransform(unittest.TestCase):
                                         **contig_kwargs
                                         )
             indep, metadata = aa_model.make_indep(test_pdb, ligand=ligand, return_metadata=True)
-            conf = addict.Dict()
+            conf = test_utils.construct_conf(inference=True) 
             adaptor = aa_model.Model(conf)
             indep, is_diffused, _ = adaptor.insert_contig(indep, contig_map, metadata=metadata) # ['ASP', 'GLN', 'VAL', 'PRO']
 

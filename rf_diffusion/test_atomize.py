@@ -13,6 +13,7 @@ import rf_diffusion.inference.utils
 from rf_diffusion import contigs
 from rf_diffusion import atomize
 from rf2aa import tensor_util
+import test_utils
 
 class TestAtomization(unittest.TestCase):
 
@@ -48,7 +49,7 @@ class TestAtomization(unittest.TestCase):
                                         )
             # indep = make_indep(test_pdb, 'LG1')
             indep, metadata = make_indep(test_pdb, ligand, return_metadata=True)
-            conf = addict.Dict()
+            conf = test_utils.construct_conf(inference=True) 
             adaptor = Model(conf)
             indep, _, _ = adaptor.insert_contig(indep, contig_map, metadata=metadata)
             indep.xyz = atomize.set_nonexistant_atoms_to_nan(indep.xyz, indep.seq)

@@ -338,6 +338,84 @@ class AAModelTestCase(unittest.TestCase):
         ic(new_bonds)
         new_bonded_elements = tuple(set([element for _, element in b]) for b in new_bonds)
         # assertpy.assert_that(new_bonded_elements).is_equal_to((set(['C', 'S']),))
+        
+class TestTwoChains(unittest.TestCase):
+
+    def test_two_chain_aa_model(self):
+        input_pdb = './benchmark/input/2j0l.pdb'
+        ligand_name = 'ANP'
+
+        conf = test_utils.construct_conf_single(config_name='two_chains_ligand', inference=True)
+        conf.inference.contig_as_guidepost=True
+        conf.guidepost_bonds = True
+        conf.dataloader.USE_GUIDE_POSTS = True
+        conf.contigmap.has_termini = [True, True]
+        adaptor = aa_model.Model(conf)
+
+        run_inference.seed_all()
+        indep, metadata = aa_model.make_indep(input_pdb, ligand_name, return_metadata=True)
+        target_feats = inference.utils.process_target(input_pdb)
+        contig_map =  contigs.ContigMap(target_feats,
+                                    contigs=['A441-450;10'])
+        
+        indep_contig,is_diffused,_ = adaptor.insert_contig(indep, contig_map, metadata=metadata)
+
+        aa_indep_attributes = {
+            "idx": indep_contig.idx,
+            "terminus_type": indep_contig.terminus_type,
+            "bond_feats": indep_contig.bond_feats,
+        }
+
+        cmp = partial(tensor_util.cmp, atol=1e-20, rtol=1e-5)
+        test_utils.assert_matches_golden(self, 'aa_model_two_chain', aa_indep_attributes, rewrite=REWRITE, custom_comparator=cmp)
+
+    def test_3_chain_indep(self):
+        input_pdb = './benchmark/input/2j0l.pdb'
+        ligand_name = 'ANP'
+
+        conf = test_utils.construct_conf_single(config_name='two_chains_ligand', inference=True)
+        conf.contigmap.has_termini = [True, True, False]
+        adaptor = aa_model.Model(conf)
+
+        run_inference.seed_all()
+        indep, metadata = aa_model.make_indep(input_pdb, ligand_name, return_metadata=True)
+        target_feats = inference.utils.process_target(input_pdb)
+        contig_map = contigs.ContigMap(target_feats,
+                                    contigs=['3;3;A441-443,A445-447'])
+
+        indep_contig, is_diffused, _ = adaptor.insert_contig(indep, contig_map, metadata=metadata)
+
+        expected_idx = torch.tensor([1, 2, 3, 36, 37, 38, 71, 72, 73, 74, 75, 76])
+        expected_terminus_type = torch.tensor([1., 0., 2., 1., 0., 2., 0., 0., 0., 0., 0., 0.])
+
+        assertpy.assert_that(indep_contig.idx.tolist()[:12]).is_equal_to(expected_idx.tolist())
+        assertpy.assert_that(indep_contig.terminus_type.tolist()[:12]).is_equal_to(expected_terminus_type.tolist())
+
+    def test_3_chain_binder_middle_indep(self):
+        input_pdb = './benchmark/input/2j0l.pdb'
+        ligand_name = 'ANP'
+
+        conf = test_utils.construct_conf_single(config_name='two_chains_ligand', inference=True)
+        conf.contigmap.has_termini = [True, True, True]
+        adaptor = aa_model.Model(conf)
+
+        run_inference.seed_all()
+        indep, metadata = aa_model.make_indep(input_pdb, ligand_name, return_metadata=True)
+        target_feats = inference.utils.process_target(input_pdb)
+        contig_map = contigs.ContigMap(target_feats,
+                                    contigs=['A441-443;3;A445-447'])
+
+        indep_contig, is_diffused, _ = adaptor.insert_contig(indep, contig_map, metadata=metadata)
+
+        expected_idx = torch.tensor([1,   2,   3,  36,  37,  38,  71,  72,  73])
+        expected_terminus_type = torch.tensor([1., 0., 2., 1., 0., 2., 1., 0., 2.])
+
+        assertpy.assert_that(indep_contig.idx.tolist()[:9]).is_equal_to(expected_idx.tolist())
+        assertpy.assert_that(indep_contig.terminus_type.tolist()[:9]).is_equal_to(expected_terminus_type.tolist())
+        assertpy.assert_that(indep_contig.bond_feats[2][3]).is_equal_to(0)
+        assertpy.assert_that(indep_contig.bond_feats[3][2]).is_equal_to(0)
+        assertpy.assert_that(indep_contig.bond_feats[5][6]).is_equal_to(0)
+        assertpy.assert_that(indep_contig.bond_feats[6][5]).is_equal_to(0)
 
 REWRITE = False
 if __name__ == '__main__':
