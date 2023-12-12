@@ -216,21 +216,6 @@ def load_df(metrics_path):
 
     return df
 
-class PymolObj:
-    def __init__(self, name, selectors):
-        self.name = name
-        self.selectors = selectors
-
-    def __getitem__(self, k):
-        return f'({self.name} and {self.selectors[k]})'
-    
-    def self_selectors(self):
-        # return show_tip_pa.combine_selectors([self.name], 
-        o = {}
-        for k, _ in self.selectors.items():
-            o[k] = self[k]
-        return o        
-
 def show_df(data, structs={'X0'}, af2=False, des=False, pair_seeds=False, return_entities=False, **kwargs):
     cmd.set('grid_mode', 1)
     all_pymol = []
@@ -245,11 +230,7 @@ def show_df(data, structs={'X0'}, af2=False, des=False, pair_seeds=False, return
             des_color = row['des_color']
         if 'hetatm_color' in row and not pd.isna(row['hetatm_color']):
             hetatm_color = row['hetatm_color']
-        pymol_objs, obj_selectors = show_tip_pa.show(row, structs=structs, af2=af2, des=des, des_color=des_color, hetatm_color=hetatm_color, **kwargs)
-
-        entities = {}
-        for label, pymol_name in pymol_objs.items():
-            entities[label] = PymolObj(pymol_name, obj_selectors[label])
+        entities = show_tip_pa.show(row, structs=structs, af2=af2, des=des, des_color=des_color, hetatm_color=hetatm_color, **kwargs)
         
         all_entities.append(entities)
 
@@ -258,12 +239,13 @@ def show_df(data, structs={'X0'}, af2=False, des=False, pair_seeds=False, return
         #     ic(entity)
         #     cmd.hide(AND([entity.name, NOT(entity['residue_motif'])]))
 
-        for v in pymol_objs.values():
+        for e in entities.values():
+            v = e.name
             grid_slot = i
             if pair_seeds:
                 grid_slot = row['seed'] + 1
             cmd.set('grid_slot', grid_slot, v)
-        all_pymol.append(pymol_objs)
+        all_pymol.append(v)
     cmd.color('atomic', 'hetatm and not elem C')
     cmd.set('valence', 1)
     if return_entities:

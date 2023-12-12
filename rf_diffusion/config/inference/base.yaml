@@ -66,6 +66,7 @@ contigmap:
   length: null
   shuffle: null
   has_termini: [True]
+  intersperse: null
 
 model:
   n_extra_block: 4

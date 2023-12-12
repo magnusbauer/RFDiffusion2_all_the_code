@@ -1,3 +1,4 @@
+from functools import partial
 import sys
 import os
 import re
@@ -25,6 +26,7 @@ from rf_diffusion.dev.pymol import cmd
 import rf_diffusion.estimate_likelihood as el
 from rf_diffusion.inference import utils
 from itertools import takewhile
+import math
 
 
 
@@ -33,6 +35,7 @@ print(f'initializing analyze, cmd: {cmd}')
 DESIGN = 'design_path'
 
 def common_prefix(strlist):
+    strlist=[e if isinstance(e, str) else 'notfound' for e in strlist]
     return ''.join(c[0] for c in takewhile(lambda x:
                 all(x[0] == y for y in x), zip(*strlist)))
 
@@ -48,8 +51,8 @@ def get_pdb_path(row):
             return p
     raise Exception(f'pdb not found in {possible_paths} ')
 
-def get_epoch(row):
-    ckpt = row['inference.ckpt_path']
+def get_epoch(row, model_key='inference.ckpt_path'):
+    ckpt = row[model_key]
     ckpt = ckpt.split('_')[-1]
     ckpt = ckpt[:-3]
     return float(ckpt)
@@ -75,6 +78,10 @@ def read_metrics(df_path, add_contig_rmsd=True):
         print('failed to get run', e)
     # For backwards compatibility
     model_key = 'inference.ckpt_path'
+    if len(df.value_counts('inference.ckpt_path')) < len(df.value_counts('score_model.weights_path')):
+        model_key = 'score_model.weights_path'
+    df[model_key] = df[model_key].map(lambda x: x if isinstance(x, str) else "MODEL_NOT_FOUND")
+    df = df[df[model_key] != "MODEL_NOT_FOUND"]
     if model_key not in df.columns:
         model_key = 'inference.ckpt_override_path'
     if model_key in df.columns:
@@ -84,8 +91,9 @@ def read_metrics(df_path, add_contig_rmsd=True):
     
     df['pdb_path'] = df.apply(get_pdb_path, axis=1)
     df['des_color'] = 'rainbow'
-    df['epoch'] = df.apply(get_epoch, axis=1)
+    df['epoch'] = df.apply(partial(get_epoch, model_key=model_key), axis=1)
     df['seed'] = df.name.apply(lambda x: int(x.split('_cond')[1].split('_')[1].split('-')[0]))
+    df['diffuser.type'] = df['diffuser.type'].fillna('diffusion')
 
     #get_epoch  = lambda x: re.match('.*_(\w+).*', x).groups()[0]
 

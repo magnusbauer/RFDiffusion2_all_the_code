@@ -92,7 +92,6 @@ def expand_config(conf):
     confs = {}
     if conf.inference.guidepost_xyz_as_design:
         sub_conf = copy.deepcopy(conf)
-        ic(conf.inference.guidepost_xyz_as_design_bb)
         for val in conf.inference.guidepost_xyz_as_design_bb:
             sub_conf.inference.guidepost_xyz_as_design_bb = val
             suffix = f'atomized-bb-{val}'
@@ -137,7 +136,8 @@ def sample(sampler):
 def sample_one(sampler, simple_logging=False):
     # For intermediate output logging
     indep = sampler.sample_init()
-    ic(sampler._conf.denoiser.noise_scale, sampler._conf.denoiser.center)
+    log = logging.getLogger(__name__)
+    log.debug(sampler._conf.denoiser.noise_scale, sampler._conf.denoiser.center)
 
     denoised_xyz_stack = []
     px0_xyz_stack = []
@@ -207,21 +207,26 @@ def sample_one(sampler, simple_logging=False):
     )
     px0_xyz_stack[..., :36, :] = px0_xyz_stack_filler
 
-    # deatomize features, if applicable
-    if (sampler.model_adaptor.atomizer is not None):
-        indep, px0_xyz_stack, denoised_xyz_stack, seq_stack = \
-            deatomize_sampler_outputs(sampler, indep, px0_xyz_stack, denoised_xyz_stack, seq_stack)
-
     # Idealize protein backbone
     is_protein = rf2aa.util.is_protein(indep.seq)
     denoised_xyz_stack[:, is_protein] = idealize_backbone.idealize_bb_atoms(
         xyz=denoised_xyz_stack[:, is_protein],
         idx=indep.idx[is_protein]
     )
-    px0_xyz_stack[:, is_protein] = idealize_backbone.idealize_bb_atoms(
+    px0_xyz_stack_idealized = torch.clone(px0_xyz_stack)
+    px0_xyz_stack_idealized[:, is_protein] = idealize_backbone.idealize_bb_atoms(
         xyz=px0_xyz_stack[:, is_protein],
         idx=indep.idx[is_protein]
     )
+    log = logging.getLogger(__name__)
+    backbone_ideality_gap = idealize_backbone.backbone_ideality_gap(px0_xyz_stack[0], px0_xyz_stack_idealized[0])
+    log.debug(backbone_ideality_gap)
+    px0_xyz_stack = px0_xyz_stack_idealized
+
+    # deatomize features, if applicable
+    if (sampler.model_adaptor.atomizer is not None):
+        indep, px0_xyz_stack, denoised_xyz_stack, seq_stack = \
+            deatomize_sampler_outputs(sampler, indep, px0_xyz_stack, denoised_xyz_stack, seq_stack)
 
     return indep, denoised_xyz_stack, px0_xyz_stack, seq_stack, raw
 

@@ -1,5 +1,6 @@
 import os
 from rf_diffusion.dev import show_tip_row
+from rf_diffusion.dev.show_tip_row import AND, OR
 from rf_diffusion.dev import analyze
 from rf_diffusion import aa_model
 import numpy as np
@@ -231,4 +232,34 @@ def show(row, structs = {'X0'}, af2=False, des=True, des_color=None, hetatm_colo
     cmd.show('spheres', 'name CA')
     if af2:
         cmd.color('white', pymol_objects['af2'])
-    return pymol_objects, obj_selectors
+
+    entities = {}
+    for label, pymol_name in pymol_objects.items():
+        entities[label] = PymolObj(pymol_name, obj_selectors[label])
+    
+    for e in entities.values():
+        if row['inference.contig_as_guidepost']:
+            gp = OR([
+                e['residue_gp_motif'],
+                e['sidechains_diffused'],
+                e['sidechains_motif'],
+            ])
+            cmd.unbond(gp, f' NOT ({gp})')
+
+            # DEBUG: hide the non-gp
+            # cmd.hide('everything', f'{e.name} and not ({gp})')
+    return entities
+
+class PymolObj:
+    def __init__(self, name, selectors):
+        self.name = name
+        self.selectors = selectors
+
+    def __getitem__(self, k):
+        return f'({self.name} and {self.selectors[k]})'
+    
+    def self_selectors(self):
+        o = {}
+        for k, _ in self.selectors.items():
+            o[k] = self[k]
+        return o

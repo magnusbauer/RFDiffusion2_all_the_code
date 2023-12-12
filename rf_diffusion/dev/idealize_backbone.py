@@ -25,10 +25,16 @@ def idealize_bb_atoms(xyz, idx):
     '''
     dims = xyz.shape[:-2]
     ala_seq = torch.zeros(dims)
-    xyz = rf2aa.util.idealize_reference_frame(ala_seq, xyz)
-    xyz[..., :4, :] = get_o(xyz, idx)
+    xyz_ideal = rf2aa.util.idealize_reference_frame(ala_seq, xyz)
+    xyz_ideal[..., :4, :] = get_o(xyz_ideal, idx)
+    return xyz_ideal
 
-    return xyz
+def backbone_ideality_gap(xyz_stack, xyz_stack_ideal):
+    ideality_gap = torch.linalg.vector_norm(
+        xyz_stack[..., :5, :] - xyz_stack_ideal[..., :5, :],
+        dim=-1,
+    )
+    return ideality_gap
 
 def rewrite(path, outpath):
     with open(path, 'r') as fh:
