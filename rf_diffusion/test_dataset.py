@@ -296,8 +296,10 @@ class Dataloader(unittest.TestCase):
             got.idx[-13:] = -1
             want.idx[-13:] = -1
             return self.cmp(got, want)
-        show.one(indep, atomizer)
-        cmd.show('licorice', 'resi 491')
+
+        if self.show_in_pymol:
+            show.one(indep, atomizer)
+            cmd.show('licorice', 'resi 491')
         
         test_utils.assert_matches_golden(self, golden_name, indep, rewrite=REWRITE, custom_comparator=cmp)
 
@@ -329,8 +331,11 @@ class Dataloader(unittest.TestCase):
         assertpy.assert_that(len(bonds)).is_equal_to(1)
 
         golden_name = f'indep_{dataset}-{mask}-weird'
-        show.one(indep, None, golden_name)
-        show.one(indep, atomizer, golden_name+'_deatomized')
+
+        if self.show_in_pymol:
+            show.one(indep, None, golden_name)
+            show.one(indep, atomizer, golden_name+'_deatomized')
+
         test_utils.assert_matches_golden(self, golden_name, indep, rewrite=REWRITE, custom_comparator=self.cmp)
         
     def test_covale_uncond_bridge(self):
@@ -346,8 +351,11 @@ class Dataloader(unittest.TestCase):
         assertpy.assert_that(len(bonds)).is_equal_to(2)
 
         golden_name = f'indep_{dataset}-{mask}-bridge'
-        show.one(indep, None, golden_name)
-        show.one(indep, atomizer, golden_name+'_deatomized')
+
+        if self.show_in_pymol:
+            show.one(indep, None, golden_name)
+            show.one(indep, atomizer, golden_name+'_deatomized')
+
         test_utils.assert_matches_golden(self, golden_name, indep, rewrite=REWRITE, custom_comparator=self.cmp)
 
     def test_covale_uncond_bridge_gpbonds(self):
@@ -364,8 +372,11 @@ class Dataloader(unittest.TestCase):
         assertpy.assert_that(indep.same_chain.all()).is_true()
 
         golden_name = f'indep_{dataset}-{mask}-bridge-gpbonds'
-        show.one(indep, None, golden_name)
-        show.one(indep, atomizer, golden_name+'_deatomized')
+
+        if self.show_in_pymol:
+            show.one(indep, None, golden_name)
+            show.one(indep, atomizer, golden_name+'_deatomized')
+
         test_utils.assert_matches_golden(self, golden_name, indep, rewrite=REWRITE, custom_comparator=self.cmp)
 
     def test_covale_islands_partial_ligand(self):
@@ -383,7 +394,9 @@ class Dataloader(unittest.TestCase):
             return self.cmp(got, want)
         ic((~is_diffused).nonzero()[:,0])
         ic(np.unique(indep.chains()))
-        show.color_diffused(indep, is_diffused)
+
+        if self.show_in_pymol:
+            show.color_diffused(indep, is_diffused)
         
         test_utils.assert_matches_golden(self, golden_name, indep, rewrite=REWRITE, custom_comparator=cmp)
     
@@ -399,9 +412,11 @@ class Dataloader(unittest.TestCase):
         ic(indep.chains())
         unique_chains = np.unique(indep.chains())
         assertpy.assert_that(len(unique_chains)).is_equal_to(2)
-        name, names = show.one(indep, None)
-        show.cmd.do('util.cbc')
-        show.diffused(indep, is_diffused, 'true')
+
+        if self.show_in_pymol:
+            name, names = show.one(indep, None)
+            show.cmd.do('util.cbc')
+            show.diffused(indep, is_diffused, 'true')
         
         test_utils.assert_matches_golden(self, golden_name, indep, rewrite=REWRITE, custom_comparator=self.cmp)
 
@@ -420,10 +435,12 @@ class Dataloader(unittest.TestCase):
         golden_name = f'indep_{dataset}-{mask}'
         unique_chains = np.unique(indep.chains())
         assertpy.assert_that(len(unique_chains)).is_equal_to(2)
-        name, names = show.one(indep, None)
-        # show.cmd.do(f'util.cbc {name}')
-        # show.diffused(indep, is_diffused, 'true')
-        # show.one(indep, None)
+
+        if self.show_in_pymol:
+            name, names = show.one(indep, None)
+            # show.cmd.do(f'util.cbc {name}')
+            # show.diffused(indep, is_diffused, 'true')
+            # show.one(indep, None)
         
         test_utils.assert_matches_golden(self, golden_name, indep, rewrite=REWRITE, custom_comparator=self.cmp)
 
@@ -438,9 +455,11 @@ class Dataloader(unittest.TestCase):
         indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context = loader_out
         indep.metadata = None
         golden_name = f'indep_{dataset}-{mask}-is-guideposted'
-        name, names = show.one(indep, None)
-        show.cmd.do(f'util.cbc {name}')
-        show.diffused(indep, is_diffused, 'true')
+
+        if self.show_in_pymol:
+            name, names = show.one(indep, None)
+            show.cmd.do(f'util.cbc {name}')
+            show.diffused(indep, is_diffused, 'true')
         
         test_utils.assert_matches_golden(self, golden_name, indep, rewrite=REWRITE, custom_comparator=self.cmp)
     
@@ -459,11 +478,13 @@ class Dataloader(unittest.TestCase):
             indep.idx[indep.is_sm],
         )
         golden_name = f'indep_{dataset}-{mask}-multiligand'
-        name, names = show.one(indep, None)
-        show.cmd.do(f'util.cbc {name}')
-        show.cmd.color('orange', f'{name} and hetatm and elem C')
-        # show.cmd.do(f'util.cbc {name}')
-        # show.diffused(indep, is_diffused, 'true')
+
+        if self.show_in_pymol:
+            name, names = show.one(indep, None)
+            show.cmd.do(f'util.cbc {name}')
+            show.cmd.color('orange', f'{name} and hetatm and elem C')
+            # show.cmd.do(f'util.cbc {name}')
+            # show.diffused(indep, is_diffused, 'true')
         
         test_utils.assert_matches_golden(self, golden_name, indep, rewrite=REWRITE, custom_comparator=self.cmp)
 
