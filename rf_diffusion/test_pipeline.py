@@ -81,6 +81,14 @@ class TestBenchmark(unittest.TestCase):
             {'a':'2'},
             {'a':'3'},
         ]),
+        ('''
+        a=1
+        ()|(a=2)
+        ''',
+        [
+            {'a':'1'},
+            {'a':'2'},
+        ])
         # TODO: Implement check such that this testcase returns an error, as it is somewhat nonsensical.
         # ('''
         # arg1=A|B
