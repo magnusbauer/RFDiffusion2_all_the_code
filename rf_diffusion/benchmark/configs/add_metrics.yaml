@@ -1,7 +1,14 @@
 datadir: ${hydra:runtime.cwd}
 filenames: null
-chunk: 50
+chunk: 300
 tmp_pre: add_metrics.list
+invalidate_cache: False
+
+design_metrics:
+  - backbone
+
+sequence_metrics:
+  - default
 
 slurm:
   J: null

@@ -14,6 +14,11 @@ from hydra.core.hydra_config import HydraConfig
 script_dir = os.path.dirname(os.path.realpath(__file__))
 from rf_diffusion.benchmark.util import slurm_tools
 
+def num_lines(path):
+    with open(path, "rb") as f:
+        num_lines = sum(1 for _ in f)
+    return num_lines
+
 @hydra.main(version_base=None, config_path='configs/', config_name='add_metrics')
 def main(conf: HydraConfig) -> list[int]:
     '''
@@ -51,32 +56,42 @@ def main(conf: HydraConfig) -> list[int]:
     # raise Exception('stop')
 
     # General metrics
-    for cohort, filenames in [
-        ('design', backbone_filenames),
-        ('sequence', sequence_filenames),
+    for cohort, filenames, metrics in [
+        ('design', backbone_filenames, conf.design_metrics),
+        ('sequence', sequence_filenames, conf.sequence_metrics),
     ]:
-        job_fn = conf.datadir + f'/jobs.metrics_per_{cohort}.list'
-        job_list_file = open(job_fn, 'w') if conf.slurm.submit else sys.stdout
-        for i in np.arange(0,len(filenames),conf.chunk):
-            tmp_fn = f'{conf.datadir}/{conf.tmp_pre}.metrics_per_{cohort}.{i}'
-            with open(tmp_fn,'w') as outf:
-                for j in np.arange(i,min(i+conf.chunk, len(filenames))):
-                    print(filenames[j], file=outf)
-            print(f'{os.path.join(script_dir, f"per_{cohort}_metrics.py")} '\
-                    f'--outcsv {conf.datadir}/metrics/per_{cohort}/csv.{i} '\
-                    f'{tmp_fn}', file=job_list_file)
+        ic(cohort, len(filenames), metrics)
+        for metric in metrics:
+            job_fn = conf.datadir + f'/jobs.metrics_per_{cohort}_{metric}.list'
+            job_list_file = open(job_fn, 'w') if conf.slurm.submit else sys.stdout
+            for i in np.arange(0,len(filenames),conf.chunk):
+                tmp_fn = f'{conf.datadir}/{conf.tmp_pre}.metrics_per_{cohort}_{metric}.{i}'
+                n_chunk = 0
+                with open(tmp_fn,'w') as outf:
+                    for j in np.arange(i,min(i+conf.chunk, len(filenames))):
+                        n_chunk += 1
+                        print(filenames[j], file=outf)
+                out_csv_path = f'{conf.datadir}/metrics/per_{cohort}/{metric}/csv.{i}'
+                if os.path.exists(out_csv_path):
+                    if num_lines(out_csv_path)-1 == n_chunk:
+                        if not conf.invalidate_cache:
+                            continue
+                print(f'{os.path.join(script_dir, f"per_sequence_metrics.py")} '\
+                        f'--metric {metric} '\
+                        f'--outcsv {conf.datadir}/metrics/per_{cohort}/{metric}/csv.{i} '\
+                        f'{tmp_fn}', file=job_list_file)
 
-        # submit job
-        if conf.slurm.submit: 
-            job_list_file.close()
-            if conf.slurm.J is not None:
-                job_name = conf.slurm.J 
-            else:
-                job_name = f'{cohort}_metrics_'+os.path.basename(conf.datadir.strip('/'))
-            af2_job, proc = slurm_tools.array_submit(job_fn, p = conf.slurm.p, gres=None if conf.slurm.p=='cpu' else conf.slurm.gres, log=conf.slurm.keep_logs, J=job_name, in_proc=conf.slurm.in_proc)
-            if af2_job > 0:
-                job_ids.append(af2_job)
-            print(f'Submitted array job {af2_job} with {int(np.ceil(len(filenames)/conf.chunk))} jobs to compute per-{cohort} metrics for {len(filenames)} designs')
+            # submit job
+            if conf.slurm.submit: 
+                job_list_file.close()
+                if conf.slurm.J is not None:
+                    job_name = conf.slurm.J 
+                else:
+                    job_name = f'{cohort}_metrics_'+os.path.basename(conf.datadir.strip('/'))
+                af2_job, proc = slurm_tools.array_submit(job_fn, p = conf.slurm.p, gres=None if conf.slurm.p=='cpu' else conf.slurm.gres, log=conf.slurm.keep_logs, J=job_name, in_proc=conf.slurm.in_proc)
+                if af2_job > 0:
+                    job_ids.append(af2_job)
+                print(f'Submitted array job {af2_job} with {int(np.ceil(len(filenames)/conf.chunk))} jobs to compute per-{cohort} metrics for {len(filenames)} designs')
 
     return job_ids
 

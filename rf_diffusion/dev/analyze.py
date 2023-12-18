@@ -78,12 +78,14 @@ def read_metrics(df_path, add_contig_rmsd=True):
         print('failed to get run', e)
     # For backwards compatibility
     model_key = 'inference.ckpt_path'
-    if len(df.value_counts('inference.ckpt_path')) < len(df.value_counts('score_model.weights_path')):
-        model_key = 'score_model.weights_path'
+    possible_model_keys = ['inference.ckpt_path', 'score_model.weights_path', 'inference.ckpt_override_path']
+    count_by_model_key = {k: len(df.value_counts(k)) if k in df.columns else 0 for k in possible_model_keys}
+    model_key = max(count_by_model_key, key=count_by_model_key.get)
+    if not any(k in df.columns for k in possible_model_keys):
+        model_key = 'fake_model_key'
+        df[model_key] = 'SOME_MODEL_1.pt'
     df[model_key] = df[model_key].map(lambda x: x if isinstance(x, str) else "MODEL_NOT_FOUND")
-    df = df[df[model_key] != "MODEL_NOT_FOUND"]
-    if model_key not in df.columns:
-        model_key = 'inference.ckpt_override_path'
+    # df = df[df[model_key] != "MODEL_NOT_FOUND"]
     if model_key in df.columns:
         models = df[model_key].unique()
         common = common_prefix(models)
@@ -93,6 +95,8 @@ def read_metrics(df_path, add_contig_rmsd=True):
     df['des_color'] = 'rainbow'
     df['epoch'] = df.apply(partial(get_epoch, model_key=model_key), axis=1)
     df['seed'] = df.name.apply(lambda x: int(x.split('_cond')[1].split('_')[1].split('-')[0]))
+    if 'diffuser.type' not in df:
+        df['diffuser.type'] = 'diffuser_unknown'
     df['diffuser.type'] = df['diffuser.type'].fillna('diffusion')
 
     #get_epoch  = lambda x: re.match('.*_(\w+).*', x).groups()[0]
@@ -670,7 +674,7 @@ def make_row_from_traj(traj_prefix):
     synth_row['mpnn'] = True
     trb = get_trb(synth_row)
     rundir = synth_row['rundir']
-    config = trb['config']
+    config = trb.get('config', {})
     config = flatten_dict(config)
     synth_row.update(config)
     synth_row['rundir'] = rundir
@@ -1190,6 +1194,29 @@ def show_paper_pocket_af2(row, b=None, des=True, ligand=False, traj_types=None, 
     return identifiers
 
 
+def calc_success(df, threshold_columns=['contig_rmsd_af2', 'rmsd_af2_des', 'af2_pae_mean'], threshold_signs=['-', '-', '-'], named_thresholds=[('excellent', (1,2,5)), ('good', (1.5,3,7.5)), ('okay', (2,3,10))], recompute=True):
+    filter_names = [name for name, threshold in named_thresholds]
+    thresholds = [threshold for name, threshold in named_thresholds]
+    if recompute:
+        filters,  filter_unions = add_filters_multi(df, threshold_columns=threshold_columns, thresholds=thresholds, threshold_signs=threshold_signs)
+        df.drop(columns=filter_names, inplace=True, errors='ignore')
+        df.rename(columns=dict(zip(filter_unions, filter_names)), inplace=True)
+    else: 
+        filter_unions = []
+        for i in range(len(named_thresholds)):
+            filter_union_name = f'filter_set_{i}'
+            filter_unions.append(filter_union_name)
+
+    melts = []
+    for filter_union in filter_names:
+        best_filter_passers = df.groupby(["name"]).apply(lambda grp: grp.sort_values([filter_union, 'contig_rmsd_af2_full_atom'], ascending=[False, True]).head(1))
+        best_filter_passers.index =best_filter_passers.index.droplevel()
+        melted = melt_filters(best_filter_passers, [filter_union])
+        melted['filter_set'] = filter_union
+        melts.append(melted)
+
+    melted = pd.concat(melts)
+    return melted
 
 def plot_success(df, threshold_columns=['contig_rmsd_af2', 'rmsd_af2_des', 'af2_pae_mean'], threshold_signs=['-', '-', '-'], named_thresholds=[('excellent', (1,2,5)), ('good', (1.5,3,7.5)), ('okay', (2,3,10))], recompute=True):
     #filters,  filter_unions = analyze.add_filters_multi(df, threshold_columns=['contig_rmsd_af2','contig_rmsd_af2_full_atom', 'rmsd_af2_des', 'af2_pae_mean'], thresholds=[(1,1.5,2,5), (1,999,2,5), (1.5,3,3,7.5), (1.5,2,3,10)], threshold_signs=['-','-', '-', '-'])

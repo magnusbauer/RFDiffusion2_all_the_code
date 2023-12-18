@@ -563,14 +563,15 @@ def make_indep(pdb, ligand='', center=True, return_metadata=False):
     seq_sm = torch.zeros((0,)).long()
     if len(ligands):
         protein_ligand_bonds_atoms = find_covale_bonds(stream, ligands)
-        msg = []
-        for d,r in protein_ligand_bonds_atoms:
-            msg.append(f'{d.get_full_id()} : {r.get_full_id()}')
-        msg = '\n'.join(msg)
-        if msg:
-            print(f'Protein-ligand bonds:\n{msg}')
-        else:
-            print(f'No protein-ligand bonds')
+        # Debugging
+        # msg = []
+        # for d,r in protein_ligand_bonds_atoms:
+        #     msg.append(f'{d.get_full_id()} : {r.get_full_id()}')
+        # msg = '\n'.join(msg)
+        # if msg:
+        #     print(f'Protein-ligand bonds:\n{msg}')
+        # else:
+        #     print(f'No protein-ligand bonds')
         
         for protein_atom, ligand_atom in protein_ligand_bonds_atoms:
             prot_res_idx, prot_atom_name = get_atom_uid(protein_atom)

@@ -152,6 +152,7 @@ class ContigMap():
                 sampled_mask.append(','.join(subcon_out))
             #check length is compatible 
             if self.length is not None:
+                # print(f'{sampled_mask_length=}, {self.length=}, {subcon_out=}')
                 if sampled_mask_length >= self.length[0] and sampled_mask_length < self.length[1]:
                     length_compatible = True
             else:

@@ -1,0 +1,11 @@
+defaults:
+  - pipeline
+
+metrics:
+  design_metrics: []
+  sequence_metrics:
+    - catalytic_constraints
+
+start_step: mpnn
+
+outdir: TODO

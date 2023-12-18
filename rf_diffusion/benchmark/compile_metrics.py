@@ -25,38 +25,49 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('datadir',type=str,help='Folder of designs')
     parser.add_argument('--outcsv',type=str,default='compiled_metrics.csv',help='Output filename')
+    parser.add_argument('--cached_trb_df',type=bool,default=False,help='Output filename')
     args = parser.parse_args()
 
+    print('finding trbs')
     filenames = glob.glob(args.datadir+'/*.trb')
 
+
     print('loading run metadata (base metrics)')
-    records = []
-    for fn in tqdm(filenames):
-        name = os.path.basename(fn).replace('.trb','')
-        trb = np.load(fn, allow_pickle=True)
+    df_trb_path = os.path.join(args.datadir, 'trb_compiled_metrics.csv')
+    if os.path.exists(df_trb_path) and args.cached_trb_df:
+        print('loading run metadata (base metrics) from cached csv')
+        df_base = pd.read_csv(df_trb_path)
+    else:
+        print('loading run metadata (base metrics) from individual trbs, if re-compiling consider passing --cached_trb_df=1 to use the cacheed trb compilation df')
+        records = []
+        for fn in tqdm(filenames):
+            name = os.path.basename(fn).replace('.trb','')
+            trb = np.load(fn, allow_pickle=True)
 
-        record = {'name':name}
-        if 'lddt' in trb:
-            record['lddt'] = trb['lddt'].mean()
-        if 'inpaint_lddt' in trb:
-            record['inpaint_lddt'] = np.mean(trb['inpaint_lddt'])
+            record = {'name':name}
+            if 'lddt' in trb:
+                record['lddt'] = trb['lddt'].mean()
+            if 'inpaint_lddt' in trb:
+                record['inpaint_lddt'] = np.mean(trb['inpaint_lddt'])
 
-        if 'plddt' in trb:
-            plddt = trb['plddt'].mean(1)
-            record.update(dict(
-                plddt_start = plddt[0],
-                plddt_mid = plddt[len(plddt)//2],
-                plddt_end = plddt[-1],
-                plddt_mean = plddt.mean()
-            ))
-        if 'sampled_mask' in trb:
-            record['sampled_mask'] = trb['sampled_mask']
-        if 'config' in trb:
-            flat = flatten_dictionary(trb['config'])
-            record.update(flat)
-        records.append(record)
+            if 'plddt' in trb:
+                plddt = trb['plddt'].mean(1)
+                record.update(dict(
+                    plddt_start = plddt[0],
+                    plddt_mid = plddt[len(plddt)//2],
+                    plddt_end = plddt[-1],
+                    plddt_mean = plddt.mean()
+                ))
+            if 'sampled_mask' in trb:
+                record['sampled_mask'] = trb['sampled_mask']
+            if 'config' in trb:
+                flat = flatten_dictionary(trb['config'])
+                record.update(flat)
+            records.append(record)
 
-    df_base = pd.DataFrame.from_records(records)
+        df_base = pd.DataFrame.from_records(records)
+        print('writing run metadata (base metrics) to cached csv')
+        df_base.to_csv(df_trb_path, index=None)
 
     # load computed metrics, if they exist
     print('loading computed metrics')
@@ -161,7 +172,7 @@ def main():
     for path in [
         args.datadir+'/tm_clusters.csv',
         args.datadir+'/blast_clusters.csv',
-        args.datadir+'/metrics/per_design/csv.*',
+        # args.datadir+'/metrics/per_design/csv.*',
     ]:
         df_s = [ pd.read_csv(fn,index_col=0) for fn in glob.glob(path) ]
         tmp = pd.concat(df_s) if len(df_s)>0 else pd.DataFrame(dict(name=[]))
@@ -173,15 +184,27 @@ def main():
         df = df.merge(tmp, on='name', how='outer')    
 
     # add seq/struc clusters (assumed to be the same for mpnn designs as non-mpnn)
-    for path in [
-        args.datadir+'/metrics/per_sequence/csv.*',
-    ]:
+    sequence_metric_dirs = [os.path.join(d, 'csv.*') for d in glob.glob(args.datadir+'/metrics/per_sequence/*/')]
+    for path in sequence_metric_dirs:
+        ic('sequence metrics path', path, len(glob.glob(path)))
         if len(glob.glob(path)) == 0:
             continue
 
         df_s = [ pd.read_csv(fn,index_col=0) for fn in glob.glob(path) ]
         tmp = pd.concat(df_s) if len(df_s)>0 else pd.DataFrame(dict(name=[]))
-        df = df.merge(tmp, on=['name', 'mpnn_index'], how='left')
+        if 'catalytic_constraints.mpnn_packed.name' in tmp.columns:
+            prefix = 'catalytic_constraints.mpnn_packed.'
+            ic(prefix)
+        elif 'catalytic_constraints.raw.name' in tmp.columns:
+            prefix = 'catalytic_constraints.raw.'
+        else:
+            prefix = ''
+        tmp['name'] = tmp[f'{prefix}name']
+        tmp['mpnn_index'] = tmp[f'{prefix}mpnn_index']
+        merge_keys = ['name']
+        if 'mpnn_index' in tmp.columns:
+            merge_keys.append('mpnn_index')
+        df = df.merge(tmp, on=merge_keys, how='left')
 
     df.to_csv(args.datadir+'/'+args.outcsv, index=None)
     print(f'Wrote metrics dataframe {df.shape} to "{args.datadir}/{args.outcsv}"')

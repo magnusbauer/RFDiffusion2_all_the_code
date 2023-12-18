@@ -443,20 +443,23 @@ def main():
         if os.path.exists(trbname): 
             trb = np.load(trbname,allow_pickle=True)
 
+        def get_input_pdb(trb):
+            if 'inference.input_pdb' in trb:
+                return trb['inference.input_pdb']
+            if 'config' in trb:
+                return trb['config']['inference']['input_pdb']
+            raise Exception('input_pdb not found')
+        
+        def get_contig_atoms(trb):
+            if 'contigmap.contig_atoms' in trb:
+                return trb['contigmap.contig_atoms']
+            if 'config' in trb:
+                return trb['config']['contigmap']['contig_atoms']
+            return None
+
         # load reference structure, if needed
         if args.template is None and args.template_dir is None and os.path.exists(trbname):
-            if 'settings' in trb:
-                refpdb_fn = trb['settings']['pdb'] # hallucination outputs
-            elif 'config' in trb: 
-                refpdb_fn = trb['config']['inference']['input_pdb'] # diffusion outputs
-            else: 
-                refpdb_fn = trb['flags'].pdb # inpainting outputs
-            if not os.path.exists(refpdb_fn): 
-                refpdb_fn = os.path.dirname(fn)+'/input/'+os.path.basename(refpdb_fn)
-            if not os.path.exists(refpdb_fn):
-                refpdb_fn = os.path.dirname(fn)+'/../input/'+os.path.basename(refpdb_fn)
-            if not os.path.exists(refpdb_fn):
-                refpdb_fn = os.path.dirname(fn)+'/../../input/'+os.path.basename(refpdb_fn)
+            refpdb_fn = get_input_pdb(trb)
             pdb_ref = parse_pdb(refpdb_fn)
             xyz_ref = pdb_ref['xyz']
         if args.template_dir is not None and os.path.exists(trbname):
@@ -488,40 +491,46 @@ def main():
             bb_mask[:,:3] = True
             ca_mask = np.zeros_like(atom_exists).astype(bool)
             ca_mask[:,1] = True
+
+            contig_atoms = get_contig_atoms(trb)
+            if contig_atoms is not None:
+                contig_atoms = eval(contig_atoms)
+                contig_atoms = {k:v.split(',') for k,v in contig_atoms.items()}
+                # For debugging: print all contig related keys.
+                # for k in trb.keys():
+                #     if 'con' in k and k != 'config':
+                #         print(f"{k}:{trb[k]}")
+                def get_atom_idx(aa, atom_names):
+                    i_by_name = {name if name is None else name.strip():i for i, name in enumerate(rf2aa.chemical.aa2long[aa])}
+                    ii = []
+                    for a in atom_names:
+                        assert a in i_by_name, f'{a=}, {i_by_name=}, {rf2aa.chemical.num2aa[aa]}'
+                        ii.append(i_by_name[a])
+                    return ii
+                
+                motif_atom_idx = []
+                for i, (ref_chain, ref_idx_pdb) in zip(trb['con_ref_idx0'], trb['con_ref_pdb_idx']):
+                    contig_atoms_key = f'{ref_chain}{ref_idx_pdb}'
+                    atom_names = contig_atoms[contig_atoms_key]
+                    aa = pdb_ref['seq'][i]
+                    motif_atom_idx.append(get_atom_idx(
+                        aa, atom_names,
+                    ))
+                is_motif_atom = np.zeros_like(atom_exists).astype(bool)
+                for i, motif_i in enumerate(motif_atom_idx):
+                    is_motif_atom[i, motif_i] = True
+            else:
+                is_motif_atom = atom_exists
             
             for suffix, has_atom in [
                     ('', bb_mask),
                     ('_c_alpha', ca_mask),
                     ('_full_atom', atom_exists),
+                    ('_motif_atom', is_motif_atom),
                         ]:
                 xyz_ref_motif = xyz_ref[idx_motif_ref][has_atom].reshape(-1,3)
                 xyz_pred_motif = xyz_pred[idx_motif][has_atom].reshape(-1,3)
                 xyz_des_motif = xyz_des[idx_motif][has_atom].reshape(-1,3)
-                row['contig_rmsd_af2_des' + suffix] = calc_rmsd(xyz_pred_motif, xyz_des_motif)
-                row['contig_rmsd_af2' + suffix] = calc_rmsd(xyz_pred_motif, xyz_ref_motif)
-                row['contig_rmsd' + suffix] = calc_rmsd(xyz_des_motif, xyz_ref_motif)
-            
-            if trb.get('atomize_indices2atomname', None):
-                ref_idx0_by_des_idx0 = {}
-                for ref_idx0, des_idx0 in zip(trb['con_ref_idx0'], trb['con_hal_idx0']):
-                    ref_idx0_by_des_idx0[des_idx0] = ref_idx0
-                def get_atom_idx(aa, atom_names):
-                    i_by_name = {name if name is None else name.strip():i for i, name in enumerate(rf2aa.chemical.aa2long[aa])}
-                    return [i_by_name[a] for a in atom_names]
-
-                is_contig_atom_des = np.zeros_like(xyz_des).astype(bool)
-                is_contig_atom_ref = np.zeros_like(xyz_ref).astype(bool)
-                for des_idx0, atom_names in trb['atomize_indices2atomname'].items():
-                    aa = pdb_des['seq'][des_idx0]
-                    atom_idxs = get_atom_idx(aa, atom_names)
-                    is_contig_atom_des[des_idx0, atom_idxs] = True
-                    ref_idx0 = ref_idx0_by_des_idx0[des_idx0]
-                    is_contig_atom_ref[ref_idx0, atom_idxs] = True
-
-                suffix = '_atomized'
-                xyz_ref_motif = xyz_ref[is_contig_atom_ref].reshape(-1,3)
-                xyz_pred_motif = xyz_pred[is_contig_atom_des].reshape(-1,3)
-                xyz_des_motif = xyz_des[is_contig_atom_des].reshape(-1,3)
                 row['contig_rmsd_af2_des' + suffix] = calc_rmsd(xyz_pred_motif, xyz_des_motif)
                 row['contig_rmsd_af2' + suffix] = calc_rmsd(xyz_pred_motif, xyz_ref_motif)
                 row['contig_rmsd' + suffix] = calc_rmsd(xyz_des_motif, xyz_ref_motif)

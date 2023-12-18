@@ -88,7 +88,23 @@ class TestBenchmark(unittest.TestCase):
         [
             {'a':'1'},
             {'a':'2'},
-        ])
+        ]),
+        ('''
+        ()|(a=2)
+        a=1
+        ''',
+        [
+            {'a':'1'},
+            {'a':'1'},
+        ]),
+        ('''
+        POST(()|(a=2))
+        a=1
+        ''',
+        [
+            {'a':'1'},
+            {'a':'2'},
+        ]),
         # TODO: Implement check such that this testcase returns an error, as it is somewhat nonsensical.
         # ('''
         # arg1=A|B
@@ -98,6 +114,7 @@ class TestBenchmark(unittest.TestCase):
         # ),
         ]:
             with error.context(f'{arg_str=} {want=}'):
+                arg_str = benchmark.sweep_hyperparam.process_post(arg_str)
                 got = benchmark.sweep_hyperparam.get_arg_combos(arg_str)
                 ic(got, want)
                 self.assertEqual(got, want)

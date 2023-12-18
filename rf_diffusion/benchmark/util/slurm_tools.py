@@ -44,7 +44,7 @@ def array_submit(job_list_file, p='gpu', gres='gpu:rtx2080:1', wait_for=None, lo
         cmd = 'eval \\`sed -n \\${SLURM_ARRAY_TASK_ID}p '+job_list_file+'\\`',
         a = f'1-$(cat {job_list_file} | wc -l)',
         p = p,
-        c = 2,
+        c = 1,
         mem = 12,
         gres = gres,
         wait_for = wait_for,

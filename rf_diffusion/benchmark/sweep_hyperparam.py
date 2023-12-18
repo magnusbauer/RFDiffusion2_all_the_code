@@ -95,6 +95,41 @@ def get_arg_combos(arg_str):
 
     return arg_dicts
 
+def process_post(input_str):
+    parts = input_str.split("POST(")
+    if len(parts) == 1:
+        return input_str
+    if len(parts) > 2:
+        raise Exception('invalid input format')
+    
+    before_post = parts[0]
+    rest = parts[1]
+    
+    # Extracting substrings enclosed in parentheses
+    in_post = ""
+    stack = ["("]
+
+    after_post = ""
+    done = False
+    for char in rest:
+        if done:
+            after_post += char
+        else:
+            if char == '(':
+                stack.append('(')
+            elif char == ')':
+                if stack:
+                    stack.pop()
+                    if not stack:
+                        done = True
+                else:
+                    raise Exception("invalid POST parentheses")
+        
+            if stack:
+                in_post += char
+    
+    return ' '.join([before_post, after_post, in_post])
+
 @hydra.main(version_base=None, config_path='configs/', config_name='sweep_hyperparam')
 def main(conf: HydraConfig) -> list[int]:
     '''
@@ -163,6 +198,10 @@ def main(conf: HydraConfig) -> list[int]:
         for benchmark in benchmark_list: # [output path, input pdb, contig spec]
             benchmark_arg_groups.append(f"({' '.join(benchmark)})")
         arg_str += ' ' + '|'.join(benchmark_arg_groups)
+
+    # Process POST groups to be applied AFTER benchmarks, so that they may override benchmark defaults.
+    arg_str = process_post(arg_str)
+
     arg_dicts = get_arg_combos(arg_str)
 
     df = pd.DataFrame.from_dict(arg_dicts, dtype=str)

@@ -1,4 +1,5 @@
 import glob
+import math
 import os
 from rf_diffusion.dev import pymol
 from rf_diffusion.dev import analyze
@@ -347,6 +348,8 @@ def get_best_n_designs_in_group(df, groups, n, columns, ascendings):
     data = df.groupby(groups,  dropna=False).apply(lambda grp: grp.sort_values(columns, ascending=ascendings).head(n)).reset_index(drop=True)
     return data
 
+def get_least_in_group_single(df, column, ascending=True, groups=['design_id']):
+    return get_least_in_group(df, groups, 1, [column], ascendings=[ascending])
 
 def get_least_in_group(df, groups, n, columns, ascendings):
     data = df.groupby(groups,  dropna=False).apply(lambda grp: grp.sort_values(columns, ascending=ascendings).head(n)).reset_index(drop=True)
@@ -364,7 +367,7 @@ def only_latest_epoch(df):
     return df.merge(highest_epoch, on=['training_id', 'epoch'])
     # return get_best_n_designs_in_group(df, ['training_id'], n=999999, 
 
-def plot_self_consistency(bench, x='epoch', **kwargs):
+def plot_self_consistency(bench, x='epoch', hue='benchmark', **kwargs):
     # x = 'score_model.weights_path'
     # if 'method' in bench.columns:
     #     x='method'
@@ -372,7 +375,19 @@ def plot_self_consistency(bench, x='epoch', **kwargs):
     data = get_best(bench)
     data['motif RMSD < 1 & RMSD < 2'] = data['self_consistent_and_motif']
     # g = sns.catplot(data=data, y='motif RMSD < 1 & RMSD < 2', x=x, hue='benchmark', kind='bar', orient='v', height=8.27, aspect=11.7/8.27, legend_out=True, ci=None, **kwargs)
-    g = sns.catplot(data=data, y='motif RMSD < 1 & RMSD < 2', x=x, hue='benchmark', kind='bar', orient='v', legend_out=True, ci=None, **kwargs)
+    g = sns.catplot(data=data, y='motif RMSD < 1 & RMSD < 2', x=x, hue=hue, kind='bar', orient='v', legend_out=True, ci=None, **kwargs)
+    _ = plt.xticks(rotation=90)
+    # show_percents
+
+def plot_self_consistency_no_motif(bench, x='epoch', hue='benchmark', **kwargs):
+    # x = 'score_model.weights_path'
+    # if 'method' in bench.columns:
+    #     x='method'
+    add_metrics_sc(bench)
+    data = get_least_in_group_single(bench, 'rmsd_af2_des')
+    data['RMSD < 2'] = data['rmsd_af2_des'] < 2.0
+    # g = sns.catplot(data=data, y='motif RMSD < 1 & RMSD < 2', x=x, hue='benchmark', kind='bar', orient='v', height=8.27, aspect=11.7/8.27, legend_out=True, ci=None, **kwargs)
+    g = sns.catplot(data=data, y='RMSD < 2', x=x, hue=hue, kind='bar', orient='v', legend_out=True, ci=None, **kwargs)
     _ = plt.xticks(rotation=90)
     # show_percents
 
@@ -414,7 +429,7 @@ def show_unconditional_performance_over_epochs(bench):
     plt.title("Self consistency of unconditonal generation")
 
 def show_performance_over_epochs(bench, col='training', row='ema', **kwargs):
-    bench['training'] = bench['score_model.weights_path'].map(lambda x: x.split('/')[-4].split('2023')[0])
+    # bench['training'] = bench['score_model.weights_path'].map(lambda x: x.split('/')[-4].split('2023')[0])
     # get_epoch  = lambda x: float(re.match('.*_(\w+).*', x).groups()[0])
     # bench['epoch'] = bench['score_model.weights_path'].apply(get_epoch)
     bench['method'] = bench['epoch']
@@ -540,3 +555,82 @@ def pymol_best_from_each_epoch(
     # cmd.do(f'mass_paper_rainbow')
     # cmd.show('licorice')
     return all_entities
+
+def show_by_seed(
+        bench,
+        unique_keys = ['training', 'epoch', 'benchmark'],
+        n=1, 
+        structs={'X0'},
+        mpnn_packed=False,
+        af2=False):
+    # show = bench[bench['benchmark'] == '10_res_atomized_1']
+    # show = bench[~bench['benchmark'].isin(['10_res_atomized_1', '10_res_atomized_2', '10_res_atomized_3'])].copy()
+    show = bench
+    add_metrics_sc(show)
+    show = get_best(show)
+    show = show[show['seed'] < n]
+    print(show.shape)
+    show_bench.add_pymol_name(show, unique_keys + ['seed', 'rmsd_af2_des', 'contig_rmsd_af2_des'])
+    show = show.sort_values(unique_keys)
+    show_tip_pa.clear()
+
+    print(f'showing {len(show)} designs')
+    all_entities = show_bench.show_df(
+        show,
+        structs=structs,
+        des=0,
+        af2=af2,
+        mpnn_packed=mpnn_packed,
+        return_entities=True)
+    return all_entities
+
+def isnan(x):
+    return isinstance(x, float) and math.isnan(x)
+
+def add_cc_columns(df):
+
+    add_metrics_sc(df)
+    df['seq_id'] = df['name'] + '_' + df['mpnn_index'].astype('str')
+    
+    for subtype in [
+        'raw',
+        'mpnn_packed',
+    ]:
+        prefix = f'catalytic_constraints.{subtype}.'
+        df[f'{prefix}all'] = (
+            df[f'{prefix}criterion_1'] &
+            df[f'{prefix}criterion_2'] &
+            df[f'{prefix}criterion_3'] &
+            df[f'{prefix}criterion_4'] &
+            df[f'{prefix}criterion_5'] &
+            df[f'{prefix}criterion_6']
+        )
+
+
+def best_in_group(df, group_by=['name'], cols=['catalytic_constraints.raw.criterion_1'], ascending=[False], unique_column='seq_id'):
+    df_small  = df[group_by + cols + [unique_column]]
+    grouped = df_small.groupby(group_by).apply(lambda grp: grp.sort_values(cols, ascending=ascending).head(1))
+    return pd.merge(df, grouped[unique_column], on=unique_column, how='inner')
+
+def get_cc_passing(df, subtypes=('raw',)):
+    all_melted = {}
+    for subtype in subtypes:
+        prefix = f'catalytic_constraints.{subtype}.'
+        filter_names = [f'{prefix}criterion_{i}' for i in range(1,7)] + [f'{prefix}all']
+        filter_names_no_prefix = [f'criterion_{i}' for i in range(1,7)] + [f'criterion_all']
+        df_remapped = df.rename(columns=dict(zip(filter_names, filter_names_no_prefix)))
+        df_remapped['pack'] = subtype
+        filter_names = filter_names_no_prefix
+        melts = []
+        for filter_union in filter_names:
+            best_filter_passers = best_in_group(df_remapped,
+                                                cols=[filter_union, 'contig_rmsd_af2_full_atom'],
+                                                ascending=[False, True]
+            )
+            melted = analyze.melt_filters(best_filter_passers, [filter_union])
+            melted['filter_set'] = filter_union
+            melts.append(melted)
+        melted = pd.concat(melts)
+        all_melted[subtype] = melted.copy()
+    by_pack = pd.concat(all_melted.values())
+    return by_pack
