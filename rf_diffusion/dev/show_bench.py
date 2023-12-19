@@ -1,3 +1,5 @@
+#!/net/software/containers/users/dtischer/shebang_rf_se3_diffusion_dev.sh
+
 from rf_diffusion.dev import pymol
 import fire
 import glob
