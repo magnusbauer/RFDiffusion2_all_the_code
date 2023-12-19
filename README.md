@@ -80,3 +80,5 @@ This will produce a metrics dataframe: $METRICS_DATAFRAME_PATH
 
 Use $METRICS_DATAFRAME_PATH in the provided analysis notebook `notebooks/analyze_catalytic_constraints.ipynb` to analyze success on the various catalytic constraints.
 
+If you do not have the dependencies to run this notebook in your default kernel, use this sif as a kernel `/net/software/containers/users/dtischer/rf_diffusion_aa.sif` following instructions in https://wiki.ipd.uw.edu/it/digs/apptainer#jupyter
+
