@@ -2,12 +2,12 @@
 	path = rf_se3_diffusion
 	url = git@github.com:w-ahern/rf_se3_diffusion.git
 	branch = no_submodule
-[submodule "fused_mpnn"]
-	path = fused_mpnn
-	url = https://git.ipd.uw.edu/justas/fused_mpnn.git
 [submodule "lib/se3_flow_matching"]
 	path = lib/se3_flow_matching
 	url = git@github.com:baker-laboratory/frame-flow.git
 [submodule "lib/rf2aa"]
 	path = lib/rf2aa
 	url = git@github.com:baker-laboratory/rf_all_atom.git
+[submodule "lib/fused_mpnn/fused_mpnn"]
+	path = lib/fused_mpnn/fused_mpnn
+	url = git@github.com:baker-laboratory/fused_mpnn.git
