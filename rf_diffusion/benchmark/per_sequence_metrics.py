@@ -30,8 +30,10 @@ from rf_diffusion import atomize
 import rf2aa.chemical
 from rf_diffusion import bond_geometry
 from rf_diffusion.dev import benchmark as bm
+from rf_diffusion import loss
 
 def main(pdb_names_file, outcsv=None, metric='default'):
+    ic(__name__)
     thismodule = sys.modules[__name__]
     metric_f = getattr(thismodule, metric)
 
@@ -182,6 +184,9 @@ def catalytic_constraints_inner(pdb, mpnn_packed: bool):
     motif_and_ligand_des = xyz('des', get_des_motif, get_ligand)
     motif_and_ligand_ref = xyz('ref', get_ref_motif, get_ligand)
     ref_aligned_motif_and_ligand_des = T_motif_des_to_ref(motif_and_ligand_des)
+    ic(
+        motif_and_ligand_des
+    )
     out['des_ref_motif_aligned_motif_ligand_rmsd'] = rmsd(ref_aligned_motif_and_ligand_des, motif_and_ligand_ref).item()
     out['criterion_1_metric'] = out['des_ref_motif_aligned_motif_ligand_rmsd']
     out['criterion_1_cutoff'] = 1.
@@ -351,6 +356,78 @@ def rigid_loss(r):
 
     return rigid_losses.get('motif_atom_determined', torch.tensor(float('nan'))).item()
 
+def invert(d):
+   return {v: k for k,v in d.items()}
+
+def guidepost(pdb):
+    row = analyze.make_row_from_traj(pdb[:-4])
+    o = {}
+    trb = analyze.get_trb(row)
+    gp_by_motif = invert(trb['motif_by_gp'])
+    motif_by_placed = {k:v for k,v in zip(
+            trb['con_hal_idx0'],
+            trb['con_hal_idx0_literal'],
+    )}
+    gp_i = []
+    bb_i = []
+    for bb_ii in trb['con_hal_idx0']:
+        bb_i.append(bb_ii)
+        gp_i.append(gp_by_motif[motif_by_placed[bb_ii]])
+
+    gp_i = np.array(gp_i)
+    bb_i = np.array(bb_i)
+    gp_motif = trb['indep']['xyz'][gp_i]
+    bb_motif = trb['indep']['xyz'][bb_i]
+    ca_dist = np.linalg.norm(gp_motif[:, 1] - bb_motif[:, 1], axis=-1)
+    o['ca_dist.max'] = np.max(ca_dist)
+    o['ca_dist.min'] = np.min(ca_dist)
+    o['ca_dist.mean'] = np.mean(ca_dist)
+    o = {f'guidepost.{k}':v for k,v in o.items()}
+    o['name'] = row['name']
+    return o
+
+def junction_bond_len(xyz, is_motif, idx):
+    '''
+        Args:
+            xyz: [L, 14, 3] protein only xyz
+            is_motif: [L] boolean motif mask
+            idx: [L] pdb index
+    '''
+    sig_len=0.02
+    sig_ang=0.05
+    ideal_NC=1.329
+    blen_CN  = loss.length(xyz[:-1,2], xyz[1:,0])
+    CN_loss = torch.clamp( torch.abs(blen_CN - ideal_NC) - sig_len, min=0.0 )
+
+    pairsum = is_motif[:-1].double() + is_motif[1:].double()
+    pairsum[idx[:-1] - idx[1:] != -1] = -1
+
+    junction = pairsum == 1
+    intra_motif = pairsum == 2
+    intra_diff = pairsum == 0
+
+    return {
+        'junction_CN_loss': CN_loss[junction].mean().item(),
+        'intra_motif_CN_loss': CN_loss[intra_motif].mean().item(),
+        'intra_diff_CN_loss': CN_loss[intra_diff].mean().item()
+    }
+
+
+def junction_cn(pdb):
+    row = analyze.make_row_from_traj(pdb[:-4])
+    trb = analyze.get_trb(row)
+    des_pdb = analyze.get_diffusion_pdb(row)
+    indep = aa_model.make_indep(des_pdb, row['inference.ligand'])
+    is_motif = torch.zeros(indep.length()).bool()
+    is_motif[trb['con_hal_idx0']] = True
+    ic(is_motif)
+    o = junction_bond_len(
+        indep.xyz[~indep.is_sm],
+        is_motif[~indep.is_sm],
+        indep.idx[~indep.is_sm])
+    o['name'] = row['name']
+    return o
+
 def backbone(pdb):
     record = {}
     row = rf_diffusion.dev.analyze.make_row_from_traj(pdb[:-4])
@@ -380,6 +457,13 @@ def backbone(pdb):
     # Broken due to residue indexing.
     # record['rigid_loss'] = rigid_loss(row)
     return record
+
+# For debugging, can be run like:
+# python -m fire /home/ahern/projects/aa/rf_diffusion_flow/rf_diffusion/benchmark/per_sequence_metrics.py single --metric guidepost --pdb=/net/scratch/ahern/se3_diffusion/benchmarks/2023-12-18_20-48-06_cc_sh_schedule_sweep/run_siteD_troh1_cond1_0-atomized-bb-False.pdb
+def single(metric, pdb, **kwargs):
+    metric_f = globals()[metric]
+    df = get_metrics([pdb], metric_f)
+    ic(df)
 
 if __name__ == '__main__':
     fire.Fire(main)
