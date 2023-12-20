@@ -169,11 +169,11 @@ def main():
     df = pd.concat(df_all_list)
 
     # add seq/struc clusters (assumed to be the same for mpnn designs as non-mpnn)
+    backbone_metric_dirs = [os.path.join(d, 'csv.*') for d in glob.glob(args.datadir+'/metrics/per_design/*/')]
     for path in [
         args.datadir+'/tm_clusters.csv',
         args.datadir+'/blast_clusters.csv',
-        # args.datadir+'/metrics/per_design/csv.*',
-    ]:
+    ] + backbone_metric_dirs:
         df_s = [ pd.read_csv(fn,index_col=0) for fn in glob.glob(path) ]
         tmp = pd.concat(df_s) if len(df_s)>0 else pd.DataFrame(dict(name=[]))
         ic(
