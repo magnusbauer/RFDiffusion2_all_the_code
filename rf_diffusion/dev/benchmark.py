@@ -336,8 +336,12 @@ def add_metrics_sc(df):
     df['self_consistent'] = df['rmsd_af2_des'] < 2.0
     df['self_consistent_and_motif'] = df['self_consistent'] & (np.isnan(df['contig_rmsd_af2_des']) | (df['contig_rmsd_af2_des'] < 1.0))
 
-def get_best(df):
-    data = df.groupby(["design_id"], dropna=False).apply(lambda grp: grp.sort_values(['self_consistent_and_motif', 'contig_rmsd_af2_des', 'rmsd_af2_des'], ascending=[False, True, True]).head(1)).reset_index(drop=True)
+def get_best(df, motif_first=True):
+    other_sorts = ['contig_rmsd_af2_des', 'rmsd_af2_des']
+    if not motif_first:
+        other_sorts = ['rmsd_af2_des', 'contig_rmsd_af2_des']
+
+    data = df.groupby(["design_id"], dropna=False).apply(lambda grp: grp.sort_values(['self_consistent_and_motif'] + other_sorts, ascending=[False, True, True]).head(1)).reset_index(drop=True)
     return data
 
 def get_most_sc_designs_in_group(df, groups, n=1):
@@ -562,6 +566,7 @@ def show_by_seed(
         n=1, 
         structs={'X0'},
         mpnn_packed=False,
+        des=0,
         af2=False):
     # show = bench[bench['benchmark'] == '10_res_atomized_1']
     # show = bench[~bench['benchmark'].isin(['10_res_atomized_1', '10_res_atomized_2', '10_res_atomized_3'])].copy()
@@ -578,7 +583,7 @@ def show_by_seed(
     all_entities = show_bench.show_df(
         show,
         structs=structs,
-        des=0,
+        des=des,
         af2=af2,
         mpnn_packed=mpnn_packed,
         return_entities=True)
@@ -627,10 +632,17 @@ def get_cc_passing(df, subtypes=('raw',)):
                                                 cols=[filter_union, 'contig_rmsd_af2_full_atom'],
                                                 ascending=[False, True]
             )
-            melted = analyze.melt_filters(best_filter_passers, [filter_union])
+            melted = analyze.melt_filters(best_filter_passers, [filter_union]).copy()
             melted['filter_set'] = filter_union
             melts.append(melted)
         melted = pd.concat(melts)
         all_melted[subtype] = melted.copy()
     by_pack = pd.concat(all_melted.values())
     return by_pack
+
+def columns_with_substring(df, substring):
+    o = []
+    for c in df.columns:
+        if substring in c:
+            o.append(c)
+    return o
