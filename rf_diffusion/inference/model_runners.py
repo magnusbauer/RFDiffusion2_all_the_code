@@ -369,7 +369,7 @@ class NRBStyleSelfCond(Sampler):
     Works for diffusion and flow matching models.
     """
 
-    def sample_step(self, t, indep, rfo):
+    def get_grads(self, t, indep, rfo):
         '''
         Generate the next pose that the model should be supplied at timestep t-1.
         Args:
@@ -389,10 +389,6 @@ class NRBStyleSelfCond(Sampler):
         indep.extra_t1d = features.get_extra_t1d_inference(indep, extra_t1d_names, self._conf.extra_t1d_params, self._conf.inference.conditions, is_gp=indep.is_gp, t_cont=t_cont)
         rfi = self.model_adaptor.prepro(indep, t, self.is_diffused)
         rf2aa.tensor_util.to_device(rfi, self.device)
-        seq_init = torch.nn.functional.one_hot(
-                indep.seq, num_classes=rf2aa.chemical.NAATOKENS).to(self.device).float()
-        seq_t = torch.clone(seq_init)
-        seq_in = torch.clone(seq_init)
         # B,N,L = xyz_t.shape[:3]
 
         ##################################
@@ -422,7 +418,7 @@ class NRBStyleSelfCond(Sampler):
 
         rigids_t = du.rigid_frames_from_atom_14(rfi.xyz)
         # ic(self._conf.denoiser.noise_scale, do_self_cond)
-        rigids_t = self.diffuser.reverse(
+        trans_grad, rots_grad = self.diffuser.get_grads(
             rigid_t=rigids_t,
             rot_score=du.move_to_np(model_out['rot_score'][:,-1]),
             trans_score=du.move_to_np(model_out['trans_score'][:,-1]),
@@ -433,22 +429,53 @@ class NRBStyleSelfCond(Sampler):
             noise_scale=self._conf.denoiser.noise_scale,
             rigid_pred=model_out['rigids_raw'][:,-1]
         )
+
+        px0 = model_out['atom37'][0, -1]
+        px0 = px0.cpu()
+
+        return trans_grad, rots_grad, px0, model_out['rfo']
+    
+    def get_rigids(indep):
+        rigids = du.rigid_frames_from_atom_14(indep.xyz)
+        return rigids
+
+    def sample_step(self, t, indep, rfo):
+        '''
+        Generate the next pose that the model should be supplied at timestep t-1.
+        Args:
+            t (int): The timestep that has just been predicted
+            seq_t (torch.tensor): (L,22) The sequence at the beginning of this timestep
+            x_t (torch.tensor): (L,14,3) The residue positions at the beginning of this timestep
+            seq_init (torch.tensor): (L,22) The initialized sequence used in updating the sequence.
+        Returns:
+            px0: (L,14,3) The model's prediction of x0.
+            x_t_1: (L,14,3) The updated positions of the next step.
+            seq_t_1: (L) The updated sequence of the next step.
+            tors_t_1: (L, ?) The updated torsion angles of the next  step.
+            plddt: (L, 1) Predicted lDDT of x0.
+        '''
+        trans_grad, rots_grad, px0, rfo = self.get_grads(t, indep, rfo)
+        trans_dt, rots_dt = self.diffuser.get_dt(t/self._conf.diffuser.T, 1/self._conf.diffuser.T)
+        rigids_t = du.rigid_frames_from_atom_14(indep.xyz)
+        rigids_t = self.diffuser.apply_grads(rigids_t, trans_grad, rots_grad, trans_dt, rots_dt)
         x_t_1 = all_atom.atom37_from_rigid(rigids_t)
         x_t_1 = x_t_1[0,:,:14]
         # Replace the xyzs of the motif
         x_t_1[~self.is_diffused.bool(), :14] = indep.xyz[~self.is_diffused.bool(), :14]
+
+        seq_init = torch.nn.functional.one_hot(
+                indep.seq, num_classes=rf2aa.chemical.NAATOKENS).to(self.device).float()
+        seq_t = torch.clone(seq_init)
         seq_t_1 = seq_t
         tors_t_1 = torch.ones((self.is_diffused.shape[-1], 10, 2))
 
-        px0 = model_out['atom37'][0, -1]
-        px0 = px0.cpu()
         x_t_1 = x_t_1.cpu()
         seq_t_1 = seq_t_1.cpu()
 
         if self.symmetry is not None:
             x_t_1, seq_t_1 = self.symmetry.apply_symmetry(x_t_1, seq_t_1)
 
-        return px0, x_t_1, seq_t_1, tors_t_1, None, model_out['rfo']
+        return px0, x_t_1, seq_t_1, tors_t_1, None, rfo
 
 class FlowMatching(Sampler):
     """
