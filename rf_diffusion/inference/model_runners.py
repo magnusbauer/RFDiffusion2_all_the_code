@@ -364,7 +364,9 @@ class Sampler:
 
 class NRBStyleSelfCond(Sampler):
     """
-    Model Runner for self conditioning in the style attempted by NRB
+    Model Runner for self conditioning in the style attempted by NRB.
+
+    Works for diffusion and flow matching models.
     """
 
     def sample_step(self, t, indep, rfo):
@@ -448,19 +450,126 @@ class NRBStyleSelfCond(Sampler):
 
         return px0, x_t_1, seq_t_1, tors_t_1, None, model_out['rfo']
 
+class FlowMatching(Sampler):
+    """
+    Model Runner for flow matching.
+    """
+
+    def get_grads(self, t, indep, rfo):
+        '''
+        Generate the next pose that the model should be supplied at timestep t-1.
+        Args:
+            t (int): The timestep that has just been predicted
+            seq_t (torch.tensor): (L,22) The sequence at the beginning of this timestep
+            x_t (torch.tensor): (L,14,3) The residue positions at the beginning of this timestep
+            seq_init (torch.tensor): (L,22) The initialized sequence used in updating the sequence.
+        Returns:
+            px0: (L,14,3) The model's prediction of x0.
+            x_t_1: (L,14,3) The updated positions of the next step.
+            seq_t_1: (L) The updated sequence of the next step.
+            tors_t_1: (L, ?) The updated torsion angles of the next  step.
+            plddt: (L, 1) Predicted lDDT of x0.
+        '''
+        extra_t1d_names = getattr(self._conf, 'extra_t1d', [])
+        t_cont = t/self._conf.diffuser.T
+        indep.extra_t1d = features.get_extra_t1d_inference(indep, extra_t1d_names, self._conf.extra_t1d_params, self._conf.inference.conditions, is_gp=indep.is_gp, t_cont=t_cont)
+        rfi = self.model_adaptor.prepro(indep, t, self.is_diffused)
+        rf2aa.tensor_util.to_device(rfi, self.device)
+        # B,N,L = xyz_t.shape[:3]
+
+        ##################################
+        ######## Str Self Cond ###########
+        ##################################
+        do_self_cond = ((t < self._conf.diffuser.T) and (t != self._conf.diffuser.partial_T)) and self._conf.inference.str_self_cond
+        if do_self_cond:
+            rfi = aa_model.self_cond(indep, rfi, rfo)
+
+        if self.symmetry is not None:
+            idx_pdb, self.chain_idx = self.symmetry.res_idx_procesing(res_idx=idx_pdb)
+
+        with torch.no_grad():
+            assert not rfi.xyz[0,:,:3,:].isnan().any(), f'{t}: {rfi.xyz[0,:,:3,:]}'
+            model_out = self.model.forward_from_rfi(rfi, torch.tensor([t/self._conf.diffuser.T]).to(rfi.xyz.device), use_checkpoint=False)
+
+        now = datetime.now()
+        current_time = now.strftime("%H:%M:%S")
+        # self._log.info(
+        #         f'{current_time}: Timestep {t}')
+
+        rigids_t = du.rigid_frames_from_atom_14(rfi.xyz)
+        # ic(self._conf.denoiser.noise_scale, do_self_cond)
+        trans_grad, rots_grad = self.diffuser.get_grads(
+            rigid_t=rigids_t,
+            rot_score=du.move_to_np(model_out['rot_score'][:,-1]),
+            trans_score=du.move_to_np(model_out['trans_score'][:,-1]),
+            diffuse_mask=du.move_to_np(self.is_diffused.float()[None,...]),
+            t=t/self._conf.diffuser.T,
+            dt=1/self._conf.diffuser.T,
+            center=self._conf.denoiser.center,
+            noise_scale=self._conf.denoiser.noise_scale,
+            rigid_pred=model_out['rigids_raw'][:,-1]
+        )
+
+        px0 = model_out['atom37'][0, -1]
+        px0 = px0.cpu()
+
+        return trans_grad, rots_grad, px0, model_out
+    
+    def get_rigids(indep):
+        rigids = du.rigid_frames_from_atom_14(indep.xyz)
+        return rigids
+
+    def sample_step(self, t, indep, rfo):
+        '''
+        Generate the next pose that the model should be supplied at timestep t-1.
+        Args:
+            t (int): The timestep that has just been predicted
+            seq_t (torch.tensor): (L,22) The sequence at the beginning of this timestep
+            x_t (torch.tensor): (L,14,3) The residue positions at the beginning of this timestep
+            seq_init (torch.tensor): (L,22) The initialized sequence used in updating the sequence.
+        Returns:
+            px0: (L,14,3) The model's prediction of x0.
+            x_t_1: (L,14,3) The updated positions of the next step.
+            seq_t_1: (L) The updated sequence of the next step.
+            tors_t_1: (L, ?) The updated torsion angles of the next  step.
+            plddt: (L, 1) Predicted lDDT of x0.
+        '''
+        rigids_t = du.rigid_frames_from_atom_14(indep.xyz)[None,...]
+        trans_grad, rots_grad, px0, model_out = self.get_grads(t, indep, rfo)
+        trans_dt, rots_dt = self.diffuser.get_dt(t/self._conf.diffuser.T, 1/self._conf.diffuser.T)
+        rigids_t = du.rigid_frames_from_atom_14(indep.xyz)[None,...]
+
+        # NEW:
+        rigids_t = self.diffuser.apply_grads(rigids_t, trans_grad, rots_grad, trans_dt, rots_dt)
+
+        x_t_1 = all_atom.atom37_from_rigid(rigids_t)
+        x_t_1 = x_t_1[0,:,:14]
+        # Replace the xyzs of the motif
+        x_t_1[~self.is_diffused.bool(), :14] = indep.xyz[~self.is_diffused.bool(), :14]
+
+        seq_init = torch.nn.functional.one_hot(
+                indep.seq, num_classes=rf2aa.chemical.NAATOKENS).to(self.device).float()
+        seq_t = torch.clone(seq_init)
+        seq_t_1 = seq_t
+        tors_t_1 = torch.ones((self.is_diffused.shape[-1], 10, 2))
+
+        x_t_1 = x_t_1.cpu()
+        seq_t_1 = seq_t_1.cpu()
+
+        if self.symmetry is not None:
+            x_t_1, seq_t_1 = self.symmetry.apply_symmetry(x_t_1, seq_t_1)
+
+        return px0, x_t_1, seq_t_1, tors_t_1, None, model_out['rfo']
+
 def sampler_selector(conf: DictConfig):
     if conf.inference.model_runner == 'default':
         sampler = Sampler(conf)
-    elif conf.inference.model_runner == 'legacy':
-        sampler = T1d28T2d45Sampler(conf)
-    elif conf.inference.model_runner == 'seq2str':
-        sampler = Seq2StrSampler(conf)
-    elif conf.inference.model_runner == 'JWStyleSelfCond':
-        sampler = JWStyleSelfCond(conf)
     elif conf.inference.model_runner == 'NRBStyleSelfCond':
         sampler = NRBStyleSelfCond(conf)
+    elif conf.inference.model_runner == 'FlowMatching':
+        sampler = FlowMatching(conf)
     else:
-        raise ValueError(f'Unrecognized sampler {conf.model_runner}')
+        raise ValueError(f'Unrecognized sampler {conf.inference.model_runner}')
     return sampler
 
 

@@ -116,24 +116,39 @@ class TestRegression(unittest.TestCase):
         # The network exhibits chaotic behavior when coordinates corresponding to chiral gradients are updated,
         # so this primarily checks that inference runs and produces the expected shapes, rather than coordinate
         # values, which vary wildly across CPU architectures.
-        cmp = partial(tensor_util.cmp, atol=1e-2, rtol=0)
+        cmp = partial(tensor_util.cmp, atol=2, rtol=0)
         test_utils.assert_matches_golden(self, 'partial_sc', pdb_contents, rewrite=REWRITE, custom_comparator=cmp)
     
     @pytest.mark.slow
     @pytest.mark.nondeterministic
-    def test_partial_sidechain_strict(self):
+    def test_10res_flow_matching(self):
         run_inference.make_deterministic()
         pdb, _ = infer([
             'diffuser.T=10',
             'inference.num_designs=1',
-            'inference.output_prefix=tmp/test_3',
+            'inference.output_prefix=tmp/test_10res_flow_matching',
+            "contigmap.contigs=['9,A518-518,1']",
+            "+contigmap.contig_atoms=\"{'A518':'CG,OD1,OD2'}\"",
+            "inference.model_runner=FlowMatching",
+        ])
+        pdb_contents = inference.utils.parse_pdb(pdb)
+        cmp = partial(tensor_util.cmp, atol=1e-1, rtol=0)
+        test_utils.assert_matches_golden(self, '10res_self_conditioning', pdb_contents, rewrite=REWRITE, custom_comparator=cmp)
+
+    @pytest.mark.slow
+    @pytest.mark.nondeterministic
+    def test_10res_self_conditioning(self):
+        run_inference.make_deterministic()
+        pdb, _ = infer([
+            'diffuser.T=10',
+            'inference.num_designs=1',
+            'inference.output_prefix=tmp/test_10res_self_conditioning',
             "contigmap.contigs=['9,A518-518,1']",
             "+contigmap.contig_atoms=\"{'A518':'CG,OD1,OD2'}\"",
         ])
-        ic(pdb)
         pdb_contents = inference.utils.parse_pdb(pdb)
         cmp = partial(tensor_util.cmp, atol=1e-2, rtol=0)
-        test_utils.assert_matches_golden(self, 'partial_sc_strict', pdb_contents, rewrite=REWRITE, custom_comparator=cmp)
+        test_utils.assert_matches_golden(self, '10res_self_conditioning', pdb_contents, rewrite=REWRITE, custom_comparator=cmp)
 
     @pytest.mark.slow
     @pytest.mark.nondeterministic

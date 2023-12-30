@@ -6,6 +6,7 @@ from openfold.utils import rigid_utils as ru
 
 from rf_se3_diffusion.data import se3_diffuser
 from se3_flow_matching.data import interpolant
+from se3_flow_matching.data import so3_utils
 
 def get(noiser_conf):
     if 'type' not in noiser_conf or noiser_conf.type == 'diffusion':
@@ -115,6 +116,50 @@ class NormalizingFlow(interpolant.Interpolant):
         rigid_t_2[:, is_diffused] = rigid_t_2_diffused
         return rigid_t_2
     
+    def get_grads(
+            self,
+            rigid_t,
+            rigid_pred,
+            t,
+            dt,
+            **kwargs
+    ):
+        trans_t_1 = rigid_t.get_trans()
+        rotmats_t_1 = rigid_t.get_rots().get_rot_mats()
+        pred_trans_1 = rigid_pred.get_trans()
+        pred_rotmats_1 = rigid_pred.get_rots().get_rot_mats()
+
+        # Take reverse step
+        trans_grad = (pred_trans_1 - trans_t_1)  #* trans_schedule_scaling
+
+        rots_grad = so3_utils.calc_rot_vf(rotmats_t_1, pred_rotmats_1)
+
+        return trans_grad, rots_grad
+    
+    def get_dt(self, t, dt):
+        # Rotations
+        t = 1 - t
+        if self._rots_cfg.sample_schedule == 'linear':
+            rot_scaling = 1 / (1 - t)
+        elif self._rots_cfg.sample_schedule == 'exp':
+            rot_scaling = self._rots_cfg.exp_rate
+        
+        trans_scaling = 1 / (1 - t)
+
+        return trans_scaling * dt, rot_scaling * dt
+    
+    def apply_grads(self, rigid_t, trans_grad, rots_grad, trans_dt, rots_dt):
+
+        trans_t_1 = rigid_t.get_trans()
+        rotmats_t_1 = rigid_t.get_rots().get_rot_mats()
+        trans_t_2 = trans_t_1 + trans_grad * trans_dt
+        rots_vf = rots_dt * rots_grad
+
+        rotmats_t_2 = torch.einsum("...ij,...jk->...ik", rotmats_t_1, so3_utils.rotvec_to_rotmat(rots_vf))
+
+        rigid_t_2 = ru.Rigid(trans=trans_t_2, rots=ru.Rotation(rot_mats=rotmats_t_2))
+        return rigid_t_2
+
     def reverse_all(
             self,
             rigid_t,
