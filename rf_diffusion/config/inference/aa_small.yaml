@@ -9,7 +9,7 @@ inference:
   guidepost_xyz_as_design_bb: [True]
   contig_as_guidepost: False
   str_self_cond: 1
-  ckpt_path: /net/scratch/ahern/se3_diffusion/training/fm/fm2023-11-18_20:09:38.198221/rank_0/models/RFD_22.pt
+  ckpt_path: /net/scratch/ahern/se3_diffusion/training/fm_tip_resume_24/fm_tip_resume_242023-12-03_14:20:34.490797/rank_0/models/RFD_45.pt
 
 dataloader:
   P_IS_GUIDEPOST_EXAMPLE: 0.5
