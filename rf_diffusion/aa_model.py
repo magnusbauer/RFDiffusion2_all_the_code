@@ -2217,3 +2217,10 @@ def open_indep(indep, is_open):
 
 def residue_atoms(res):
     return [n.strip() for n in rf2aa.chemical.aa2long[res][:14] if n is not None]
+
+def make_conditional_indep(indep, indep_original, is_diffused):
+    assert indep.is_sm[~is_diffused].all(), f'sequence unmasking not yet implemented, only coordinate conditioning, so only atomized/small molecule motifs are allowed'
+    indep = copy.deepcopy(indep)
+    ic(indep.xyz[~is_diffused]-indep_original.xyz[~is_diffused, :14])
+    indep.xyz[~is_diffused] = indep_original.xyz[~is_diffused, :14]
+    return indep

@@ -417,6 +417,22 @@ class TestTwoChains(unittest.TestCase):
         assertpy.assert_that(indep_contig.bond_feats[5][6]).is_equal_to(0)
         assertpy.assert_that(indep_contig.bond_feats[6][5]).is_equal_to(0)
 
+class TestConditionalIndep(unittest.TestCase):
+    def test_all(self):
+        indep = make_indep('benchmark/input/gaa.pdb', 'LG1')
+        L = indep.length()
+        input_copy = copy.deepcopy(indep)
+        i = torch.randperm(L)
+        i_inv = torch.argsort(i)
+        aa_model.rearrange_indep(indep, i)
+        aa_model.rearrange_indep(indep, i_inv)
+
+
+        diff = test_utils.cmp_pretty(indep, input_copy)
+        if diff:
+            print(diff)
+            self.fail(f'{diff=}')
+
 REWRITE = False
 if __name__ == '__main__':
         unittest.main()

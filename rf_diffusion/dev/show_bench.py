@@ -272,6 +272,8 @@ def add_pymol_name(data, keys):
                 v = v.split('/')[-1]
             if k == 'inference.input_pdb':
                 v = v.split('/')[-1]
+            if k == 'pdb_path':
+                v = v.split('/')[-1]
             k_str = k.replace('.', '_')
             v = str(v)
             v = v.replace('.', '_')

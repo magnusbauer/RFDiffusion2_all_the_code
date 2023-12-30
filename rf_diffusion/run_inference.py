@@ -144,6 +144,10 @@ def sample_one(sampler, simple_logging=False):
     seq_stack = []
 
     rfo = None
+    extra = {
+        'rfo_uncond': None,
+        'rfo_cond': None,
+    }
 
     # Loop over number of reverse diffusion time steps.
     for t in trange(int(sampler.t_step_input), sampler.inf_conf.final_step-1, -1):
@@ -156,8 +160,8 @@ def sample_one(sampler, simple_logging=False):
         if sampler._conf.preprocess.randomize_frames:
             print('randomizing frames')
             indep.xyz = aa_model.randomly_rotate_frames(indep.xyz)
-        px0, x_t, seq_t, tors_t, plddt, rfo = sampler.sample_step(
-            t, indep, rfo)
+        px0, x_t, seq_t, rfo, extra = sampler.sample_step(
+            t, indep, rfo, extra)
         # assert_that(indep.xyz.shape).is_equal_to(x_t.shape)
         rf2aa.tensor_util.assert_same_shape(indep.xyz, x_t)
         indep.xyz = x_t

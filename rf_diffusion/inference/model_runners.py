@@ -48,6 +48,76 @@ import sys
 import rf_diffusion.model_input_logger as model_input_logger
 from rf_diffusion.model_input_logger import pickle_function_call
 
+def sample_init(conf, contig_map, target_feats, diffuser, insert_contig, diffuse_all):
+    """Initial features to start the sampling process.
+    
+    Modify signature and function body for different initialization
+    based on the config.
+    
+    Returns:
+        xt: Starting positions with a portion of them randomly sampled.
+        seq_t: Starting sequence with a portion of them set to unknown.
+    """
+
+    L = len(target_feats['pdb_idx'])
+
+    indep_orig, metadata = aa_model.make_indep(conf.inference.input_pdb, conf.inference.ligand, return_metadata=True)
+    for_partial_diffusion = conf.diffuser.partial_T != None
+    indep, is_diffused, is_seq_masked = insert_contig(
+            indep_orig, 
+            contig_map,
+            metadata=metadata,
+            for_partial_diffusion=for_partial_diffusion)
+    
+    #ic(
+    #    aa_model.what_is_diffused(indep, self.is_diffused, self.model_adaptor.atomizer)
+    #)
+    
+    if conf.inference.center_motif:
+        indep.xyz -= aa_model.motif_c_alpha_com(indep.xyz, is_diffused)
+    t_step_input = conf.diffuser.T
+    indep_orig = copy.deepcopy(indep)
+    if for_partial_diffusion:
+        mappings = contig_map.get_mappings()
+        # This is due to the fact that when inserting a contig, the non-motif coordinates are reset.
+        if conf.inference.safety.sidechain_partial_diffusion:
+            print("You better know what you're doing when doing partial diffusion with sidechains")
+        else:
+            assert indep.xyz.shape[0] ==  L + torch.sum(indep.is_sm), f"there must be a coordinate in the input PDB for each residue implied by the contig string for partial diffusion.  length of input PDB != length of contig string: {indep.xyz.shape[0]} != {L+torch.sum(indep.is_sm)}"
+            assert torch.all(is_diffused[indep.is_sm] == 0), f"all ligand atoms must be in the motif"
+        assert (mappings['con_hal_idx0'] == mappings['con_ref_idx0']).all(), f"all positions in the input PDB must correspond to the same index in the output pdb: {list(zip(mappings['con_hal_idx0'], mappings['con_ref_idx0']))=}"
+    indep.seq[is_seq_masked] = rf2aa.chemical.MASKINDEX
+    # Diffuse the contig-mapped coordinates 
+    if for_partial_diffusion:
+        t_step_input = conf.diffuser.partial_T
+        assert conf.diffuser.partial_T <= conf.diffuser.T
+    indep.xyz = aa_model.add_fake_frame_legs(indep.xyz, indep.is_sm)
+    rigids_0 = du.rigid_frames_from_atom_14(indep.xyz)
+    t_cont = t_step_input / conf.diffuser.T
+
+    forward_is_diffused = is_diffused.clone()
+    if diffuse_all:
+        forward_is_diffused[:] = True
+    diffuser_out = diffuser.forward_marginal(
+        rigids_0,
+        t=t_cont,
+        diffuse_mask=forward_is_diffused.float(),
+        as_tensor_7=False
+    )
+    xT = all_atom.atom37_from_rigid(diffuser_out['rigids_t'])
+    ic(
+        # indep.xyz[~is_diffused] - indep_orig.xyz[~is_diffused, :14],
+        xT[~is_diffused, :14] - indep_orig.xyz[~is_diffused, :14],
+        # xT[~is_diffused] - indep_orig.xyz[~is_diffused],
+        diffuser_out['rigids_t'].get_trans()[~is_diffused] - indep_orig.xyz[~is_diffused, 1],
+        # rigids_0.get_trans()[~is_diffused] - indep_orig.xyz[~is_diffused, 1],
+        # diffuser_out['rigids_t']
+    )
+    xt = torch.clone(xT[:,:14])
+    indep.xyz = xt
+    
+    return indep, indep_orig, is_diffused
+
 class Sampler:
 
     def __init__(self, conf: DictConfig):
@@ -292,65 +362,8 @@ class Sampler:
             xt: Starting positions with a portion of them randomly sampled.
             seq_t: Starting sequence with a portion of them set to unknown.
         """
-
-        # moved this here as should be updated each iteration of diffusion
-        self.contig_map = self.construct_contig(self.target_feats)
-        L = len(self.target_feats['pdb_idx'])
-
-        indep_orig, metadata = aa_model.make_indep(self._conf.inference.input_pdb, self._conf.inference.ligand, return_metadata=True)
-        for_partial_diffusion = self.diffuser_conf.partial_T != None
-        indep, self.is_diffused, self.is_seq_masked = self.model_adaptor.insert_contig(
-                indep_orig, 
-                self.contig_map,
-                metadata=metadata,
-                for_partial_diffusion=for_partial_diffusion)
-        
-        #ic(
-        #    aa_model.what_is_diffused(indep, self.is_diffused, self.model_adaptor.atomizer)
-        #)
-        
-        if self._conf.inference.center_motif:
-            indep.xyz -= aa_model.motif_c_alpha_com(indep.xyz, self.is_diffused)
-        self.t_step_input = self._conf.diffuser.T
-        self.indep_orig = copy.deepcopy(indep)
-        if for_partial_diffusion:
-            mappings = self.contig_map.get_mappings()
-            # This is due to the fact that when inserting a contig, the non-motif coordinates are reset.
-            if self._conf.inference.safety.sidechain_partial_diffusion:
-                print("You better know what you're doing when doing partial diffusion with sidechains")
-            else:
-                assert indep.xyz.shape[0] ==  L + torch.sum(indep.is_sm), f"there must be a coordinate in the input PDB for each residue implied by the contig string for partial diffusion.  length of input PDB != length of contig string: {indep.xyz.shape[0]} != {L+torch.sum(indep.is_sm)}"
-                assert torch.all(self.is_diffused[indep.is_sm] == 0), f"all ligand atoms must be in the motif"
-            assert (mappings['con_hal_idx0'] == mappings['con_ref_idx0']).all(), f"all positions in the input PDB must correspond to the same index in the output pdb: {list(zip(mappings['con_hal_idx0'], mappings['con_ref_idx0']))=}"
-        indep.seq[self.is_seq_masked] = rf2aa.chemical.MASKINDEX
-        # Diffuse the contig-mapped coordinates 
-        if for_partial_diffusion:
-            self.t_step_input = self.diffuser_conf.partial_T
-            assert self.diffuser_conf.partial_T <= self.diffuser_conf.T
-        t_list = np.arange(1, self.t_step_input+1)
-        atom_mask = None
-        seq_one_hot = None
-        rigids_0 = du.rigid_frames_from_atom_14(indep.xyz)
-        t_cont = self.t_step_input / self.diffuser_conf.T
-        diffuser_out = self.diffuser.forward_marginal(
-            rigids_0,
-            t=t_cont,
-            diffuse_mask=self.is_diffused.float(),
-            as_tensor_7=False
-        )
-        xT = all_atom.atom37_from_rigid(diffuser_out['rigids_t'])
-        xt = torch.clone(xT[:,:14])
-        indep.xyz = xt
-
-        # self.denoiser = self.construct_denoiser(len(self.contig_map.ref), visible=~self.is_diffused)
-        if self.symmetry is not None:
-            raise Exception('not implemented')
-            xt, seq_t = self.symmetry.apply_symmetry(xt, seq_t)
-        
-        self.msa_prev = None
-        self.pair_prev = None
-        self.state_prev = None
-        
+        self.contig_map = ContigMap(self.target_feats, **self.contig_conf)
+        indep, self.indep_orig, self.is_diffused = sample_init(self._conf, self.contig_map, self.target_feats, self.diffuser, self.model_adaptor.insert_contig, diffuse_all=False)
         return indep
 
     def symmetrise_prev_pred(self, px0, seq_in, alpha):
@@ -361,7 +374,7 @@ class Sampler:
         px0_sym,_ = self.symmetry.apply_symmetry(px0_aa.to('cpu').squeeze()[:,:14], torch.argmax(seq_in, dim=-1).squeeze().to('cpu'))
         px0_sym = px0_sym[None].to(self.device)
         return px0_sym
-
+    
 class NRBStyleSelfCond(Sampler):
     """
     Model Runner for self conditioning in the style attempted by NRB.
@@ -369,7 +382,7 @@ class NRBStyleSelfCond(Sampler):
     Works for diffusion and flow matching models.
     """
 
-    def get_grads(self, t, indep, rfo):
+    def sample_step(self, t, indep, rfo, extra):
         '''
         Generate the next pose that the model should be supplied at timestep t-1.
         Args:
@@ -388,7 +401,12 @@ class NRBStyleSelfCond(Sampler):
         t_cont = t/self._conf.diffuser.T
         indep.extra_t1d = features.get_extra_t1d_inference(indep, extra_t1d_names, self._conf.extra_t1d_params, self._conf.inference.conditions, is_gp=indep.is_gp, t_cont=t_cont)
         rfi = self.model_adaptor.prepro(indep, t, self.is_diffused)
+
         rf2aa.tensor_util.to_device(rfi, self.device)
+        seq_init = torch.nn.functional.one_hot(
+                indep.seq, num_classes=rf2aa.chemical.NAATOKENS).to(self.device).float()
+        seq_t = torch.clone(seq_init)
+        seq_in = torch.clone(seq_init)
         # B,N,L = xyz_t.shape[:3]
 
         ##################################
@@ -418,7 +436,7 @@ class NRBStyleSelfCond(Sampler):
 
         rigids_t = du.rigid_frames_from_atom_14(rfi.xyz)
         # ic(self._conf.denoiser.noise_scale, do_self_cond)
-        trans_grad, rots_grad = self.diffuser.get_grads(
+        rigids_t = self.diffuser.reverse(
             rigid_t=rigids_t,
             rot_score=du.move_to_np(model_out['rot_score'][:,-1]),
             trans_score=du.move_to_np(model_out['trans_score'][:,-1]),
@@ -429,53 +447,41 @@ class NRBStyleSelfCond(Sampler):
             noise_scale=self._conf.denoiser.noise_scale,
             rigid_pred=model_out['rigids_raw'][:,-1]
         )
+        # x_t_1 = all_atom.atom37_from_rigid(rigids_t)
+        # x_t_1 = x_t_1[0,:,:14]
+        # # Replace the xyzs of the motif
+        # x_t_1[~self.is_diffused.bool(), :14] = indep.xyz[~self.is_diffused.bool(), :14]
+        # seq_t_1 = seq_t
+        # tors_t_1 = torch.ones((self.is_diffused.shape[-1], 10, 2))
 
         px0 = model_out['atom37'][0, -1]
         px0 = px0.cpu()
+        # x_t_1 = x_t_1.cpu()
+        # seq_t_1 = seq_t_1.cpu()
 
-        return trans_grad, rots_grad, px0, model_out['rfo']
+        # if self.symmetry is not None:
+        #     x_t_1, seq_t_1 = self.symmetry.apply_symmetry(x_t_1, seq_t_1)
+
+        # return px0, x_t_1, seq_t_1, model_out['rfo'], {}
     
-    def get_rigids(indep):
-        rigids = du.rigid_frames_from_atom_14(indep.xyz)
-        return rigids
+        return px0, get_x_t_1(rigids_t, indep.xyz, self.is_diffused), get_seq_one_hot(indep.seq), model_out['rfo'], {}
 
-    def sample_step(self, t, indep, rfo):
-        '''
-        Generate the next pose that the model should be supplied at timestep t-1.
-        Args:
-            t (int): The timestep that has just been predicted
-            seq_t (torch.tensor): (L,22) The sequence at the beginning of this timestep
-            x_t (torch.tensor): (L,14,3) The residue positions at the beginning of this timestep
-            seq_init (torch.tensor): (L,22) The initialized sequence used in updating the sequence.
-        Returns:
-            px0: (L,14,3) The model's prediction of x0.
-            x_t_1: (L,14,3) The updated positions of the next step.
-            seq_t_1: (L) The updated sequence of the next step.
-            tors_t_1: (L, ?) The updated torsion angles of the next  step.
-            plddt: (L, 1) Predicted lDDT of x0.
-        '''
-        trans_grad, rots_grad, px0, rfo = self.get_grads(t, indep, rfo)
-        trans_dt, rots_dt = self.diffuser.get_dt(t/self._conf.diffuser.T, 1/self._conf.diffuser.T)
-        rigids_t = du.rigid_frames_from_atom_14(indep.xyz)
-        rigids_t = self.diffuser.apply_grads(rigids_t, trans_grad, rots_grad, trans_dt, rots_dt)
-        x_t_1 = all_atom.atom37_from_rigid(rigids_t)
-        x_t_1 = x_t_1[0,:,:14]
-        # Replace the xyzs of the motif
-        x_t_1[~self.is_diffused.bool(), :14] = indep.xyz[~self.is_diffused.bool(), :14]
+def get_x_t_1(rigids_t, xyz, is_diffused):
+    x_t_1 = all_atom.atom37_from_rigid(rigids_t)
+    x_t_1 = x_t_1[0,:,:14]
+    # Replace the xyzs of the motif
+    x_t_1[~is_diffused.bool(), :14] = xyz[~is_diffused.bool(), :14]
+    x_t_1 = x_t_1.cpu()
+    return x_t_1
 
-        seq_init = torch.nn.functional.one_hot(
-                indep.seq, num_classes=rf2aa.chemical.NAATOKENS).to(self.device).float()
-        seq_t = torch.clone(seq_init)
-        seq_t_1 = seq_t
-        tors_t_1 = torch.ones((self.is_diffused.shape[-1], 10, 2))
-
-        x_t_1 = x_t_1.cpu()
-        seq_t_1 = seq_t_1.cpu()
-
-        if self.symmetry is not None:
-            x_t_1, seq_t_1 = self.symmetry.apply_symmetry(x_t_1, seq_t_1)
-
-        return px0, x_t_1, seq_t_1, tors_t_1, None, rfo
+def get_seq_one_hot(seq):
+    seq_init = torch.nn.functional.one_hot(
+            seq, num_classes=rf2aa.chemical.NAATOKENS).float()
+    return seq_init.cpu()
+    # seq_t = torch.clone(seq_init)
+    # seq_t_1 = seq_t
+    # seq_t_1 = seq_t_1.cpu()
+    # return seq_t_1
 
 class FlowMatching(Sampler):
     """
@@ -515,7 +521,7 @@ class FlowMatching(Sampler):
             idx_pdb, self.chain_idx = self.symmetry.res_idx_procesing(res_idx=idx_pdb)
 
         with torch.no_grad():
-            assert not rfi.xyz[0,:,:3,:].isnan().any(), f'{t}: {rfi.xyz[0,:,:3,:]}'
+            # assert not rfi.xyz[0,:,:3,:].isnan().any(), f'{t}: {rfi.xyz[0,:,:3,:]}'
             model_out = self.model.forward_from_rfi(rfi, torch.tensor([t/self._conf.diffuser.T]).to(rfi.xyz.device), use_checkpoint=False)
 
         now = datetime.now()
@@ -546,7 +552,7 @@ class FlowMatching(Sampler):
         rigids = du.rigid_frames_from_atom_14(indep.xyz)
         return rigids
 
-    def sample_step(self, t, indep, rfo):
+    def sample_step(self, t, indep, rfo, extra):
         '''
         Generate the next pose that the model should be supplied at timestep t-1.
         Args:
@@ -561,32 +567,14 @@ class FlowMatching(Sampler):
             tors_t_1: (L, ?) The updated torsion angles of the next  step.
             plddt: (L, 1) Predicted lDDT of x0.
         '''
-        rigids_t = du.rigid_frames_from_atom_14(indep.xyz)[None,...]
         trans_grad, rots_grad, px0, model_out = self.get_grads(t, indep, rfo)
         trans_dt, rots_dt = self.diffuser.get_dt(t/self._conf.diffuser.T, 1/self._conf.diffuser.T)
         rigids_t = du.rigid_frames_from_atom_14(indep.xyz)[None,...]
 
         # NEW:
         rigids_t = self.diffuser.apply_grads(rigids_t, trans_grad, rots_grad, trans_dt, rots_dt)
-
-        x_t_1 = all_atom.atom37_from_rigid(rigids_t)
-        x_t_1 = x_t_1[0,:,:14]
-        # Replace the xyzs of the motif
-        x_t_1[~self.is_diffused.bool(), :14] = indep.xyz[~self.is_diffused.bool(), :14]
-
-        seq_init = torch.nn.functional.one_hot(
-                indep.seq, num_classes=rf2aa.chemical.NAATOKENS).to(self.device).float()
-        seq_t = torch.clone(seq_init)
-        seq_t_1 = seq_t
-        tors_t_1 = torch.ones((self.is_diffused.shape[-1], 10, 2))
-
-        x_t_1 = x_t_1.cpu()
-        seq_t_1 = seq_t_1.cpu()
-
-        if self.symmetry is not None:
-            x_t_1, seq_t_1 = self.symmetry.apply_symmetry(x_t_1, seq_t_1)
-
-        return px0, x_t_1, seq_t_1, tors_t_1, None, model_out['rfo']
+    
+        return px0, get_x_t_1(rigids_t, indep.xyz, self.is_diffused), get_seq_one_hot(indep.seq), model_out['rfo'], {}
 
 def sampler_selector(conf: DictConfig):
     if conf.inference.model_runner == 'default':
@@ -595,6 +583,14 @@ def sampler_selector(conf: DictConfig):
         sampler = NRBStyleSelfCond(conf)
     elif conf.inference.model_runner == 'FlowMatching':
         sampler = FlowMatching(conf)
+    elif conf.inference.model_runner == 'FlowMatching_make_conditional':
+        sampler = FlowMatching_make_conditional(conf)
+    elif conf.inference.model_runner == 'NRBStyleSelfCond_debug':
+        sampler = NRBStyleSelfCond_debug(conf)
+    elif conf.inference.model_runner == 'ClassifierFreeGuidance':
+        sampler = ClassifierFreeGuidance(conf)
+    elif conf.inference.model_runner in globals():
+        sampler = globals()[conf.inference.model_runner](conf)
     else:
         raise ValueError(f'Unrecognized sampler {conf.inference.model_runner}')
     return sampler
@@ -648,3 +644,52 @@ def assemble_config_from_chk(conf, ckpt) -> None:
 
     print('self._conf:')
     ic(conf)
+
+class FlowMatching_make_conditional(FlowMatching):
+
+    def sample_init(self):
+        self.contig_map = ContigMap(self.target_feats, **self.contig_conf)
+        indep, self.indep_orig, self.is_diffused = sample_init(self._conf, self.contig_map, self.target_feats, self.diffuser, self.model_adaptor.insert_contig, diffuse_all=False)
+        return indep
+    
+    def sample_step(self, t, indep, rfo, extra):
+        indep_before = copy.deepcopy(indep)
+        indep = aa_model.make_conditional_indep(indep, self.indep_orig, self.is_diffused)
+
+        trans_grad, rots_grad, px0, model_out = self.get_grads(t, indep, rfo)
+        trans_dt, rots_dt = self.diffuser.get_dt(t/self._conf.diffuser.T, 1/self._conf.diffuser.T)
+        rigids_t = du.rigid_frames_from_atom_14(indep.xyz)[None,...]
+
+        # NEW:
+        rigids_t = self.diffuser.apply_grads(rigids_t, trans_grad, rots_grad, trans_dt, rots_dt)
+    
+        return px0, get_x_t_1(rigids_t, indep.xyz, self.is_diffused), get_seq_one_hot(indep.seq), model_out['rfo'], {}
+
+class ClassifierFreeGuidance(NRBStyleSelfCond):
+
+    def sample_init(self):
+
+        self.contig_map = ContigMap(self.target_feats, **self.contig_conf)
+        indep, self.indep_orig, self.is_diffused = sample_init(self._conf, self.contig_map, self.target_feats, self.diffuser, self.model_adaptor.insert_contig, diffuse_all=True)
+        return indep
+        # contig_map
+        # contig_map_uncond = ContigMap(self.target_feats, **self.contig_conf)
+        # indep = 
+    
+    def sample_step(self, t, indep, rfo, extra):
+        # grads = {}
+        # for conditional in [False, True]:
+        ic(t, extra.keys())
+        extra_out = {}
+        trans_grad, rots_grad, px0, extra_out['rfo_uncond'] = self.get_grads(t, indep, extra['rfo_uncond'])
+        indep_cond = aa_model.make_conditional_indep(indep, self.indep_orig, self.is_diffused)
+        trans_grad_cond, rots_grad_cond, px0, extra_out['rfo_cond'] = self.get_grads(t, indep_cond, extra['rfo_cond'])
+        
+        w = self._conf.inference.classifier_free_guidance_scale
+        trans_grad = (1-w) * trans_grad + w * trans_grad_cond
+        rots_grad = (1-w) * rots_grad + w * rots_grad_cond
+        trans_dt, rots_dt = self.diffuser.get_dt(t/self._conf.diffuser.T, 1/self._conf.diffuser.T)
+        rigids_t = du.rigid_frames_from_atom_14(indep.xyz)
+        rigids_t = self.diffuser.apply_grads(rigids_t, trans_grad, rots_grad, trans_dt, rots_dt)
+
+        return px0, get_x_t_1(rigids_t, indep.xyz, self.is_diffused), get_seq_one_hot(indep.seq), extra_out['rfo_cond'], extra_out
