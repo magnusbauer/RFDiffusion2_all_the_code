@@ -113,7 +113,12 @@ def sample_init(
         t_step_input = conf.diffuser.partial_T
         assert conf.diffuser.partial_T <= conf.diffuser.T
     indep.xyz = aa_model.add_fake_frame_legs(indep.xyz, indep.is_sm, generator=frame_legs_rng)
+    # indep_orig is the starting structure with native C, N, O, CB, etc. positions.  This gets
+    # used for replacing implicit sidechains and O / CB positions.
     indep_orig = copy.deepcopy(indep)
+    # indep_cond is the starting structure, with fake frame legs added and wonky O, CB,
+    # and sidechain positions resulting from frame-idealization.  This is used to make
+    # an unconditional indep conditional in the ClassifierFreeGuidance sampler.
     indep_cond = add_fake_peptide_frame(indep, generator=copy_rng(frame_legs_rng))
     rigids_0 = du.rigid_frames_from_atom_14(indep.xyz)
     t_cont = t_step_input / conf.diffuser.T
@@ -127,9 +132,7 @@ def sample_init(
         diffuse_mask=forward_is_diffused.float(),
         as_tensor_7=False
     )
-    # TODO: uncomment, regen goldens
-    # xT = all_atom.atom37_from_rigid(diffuser_out['rigids_t'], generator=frame_legs_rng)
-    xT = all_atom.atom37_from_rigid(diffuser_out['rigids_t'], generator=None)
+    xT = all_atom.atom37_from_rigid(diffuser_out['rigids_t'], generator=frame_legs_rng)
     xt = torch.clone(xT[:,:14])
     indep.xyz = xt
     

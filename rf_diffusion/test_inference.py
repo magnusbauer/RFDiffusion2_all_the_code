@@ -357,12 +357,12 @@ class TestModelRunners(unittest.TestCase):
                 indep_cond.xyz[~sampler.is_diffused] - indep.xyz[~sampler.is_diffused]
             )
             # TODO: uncomment
-            # self.fail(f'Some disagreement: {diff=}')
+            self.fail(f'Some disagreement: {diff=}')
 
-        # diff = test_utils.cmp_pretty(indep_cond, indep, atol=1e-6)
-        # if diff:
-        #     print(diff)
-        #     self.fail(f'{diff=}')
+        diff = test_utils.cmp_pretty(indep_cond, indep, atol=1e-6)
+        if diff:
+            print(diff)
+            self.fail(f'{diff=}')
 
 class TestInference(unittest.TestCase):
 
