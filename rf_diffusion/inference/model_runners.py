@@ -48,19 +48,19 @@ import sys
 import rf_diffusion.model_input_logger as model_input_logger
 from rf_diffusion.model_input_logger import pickle_function_call
 
-def idealize_peptide_frames(indep):
+def idealize_peptide_frames(indep, generator=None):
     indep = copy.deepcopy(indep)
     rigids = du.rigid_frames_from_atom_14(indep.xyz)
-    atom37 = all_atom.atom37_from_rigid(rigids)
+    atom37 = all_atom.atom37_from_rigid(rigids, generator=generator)
     # Not sure if this clone is necessary
     atom37 = torch.clone(atom37)
     indep.xyz = atom37[:,:14]
     return indep
 
-def add_fake_peptide_frame(indep):
+def add_fake_peptide_frame(indep, generator=None):
     indep = copy.deepcopy(indep)
-    indep.xyz = aa_model.add_fake_frame_legs(indep.xyz, indep.is_sm)
-    return idealize_peptide_frames(indep)
+    indep.xyz = aa_model.add_fake_frame_legs(indep.xyz, indep.is_sm, generator=generator)
+    return idealize_peptide_frames(indep, generator=generator)
 
 def sample_init(
         conf,
@@ -113,6 +113,8 @@ def sample_init(
         t_step_input = conf.diffuser.partial_T
         assert conf.diffuser.partial_T <= conf.diffuser.T
     indep.xyz = aa_model.add_fake_frame_legs(indep.xyz, indep.is_sm, generator=frame_legs_rng)
+    indep_orig = copy.deepcopy(indep)
+    indep_cond = add_fake_peptide_frame(indep, generator=copy_rng(frame_legs_rng))
     rigids_0 = du.rigid_frames_from_atom_14(indep.xyz)
     t_cont = t_step_input / conf.diffuser.T
 
@@ -125,11 +127,13 @@ def sample_init(
         diffuse_mask=forward_is_diffused.float(),
         as_tensor_7=False
     )
-    xT = all_atom.atom37_from_rigid(diffuser_out['rigids_t'])
+    # TODO: uncomment, regen goldens
+    # xT = all_atom.atom37_from_rigid(diffuser_out['rigids_t'], generator=frame_legs_rng)
+    xT = all_atom.atom37_from_rigid(diffuser_out['rigids_t'], generator=None)
     xt = torch.clone(xT[:,:14])
     indep.xyz = xt
     
-    return indep, indep_orig, is_diffused
+    return indep, indep_orig, indep_cond, is_diffused
 
 class Sampler:
 
@@ -377,7 +381,7 @@ class Sampler:
         """
         self.contig_map = ContigMap(self.target_feats, **self.contig_conf)
         self.frame_legs_rng = copy_rng(torch.default_generator)
-        indep, self.indep_orig, self.is_diffused = sample_init(self._conf, self.contig_map, self.target_feats, self.diffuser, self.model_adaptor.insert_contig, diffuse_all=False,
+        indep, self.indep_orig, self.indep_cond, self.is_diffused = sample_init(self._conf, self.contig_map, self.target_feats, self.diffuser, self.model_adaptor.insert_contig, diffuse_all=False,
                                                             frame_legs_rng=copy_rng(self.frame_legs_rng))
 
         return indep

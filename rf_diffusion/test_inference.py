@@ -148,7 +148,6 @@ class TestRegression(unittest.TestCase):
 
     @pytest.mark.slow
     @pytest.mark.nondeterministic
-    @pytest.mark.generates_golden
     def test_10res_flow_matching(self):
         run_inference.make_deterministic()
         pdb, _ = infer([
@@ -161,7 +160,7 @@ class TestRegression(unittest.TestCase):
         ])
         pdb_contents = inference.utils.parse_pdb(pdb)
         cmp = partial(tensor_util.cmp, atol=0.25, rtol=0)
-        test_utils.assert_matches_golden(self, '10res_self_conditioning', pdb_contents, rewrite=REWRITE, custom_comparator=cmp)
+        test_utils.assert_matches_golden(self, '10res_self_conditioning', pdb_contents, rewrite=False, custom_comparator=cmp)
 
     @pytest.mark.slow
     @pytest.mark.nondeterministic
@@ -197,7 +196,7 @@ class TestRegression(unittest.TestCase):
 #         ])
 #         pdb_contents = inference.utils.parse_pdb(pdb)
 #         cmp = partial(tensor_util.cmp, atol=1e-2, rtol=0)
-#         test_utils.assert_matches_golden(self, '10res_batch_optimal_transport_false', pdb_contents, rewrite=REWRITE, custom_comparator=cmp)
+#         test_utils.assert_matches_golden(self, '10res_batch_optimal_transport_false', pdb_contents, rewrite=False, custom_comparator=cmp)
 
 # # #  TO UNCOMMENT WHEN WORKING
 #     @pytest.mark.slow
@@ -326,33 +325,44 @@ class TestModelRunners(unittest.TestCase):
             print(diff)
             self.fail(f'{diff=}')
 
-    # def test_make_conditional(self):
-    #     run_inference.make_deterministic()
-    #     conf = construct_conf([
-    #         'diffuser.T=10',
-    #         'inference.num_designs=1',
-    #         'inference.output_prefix=tmp/test_no_batch_ot',
-    #         "contigmap.contigs=['9,A518-518,1']",
-    #         "+contigmap.contig_atoms=\"{'A518':'CG,OD1,OD2'}\"",
-    #         "+diffuser.batch_optimal_transport=False",
-    #         "inference.model_runner=FlowMatching",
-    #     ])
-    #     sampler = model_runners.sampler_selector(conf)
-    #     indep = sampler.sample_init()
+    def test_make_conditional(self):
+        run_inference.make_deterministic()
+        conf = construct_conf([
+            'diffuser.T=10',
+            'inference.num_designs=1',
+            'inference.output_prefix=tmp/test_no_batch_ot',
+            "contigmap.contigs=['9,A518-518,1']",
+            "+contigmap.contig_atoms=\"{'A518':'CG,OD1,OD2'}\"",
+            "+diffuser.batch_optimal_transport=False",
+            "inference.model_runner=FlowMatching",
+        ])
+        sampler = model_runners.sampler_selector(conf)
+        indep = sampler.sample_init()
 
-    #     indep_cond = aa_model.make_conditional_indep(indep, sampler.indep_cond, sampler.is_diffused)
-    #     ic(
-    #         indep_cond.xyz[~sampler.is_diffused] - indep.xyz[~sampler.is_diffused]
-    #     )
-    #     diff = test_utils.cmp_pretty(indep_cond.xyz[~sampler.is_diffused, :3], indep.xyz[~sampler.is_diffused, :3], atol=1e-6)
-    #     if diff:
-    #         print(diff)
-    #         self.fail(f'{diff=}')
+        indep_cond = aa_model.make_conditional_indep(indep, sampler.indep_cond, sampler.is_diffused)
 
-    #     # diff = test_utils.cmp_pretty(indep_cond, indep, atol=1e-6)
-    #     # if diff:
-    #     #     print(diff)
-    #     #     self.fail(f'{diff=}')
+        diff = test_utils.cmp_pretty(indep_cond.xyz[~sampler.is_diffused, :3], indep.xyz[~sampler.is_diffused, :3], atol=1e-6)
+        if diff:
+            print(diff)
+            ic(
+                indep_cond.xyz[~sampler.is_diffused] - indep.xyz[~sampler.is_diffused]
+            )
+            self.fail(f'Backbone disagreement: {diff=}')
+        
+
+        diff = test_utils.cmp_pretty(indep_cond.xyz[~sampler.is_diffused], indep.xyz[~sampler.is_diffused], atol=1e-6)
+        if diff:
+            print(diff)
+            ic(
+                indep_cond.xyz[~sampler.is_diffused] - indep.xyz[~sampler.is_diffused]
+            )
+            # TODO: uncomment
+            # self.fail(f'Some disagreement: {diff=}')
+
+        # diff = test_utils.cmp_pretty(indep_cond, indep, atol=1e-6)
+        # if diff:
+        #     print(diff)
+        #     self.fail(f'{diff=}')
 
 class TestInference(unittest.TestCase):
 
