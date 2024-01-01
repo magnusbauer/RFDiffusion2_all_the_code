@@ -206,10 +206,11 @@ def sample_one(sampler, simple_logging=False):
     px0_xyz_stack_filler = add_implicit_side_chain_atoms(
         seq=indep.seq,
         act_on_residue=~sampler.is_diffused,
-        xyz=px0_xyz_stack[..., :36, :],
-        xyz_with_sc=sampler.indep_orig.xyz,
+        xyz=px0_xyz_stack[..., :14, :],
+        # xyz_with_sc=sampler.indep_orig.xyz,
+        xyz_with_sc=sampler.indep_orig.xyz[..., :14, :],
     )
-    px0_xyz_stack[..., :36, :] = px0_xyz_stack_filler
+    px0_xyz_stack[..., :14, :] = px0_xyz_stack_filler
 
     # Idealize protein backbone
     is_protein = rf2aa.util.is_protein(indep.seq)
@@ -249,7 +250,8 @@ def add_implicit_side_chain_atoms(seq, act_on_residue, xyz, xyz_with_sc):
     '''
     # Shape checks
     L, n_atoms = xyz_with_sc.shape[:2]
-    assert xyz.shape[-3:] == xyz_with_sc.shape
+    ic(f'{xyz.shape[-3:]=}, {xyz_with_sc.shape=}')
+    assert xyz.shape[-3:] == xyz_with_sc.shape, f'{xyz.shape[-3:]=} != {xyz_with_sc.shape=}'
     assert len(seq) == L
     assert len(act_on_residue) == L
 

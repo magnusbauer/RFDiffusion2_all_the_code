@@ -678,14 +678,14 @@ def make_indep(pdb, ligand='', center=True, return_metadata=False):
         return indep, metadata
     return indep
 
-def add_fake_frame_legs(xyz, is_atom):
+def add_fake_frame_legs(xyz, is_atom, generator=None):
     # HACK.  ComputeAllAtom in the network requires N and C coords even for atomized residues,
     # However, these have no semantic value.  TODO: Remove the network's reliance on these coordinates.
     xyz = xyz.clone()
     atom_xyz = xyz[is_atom, 1]
     xyz[is_atom,:3] = atom_xyz[...,None,:]
-    xyz[is_atom, 0] += torch.normal(torch.zeros_like(xyz[is_atom, 0]), std=1.0)
-    xyz[is_atom, 2] += torch.normal(torch.zeros_like(xyz[is_atom, 2]), std=1.0)
+    xyz[is_atom, 0] += torch.normal(torch.zeros_like(xyz[is_atom, 0]), std=1.0, generator=generator)
+    xyz[is_atom, 2] += torch.normal(torch.zeros_like(xyz[is_atom, 2]), std=1.0, generator=generator)
     return xyz
 
 def conf_supports_guideposts(conf):
@@ -2221,6 +2221,5 @@ def residue_atoms(res):
 def make_conditional_indep(indep, indep_original, is_diffused):
     assert indep.is_sm[~is_diffused].all(), f'sequence unmasking not yet implemented, only coordinate conditioning, so only atomized/small molecule motifs are allowed'
     indep = copy.deepcopy(indep)
-    ic(indep.xyz[~is_diffused]-indep_original.xyz[~is_diffused, :14])
     indep.xyz[~is_diffused] = indep_original.xyz[~is_diffused, :14]
     return indep

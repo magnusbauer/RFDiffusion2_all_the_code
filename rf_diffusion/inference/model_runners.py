@@ -48,7 +48,28 @@ import sys
 import rf_diffusion.model_input_logger as model_input_logger
 from rf_diffusion.model_input_logger import pickle_function_call
 
-def sample_init(conf, contig_map, target_feats, diffuser, insert_contig, diffuse_all):
+def idealize_peptide_frames(indep):
+    indep = copy.deepcopy(indep)
+    rigids = du.rigid_frames_from_atom_14(indep.xyz)
+    atom37 = all_atom.atom37_from_rigid(rigids)
+    # Not sure if this clone is necessary
+    atom37 = torch.clone(atom37)
+    indep.xyz = atom37[:,:14]
+    return indep
+
+def add_fake_peptide_frame(indep):
+    indep = copy.deepcopy(indep)
+    indep.xyz = aa_model.add_fake_frame_legs(indep.xyz, indep.is_sm)
+    return idealize_peptide_frames(indep)
+
+def sample_init(
+        conf,
+        contig_map,
+        target_feats,
+        diffuser,
+        insert_contig,
+        diffuse_all,
+        frame_legs_rng=None):
     """Initial features to start the sampling process.
     
     Modify signature and function body for different initialization
@@ -91,7 +112,7 @@ def sample_init(conf, contig_map, target_feats, diffuser, insert_contig, diffuse
     if for_partial_diffusion:
         t_step_input = conf.diffuser.partial_T
         assert conf.diffuser.partial_T <= conf.diffuser.T
-    indep.xyz = aa_model.add_fake_frame_legs(indep.xyz, indep.is_sm)
+    indep.xyz = aa_model.add_fake_frame_legs(indep.xyz, indep.is_sm, generator=frame_legs_rng)
     rigids_0 = du.rigid_frames_from_atom_14(indep.xyz)
     t_cont = t_step_input / conf.diffuser.T
 
@@ -105,14 +126,6 @@ def sample_init(conf, contig_map, target_feats, diffuser, insert_contig, diffuse
         as_tensor_7=False
     )
     xT = all_atom.atom37_from_rigid(diffuser_out['rigids_t'])
-    ic(
-        # indep.xyz[~is_diffused] - indep_orig.xyz[~is_diffused, :14],
-        xT[~is_diffused, :14] - indep_orig.xyz[~is_diffused, :14],
-        # xT[~is_diffused] - indep_orig.xyz[~is_diffused],
-        diffuser_out['rigids_t'].get_trans()[~is_diffused] - indep_orig.xyz[~is_diffused, 1],
-        # rigids_0.get_trans()[~is_diffused] - indep_orig.xyz[~is_diffused, 1],
-        # diffuser_out['rigids_t']
-    )
     xt = torch.clone(xT[:,:14])
     indep.xyz = xt
     
@@ -363,7 +376,10 @@ class Sampler:
             seq_t: Starting sequence with a portion of them set to unknown.
         """
         self.contig_map = ContigMap(self.target_feats, **self.contig_conf)
-        indep, self.indep_orig, self.is_diffused = sample_init(self._conf, self.contig_map, self.target_feats, self.diffuser, self.model_adaptor.insert_contig, diffuse_all=False)
+        self.frame_legs_rng = copy_rng(torch.default_generator)
+        indep, self.indep_orig, self.is_diffused = sample_init(self._conf, self.contig_map, self.target_feats, self.diffuser, self.model_adaptor.insert_contig, diffuse_all=False,
+                                                            frame_legs_rng=copy_rng(self.frame_legs_rng))
+
         return indep
 
     def symmetrise_prev_pred(self, px0, seq_in, alpha):
@@ -374,7 +390,21 @@ class Sampler:
         px0_sym,_ = self.symmetry.apply_symmetry(px0_aa.to('cpu').squeeze()[:,:14], torch.argmax(seq_in, dim=-1).squeeze().to('cpu'))
         px0_sym = px0_sym[None].to(self.device)
         return px0_sym
-    
+
+def copy_rng(rng: torch.Generator) -> torch.Generator:
+    current_state = torch.get_rng_state()
+    rng = torch.Generator()
+    rng.set_state(current_state)
+    return rng
+
+def peek_rng(rng):
+    current_state = rng.get_state()
+    # o = rng.random()
+    o = torch.rand(1, generator=rng)
+    rng.set_state(current_state)
+    return o
+
+
 class NRBStyleSelfCond(Sampler):
     """
     Model Runner for self conditioning in the style attempted by NRB.
@@ -570,8 +600,6 @@ class FlowMatching(Sampler):
         trans_grad, rots_grad, px0, model_out = self.get_grads(t, indep, rfo)
         trans_dt, rots_dt = self.diffuser.get_dt(t/self._conf.diffuser.T, 1/self._conf.diffuser.T)
         rigids_t = du.rigid_frames_from_atom_14(indep.xyz)[None,...]
-
-        # NEW:
         rigids_t = self.diffuser.apply_grads(rigids_t, trans_grad, rots_grad, trans_dt, rots_dt)
     
         return px0, get_x_t_1(rigids_t, indep.xyz, self.is_diffused), get_seq_one_hot(indep.seq), model_out['rfo'], {}
@@ -649,7 +677,13 @@ class FlowMatching_make_conditional(FlowMatching):
 
     def sample_init(self):
         self.contig_map = ContigMap(self.target_feats, **self.contig_conf)
-        indep, self.indep_orig, self.is_diffused = sample_init(self._conf, self.contig_map, self.target_feats, self.diffuser, self.model_adaptor.insert_contig, diffuse_all=False)
+        indep, self.indep_orig, self.is_diffused = sample_init(
+                self._conf,
+                self.contig_map,
+                self.target_feats,
+                self.diffuser,
+                self.model_adaptor.insert_contig,
+                diffuse_all=False)
         return indep
     
     def sample_step(self, t, indep, rfo, extra):
@@ -659,13 +693,11 @@ class FlowMatching_make_conditional(FlowMatching):
         trans_grad, rots_grad, px0, model_out = self.get_grads(t, indep, rfo)
         trans_dt, rots_dt = self.diffuser.get_dt(t/self._conf.diffuser.T, 1/self._conf.diffuser.T)
         rigids_t = du.rigid_frames_from_atom_14(indep.xyz)[None,...]
-
-        # NEW:
         rigids_t = self.diffuser.apply_grads(rigids_t, trans_grad, rots_grad, trans_dt, rots_dt)
     
         return px0, get_x_t_1(rigids_t, indep.xyz, self.is_diffused), get_seq_one_hot(indep.seq), model_out['rfo'], {}
 
-class ClassifierFreeGuidance(NRBStyleSelfCond):
+class ClassifierFreeGuidance(FlowMatching):
 
     def sample_init(self):
 

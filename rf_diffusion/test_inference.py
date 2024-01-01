@@ -25,6 +25,7 @@ import rf2aa.loss
 from rf_diffusion.inference import model_runners
 from rf_diffusion import aa_model
 from rf_diffusion import inference
+import rf_se3_diffusion.data.utils as du
 ic.configureOutput(includeContext=True)
 
 REWRITE = False
@@ -61,6 +62,7 @@ class TestRegression(unittest.TestCase):
     # Example regression test.
     @pytest.mark.slow
     @pytest.mark.nondeterministic
+    @pytest.mark.generates_golden
     def test_t2(self):
         run_inference.make_deterministic()
         pdb, _ = infer([
@@ -72,6 +74,7 @@ class TestRegression(unittest.TestCase):
         cmp = partial(tensor_util.cmp, atol=5e-2, rtol=0)
         test_utils.assert_matches_golden(self, 'T2', pdb_contents, rewrite=REWRITE, custom_comparator=cmp)
     
+    @pytest.mark.generates_golden
     def test_inference_rfi(self):
         run_inference.make_deterministic()
         conf = construct_conf([
@@ -105,6 +108,7 @@ class TestRegression(unittest.TestCase):
         test_utils.assert_matches_golden(self, 'rfi_regression', mapped_calls, rewrite=REWRITE, custom_comparator=cmp)
         
     @pytest.mark.slow
+    @pytest.mark.generates_golden
     def test_partial_sidechain(self):
         run_inference.make_deterministic()
         pdb, _ = infer([
@@ -123,6 +127,7 @@ class TestRegression(unittest.TestCase):
     
     @pytest.mark.slow
     @pytest.mark.nondeterministic
+    @pytest.mark.generates_golden
     def test_10res_self_conditioning(self):
         '''
         This test should be used to write the golden 10res_self_conditioning, which can then be picked up by
@@ -143,6 +148,7 @@ class TestRegression(unittest.TestCase):
 
     @pytest.mark.slow
     @pytest.mark.nondeterministic
+    @pytest.mark.generates_golden
     def test_10res_flow_matching(self):
         run_inference.make_deterministic()
         pdb, _ = infer([
@@ -158,6 +164,8 @@ class TestRegression(unittest.TestCase):
         test_utils.assert_matches_golden(self, '10res_self_conditioning', pdb_contents, rewrite=REWRITE, custom_comparator=cmp)
 
     @pytest.mark.slow
+    @pytest.mark.nondeterministic
+    @pytest.mark.generates_golden
     def test_10res_batch_optimal_transport_false(self):
         run_inference.make_deterministic()
         pdb, _ = infer([
@@ -173,8 +181,27 @@ class TestRegression(unittest.TestCase):
         cmp = partial(tensor_util.cmp, atol=1e-2, rtol=0)
         test_utils.assert_matches_golden(self, '10res_batch_optimal_transport_false', pdb_contents, rewrite=REWRITE, custom_comparator=cmp)
 
-# #  TO UNCOMMENT WHEN WORKING
+
 #     @pytest.mark.slow
+#     @pytest.mark.nondeterministic
+#     def test_10res_batch_optimal_transport_false_make_conditional(self):
+#         run_inference.make_deterministic()
+#         pdb, _ = infer([
+#             'diffuser.T=10',
+#             'inference.num_designs=1',
+#             'inference.output_prefix=tmp/test_10res_batch_optimal_transport_false_make_conditional',
+#             "contigmap.contigs=['9,A518-518,1']",
+#             "+contigmap.contig_atoms=\"{'A518':'CG,OD1,OD2'}\"",
+#             "inference.model_runner=FlowMatching_make_conditional",
+#             "+diffuser.batch_optimal_transport=False",
+#         ])
+#         pdb_contents = inference.utils.parse_pdb(pdb)
+#         cmp = partial(tensor_util.cmp, atol=1e-2, rtol=0)
+#         test_utils.assert_matches_golden(self, '10res_batch_optimal_transport_false', pdb_contents, rewrite=REWRITE, custom_comparator=cmp)
+
+# # #  TO UNCOMMENT WHEN WORKING
+#     @pytest.mark.slow
+#     @pytest.mark.nondeterministic
 #     def test_10res_batch_optimal_transport_false_classifier_guidance(self):
 #         run_inference.make_deterministic()
 #         pdb, _ = infer([
@@ -193,6 +220,7 @@ class TestRegression(unittest.TestCase):
 
     @pytest.mark.slow
     @pytest.mark.nondeterministic
+    @pytest.mark.generates_golden
     def test_guidepost(self):
         '''
         Tests that predictions with guide posts flag are correct.
@@ -212,36 +240,119 @@ class TestRegression(unittest.TestCase):
         cmp = partial(tensor_util.cmp, atol=5e-2, rtol=0)
         test_utils.assert_matches_golden(self, 'guidepost', pdb_contents, rewrite=REWRITE, custom_comparator=cmp)
 
-# class TestModelRunners(unittest.TestCase):
+class TestModelRunners(unittest.TestCase):
 
-#     def setUp(self) -> None:
-#         # Some other test is leaving a global hydra initialized, so we clear it here.
-#         if hydra.core.global_hydra.GlobalHydra().is_initialized():
-#             hydra.core.global_hydra.GlobalHydra().clear()
-#         return super().setUp()
+    def setUp(self) -> None:
+        # Some other test is leaving a global hydra initialized, so we clear it here.
+        if hydra.core.global_hydra.GlobalHydra().is_initialized():
+            hydra.core.global_hydra.GlobalHydra().clear()
+        return super().setUp()
 
-#     def tearDown(self):
-#         hydra.core.global_hydra.GlobalHydra.instance().clear()
+    def tearDown(self):
+        hydra.core.global_hydra.GlobalHydra.instance().clear()
 
-#     def test_make_conditional(self):
-#         run_inference.make_deterministic()
-#         conf = construct_conf([
-#             'diffuser.T=10',
-#             'inference.num_designs=1',
-#             'inference.output_prefix=tmp/test_no_batch_ot',
-#             "contigmap.contigs=['9,A518-518,1']",
-#             "+contigmap.contig_atoms=\"{'A518':'CG,OD1,OD2'}\"",
-#             "+diffuser.batch_optimal_transport=False",
-#             "inference.model_runner=NRBStyleSelfCond",
-#         ])
-#         sampler = model_runners.sampler_selector(conf)
-#         indep = sampler.sample_init()
-#         indep_cond = aa_model.make_conditional_indep(indep, sampler.indep_orig, sampler.is_diffused)
-#         ic(torch.nonzero(~sampler.is_diffused))
-#         diff = test_utils.cmp_pretty(indep_cond, indep, atol=1e-6)
-#         if diff:
-#             print(diff)
-#             self.fail(f'{diff=}')
+    def test_add_fake_peptide_frame_idempotency(self):
+        run_inference.make_deterministic()
+        conf = construct_conf([
+            'diffuser.T=10',
+            'inference.num_designs=1',
+            'inference.output_prefix=tmp/test_no_batch_ot',
+            "contigmap.contigs=['9,A518-518,1']",
+            "+contigmap.contig_atoms=\"{'A518':'CG,OD1,OD2'}\"",
+            "+diffuser.batch_optimal_transport=False",
+            "inference.model_runner=FlowMatching",
+        ])
+        sampler = model_runners.sampler_selector(conf)
+        indep = sampler.sample_init()
+        run_inference.make_deterministic()
+        indep_fake_frame = model_runners.add_fake_peptide_frame(indep)
+        run_inference.make_deterministic()
+        indep_fake_frame_2 =  model_runners.add_fake_peptide_frame(indep_fake_frame)
+        diff = test_utils.cmp_pretty(indep_fake_frame_2.xyz, indep_fake_frame.xyz, atol=1e-4)
+        if diff:
+            print(diff)
+            self.fail(f'{diff=}')
+    
+    def test_idealize_peptide_frames_idempotency(self):
+        run_inference.make_deterministic()
+        conf = construct_conf([
+            'diffuser.T=10',
+            'inference.num_designs=1',
+            'inference.output_prefix=tmp/test_no_batch_ot',
+            "contigmap.contigs=['9,A518-518,1']",
+            "+contigmap.contig_atoms=\"{'A518':'CG,OD1,OD2'}\"",
+            "+diffuser.batch_optimal_transport=False",
+            "inference.model_runner=FlowMatching",
+        ])
+        sampler = model_runners.sampler_selector(conf)
+        indep = sampler.sample_init()
+        run_inference.make_deterministic()
+        indep_fake_frame = model_runners.idealize_peptide_frames(indep)
+        run_inference.make_deterministic()
+        indep_fake_frame_2 =  model_runners.idealize_peptide_frames(indep_fake_frame)
+        diff = test_utils.cmp_pretty(indep_fake_frame_2.xyz, indep_fake_frame.xyz, atol=1e-4)
+        ic(
+            torch.linalg.vector_norm(indep_fake_frame.xyz - indep_fake_frame_2.xyz, dim=-1),
+            torch.linalg.vector_norm(indep_fake_frame.xyz - indep_fake_frame_2.xyz, dim=-1).max(),
+        )
+        if diff:
+            print(diff)
+            self.fail(f'{diff=}')
+
+    def test_rigid_from_atom_14(self):
+        run_inference.make_deterministic()
+        conf = construct_conf([
+            'diffuser.T=10',
+            'inference.num_designs=1',
+            'inference.output_prefix=tmp/test_no_batch_ot',
+            "contigmap.contigs=['9,A518-518,1']",
+            "+contigmap.contig_atoms=\"{'A518':'CG,OD1,OD2'}\"",
+            "+diffuser.batch_optimal_transport=False",
+            "inference.model_runner=FlowMatching",
+        ])
+        sampler = model_runners.sampler_selector(conf)
+        indep = sampler.sample_init()
+        # run_inference.make_deterministic()
+        rigid_1 = du.rigid_frames_from_atom_14(indep.xyz)
+        # run_inference.make_deterministic()
+        rigid_2 =  du.rigid_frames_from_atom_14(indep.xyz)
+        rots_1 = rigid_1.get_rots().get_rot_mats()
+        rots_2 = rigid_2.get_rots().get_rot_mats()
+        diff = test_utils.cmp_pretty(rots_1, rots_2, atol=1e-6)
+        if diff:
+            ic(
+                (rots_1 - rots_2).max(),
+            )
+            print(diff)
+            self.fail(f'{diff=}')
+
+    # def test_make_conditional(self):
+    #     run_inference.make_deterministic()
+    #     conf = construct_conf([
+    #         'diffuser.T=10',
+    #         'inference.num_designs=1',
+    #         'inference.output_prefix=tmp/test_no_batch_ot',
+    #         "contigmap.contigs=['9,A518-518,1']",
+    #         "+contigmap.contig_atoms=\"{'A518':'CG,OD1,OD2'}\"",
+    #         "+diffuser.batch_optimal_transport=False",
+    #         "inference.model_runner=FlowMatching",
+    #     ])
+    #     sampler = model_runners.sampler_selector(conf)
+    #     indep = sampler.sample_init()
+
+    #     indep_cond = aa_model.make_conditional_indep(indep, sampler.indep_cond, sampler.is_diffused)
+    #     ic(
+    #         indep_cond.xyz[~sampler.is_diffused] - indep.xyz[~sampler.is_diffused]
+    #     )
+    #     diff = test_utils.cmp_pretty(indep_cond.xyz[~sampler.is_diffused, :3], indep.xyz[~sampler.is_diffused, :3], atol=1e-6)
+    #     if diff:
+    #         print(diff)
+    #         self.fail(f'{diff=}')
+
+    #     # diff = test_utils.cmp_pretty(indep_cond, indep, atol=1e-6)
+    #     # if diff:
+    #     #     print(diff)
+    #     #     self.fail(f'{diff=}')
 
 class TestInference(unittest.TestCase):
 
