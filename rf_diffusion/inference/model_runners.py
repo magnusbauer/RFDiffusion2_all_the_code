@@ -697,7 +697,6 @@ class FlowMatching_make_conditional_diffuse_all(FlowMatching_make_conditional):
 
 class ClassifierFreeGuidance(FlowMatching):
     # WIP
-
     def sample_init(self):
         self.contig_map = ContigMap(self.target_feats, **self.contig_conf)
         self.frame_legs_rng = copy_rng(torch.default_generator)
@@ -706,17 +705,13 @@ class ClassifierFreeGuidance(FlowMatching):
         return indep
     
     def sample_step(self, t, indep, rfo, extra):
-        # grads = {}
-        # for conditional in [False, True]:
-        ic(t, extra.keys())
         extra_out = {}
-        ic(
-            t,
-            type(extra['rfo_uncond']),
-        )
-        trans_grad, rots_grad, px0, extra_out['rfo_uncond'] = self.get_grads(t, indep, extra['rfo_uncond'])
         indep_cond = aa_model.make_conditional_indep(indep, self.indep_cond, self.is_diffused)
-        trans_grad_cond, rots_grad_cond, px0, extra_out['rfo_cond'] = self.get_grads(t, indep_cond, extra['rfo_cond'])
+        trans_grad_cond, rots_grad_cond, px0_cond, model_out_cond = self.get_grads(t, indep_cond, extra['rfo_cond'])
+        extra_out['rfo_cond'] = model_out_cond['rfo']
+        with torch.random.fork_rng():
+            trans_grad, rots_grad, px0_uncond, model_out_uncond = self.get_grads(t, indep, extra['rfo_uncond'])
+        extra_out['rfo_uncond'] = model_out_uncond['rfo']
         
         w = self._conf.inference.classifier_free_guidance_scale
         trans_grad = (1-w) * trans_grad + w * trans_grad_cond
@@ -725,4 +720,7 @@ class ClassifierFreeGuidance(FlowMatching):
         rigids_t = du.rigid_frames_from_atom_14(indep.xyz)
         rigids_t = self.diffuser.apply_grads(rigids_t, trans_grad, rots_grad, trans_dt, rots_dt)
 
+        px0 = px0_cond
+        # # The below looks weird:
+        # px0 = px0_uncond
         return px0, get_x_t_1(rigids_t, indep.xyz, self.is_diffused), get_seq_one_hot(indep.seq), extra_out['rfo_cond'], extra_out
