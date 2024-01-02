@@ -181,22 +181,22 @@ class TestRegression(unittest.TestCase):
         test_utils.assert_matches_golden(self, '10res_batch_optimal_transport_false', pdb_contents, rewrite=REWRITE, custom_comparator=cmp)
 
 
-#     @pytest.mark.slow
-#     @pytest.mark.nondeterministic
-#     def test_10res_batch_optimal_transport_false_make_conditional(self):
-#         run_inference.make_deterministic()
-#         pdb, _ = infer([
-#             'diffuser.T=10',
-#             'inference.num_designs=1',
-#             'inference.output_prefix=tmp/test_10res_batch_optimal_transport_false_make_conditional',
-#             "contigmap.contigs=['9,A518-518,1']",
-#             "+contigmap.contig_atoms=\"{'A518':'CG,OD1,OD2'}\"",
-#             "inference.model_runner=FlowMatching_make_conditional",
-#             "+diffuser.batch_optimal_transport=False",
-#         ])
-#         pdb_contents = inference.utils.parse_pdb(pdb)
-#         cmp = partial(tensor_util.cmp, atol=1e-2, rtol=0)
-#         test_utils.assert_matches_golden(self, '10res_batch_optimal_transport_false', pdb_contents, rewrite=False, custom_comparator=cmp)
+    @pytest.mark.slow
+    @pytest.mark.nondeterministic
+    def test_10res_batch_optimal_transport_false_make_conditional(self):
+        run_inference.make_deterministic()
+        pdb, _ = infer([
+            'diffuser.T=10',
+            'inference.num_designs=1',
+            'inference.output_prefix=tmp/test_10res_batch_optimal_transport_false_make_conditional',
+            "contigmap.contigs=['9,A518-518,1']",
+            "+contigmap.contig_atoms=\"{'A518':'CG,OD1,OD2'}\"",
+            "inference.model_runner=FlowMatching_make_conditional",
+            "+diffuser.batch_optimal_transport=False",
+        ])
+        pdb_contents = inference.utils.parse_pdb(pdb)
+        cmp = partial(tensor_util.cmp, atol=1e-2, rtol=0)
+        test_utils.assert_matches_golden(self, '10res_batch_optimal_transport_false', pdb_contents, rewrite=False, custom_comparator=cmp)
 
 # # #  TO UNCOMMENT WHEN WORKING
 #     @pytest.mark.slow

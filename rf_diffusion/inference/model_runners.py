@@ -682,20 +682,15 @@ def assemble_config_from_chk(conf, ckpt) -> None:
 
 class FlowMatching_make_conditional(FlowMatching):
 
-    def sample_init(self):
-        self.contig_map = ContigMap(self.target_feats, **self.contig_conf)
-        indep, self.indep_orig, self.is_diffused = sample_init(
-                self._conf,
-                self.contig_map,
-                self.target_feats,
-                self.diffuser,
-                self.model_adaptor.insert_contig,
-                diffuse_all=False)
-        return indep
+    # def sample_init(self):
+        # self.contig_map = ContigMap(self.target_feats, **self.contig_conf)
+        # self.frame_legs_rng = copy_rng(torch.default_generator)
+        # indep, self.indep_orig, self.indep_cond, self.is_diffused = sample_init(self._conf, self.contig_map, self.target_feats, self.diffuser, self.model_adaptor.insert_contig, diffuse_all=False,
+        #                                                     frame_legs_rng=copy_rng(self.frame_legs_rng))
+        # return indep
     
     def sample_step(self, t, indep, rfo, extra):
-        indep_before = copy.deepcopy(indep)
-        indep = aa_model.make_conditional_indep(indep, self.indep_orig, self.is_diffused)
+        indep = aa_model.make_conditional_indep(indep, self.indep_cond, self.is_diffused)
 
         trans_grad, rots_grad, px0, model_out = self.get_grads(t, indep, rfo)
         trans_dt, rots_dt = self.diffuser.get_dt(t/self._conf.diffuser.T, 1/self._conf.diffuser.T)
