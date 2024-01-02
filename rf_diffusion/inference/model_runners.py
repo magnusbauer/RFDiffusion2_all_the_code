@@ -681,42 +681,41 @@ def assemble_config_from_chk(conf, ckpt) -> None:
     ic(conf)
 
 class FlowMatching_make_conditional(FlowMatching):
-
-    # def sample_init(self):
-        # self.contig_map = ContigMap(self.target_feats, **self.contig_conf)
-        # self.frame_legs_rng = copy_rng(torch.default_generator)
-        # indep, self.indep_orig, self.indep_cond, self.is_diffused = sample_init(self._conf, self.contig_map, self.target_feats, self.diffuser, self.model_adaptor.insert_contig, diffuse_all=False,
-        #                                                     frame_legs_rng=copy_rng(self.frame_legs_rng))
-        # return indep
     
-    def sample_step(self, t, indep, rfo, extra):
+    def sample_step(self, t, indep, *args, **kwargs):
         indep = aa_model.make_conditional_indep(indep, self.indep_cond, self.is_diffused)
+        return super().sample_step(t, indep, *args, **kwargs)
 
-        trans_grad, rots_grad, px0, model_out = self.get_grads(t, indep, rfo)
-        trans_dt, rots_dt = self.diffuser.get_dt(t/self._conf.diffuser.T, 1/self._conf.diffuser.T)
-        rigids_t = du.rigid_frames_from_atom_14(indep.xyz)[None,...]
-        rigids_t = self.diffuser.apply_grads(rigids_t, trans_grad, rots_grad, trans_dt, rots_dt)
-    
-        return px0, get_x_t_1(rigids_t, indep.xyz, self.is_diffused), get_seq_one_hot(indep.seq), model_out['rfo'], {}
-
-class ClassifierFreeGuidance(FlowMatching):
+class FlowMatching_make_conditional_diffuse_all(FlowMatching_make_conditional):
 
     def sample_init(self):
-
         self.contig_map = ContigMap(self.target_feats, **self.contig_conf)
-        indep, self.indep_orig, self.is_diffused = sample_init(self._conf, self.contig_map, self.target_feats, self.diffuser, self.model_adaptor.insert_contig, diffuse_all=True)
+        self.frame_legs_rng = copy_rng(torch.default_generator)
+        indep, self.indep_orig, self.indep_cond, self.is_diffused = sample_init(self._conf, self.contig_map, self.target_feats, self.diffuser, self.model_adaptor.insert_contig, diffuse_all=True,
+                                                            frame_legs_rng=copy_rng(self.frame_legs_rng))
         return indep
-        # contig_map
-        # contig_map_uncond = ContigMap(self.target_feats, **self.contig_conf)
-        # indep = 
+
+class ClassifierFreeGuidance(FlowMatching):
+    # WIP
+
+    def sample_init(self):
+        self.contig_map = ContigMap(self.target_feats, **self.contig_conf)
+        self.frame_legs_rng = copy_rng(torch.default_generator)
+        indep, self.indep_orig, self.indep_cond, self.is_diffused = sample_init(self._conf, self.contig_map, self.target_feats, self.diffuser, self.model_adaptor.insert_contig, diffuse_all=True,
+                                                            frame_legs_rng=copy_rng(self.frame_legs_rng))
+        return indep
     
     def sample_step(self, t, indep, rfo, extra):
         # grads = {}
         # for conditional in [False, True]:
         ic(t, extra.keys())
         extra_out = {}
+        ic(
+            t,
+            type(extra['rfo_uncond']),
+        )
         trans_grad, rots_grad, px0, extra_out['rfo_uncond'] = self.get_grads(t, indep, extra['rfo_uncond'])
-        indep_cond = aa_model.make_conditional_indep(indep, self.indep_orig, self.is_diffused)
+        indep_cond = aa_model.make_conditional_indep(indep, self.indep_cond, self.is_diffused)
         trans_grad_cond, rots_grad_cond, px0, extra_out['rfo_cond'] = self.get_grads(t, indep_cond, extra['rfo_cond'])
         
         w = self._conf.inference.classifier_free_guidance_scale

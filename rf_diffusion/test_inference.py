@@ -197,25 +197,42 @@ class TestRegression(unittest.TestCase):
         pdb_contents = inference.utils.parse_pdb(pdb)
         cmp = partial(tensor_util.cmp, atol=1e-2, rtol=0)
         test_utils.assert_matches_golden(self, '10res_batch_optimal_transport_false', pdb_contents, rewrite=False, custom_comparator=cmp)
-
-# # #  TO UNCOMMENT WHEN WORKING
-#     @pytest.mark.slow
-#     @pytest.mark.nondeterministic
-#     def test_10res_batch_optimal_transport_false_classifier_guidance(self):
-#         run_inference.make_deterministic()
-#         pdb, _ = infer([
-#             'diffuser.T=10',
-#             'inference.num_designs=1',
-#             'inference.output_prefix=tmp/test_10res_batch_optimal_transport_false_classifier_guidance',
-#             "contigmap.contigs=['9,A518-518,1']",
-#             "+contigmap.contig_atoms=\"{'A518':'CG,OD1,OD2'}\"",
-#             "+diffuser.batch_optimal_transport=False",
-#             "inference.model_runner=ClassifierFreeGuidance",
-#         ])
-#         pdb_contents = inference.utils.parse_pdb(pdb)
-#         cmp = partial(tensor_util.cmp, atol=1e-2, rtol=0)
-#         test_utils.assert_matches_golden(self, '10res_batch_optimal_transport_false', pdb_contents, rewrite=REWRITE, custom_comparator=cmp)
     
+    @pytest.mark.slow
+    @pytest.mark.nondeterministic
+    @pytest.mark.generates_golden
+    def test_10res_batch_optimal_transport_false_make_conditional_diffuse_all(self):
+        run_inference.make_deterministic()
+        pdb, _ = infer([
+            'diffuser.T=10',
+            'inference.num_designs=1',
+            'inference.output_prefix=tmp/test_10res_batch_optimal_transport_false_make_conditional_diffuse_all',
+            "contigmap.contigs=['9,A518-518,1']",
+            "+contigmap.contig_atoms=\"{'A518':'CG,OD1,OD2'}\"",
+            "inference.model_runner=FlowMatching_make_conditional_diffuse_all",
+            "+diffuser.batch_optimal_transport=False",
+        ])
+        pdb_contents = inference.utils.parse_pdb(pdb)
+        cmp = partial(tensor_util.cmp, atol=1e-2, rtol=0)
+        test_utils.assert_matches_golden(self, '10res_batch_optimal_transport_false_make_conditional_diffuse_all', pdb_contents, rewrite=REWRITE, custom_comparator=cmp)
+
+    # @pytest.mark.slow
+    # @pytest.mark.nondeterministic
+    # @pytest.mark.generates_golden
+    # def test_10res_classifier_free_guidance(self):
+    #     run_inference.make_deterministic()
+    #     pdb, _ = infer([
+    #         'diffuser.T=10',
+    #         'inference.num_designs=1',
+    #         'inference.output_prefix=tmp/test_10res_cfg',
+    #         "contigmap.contigs=['9,A518-518,1']",
+    #         "+contigmap.contig_atoms=\"{'A518':'CG,OD1,OD2'}\"",
+    #         "inference.model_runner=ClassifierFreeGuidance",
+    #         "+diffuser.batch_optimal_transport=False",
+    #     ])
+    #     pdb_contents = inference.utils.parse_pdb(pdb)
+    #     cmp = partial(tensor_util.cmp, atol=1e-2, rtol=0)
+    #     test_utils.assert_matches_golden(self, '10res_batch_optimal_transport_false_make_conditional_diffuse_all', pdb_contents, rewrite=False, custom_comparator=cmp)
 
     @pytest.mark.slow
     @pytest.mark.nondeterministic
