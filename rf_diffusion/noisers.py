@@ -152,9 +152,11 @@ class NormalizingFlow(interpolant.Interpolant):
 
         trans_t_1 = rigid_t.get_trans()
         rotmats_t_1 = rigid_t.get_rots().get_rot_mats()
+        trans_t_1 = trans_t_1.to(trans_grad.device)
         trans_t_2 = trans_t_1 + trans_grad * trans_dt
         rots_vf = rots_dt * rots_grad
 
+        rotmats_t_1 = rotmats_t_1.to(rots_vf.device)
         rotmats_t_2 = torch.einsum("...ij,...jk->...ik", rotmats_t_1, so3_utils.rotvec_to_rotmat(rots_vf))
 
         rigid_t_2 = ru.Rigid(trans=trans_t_2, rots=ru.Rotation(rot_mats=rotmats_t_2))
