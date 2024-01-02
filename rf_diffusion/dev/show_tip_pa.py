@@ -208,6 +208,7 @@ def show(row, structs = {'X0'}, af2=False, des=True, des_color=None, hetatm_colo
             atom_names_by_res_idx = get_motif_spec(row, traj=is_traj)
         selectors = show_tip_row.get_selectors_2(atom_names_by_res_idx)
         obj_selectors[label] = selectors
+    ic(obj_selectors)
 
     for i, (label, pymol_name) in enumerate(pymol_objects.items(), start=1):
         selectors = obj_selectors[label]

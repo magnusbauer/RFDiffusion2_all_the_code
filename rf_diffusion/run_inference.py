@@ -250,7 +250,6 @@ def add_implicit_side_chain_atoms(seq, act_on_residue, xyz, xyz_with_sc):
     '''
     # Shape checks
     L, n_atoms = xyz_with_sc.shape[:2]
-    ic(f'{xyz.shape[-3:]=}, {xyz_with_sc.shape=}')
     assert xyz.shape[-3:] == xyz_with_sc.shape, f'{xyz.shape[-3:]=} != {xyz_with_sc.shape=}'
     assert len(seq) == L
     assert len(act_on_residue) == L
