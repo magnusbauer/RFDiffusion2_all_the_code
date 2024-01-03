@@ -93,11 +93,7 @@ def sample_init(
     #ic(
     #    aa_model.what_is_diffused(indep, self.is_diffused, self.model_adaptor.atomizer)
     #)
-    
-    if conf.inference.center_motif:
-        indep.xyz -= aa_model.motif_c_alpha_com(indep.xyz, is_diffused)
     t_step_input = conf.diffuser.T
-    indep_orig = copy.deepcopy(indep)
     if for_partial_diffusion:
         mappings = contig_map.get_mappings()
         # This is due to the fact that when inserting a contig, the non-motif coordinates are reset.
@@ -112,31 +108,17 @@ def sample_init(
     if for_partial_diffusion:
         t_step_input = conf.diffuser.partial_T
         assert conf.diffuser.partial_T <= conf.diffuser.T
-    indep.xyz = aa_model.add_fake_frame_legs(indep.xyz, indep.is_sm, generator=frame_legs_rng)
-    # indep_orig is the starting structure with native C, N, O, CB, etc. positions.  This gets
-    # used for replacing implicit sidechains and O / CB positions.
-    indep_orig = copy.deepcopy(indep)
-    # indep_cond is the starting structure, with fake frame legs added and wonky O, CB,
-    # and sidechain positions resulting from frame-idealization.  This is used to make
-    # an unconditional indep conditional in the ClassifierFreeGuidance sampler.
-    indep_cond = add_fake_peptide_frame(indep, generator=copy_rng(frame_legs_rng))
-    rigids_0 = du.rigid_frames_from_atom_14(indep.xyz)
-    t_cont = t_step_input / conf.diffuser.T
 
-    forward_is_diffused = is_diffused.clone()
-    if diffuse_all:
-        forward_is_diffused[:] = True
-    diffuser_out = diffuser.forward_marginal(
-        rigids_0,
-        t=t_cont,
-        diffuse_mask=forward_is_diffused.float(),
-        as_tensor_7=False
-    )
-    xT = all_atom.atom37_from_rigid(diffuser_out['rigids_t'], generator=frame_legs_rng)
-    xt = torch.clone(xT[:,:14])
-    indep.xyz = xt
-    
-    return indep, indep_orig, indep_cond, is_diffused
+    indep_orig = copy.deepcopy(indep)
+    aa_model.centre(indep_orig, is_diffused)
+    indep_uncond, indep_cond = aa_model.diffuse_then_add_conditional(conf, diffuser, indep, is_diffused, t_step_input)
+
+    # indep_orig is the starting structure with native C, N, O, CB, etc. positions.  This gets
+    # # used for replacing implicit sidechains and O / CB positions.
+    # # indep_cond is the starting structure, with fake frame legs added and wonky O, CB,
+    # # and sidechain positions resulting from frame-idealization.  This is used to make
+    # # an unconditional indep conditional in the ClassifierFreeGuidance sampler.
+    return indep_uncond, indep_orig, indep_cond, is_diffused
 
 class Sampler:
 
@@ -387,6 +369,7 @@ class Sampler:
         indep, self.indep_orig, self.indep_cond, self.is_diffused = sample_init(self._conf, self.contig_map, self.target_feats, self.diffuser, self.model_adaptor.insert_contig, diffuse_all=False,
                                                             frame_legs_rng=copy_rng(self.frame_legs_rng))
 
+        indep = copy.deepcopy(self.indep_cond)
         return indep
 
     def symmetrise_prev_pred(self, px0, seq_in, alpha):
@@ -540,12 +523,13 @@ class FlowMatching(Sampler):
             tors_t_1: (L, ?) The updated torsion angles of the next  step.
             plddt: (L, 1) Predicted lDDT of x0.
         '''
+        # from rf_diffusion import determinism
+        # determinism.make_deterministic()
         extra_t1d_names = getattr(self._conf, 'extra_t1d', [])
         t_cont = t/self._conf.diffuser.T
         indep.extra_t1d = features.get_extra_t1d_inference(indep, extra_t1d_names, self._conf.extra_t1d_params, self._conf.inference.conditions, is_gp=indep.is_gp, t_cont=t_cont)
         rfi = self.model_adaptor.prepro(indep, t, is_diffused)
         rf2aa.tensor_util.to_device(rfi, self.device)
-        # B,N,L = xyz_t.shape[:3]
 
         ##################################
         ######## Str Self Cond ###########
@@ -560,11 +544,6 @@ class FlowMatching(Sampler):
         with torch.no_grad():
             # assert not rfi.xyz[0,:,:3,:].isnan().any(), f'{t}: {rfi.xyz[0,:,:3,:]}'
             model_out = self.model.forward_from_rfi(rfi, torch.tensor([t/self._conf.diffuser.T]).to(rfi.xyz.device), use_checkpoint=False)
-
-        now = datetime.now()
-        current_time = now.strftime("%H:%M:%S")
-        # self._log.info(
-        #         f'{current_time}: Timestep {t}')
 
         rigids_t = du.rigid_frames_from_atom_14(rfi.xyz)
         # ic(self._conf.denoiser.noise_scale, do_self_cond)
@@ -708,20 +687,11 @@ class ClassifierFreeGuidance(FlowMatching):
         extra_out = {}
         uncond_is_diffused = torch.ones_like(self.is_diffused).bool()
         indep_cond = aa_model.make_conditional_indep(indep, self.indep_cond, self.is_diffused)
-        ic(t, peek_rng(torch.default_generator))
-        trans_grad_cond, rots_grad_cond, px0_cond, model_out_cond = self.get_grads(t, indep_cond, extra['rfo_cond'], self.is_diffused)
-        ic(t, peek_rng(torch.default_generator))
-        extra_out['rfo_cond'] = model_out_cond['rfo']
         with torch.random.fork_rng():
-            ic(t, peek_rng(torch.default_generator))
-            trans_grad, rots_grad, px0_uncond, model_out_uncond = self.get_grads(t, indep, extra['rfo_uncond'], uncond_is_diffused)
-            ic(t, peek_rng(torch.default_generator))
-        ic(t, peek_rng(torch.default_generator))
+            trans_grad_cond, rots_grad_cond, px0_cond, model_out_cond = self.get_grads(t, indep_cond, extra['rfo_cond'], self.is_diffused)
+        extra_out['rfo_cond'] = model_out_cond['rfo']
+        trans_grad, rots_grad, px0_uncond, model_out_uncond = self.get_grads(t, indep, extra['rfo_uncond'], uncond_is_diffused)
         extra_out['rfo_uncond'] = model_out_uncond['rfo']
-        ic(
-            trans_grad.shape,
-            indep.length(),
-        )
         w = self._conf.inference.classifier_free_guidance_scale
         trans_grad = (1-w) * trans_grad + w * trans_grad_cond
         rots_grad = (1-w) * rots_grad + w * rots_grad_cond
@@ -729,8 +699,8 @@ class ClassifierFreeGuidance(FlowMatching):
         rigids_t = du.rigid_frames_from_atom_14(indep.xyz)
         rigids_t = self.diffuser.apply_grads(rigids_t, trans_grad, rots_grad, trans_dt, rots_dt)
 
-        px0 = px0_cond
         # TODO: write both px0 trajectories
+        px0 = px0_cond
         if w == 0:
             px0 = px0_uncond
         

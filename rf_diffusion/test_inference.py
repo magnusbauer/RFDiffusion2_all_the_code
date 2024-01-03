@@ -232,13 +232,12 @@ class TestCFG(unittest.TestCase):
 
     @pytest.mark.slow
     @pytest.mark.nondeterministic
-    @pytest.mark.generates_golden
     def test_cond_make_conditional_diffuse_all(self):
         self.assert_generates(
                 [
                         "inference.model_runner=FlowMatching_make_conditional_diffuse_all",
                 ],
-                'cfg_cond_diffuse_all'
+                'cfg_cond_base',
         )
 
     
@@ -250,7 +249,7 @@ class TestCFG(unittest.TestCase):
                         "inference.model_runner=ClassifierFreeGuidance",
                         "inference.classifier_free_guidance_scale=1",
                 ],
-                'cfg_cond_diffuse_all'
+                'cfg_cond_base',
         )
 
     ###################### Conditional generation ######################
@@ -277,10 +276,8 @@ class TestCFG(unittest.TestCase):
                 'cfg_uncond_base'
         )
 
-
     @pytest.mark.slow
     @pytest.mark.nondeterministic
-    @pytest.mark.expected_to_fail
     def test_uncond_cfg(self):
         self.assert_generates(
                 [
@@ -414,6 +411,50 @@ class TestModelRunners(unittest.TestCase):
         if diff:
             print(diff)
             self.fail(f'{diff=}')
+
+    def test_uncond_init(self):
+        run_inference.make_deterministic()
+        conf = construct_conf([
+            'diffuser.T=10',
+            'inference.num_designs=1',
+            'inference.output_prefix=tmp/test_no_batch_ot',
+            "contigmap.contigs=['9,A518-518,1']",
+            "+diffuser.batch_optimal_transport=False",
+            "+contigmap.contig_atoms=\"{'A518':''}\"",
+            "inference.model_runner=ClassifierFreeGuidance",
+        ])
+        sampler = model_runners.sampler_selector(conf)
+        indep_uncond = sampler.sample_init()
+        hydra.core.global_hydra.GlobalHydra.instance().clear()
+        run_inference.make_deterministic()
+        conf = construct_conf([
+            'diffuser.T=10',
+            'inference.num_designs=1',
+            'inference.output_prefix=tmp/test_no_batch_ot',
+            "contigmap.contigs=['9,A518-518,1']",
+            "+diffuser.batch_optimal_transport=False",
+            "inference.model_runner=ClassifierFreeGuidance",
+            "+contigmap.contig_atoms=\"{'A518':'CG,OD1,OD2'}\"",
+            "inference.classifier_free_guidance_scale=0",
+        ])
+        sampler = model_runners.sampler_selector(conf)
+        indep_uncond_cfg = sampler.sample_init()
+        xyzd = torch.isnan(indep_uncond_cfg.xyz) != torch.isnan(indep_uncond.xyz)
+        assert xyzd.sum() == 0
+
+        diff = test_utils.cmp_pretty(indep_uncond_cfg, indep_uncond, atol=1e-9)
+        if diff:
+            xyzd = indep_uncond_cfg.xyz - indep_uncond.xyz
+            ic(
+                xyzd,
+                torch.linalg.vector_norm(xyzd, dim=-1),
+                torch.linalg.vector_norm(xyzd, dim=(-1,-2)),
+                indep_uncond.xyz[-1,:3],
+                indep_uncond_cfg.xyz[-1,:3],
+                indep_uncond.xyz[-1,:3]-indep_uncond_cfg.xyz[-1,:3],
+            )
+            print(diff)
+            self.fail(f'indep unequal')
 
 class TestInference(unittest.TestCase):
 

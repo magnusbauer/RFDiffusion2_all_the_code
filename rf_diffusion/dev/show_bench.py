@@ -325,6 +325,7 @@ def main(path,
          sidechains=False,
          hydrogenated=False,
          key=None,
+         show_origin=False,
          ):
     ic(pymol_url)
     pymol.init(pymol_url)
@@ -375,8 +376,25 @@ def main(path,
     if sidechains:
         ic(all_entities)
         show_sidechains(all_entities, ['mpnn_packed', 'ga_lig'])
+    
+    if show_origin:
+        pa = pseudoatom(cmd)
+        cmd.color('red', pa)
+        cmd.set('grid_slot', -2, pa)
 
     # cmd.do('mass_paper_rainbow')
+
+
+def pseudoatom(
+        cmd,
+        pos: list = [0,0,0],
+        label='origin'):
+    cmd.pseudoatom(label,'', 'PS1','PSD', '1', 'P',
+        'PSDO', 'PS', -1.0, 1, 0.0, 0.0, '',
+        '', pos)
+    cmd.do(f'label {label}, "{label}"')
+    return label
+
 
 # # TODO: make this monadic
 # cmd = analyze.get_cmd('http://10.64.100.67:9123')

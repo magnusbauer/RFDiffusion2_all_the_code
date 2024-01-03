@@ -1546,6 +1546,36 @@ def diffuse(conf, diffuser, indep, is_diffused, t):
     indep.xyz = xT[:,:14]
     return indep, diffuser_out
 
+def add_fake_peptide_frame(indep, generator=None):
+    indep = copy.deepcopy(indep)
+    indep.xyz = add_fake_frame_legs(indep.xyz, indep.is_sm, generator=generator)
+    return idealize_peptide_frames(indep, generator=generator)
+
+def idealize_peptide_frames(indep, generator=None):
+    indep = copy.deepcopy(indep)
+    rigids = du.rigid_frames_from_atom_14(indep.xyz)
+    atom37 = all_atom.atom37_from_rigid(rigids, generator=generator)
+    # Not sure if this clone is necessary
+    atom37 = torch.clone(atom37)
+    indep.xyz = atom37[:,:14]
+    return indep
+
+def diffuse_then_add_conditional(conf, diffuser, indep, is_diffused, t, generator=None):
+    # Make the unconditional indep
+    indep_uncond, diffuser_out = diffuse(conf, diffuser, indep, torch.ones_like(is_diffused).bool(), t)
+
+    # Make the conditional portion
+    indep = copy.deepcopy(indep)
+    centre(indep, is_diffused)
+    indep = add_fake_peptide_frame(indep)
+    indep_cond = copy.deepcopy(indep_uncond)
+    indep_cond.xyz[~is_diffused] = indep.xyz[~is_diffused]
+
+    return indep_uncond, indep_cond
+    # indep.xyz = add_fake_frame_legs(indep.xyz, indep.is_sm, generator=generator)
+    # indep_cond = add_fake_peptide_frame(indep, generator=copy_rng(frame_legs_rng))
+    # indep
+
 def forward(model, rfi, **kwargs):
     rfi_dict = dataclasses.asdict(rfi)
     return RFO(*model(**{**rfi_dict, **kwargs}))
