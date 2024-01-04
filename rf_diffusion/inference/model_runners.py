@@ -508,7 +508,7 @@ class FlowMatching(Sampler):
     Model Runner for flow matching.
     """
 
-    def get_grads(self, t, indep, rfo, is_diffused, is_diffused_grad):
+    def get_grads(self, t, indep, rfo, is_diffused):
         '''
         Generate the next pose that the model should be supplied at timestep t-1.
         Args:
@@ -549,7 +549,7 @@ class FlowMatching(Sampler):
             rigid_t=rigids_t,
             rot_score=du.move_to_np(model_out['rot_score'][:,-1]),
             trans_score=du.move_to_np(model_out['trans_score'][:,-1]),
-            diffuse_mask=du.move_to_np(is_diffused_grad.float()[None,...]),
+            diffuse_mask=du.move_to_np(torch.ones_like(is_diffused).bool().float()[None,...]),
             t=t/self._conf.diffuser.T,
             dt=1/self._conf.diffuser.T,
             center=self._conf.denoiser.center,
@@ -581,7 +581,7 @@ class FlowMatching(Sampler):
             tors_t_1: (L, ?) The updated torsion angles of the next  step.
             plddt: (L, 1) Predicted lDDT of x0.
         '''
-        trans_grad, rots_grad, px0, model_out = self.get_grads(t, indep, rfo, self.is_diffused, is_diffused_grad=self.is_diffused)
+        trans_grad, rots_grad, px0, model_out = self.get_grads(t, indep, rfo, self.is_diffused)
         trans_dt, rots_dt = self.diffuser.get_dt(t/self._conf.diffuser.T, 1/self._conf.diffuser.T)
         rigids_t = du.rigid_frames_from_atom_14(indep.xyz)[None,...]
         rigids_t = self.diffuser.apply_grads(rigids_t, trans_grad, rots_grad, trans_dt, rots_dt)
@@ -686,10 +686,10 @@ class ClassifierFreeGuidance(FlowMatching):
         uncond_is_diffused = torch.ones_like(self.is_diffused).bool()
         indep_cond = aa_model.make_conditional_indep(indep, self.indep_cond, self.is_diffused)
         with torch.random.fork_rng():
-            trans_grad_cond, rots_grad_cond, px0_cond, model_out_cond = self.get_grads(t, indep_cond, extra['rfo_cond'], self.is_diffused, is_diffused_grad=uncond_is_diffused)
+            trans_grad_cond, rots_grad_cond, px0_cond, model_out_cond = self.get_grads(t, indep_cond, extra['rfo_cond'], self.is_diffused)
 
         extra_out['rfo_cond'] = model_out_cond['rfo']
-        trans_grad, rots_grad, px0_uncond, model_out_uncond = self.get_grads(t, indep, extra['rfo_uncond'], uncond_is_diffused, is_diffused_grad=uncond_is_diffused)
+        trans_grad, rots_grad, px0_uncond, model_out_uncond = self.get_grads(t, indep, extra['rfo_uncond'], uncond_is_diffused)
         extra_out['rfo_uncond'] = model_out_uncond['rfo']
         w = self._conf.inference.classifier_free_guidance_scale
         trans_grad = (1-w) * trans_grad + w * trans_grad_cond
