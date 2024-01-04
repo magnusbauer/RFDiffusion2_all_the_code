@@ -367,6 +367,14 @@ def preprocess(seq, xyz_t, t, T, ppi_design, binderlen, target_res, device):
     alpha_t = alpha_t.to(device)
     return msa_masked, msa_full, seq[None], torch.squeeze(xyz_t, dim=0), idx, t1d, t2d, xyz_t, alpha_t
 
+def get_pdb_lines_traj(path):
+    with open(path, 'r') as fh:
+        s = fh.read()
+        models = s.strip().split('ENDMDL')
+        models = [m for m in models if m]
+        models = [m.split('\n') for m in models]
+    return models
+
 def parse_pdb(filename, **kwargs):
     '''extract xyz coords for all heavy atoms'''
     lines = open(filename,'r').readlines()

@@ -27,6 +27,9 @@ from rf_diffusion.inference import model_runners
 from rf_diffusion import aa_model
 from rf_diffusion import inference
 import rf_se3_diffusion.data.utils as du
+import rf_diffusion
+from rf_diffusion.dev import analyze
+from rf_diffusion.dev import show_bench
 ic.configureOutput(includeContext=True)
 
 REWRITE = False
@@ -187,6 +190,8 @@ class TestRegression(unittest.TestCase):
 
 class TestCFG(unittest.TestCase):
 
+    guidance_scales_T = 20
+
     def setUp(self) -> None:
         # Some other test is leaving a global hydra initialized, so we clear it here.
         if hydra.core.global_hydra.GlobalHydra().is_initialized():
@@ -196,13 +201,13 @@ class TestCFG(unittest.TestCase):
     def tearDown(self):
         hydra.core.global_hydra.GlobalHydra.instance().clear()
     
-    def assert_generates(self, overrides, golden):
-        run_inference.make_deterministic()
+    def assert_generates(self, overrides, golden, output_dir='cfg'):
+        run_inference.make_deterministic(ignore_if_cuda=True)
         test_name=os.environ.get('PYTEST_CURRENT_TEST').split(':')[-1].split(' ')[0]
         pdb, _ = infer([
             'diffuser.T=10',
             'inference.num_designs=1',
-            f'inference.output_prefix=tmp/cfg/{test_name}',
+            f'inference.output_prefix=tmp/{output_dir}/{test_name}',
             "contigmap.contigs=['9,A518-518,1']",
             "+contigmap.contig_atoms=\"{'A518':'CG,OD1,OD2'}\"",
             "inference.model_runner=FlowMatching",
@@ -251,6 +256,21 @@ class TestCFG(unittest.TestCase):
                 ],
                 'cfg_cond_base',
         )
+    
+
+    # @pytest.mark.slow
+    # @pytest.mark.nondeterministic
+    # def test_cond_cfg_calculate_full_grads(self):
+    #     self.assert_generates(
+    #             [
+    #                     "inference.model_runner=ClassifierFreeGuidance",
+    #                     "inference.classifier_free_guidance_scale=1",
+    #                     "+inference.calculate_full_grads=True",
+    #             ],
+    #             'cfg_cond_base',
+    #             output_dir='cfg/garbo',
+    #     )
+
 
     ###################### Conditional generation ######################
     
@@ -286,6 +306,113 @@ class TestCFG(unittest.TestCase):
                 ],
                 'cfg_uncond_base'
         )
+
+    def assert_generates_xt(self, overrides, golden):
+        run_inference.make_deterministic(ignore_if_cuda=True)
+        test_name=os.environ.get('PYTEST_CURRENT_TEST').split(':')[-1].split(' ')[0]
+        pdb, _ = infer([
+            'diffuser.T=2',
+            'inference.num_designs=1',
+            f'inference.output_prefix=tmp/cfg/xt/{test_name}',
+            "contigmap.contigs=['9,A518-518,1']",
+            "+contigmap.contig_atoms=\"{'A518':'CG,OD1,OD2'}\"",
+            "inference.model_runner=FlowMatching",
+            "+diffuser.batch_optimal_transport=False",
+        ] + overrides)
+        row = show_bench.get_sdata(str(pdb)).iloc[0]
+        xt_path = analyze.get_traj_path(row, 'Xt')
+        first_denoised_pdb_lines = inference.utils.get_pdb_lines_traj(xt_path)[-1]
+        first_denoised = rf_diffusion.parsers.parse_pdb_lines_target(first_denoised_pdb_lines)
+        cmp = partial(tensor_util.cmp, atol=1e-2, rtol=0)
+        test_utils.assert_matches_golden(self, golden, first_denoised, rewrite=REWRITE, custom_comparator=cmp)
+
+    @pytest.mark.slow
+    @pytest.mark.generates_golden
+    @pytest.mark.nondeterministic
+    def test_xt_cond(self):
+        self.assert_generates_xt(
+                [],
+                'cfg_cond_xt'
+        )
+
+    # @pytest.mark.slow
+    # @pytest.mark.nondeterministic
+    # def test_xt_cfg(self):
+    #     self.assert_generates_xt(
+    #             [
+    #                 "inference.model_runner=ClassifierFreeGuidance",
+    #                 "inference.classifier_free_guidance_scale=1",
+    #             ],
+    #             'cfg_cond_xt'
+    #     )
+    
+    # ###################### Non-trivial guidance ######################
+    
+    # @pytest.mark.slow
+    # @pytest.mark.generates_golden
+    # @pytest.mark.nondeterministic
+    # def test_w_0(self):
+    #     self.assert_generates(
+    #             [
+    #                     'diffuser.T=20',
+    #                     "inference.model_runner=ClassifierFreeGuidance",
+    #                     "inference.classifier_free_guidance_scale=0",
+    #             ],
+    #             'cfg_w_0',
+    #     )
+    
+    # @pytest.mark.slow
+    # @pytest.mark.generates_golden
+    # @pytest.mark.nondeterministic
+    # def test_w_1(self):
+    #     self.assert_generates(
+    #             [
+    #                     'diffuser.T=20',
+    #                     "inference.model_runner=ClassifierFreeGuidance",
+    #                     "inference.classifier_free_guidance_scale=1",
+    #             ],
+    #             'cfg_w_1',
+    #     )        
+
+    # @pytest.mark.slow
+    # @pytest.mark.generates_golden
+    # @pytest.mark.nondeterministic
+    # def test_w_0p5(self):
+    #     self.assert_generates(
+    #             [
+    #                 'diffuser.T=20',
+    #                 "inference.model_runner=ClassifierFreeGuidance",
+    #                 "inference.classifier_free_guidance_scale=0.5",
+    #             ],
+    #             'cfg_w_0p5',
+    #     )
+
+    # @pytest.mark.slow
+    # @pytest.mark.generates_golden
+    # @pytest.mark.nondeterministic
+    # def test_w_2(self):
+    #     self.assert_generates(
+    #             [
+    #                 f'diffuser.T={self.guidance_scales_T}',
+    #                 "inference.model_runner=ClassifierFreeGuidance",
+    #                 "inference.classifier_free_guidance_scale=2",
+    #             ],
+    #             'cfg_w_2',
+    #     )
+
+    
+    # @pytest.mark.slow
+    # @pytest.mark.generates_golden
+    # @pytest.mark.nondeterministic
+    # def test_w_8(self):
+    #     self.assert_generates(
+    #             [
+    #                 f'diffuser.T={self.guidance_scales_T}',
+    #                 "inference.model_runner=ClassifierFreeGuidance",
+    #                 "inference.classifier_free_guidance_scale=8",
+    #             ],
+    #             'cfg_w_8',
+    #     )
 
 class TestModelRunners(unittest.TestCase):
 
