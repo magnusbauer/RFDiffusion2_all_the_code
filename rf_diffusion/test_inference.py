@@ -217,7 +217,7 @@ class TestCFG(unittest.TestCase):
         cmp = partial(tensor_util.cmp, atol=1e-2, rtol=0)
         test_utils.assert_matches_golden(self, golden, pdb_contents, rewrite=REWRITE, custom_comparator=cmp)
 
-    ###################### Unconditional generation ######################
+    ###################### Conditional generation ######################
 
     @pytest.mark.slow
     @pytest.mark.nondeterministic
@@ -241,6 +241,16 @@ class TestCFG(unittest.TestCase):
         self.assert_generates(
                 [
                         "inference.model_runner=FlowMatching_make_conditional_diffuse_all",
+                ],
+                'cfg_cond_base',
+        )
+
+    @pytest.mark.slow
+    @pytest.mark.nondeterministic
+    def test_cond_make_conditional_diffuse_all_xt_unfrozen(self):
+        self.assert_generates(
+                [
+                        "inference.model_runner=FlowMatching_make_conditional_diffuse_all_xt_unfrozen",
                 ],
                 'cfg_cond_base',
         )
@@ -272,7 +282,7 @@ class TestCFG(unittest.TestCase):
     #     )
 
 
-    ###################### Conditional generation ######################
+    ###################### Unconditional generation ######################
     
     @pytest.mark.slow
     @pytest.mark.nondeterministic
@@ -307,6 +317,8 @@ class TestCFG(unittest.TestCase):
                 'cfg_uncond_base'
         )
 
+    ###################### Xt tests ######################
+
     def assert_generates_xt(self, overrides, golden):
         run_inference.make_deterministic(ignore_if_cuda=True)
         test_name=os.environ.get('PYTEST_CURRENT_TEST').split(':')[-1].split(' ')[0]
@@ -329,22 +341,24 @@ class TestCFG(unittest.TestCase):
     @pytest.mark.slow
     @pytest.mark.generates_golden
     @pytest.mark.nondeterministic
-    def test_xt_cond(self):
+    def test_xt_cond_unfrozen(self):
         self.assert_generates_xt(
-                [],
+                [
+                    "inference.model_runner=FlowMatching_make_conditional_diffuse_all_xt_unfrozen",
+                ],
                 'cfg_cond_xt'
         )
 
-    # @pytest.mark.slow
-    # @pytest.mark.nondeterministic
-    # def test_xt_cfg(self):
-    #     self.assert_generates_xt(
-    #             [
-    #                 "inference.model_runner=ClassifierFreeGuidance",
-    #                 "inference.classifier_free_guidance_scale=1",
-    #             ],
-    #             'cfg_cond_xt'
-    #     )
+    @pytest.mark.slow
+    @pytest.mark.nondeterministic
+    def test_xt_cfg(self):
+        self.assert_generates_xt(
+                [
+                    "inference.model_runner=ClassifierFreeGuidance",
+                    "inference.classifier_free_guidance_scale=1",
+                ],
+                'cfg_cond_xt'
+        )
     
     # ###################### Non-trivial guidance ######################
     
@@ -354,11 +368,12 @@ class TestCFG(unittest.TestCase):
     # def test_w_0(self):
     #     self.assert_generates(
     #             [
-    #                     'diffuser.T=20',
+    #                     f'diffuser.T={self.guidance_scales_T}',
     #                     "inference.model_runner=ClassifierFreeGuidance",
     #                     "inference.classifier_free_guidance_scale=0",
     #             ],
     #             'cfg_w_0',
+    #             output_dir='cfg/w',
     #     )
     
     # @pytest.mark.slow
@@ -367,11 +382,12 @@ class TestCFG(unittest.TestCase):
     # def test_w_1(self):
     #     self.assert_generates(
     #             [
-    #                     'diffuser.T=20',
+    #                     f'diffuser.T={self.guidance_scales_T}',
     #                     "inference.model_runner=ClassifierFreeGuidance",
     #                     "inference.classifier_free_guidance_scale=1",
     #             ],
     #             'cfg_w_1',
+    #             output_dir='cfg/w',
     #     )        
 
     # @pytest.mark.slow
@@ -380,11 +396,12 @@ class TestCFG(unittest.TestCase):
     # def test_w_0p5(self):
     #     self.assert_generates(
     #             [
-    #                 'diffuser.T=20',
+    #                 f'diffuser.T={self.guidance_scales_T}',
     #                 "inference.model_runner=ClassifierFreeGuidance",
     #                 "inference.classifier_free_guidance_scale=0.5",
     #             ],
     #             'cfg_w_0p5',
+    #             output_dir='cfg/w',
     #     )
 
     # @pytest.mark.slow
@@ -398,8 +415,23 @@ class TestCFG(unittest.TestCase):
     #                 "inference.classifier_free_guidance_scale=2",
     #             ],
     #             'cfg_w_2',
+    #             output_dir='cfg/w',
     #     )
 
+    
+    # @pytest.mark.slow
+    # @pytest.mark.generates_golden
+    # @pytest.mark.nondeterministic
+    # def test_w_4(self):
+    #     self.assert_generates(
+    #             [
+    #                 f'diffuser.T={self.guidance_scales_T}',
+    #                 "inference.model_runner=ClassifierFreeGuidance",
+    #                 "inference.classifier_free_guidance_scale=4",
+    #             ],
+    #             'cfg_w_4',
+    #             output_dir='cfg/w',
+    #     )
     
     # @pytest.mark.slow
     # @pytest.mark.generates_golden
@@ -412,6 +444,7 @@ class TestCFG(unittest.TestCase):
     #                 "inference.classifier_free_guidance_scale=8",
     #             ],
     #             'cfg_w_8',
+    #             output_dir='cfg/w',
     #     )
 
 class TestModelRunners(unittest.TestCase):

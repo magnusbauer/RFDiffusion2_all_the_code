@@ -167,6 +167,8 @@ def sample_one(sampler, simple_logging=False):
         # assert_that(indep.xyz.shape).is_equal_to(x_t.shape)
         rf2aa.tensor_util.assert_same_shape(indep.xyz, x_t)
         indep.xyz = x_t
+        x_t = copy.deepcopy(x_t)
+        x_t[:,3:] = np.nan
             
         aa_model.assert_has_coords(indep.xyz, indep)
         # missing_backbone = torch.isnan(indep.xyz).any(dim=-1)[...,:3].any(dim=-1)

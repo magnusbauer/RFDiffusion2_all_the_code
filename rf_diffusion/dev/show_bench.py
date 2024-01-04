@@ -378,7 +378,8 @@ def main(path,
         show_sidechains(all_entities, ['mpnn_packed', 'ga_lig'])
     
     if show_origin:
-        pa = pseudoatom(cmd)
+        pa =pseudoatom(cmd, label='the_origin')
+        cmd.center(pa)
         cmd.color('red', pa)
         cmd.set('grid_slot', -2, pa)
 
@@ -388,11 +389,12 @@ def main(path,
 def pseudoatom(
         cmd,
         pos: list = [0,0,0],
-        label='origin'):
+        label='origin',
+        ):
     cmd.pseudoatom(label,'', 'PS1','PSD', '1', 'P',
         'PSDO', 'PS', -1.0, 1, 0.0, 0.0, '',
         '', pos)
-    cmd.do(f'label {label}, "{label}"')
+    # cmd.do(f'label {label}, "{label}"')
     return label
 
 

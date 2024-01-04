@@ -544,25 +544,11 @@ class FlowMatching(Sampler):
         )
         return trans_grad, rots_grad
 
-    def get_grads(self, t, indep, rfo, is_diffused):
-        '''
-        Generate the next pose that the model should be supplied at timestep t-1.
-        Args:
-            t (int): The timestep that has just been predicted
-            seq_t (torch.tensor): (L,22) The sequence at the beginning of this timestep
-            x_t (torch.tensor): (L,14,3) The residue positions at the beginning of this timestep
-            seq_init (torch.tensor): (L,22) The initialized sequence used in updating the sequence.
-        Returns:
-            px0: (L,14,3) The model's prediction of x0.
-            x_t_1: (L,14,3) The updated positions of the next step.
-            seq_t_1: (L) The updated sequence of the next step.
-            tors_t_1: (L, ?) The updated torsion angles of the next  step.
-            plddt: (L, 1) Predicted lDDT of x0.
-        '''
-        model_out = self.run_model(t, indep, rfo, is_diffused)
+    def get_grads(self, t, indep_in, indep_t, rfo, is_diffused):
 
-        rigids_t = du.rigid_frames_from_atom_14(indep.xyz)
+        model_out = self.run_model(t, indep_in, rfo, is_diffused)
         rigids_pred = model_out['rigids_raw'][:,-1]
+        rigids_t = du.rigid_frames_from_atom_14(indep_t.xyz)
         trans_grad, rots_grad = self.get_grads_rigid(rigids_t, rigids_pred, t, model_out)
 
         px0 = model_out['atom37'][0, -1]
@@ -589,12 +575,13 @@ class FlowMatching(Sampler):
             tors_t_1: (L, ?) The updated torsion angles of the next  step.
             plddt: (L, 1) Predicted lDDT of x0.
         '''
-        trans_grad, rots_grad, px0, model_out = self.get_grads(t, indep, rfo, self.is_diffused)
+        trans_grad, rots_grad, px0, model_out = self.get_grads(t, indep, indep, rfo, self.is_diffused)
         trans_dt, rots_dt = self.diffuser.get_dt(t/self._conf.diffuser.T, 1/self._conf.diffuser.T)
         rigids_t = du.rigid_frames_from_atom_14(indep.xyz)[None,...]
         rigids_t = self.diffuser.apply_grads(rigids_t, trans_grad, rots_grad, trans_dt, rots_dt)
+        x_t_1 = get_x_t_1(rigids_t, indep.xyz, self.is_diffused)
     
-        return px0, get_x_t_1(rigids_t, indep.xyz, self.is_diffused), get_seq_one_hot(indep.seq), model_out['rfo'], {}
+        return px0, x_t_1, get_seq_one_hot(indep.seq), model_out['rfo'], {}
 
 def sampler_selector(conf: DictConfig):
     if conf.inference.model_runner == 'default':
@@ -680,6 +667,28 @@ class FlowMatching_make_conditional_diffuse_all(FlowMatching_make_conditional):
                                                             frame_legs_rng=copy_rng(self.frame_legs_rng))
         return indep
 
+class FlowMatching_make_conditional_diffuse_all_xt_unfrozen(FlowMatching):
+
+    def sample_init(self):
+        self.contig_map = ContigMap(self.target_feats, **self.contig_conf)
+        self.frame_legs_rng = copy_rng(torch.default_generator)
+        indep, self.indep_orig, self.indep_cond, self.is_diffused = sample_init(self._conf, self.contig_map, self.target_feats, self.diffuser, self.model_adaptor.insert_contig, diffuse_all=True,
+                                                            frame_legs_rng=copy_rng(self.frame_legs_rng))
+        return indep
+    
+    def sample_step(self, t, indep, rfo, extra):
+        indep_cond = aa_model.make_conditional_indep(indep, self.indep_cond, self.is_diffused)
+        trans_grad, rots_grad, px0, model_out = self.get_grads(t, indep_cond, indep, rfo, self.is_diffused)
+        trans_dt, rots_dt = self.diffuser.get_dt(t/self._conf.diffuser.T, 1/self._conf.diffuser.T)
+        rigids_t = du.rigid_frames_from_atom_14(indep.xyz)[None,...]
+        rigids_t = self.diffuser.apply_grads(rigids_t, trans_grad, rots_grad, trans_dt, rots_dt)
+    
+        uncond_is_diffused = torch.ones_like(self.is_diffused).bool()
+        x_t_1 = get_x_t_1(rigids_t, indep.xyz, uncond_is_diffused)
+        ic(x_t_1[0,:5,0])
+        return px0, x_t_1, get_seq_one_hot(indep.seq), model_out['rfo'], {}
+
+
 class ClassifierFreeGuidance(FlowMatching):
     # WIP
     def sample_init(self):
@@ -689,15 +698,27 @@ class ClassifierFreeGuidance(FlowMatching):
                                                             frame_legs_rng=copy_rng(self.frame_legs_rng))
         return indep
     
+    def get_grads(self, t, indep_in, indep_t, rfo, is_diffused):
+
+        model_out = self.run_model(t, indep_in, rfo, is_diffused)
+        rigids_pred = model_out['rigids_raw'][:,-1]
+        rigids_t = du.rigid_frames_from_atom_14(indep_t.xyz.to(self.device))
+        trans_grad, rots_grad = self.get_grads_rigid(rigids_t, rigids_pred, t, model_out)
+
+        px0 = model_out['atom37'][0, -1]
+        px0 = px0.cpu()
+
+        return trans_grad, rots_grad, px0, model_out
+    
     def sample_step(self, t, indep, rfo, extra):
         extra_out = {}
         uncond_is_diffused = torch.ones_like(self.is_diffused).bool()
         indep_cond = aa_model.make_conditional_indep(indep, self.indep_cond, self.is_diffused)
         with torch.random.fork_rng():
-            trans_grad_cond, rots_grad_cond, px0_cond, model_out_cond = self.get_grads(t, indep_cond, extra['rfo_cond'], self.is_diffused)
+            trans_grad_cond, rots_grad_cond, px0_cond, model_out_cond = self.get_grads(t, indep_cond, indep, extra['rfo_cond'], self.is_diffused)
 
         extra_out['rfo_cond'] = model_out_cond['rfo']
-        trans_grad, rots_grad, px0_uncond, model_out_uncond = self.get_grads(t, indep, extra['rfo_uncond'], uncond_is_diffused)
+        trans_grad, rots_grad, px0_uncond, model_out_uncond = self.get_grads(t, indep, indep, extra['rfo_uncond'], uncond_is_diffused)
         extra_out['rfo_uncond'] = model_out_uncond['rfo']
         w = self._conf.inference.classifier_free_guidance_scale
         trans_grad = (1-w) * trans_grad + w * trans_grad_cond
