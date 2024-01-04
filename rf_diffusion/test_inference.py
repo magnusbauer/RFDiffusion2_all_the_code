@@ -188,6 +188,58 @@ class TestRegression(unittest.TestCase):
         cmp = partial(tensor_util.cmp, atol=0.25, rtol=0)
         test_utils.assert_matches_golden(self, '10res_self_conditioning', pdb_contents, rewrite=False, custom_comparator=cmp)
 
+class TestWriteTrajs(unittest.TestCase):
+
+    T=2
+
+    def setUp(self) -> None:
+        # Some other test is leaving a global hydra initialized, so we clear it here.
+        if hydra.core.global_hydra.GlobalHydra().is_initialized():
+            hydra.core.global_hydra.GlobalHydra().clear()
+        return super().setUp()
+
+    def tearDown(self):
+        hydra.core.global_hydra.GlobalHydra.instance().clear()
+    
+    def assert_generates(self, overrides, golden, output_dir='cfg/write_trajs'):
+        run_inference.make_deterministic(ignore_if_cuda=True)
+        test_name=os.environ.get('PYTEST_CURRENT_TEST').split(':')[-1].split(' ')[0]
+        pdb, _ = infer([
+            f'diffuser.T={self.T}',
+            'inference.num_designs=1',
+            f'inference.output_prefix=tmp/{output_dir}/{test_name}',
+            "contigmap.contigs=['9,A518-518,1']",
+            "+contigmap.contig_atoms=\"{'A518':'CG,OD1,OD2'}\"",
+            "inference.model_runner=FlowMatching",
+            "+diffuser.batch_optimal_transport=False",
+        ] + overrides)
+        row = show_bench.get_sdata(str(pdb)).iloc[0]
+        x0_path = analyze.get_traj_path(row, 'X0')
+        got = parse_traj(x0_path)
+
+        REWRITE=False
+        cmp = partial(tensor_util.cmp, atol=1e-2, rtol=0)
+        test_utils.assert_matches_golden(self, golden, got, rewrite=REWRITE, custom_comparator=cmp)
+
+
+        x0_path = analyze.get_traj_path(row, 'cond')
+        got_2 = parse_traj(x0_path)
+        test_utils.assert_matches_golden(self, golden, got_2, rewrite=REWRITE, custom_comparator=cmp)
+    
+    def test_write_base(self):
+        self.assert_generates(
+                [
+                    "inference.model_runner=ClassifierFreeGuidance",
+                    "inference.classifier_free_guidance_scale=1",
+                ],
+                'cfg_cond_trajs'
+        )
+
+def parse_traj(traj_path):
+    traj_pdb_lines = inference.utils.get_pdb_lines_traj(traj_path)
+    indeps = [rf_diffusion.parsers.parse_pdb_lines_target(lines) for lines in traj_pdb_lines]
+    return indeps
+
 class TestCFG(unittest.TestCase):
 
     guidance_scales_T = 20

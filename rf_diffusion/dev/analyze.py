@@ -346,8 +346,10 @@ def get_traj_path(row,  traj='X0'):
     rundir = row['rundir']
     if traj == 'X0':
         traj_path = os.path.join(rundir, f'traj/{row["name"]}_pX0_traj.pdb')
-    else:
+    elif traj == 'Xt':
         traj_path = os.path.join(rundir, f'traj/{row["name"]}_Xt-1_traj.pdb')
+    else:
+        traj_path = os.path.join(rundir, f'traj/{row["name"]}_{traj}_traj.pdb')
     return traj_path
 
 def load_traj(row, name=None, traj='X0'):

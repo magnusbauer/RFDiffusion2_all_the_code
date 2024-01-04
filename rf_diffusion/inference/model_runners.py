@@ -733,5 +733,10 @@ class ClassifierFreeGuidance(FlowMatching):
         if w == 0:
             px0 = px0_uncond
         
+        extra_out['traj'] = {
+            'cond': px0_cond,
+            'uncond': px0_uncond,
+        }
+        
         x_t_1 = get_x_t_1(rigids_t, indep.xyz, uncond_is_diffused)
         return px0, x_t_1, get_seq_one_hot(indep.seq), extra_out['rfo_cond'], extra_out

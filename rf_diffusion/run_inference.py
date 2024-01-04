@@ -23,6 +23,7 @@ import sys
 # sys.path.append(SE3_DIR)
 
 import re
+from collections import defaultdict
 import os, time, pickle
 import dataclasses
 import torch 
@@ -141,6 +142,7 @@ def sample_one(sampler, simple_logging=False):
     log = logging.getLogger(__name__)
     log.debug(sampler._conf.denoiser.noise_scale, sampler._conf.denoiser.center)
 
+    traj_stack = defaultdict(list)
     denoised_xyz_stack = []
     px0_xyz_stack = []
     seq_stack = []
@@ -185,6 +187,10 @@ def sample_one(sampler, simple_logging=False):
         px0_xyz_stack.append(px0)
         denoised_xyz_stack.append(x_t)
         seq_stack.append(seq_t)
+        for k, v in extra['traj'].items():
+            traj_stack[k].append(
+                v
+            )
 
     if sampler.t_step_input == 0:
         # Null-case: no diffusion performed.
@@ -198,6 +204,10 @@ def sample_one(sampler, simple_logging=False):
     denoised_xyz_stack = torch.flip(denoised_xyz_stack, [0,])
     px0_xyz_stack = torch.stack(px0_xyz_stack)
     px0_xyz_stack = torch.flip(px0_xyz_stack, [0,])
+
+    for k, v in traj_stack.items():
+        traj_stack[k] = torch.flip(torch.stack(v), [0,])
+
     raw = (px0_xyz_stack, denoised_xyz_stack)
 
     # Add back any (implicit) side chain atoms from the motif
@@ -216,6 +226,14 @@ def sample_one(sampler, simple_logging=False):
     )
     px0_xyz_stack[..., :14, :] = px0_xyz_stack_filler
 
+    for k, v in traj_stack.items():
+        traj_stack[k] = add_implicit_side_chain_atoms(
+            seq=indep.seq,
+            act_on_residue=~sampler.is_diffused,
+            xyz=v[..., :14, :],
+            xyz_with_sc=sampler.indep_orig.xyz[..., :14, :],
+        )
+
     # Idealize protein backbone
     is_protein = rf2aa.util.is_protein(indep.seq)
     denoised_xyz_stack[:, is_protein] = idealize_backbone.idealize_bb_atoms(
@@ -232,12 +250,30 @@ def sample_one(sampler, simple_logging=False):
     log.debug(backbone_ideality_gap)
     px0_xyz_stack = px0_xyz_stack_idealized
 
+
+    for k, v in traj_stack.items():
+        traj_stack[k][:, is_protein] = idealize_backbone.idealize_bb_atoms(
+            xyz=v[:, is_protein],
+            idx=indep.idx[is_protein]
+        )
+
     # deatomize features, if applicable
     if (sampler.model_adaptor.atomizer is not None):
+        init_seq_stack = copy.deepcopy(seq_stack)
         indep, px0_xyz_stack, denoised_xyz_stack, seq_stack = \
             deatomize_sampler_outputs(sampler, indep, px0_xyz_stack, denoised_xyz_stack, seq_stack)
+        
+        for k, v in traj_stack.items():
+            xyz_stack_new = []
+            for i in range(len(v)):
+                xyz_i = aa_model.pad_dim(v[i], 1, rf2aa.chemical.NTOTAL, torch.nan)
 
-    return indep, denoised_xyz_stack, px0_xyz_stack, seq_stack, raw
+                seq_, xyz_, idx_, bond_feats_, same_chain_ = \
+                    sampler.model_adaptor.atomizer.get_deatomized_features(init_seq_stack[i], xyz_i)
+                xyz_stack_new.append(xyz_)
+            traj_stack[k] = torch.stack(xyz_stack_new)
+
+    return indep, denoised_xyz_stack, px0_xyz_stack, seq_stack, raw, traj_stack
 
 def add_implicit_side_chain_atoms(seq, act_on_residue, xyz, xyz_with_sc):
     '''
@@ -302,7 +338,7 @@ def deatomize_sampler_outputs(sampler, indep, px0_xyz_stack, denoised_xyz_stack,
     return indep, px0_xyz_stack_new, denoised_xyz_stack_new, seq_stack_new
 
 
-def save_outputs(sampler, out_prefix, indep, denoised_xyz_stack, px0_xyz_stack, seq_stack, raw):
+def save_outputs(sampler, out_prefix, indep, denoised_xyz_stack, px0_xyz_stack, seq_stack, raw, traj_stack):
     log = logging.getLogger(__name__)
 
     final_seq = seq_stack[-1]
@@ -380,6 +416,12 @@ def save_outputs(sampler, out_prefix, indep, denoised_xyz_stack, px0_xyz_stack, 
     out=f'{traj_prefix}_pX0_traj.pdb'
     aa_model.write_traj(out, px0_xyz_stack, final_seq, indep.bond_feats, chain_Ls=chain_Ls, ligand_name_arr=sampler.contig_map.ligand_names, idx_pdb=indep.idx)
     x0_traj_path = os.path.abspath(out)
+
+    for k, v in traj_stack.items():
+        out=f'{traj_prefix}_{k}_traj.pdb'
+        aa_model.write_traj(out, v, final_seq, indep.bond_feats, chain_Ls=chain_Ls, ligand_name_arr=sampler.contig_map.ligand_names, idx_pdb=indep.idx)
+        traj_path = os.path.abspath(out)
+        aa_model.rename_ligand_atoms(sampler._conf.inference.input_pdb, traj_path)
 
     # run metadata
     sampler._conf.inference.input_pdb = os.path.abspath(sampler._conf.inference.input_pdb)
