@@ -508,21 +508,7 @@ class FlowMatching(Sampler):
     Model Runner for flow matching.
     """
 
-    def get_grads(self, t, indep, rfo, is_diffused):
-        '''
-        Generate the next pose that the model should be supplied at timestep t-1.
-        Args:
-            t (int): The timestep that has just been predicted
-            seq_t (torch.tensor): (L,22) The sequence at the beginning of this timestep
-            x_t (torch.tensor): (L,14,3) The residue positions at the beginning of this timestep
-            seq_init (torch.tensor): (L,22) The initialized sequence used in updating the sequence.
-        Returns:
-            px0: (L,14,3) The model's prediction of x0.
-            x_t_1: (L,14,3) The updated positions of the next step.
-            seq_t_1: (L) The updated sequence of the next step.
-            tors_t_1: (L, ?) The updated torsion angles of the next  step.
-            plddt: (L, 1) Predicted lDDT of x0.
-        '''
+    def run_model(self, t, indep, rfo, is_diffused):
         extra_t1d_names = getattr(self._conf, 'extra_t1d', [])
         t_cont = t/self._conf.diffuser.T
         indep.extra_t1d = features.get_extra_t1d_inference(indep, extra_t1d_names, self._conf.extra_t1d_params, self._conf.inference.conditions, is_gp=indep.is_gp, t_cont=t_cont)
@@ -542,20 +528,42 @@ class FlowMatching(Sampler):
         with torch.no_grad():
             # assert not rfi.xyz[0,:,:3,:].isnan().any(), f'{t}: {rfi.xyz[0,:,:3,:]}'
             model_out = self.model.forward_from_rfi(rfi, torch.tensor([t/self._conf.diffuser.T]).to(rfi.xyz.device), use_checkpoint=False)
+        return model_out
 
-        rigids_t = du.rigid_frames_from_atom_14(rfi.xyz)
-        # ic(self._conf.denoiser.noise_scale, do_self_cond)
+    def get_grads_rigid(self, rigids_t, rigids_pred, t, model_out):
         trans_grad, rots_grad = self.diffuser.get_grads(
             rigid_t=rigids_t,
             rot_score=du.move_to_np(model_out['rot_score'][:,-1]),
             trans_score=du.move_to_np(model_out['trans_score'][:,-1]),
-            diffuse_mask=du.move_to_np(torch.ones_like(is_diffused).bool().float()[None,...]),
+            diffuse_mask=np.ones(rigids_pred.shape, dtype=np.bool),
             t=t/self._conf.diffuser.T,
             dt=1/self._conf.diffuser.T,
             center=self._conf.denoiser.center,
             noise_scale=self._conf.denoiser.noise_scale,
-            rigid_pred=model_out['rigids_raw'][:,-1]
+            rigid_pred=rigids_pred,
         )
+        return trans_grad, rots_grad
+
+    def get_grads(self, t, indep, rfo, is_diffused):
+        '''
+        Generate the next pose that the model should be supplied at timestep t-1.
+        Args:
+            t (int): The timestep that has just been predicted
+            seq_t (torch.tensor): (L,22) The sequence at the beginning of this timestep
+            x_t (torch.tensor): (L,14,3) The residue positions at the beginning of this timestep
+            seq_init (torch.tensor): (L,22) The initialized sequence used in updating the sequence.
+        Returns:
+            px0: (L,14,3) The model's prediction of x0.
+            x_t_1: (L,14,3) The updated positions of the next step.
+            seq_t_1: (L) The updated sequence of the next step.
+            tors_t_1: (L, ?) The updated torsion angles of the next  step.
+            plddt: (L, 1) Predicted lDDT of x0.
+        '''
+        model_out = self.run_model(t, indep, rfo, is_diffused)
+
+        rigids_t = du.rigid_frames_from_atom_14(indep.xyz)
+        rigids_pred = model_out['rigids_raw'][:,-1]
+        trans_grad, rots_grad = self.get_grads_rigid(rigids_t, rigids_pred, t, model_out)
 
         px0 = model_out['atom37'][0, -1]
         px0 = px0.cpu()
