@@ -326,6 +326,7 @@ def main(path,
          hydrogenated=False,
          key=None,
          show_origin=False,
+         hide_oxygen=False,
          ):
     ic(pymol_url)
     pymol.init(pymol_url)

@@ -113,6 +113,13 @@ def sample_init(
     aa_model.centre(indep_orig, is_diffused)
     indep_uncond, indep_cond = aa_model.diffuse_then_add_conditional(conf, diffuser, indep, is_diffused, t_step_input)
 
+    ic(
+        aa_model.motif_c_alpha_com(indep_uncond.xyz, is_diffused),
+        aa_model.motif_c_alpha_com(indep_uncond.xyz, torch.ones_like(is_diffused).bool()),
+        aa_model.motif_c_alpha_com(indep_cond.xyz, is_diffused),
+        aa_model.motif_c_alpha_com(indep_cond.xyz, torch.ones_like(is_diffused).bool()),
+    )
+
     # indep_orig is the starting structure with native C, N, O, CB, etc. positions.  This gets
     # # used for replacing implicit sidechains and O / CB positions.
     # # indep_cond is the starting structure, with fake frame legs added and wonky O, CB,
@@ -723,7 +730,6 @@ class ClassifierFreeGuidance(FlowMatching):
         w = self._conf.inference.classifier_free_guidance_scale
         trans_grad = (1-w) * trans_grad + w * trans_grad_cond
         rots_grad = (1-w) * rots_grad + w * rots_grad_cond
-        ic(trans_grad_cond[0, ~self.is_diffused])
         trans_dt, rots_dt = self.diffuser.get_dt(t/self._conf.diffuser.T, 1/self._conf.diffuser.T)
         rigids_t = du.rigid_frames_from_atom_14(indep.xyz)
         rigids_t = self.diffuser.apply_grads(rigids_t, trans_grad, rots_grad, trans_dt, rots_dt)
@@ -734,9 +740,10 @@ class ClassifierFreeGuidance(FlowMatching):
             px0 = px0_uncond
         
         extra_out['traj'] = {
-            'cond': px0_cond,
-            'uncond': px0_uncond,
+            'px0_cond': px0_cond[:,:14],
+            'px0_uncond': px0_uncond[:,:14],
+            'Xt_cond': indep_cond.xyz[:,:14],
+            'Xt_uncond': indep.xyz[:,:14],
         }
-        
         x_t_1 = get_x_t_1(rigids_t, indep.xyz, uncond_is_diffused)
         return px0, x_t_1, get_seq_one_hot(indep.seq), extra_out['rfo_cond'], extra_out

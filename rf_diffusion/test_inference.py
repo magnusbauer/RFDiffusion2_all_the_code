@@ -240,6 +240,36 @@ def parse_traj(traj_path):
     indeps = [rf_diffusion.parsers.parse_pdb_lines_target(lines) for lines in traj_pdb_lines]
     return indeps
 
+class InferenceTestBase(unittest.TestCase):
+
+    guidance_scales_T = 20
+
+    def setUp(self) -> None:
+        # Some other test is leaving a global hydra initialized, so we clear it here.
+        if hydra.core.global_hydra.GlobalHydra().is_initialized():
+            hydra.core.global_hydra.GlobalHydra().clear()
+        return super().setUp()
+
+    def tearDown(self):
+        hydra.core.global_hydra.GlobalHydra.instance().clear()
+    
+    def assert_generates(self, overrides, golden, output_dir='cfg'):
+        run_inference.make_deterministic(ignore_if_cuda=True)
+        test_name=os.environ.get('PYTEST_CURRENT_TEST').split(':')[-1].split(' ')[0]
+        pdb, _ = infer([
+            'diffuser.T=10',
+            'inference.num_designs=1',
+            f'inference.output_prefix=tmp/{output_dir}/{test_name}',
+            "contigmap.contigs=['9,A518-518,1']",
+            "+contigmap.contig_atoms=\"{'A518':'CG,OD1,OD2'}\"",
+            "inference.model_runner=FlowMatching",
+            "+diffuser.batch_optimal_transport=False",
+        ] + overrides)
+        pdb_contents = inference.utils.parse_pdb(pdb)
+        cmp = partial(tensor_util.cmp, atol=1e-2, rtol=0)
+        test_utils.assert_matches_golden(self, golden, pdb_contents, rewrite=REWRITE, custom_comparator=cmp)
+
+
 class TestCFG(unittest.TestCase):
 
     guidance_scales_T = 20
@@ -411,7 +441,7 @@ class TestCFG(unittest.TestCase):
                 ],
                 'cfg_cond_xt'
         )
-    
+
     # ###################### Non-trivial guidance ######################
     
     # @pytest.mark.slow
@@ -498,6 +528,104 @@ class TestCFG(unittest.TestCase):
     #             'cfg_w_8',
     #             output_dir='cfg/w',
     #     )
+
+class LongerCFGTest(InferenceTestBase):
+
+    guidance_scales_T = 40
+
+    @pytest.mark.slow
+    @pytest.mark.generates_golden
+    @pytest.mark.nondeterministic
+    def test_w_1(self):
+        self.assert_generates(
+                [
+                    f'diffuser.T={self.guidance_scales_T}',
+                    "inference.model_runner=ClassifierFreeGuidance",
+                    "inference.str_self_cond=False",
+                    "inference.classifier_free_guidance_scale=1",
+                ],
+                'cfg_long_w_1',
+                output_dir='cfg/w_long',
+        )
+
+
+    @pytest.mark.slow
+    @pytest.mark.generates_golden
+    @pytest.mark.nondeterministic
+    def test_w_0_offset(self):
+        self.assert_generates(
+                [
+                    f'diffuser.T={self.guidance_scales_T}',
+                    "inference.model_runner=ClassifierFreeGuidance",
+                    "inference.str_self_cond=False",
+                    "+inference.add_offset=True",
+                    "inference.classifier_free_guidance_scale=0",
+                ],
+                'cfg_long_w_offset_1',
+                output_dir='cfg/w_long',
+        )
+
+    @pytest.mark.slow
+    @pytest.mark.generates_golden
+    @pytest.mark.nondeterministic
+    def test_w_1_offset(self):
+        self.assert_generates(
+                [
+                    f'diffuser.T={self.guidance_scales_T}',
+                    "inference.model_runner=ClassifierFreeGuidance",
+                    "inference.str_self_cond=False",
+                    "+inference.add_offset=True",
+                    "inference.classifier_free_guidance_scale=1",
+                ],
+                'cfg_long_w_offset_1',
+                output_dir='cfg/w_long',
+        )
+
+    @pytest.mark.slow
+    @pytest.mark.generates_golden
+    @pytest.mark.nondeterministic
+    def test_w_2(self):
+        self.assert_generates(
+                [
+                    f'diffuser.T={self.guidance_scales_T}',
+                    "inference.model_runner=ClassifierFreeGuidance",
+                    "inference.str_self_cond=False",
+                    "inference.classifier_free_guidance_scale=2",
+                ],
+                'cfg_long_w_2',
+                output_dir='cfg/w_long',
+        )
+
+    @pytest.mark.slow
+    @pytest.mark.generates_golden
+    @pytest.mark.nondeterministic
+    def test_w_4(self):
+        self.assert_generates(
+                [
+                    f'diffuser.T={self.guidance_scales_T}',
+                    "inference.model_runner=ClassifierFreeGuidance",
+                    "inference.str_self_cond=False",
+                    "inference.classifier_free_guidance_scale=4",
+                ],
+                'cfg_long_w_4',
+                output_dir='cfg/w_long',
+        )
+    
+    @pytest.mark.slow
+    @pytest.mark.generates_golden
+    @pytest.mark.nondeterministic
+    def test_w_8(self):
+        self.assert_generates(
+                [
+                    f'diffuser.T={self.guidance_scales_T}',
+                    "inference.model_runner=ClassifierFreeGuidance",
+                    "inference.str_self_cond=False",
+                    "inference.classifier_free_guidance_scale=8",
+                ],
+                'cfg_long_w_8',
+                output_dir='cfg/w_long',
+        )
+    
 
 class TestModelRunners(unittest.TestCase):
 
