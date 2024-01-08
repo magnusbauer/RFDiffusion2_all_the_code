@@ -33,14 +33,9 @@ def combine_selectors(objs, selectors):
 def get_motif_spec(row, traj=False):
     trb = analyze.get_trb(row)
     if traj and 'motif' in trb:
-        is_atom_motif = {}
-        if 'motif_by_gp' in trb:
-            is_atom_motif.update({k:list() for k in trb['motif_by_gp'].keys()})
-        is_atom_motif.update(trb['motif'])
+        is_atom_motif = trb['motif']
     else:
         is_atom_motif = trb.get('atomize_indices2atomname', {})
-    # is_atom_motif = trb['motif']
-    # print(f'{is_atom_motif=}')
     idx = trb['indep']['idx']
     atom_names_by_res_idx = {}
     for i0, atom_names in is_atom_motif.items():
@@ -109,22 +104,22 @@ def show(row, structs = {'X0'}, af2=False, des=True, des_color=None, hetatm_colo
     traj_type = 'X0'
     # traj = analyze.load_traj(row, traj_type, traj_type)
     # print(traj)
-    traj_types = ['X0', 'Xt']
+    # traj_types = ['X0', 'Xt']
     pdbs = {}
     if des:
         pdbs['des'] =  analyze.get_diffusion_pdb(row)
         # pdbs['des_raw'] = '/net/scratch/ahern/tip_atoms/rfd_retro_3_pilot/out/run_tip_3_lig_retroaldolase_cond0_0.pdb'
     for s in structs:
-        if s in traj_types:
-            if s == 'X0':
-                suffix = 'pX0'
-            if s == 'Xt':
-                suffix = 'Xt-1'
-            name = row['name']
-            # if 'pymol' in row:
-            #     name = row['pymol']
-            # s = f'{name}_{s}_{random.randint(0, 1000)}'
-            pdbs[s] = os.path.join(row['rundir'], f'traj/{name}_{suffix}_traj.pdb')
+        suffix = s
+        if s == 'X0':
+            suffix = 'pX0'
+        if s == 'Xt':
+            suffix = 'Xt-1'
+        name = row['name']
+        # if 'pymol' in row:
+        #     name = row['pymol']
+        # s = f'{name}_{s}_{random.randint(0, 1000)}'
+        pdbs[s] = os.path.join(row['rundir'], f'traj/{name}_{suffix}_traj.pdb')
     
     # for extra_name, path in extras.items():
     #     pdbs[extra_name] = path
@@ -205,7 +200,7 @@ def show(row, structs = {'X0'}, af2=False, des=True, des_color=None, hetatm_colo
     
     obj_selectors = {}
     for label in pymol_objects:
-        is_traj = label.split('_')[0] in traj_types
+        is_traj = label.split('_')[0] in structs
         if is_rf_diff(row):
             trb = analyze.get_trb(row)
             atom_names_by_res_idx = {resi: ['ALL'] for ch, resi in trb['con_hal_pdb_idx']}
@@ -218,6 +213,7 @@ def show(row, structs = {'X0'}, af2=False, des=True, des_color=None, hetatm_colo
         selectors = obj_selectors[label]
         sels = combine_selectors([pymol_name], selectors)
         shown = sels.pop(f'{pymol_name}_shown')
+        # cmd.hide('everything', pymol_name)
         cmd.show_as('licorice', shown)
         gp_selector = f'{pymol_name}_residue_gp_motif'
         if gp_selector in sels:
