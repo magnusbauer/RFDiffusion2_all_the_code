@@ -113,18 +113,11 @@ def sample_init(
     aa_model.centre(indep_orig, is_diffused)
     indep_uncond, indep_cond = aa_model.diffuse_then_add_conditional(conf, diffuser, indep, is_diffused, t_step_input)
 
-    ic(
-        aa_model.motif_c_alpha_com(indep_uncond.xyz, is_diffused),
-        aa_model.motif_c_alpha_com(indep_uncond.xyz, torch.ones_like(is_diffused).bool()),
-        aa_model.motif_c_alpha_com(indep_cond.xyz, is_diffused),
-        aa_model.motif_c_alpha_com(indep_cond.xyz, torch.ones_like(is_diffused).bool()),
-    )
-
     # indep_orig is the starting structure with native C, N, O, CB, etc. positions.  This gets
-    # # used for replacing implicit sidechains and O / CB positions.
-    # # indep_cond is the starting structure, with fake frame legs added and wonky O, CB,
-    # # and sidechain positions resulting from frame-idealization.  This is used to make
-    # # an unconditional indep conditional in the ClassifierFreeGuidance sampler.
+    # used for replacing implicit sidechains and O / CB positions.
+    # indep_cond is the starting structure, with fake frame legs added and wonky O, CB,
+    # and sidechain positions resulting from frame-idealization.  This is used to make
+    # an unconditional indep conditional in the ClassifierFreeGuidance sampler.
     return indep_uncond, indep_orig, indep_cond, is_diffused
 
 class Sampler:
@@ -491,7 +484,7 @@ class NRBStyleSelfCond(Sampler):
 
         # return px0, x_t_1, seq_t_1, model_out['rfo'], {}
     
-        return px0, get_x_t_1(rigids_t, indep.xyz, self.is_diffused), get_seq_one_hot(indep.seq), model_out['rfo'], {}
+        return px0, get_x_t_1(rigids_t, indep.xyz, self.is_diffused), get_seq_one_hot(indep.seq), model_out['rfo'], {'traj':{}}
 
 def get_x_t_1(rigids_t, xyz, is_diffused):
     x_t_1 = all_atom.atom37_from_rigid(rigids_t)
@@ -588,9 +581,10 @@ class FlowMatching(Sampler):
         rigids_t = self.diffuser.apply_grads(rigids_t, trans_grad, rots_grad, trans_dt, rots_dt)
         x_t_1 = get_x_t_1(rigids_t, indep.xyz, self.is_diffused)
     
-        return px0, x_t_1, get_seq_one_hot(indep.seq), model_out['rfo'], {}
+        return px0, x_t_1, get_seq_one_hot(indep.seq), model_out['rfo'], {'traj':{}}
 
 def sampler_selector(conf: DictConfig):
+    ic(conf.inference.model_runner)
     if conf.inference.model_runner == 'default':
         sampler = Sampler(conf)
     elif conf.inference.model_runner == 'NRBStyleSelfCond':
@@ -692,8 +686,7 @@ class FlowMatching_make_conditional_diffuse_all_xt_unfrozen(FlowMatching):
     
         uncond_is_diffused = torch.ones_like(self.is_diffused).bool()
         x_t_1 = get_x_t_1(rigids_t, indep.xyz, uncond_is_diffused)
-        ic(x_t_1[0,:5,0])
-        return px0, x_t_1, get_seq_one_hot(indep.seq), model_out['rfo'], {}
+        return px0, x_t_1, get_seq_one_hot(indep.seq), model_out['rfo'], {'traj':{}}
 
 
 class ClassifierFreeGuidance(FlowMatching):
@@ -719,6 +712,13 @@ class ClassifierFreeGuidance(FlowMatching):
     
     def sample_step(self, t, indep, rfo, extra):
         extra_out = {}
+
+        if self._conf.inference.get('classifier_free_guidance_recenter_xt'):
+            if self._conf.inference.str_self_cond:
+                print('warning, self._conf.inference.str_self_cond is true, may need to change') 
+            indep_uncond_com = indep.xyz[:,1,:].mean(dim=0)
+            indep.xyz = indep.xyz - indep_uncond_com
+
         uncond_is_diffused = torch.ones_like(self.is_diffused).bool()
         indep_cond = aa_model.make_conditional_indep(indep, self.indep_cond, self.is_diffused)
         with torch.random.fork_rng():
@@ -728,8 +728,14 @@ class ClassifierFreeGuidance(FlowMatching):
         trans_grad, rots_grad, px0_uncond, model_out_uncond = self.get_grads(t, indep, indep, extra['rfo_uncond'], uncond_is_diffused)
         extra_out['rfo_uncond'] = model_out_uncond['rfo']
         w = self._conf.inference.classifier_free_guidance_scale
-        trans_grad = (1-w) * trans_grad + w * trans_grad_cond
-        rots_grad = (1-w) * rots_grad + w * rots_grad_cond
+        if self._conf.inference.get('classifier_free_guidance_ignore_rots'):
+            rots_grad = rots_grad_cond
+        else:
+            rots_grad = (1-w) * rots_grad + w * rots_grad_cond
+        if self._conf.inference.get('classifier_free_guidance_ignore_trans'):
+            trans_grad = trans_grad_cond
+        else:
+            trans_grad = (1-w) * trans_grad + w * trans_grad_cond
         trans_dt, rots_dt = self.diffuser.get_dt(t/self._conf.diffuser.T, 1/self._conf.diffuser.T)
         rigids_t = du.rigid_frames_from_atom_14(indep.xyz)
         rigids_t = self.diffuser.apply_grads(rigids_t, trans_grad, rots_grad, trans_dt, rots_dt)

@@ -200,7 +200,7 @@ def show(row, structs = {'X0'}, af2=False, des=True, des_color=None, hetatm_colo
     
     obj_selectors = {}
     for label in pymol_objects:
-        is_traj = label.split('_')[0] in structs
+        is_traj = label in structs
         if is_rf_diff(row):
             trb = analyze.get_trb(row)
             atom_names_by_res_idx = {resi: ['ALL'] for ch, resi in trb['con_hal_pdb_idx']}
@@ -208,6 +208,8 @@ def show(row, structs = {'X0'}, af2=False, des=True, des_color=None, hetatm_colo
             atom_names_by_res_idx = get_motif_spec(row, traj=is_traj)
         selectors = show_tip_row.get_selectors_2(atom_names_by_res_idx)
         obj_selectors[label] = selectors
+    # Uncomment to debug
+    # ic(obj_selectors)
 
     for i, (label, pymol_name) in enumerate(pymol_objects.items(), start=1):
         selectors = obj_selectors[label]
@@ -233,8 +235,9 @@ def show(row, structs = {'X0'}, af2=False, des=True, des_color=None, hetatm_colo
     for label, pymol_name in pymol_objects.items():
         entities[label] = PymolObj(pymol_name, obj_selectors[label])
     
-    for e in entities.values():
-        if row['inference.contig_as_guidepost']:
+    for k, e in entities.items():
+        is_traj = k in structs
+        if row['inference.contig_as_guidepost'] and is_traj:
             gp = OR([
                 e['residue_gp_motif'],
                 e['sidechains_diffused'],

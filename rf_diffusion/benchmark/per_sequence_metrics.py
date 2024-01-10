@@ -2,6 +2,7 @@
 
 import os
 import sys
+from collections import defaultdict
 
 from functools import partial
 import warnings
@@ -85,6 +86,18 @@ def catalytic_constraints(pdb):
     out = {f'catalytic_constraints.raw.{k}': v for k,v in out.items()}
     return out
 
+def make_ligand_pids_unique(point_ids):
+    new_pids = []
+    ligand_pid_counts = defaultdict(int)
+    for pid in point_ids:
+        new_pid = pid
+        if pid.startswith('L'):
+            new_pid = f'{pid}_{ligand_pid_counts[pid]}'
+            ligand_pid_counts[pid] += 1
+        new_pids.append(new_pid)
+    return new_pids
+
+
 def catalytic_constraints_inner(pdb, mpnn_packed: bool):
     out = {}
     row = analyze.make_row_from_traj(pdb[:-4])
@@ -115,22 +128,22 @@ def catalytic_constraints_inner(pdb, mpnn_packed: bool):
         is_atomized = ~indeps[name].is_sm
         indeps_a[name], atomizers[name] = atomize.atomize(indeps[name], is_atomized)
         point_ids[name] = aa_model.get_point_ids(indeps_a[name], atomizers[name])
+        point_ids[name] = make_ligand_pids_unique(point_ids[name])
     
-    # 1. All-atom RMSD of scaffolded region, diffusion backbone to input motif < 1.0 Å
-    # NOTE: Aligned on all heavy motif atoms, RMSD calculated on heavy motif atoms + ligand
-    contig_atoms = row['contigmap.contig_atoms']
     trb = analyze.get_trb(row)
-    if contig_atoms is None:
-        contig_atoms = {}
-        for ref_idx0, (ref_chain, ref_idx_pdb) in zip(trb['con_ref_idx0'], trb['con_ref_pdb_idx']):
-            aa = indeps['ref'].seq[ref_idx0]
-            heavy_atom_names = aa_model.get_atom_names(aa)
-            contig_atoms[f'{ref_chain}{ref_idx_pdb}'] = heavy_atom_names
-    else:
+    heavy_motif_atoms = {}
+    for ref_idx0, (ref_chain, ref_idx_pdb) in zip(trb['con_ref_idx0'], trb['con_ref_pdb_idx']):
+        aa = indeps['ref'].seq[ref_idx0]
+        heavy_atom_names = aa_model.get_atom_names(aa)
+        heavy_motif_atoms[f'{ref_chain}{ref_idx_pdb}'] = heavy_atom_names
+
+    contig_atoms = row['contigmap.contig_atoms']
+    if contig_atoms is not None:
         contig_atoms = eval(contig_atoms)
         contig_atoms = {k:v.split(',') for k,v in contig_atoms.items()}
+    else:
+        contig_atoms = heavy_motif_atoms
     
-
     def get_pids(name, *getters):
         pids = []
         for g in getters:
@@ -141,10 +154,6 @@ def catalytic_constraints_inner(pdb, mpnn_packed: bool):
         pids = get_pids(name, *getters)
         i_by_pid = {pid: i for i, pid in enumerate(point_ids[name])}
         i_by_pid_v = np.vectorize(i_by_pid.__getitem__, otypes=[int])
-        # # TODO: vectorize
-        # ii = []
-        # for _, p in pids:
-        #     ii[i]
         ii = i_by_pid_v(pids)
         return ii
     
@@ -155,10 +164,11 @@ def catalytic_constraints_inner(pdb, mpnn_packed: bool):
         ii = get_ii(name, *getters)
         return xyz_by_id(name, ii)
     
-    # TODO: check lengths equal
-    zip_safe = zip
+    def zip_safe(*args):
+        assert len(set(map(len, args))) == 1
+        return zip(*args)
 
-    def get_motif(_, ref: bool):
+    def get_motif(_, ref: bool, contig_atoms=contig_atoms):
         pids = []
         idx0 = trb[f'con_{"ref" if ref else "hal"}_idx0']
         for (chain, ref_pdb_i), hal_i in zip_safe(
@@ -176,17 +186,14 @@ def catalytic_constraints_inner(pdb, mpnn_packed: bool):
     def get_ligand(pids):
         return [pid for pid in pids if pid.startswith('L')]
     
-    # motif_and_ligand_des_ids = ids(get_des_motif, get_ligand)
-    # motif_and_ligand_des = xyz('des', motif_and_ligand_atom_ids)
+    # 1. All-atom RMSD of scaffolded region, diffusion backbone to input motif < 1.0 Å
+    # NOTE: Aligned on all heavy motif atoms, RMSD calculated on heavy motif atoms + ligand
     motif_des = xyz('des', get_des_motif)
     motif_ref = xyz('ref', get_ref_motif)
     T_motif_des_to_ref = get_aligner(motif_des, motif_ref)
     motif_and_ligand_des = xyz('des', get_des_motif, get_ligand)
     motif_and_ligand_ref = xyz('ref', get_ref_motif, get_ligand)
     ref_aligned_motif_and_ligand_des = T_motif_des_to_ref(motif_and_ligand_des)
-    ic(
-        motif_and_ligand_des
-    )
     out['des_ref_motif_aligned_motif_ligand_rmsd'] = rmsd(ref_aligned_motif_and_ligand_des, motif_and_ligand_ref).item()
     out['criterion_1_metric'] = out['des_ref_motif_aligned_motif_ligand_rmsd']
     out['criterion_1_cutoff'] = 1.
@@ -249,6 +256,15 @@ def catalytic_constraints_inner(pdb, mpnn_packed: bool):
     out['criterion_6_metric'] = np.mean(af2_metrics['plddt'])
     out['criterion_6_cutoff'] = 0.7
     out['criterion_6'] = np.mean(af2_metrics['plddt']) > 0.7
+
+    # Extras
+    # get_ref_motif_all_heavy = partial(get_motif, ref=True, contig_atoms=heavy_motif_atoms)
+    get_des_motif_all_heavy = partial(get_motif, ref=False, contig_atoms=heavy_motif_atoms)
+    motif_des_all_heavy = xyz('des', get_des_motif_all_heavy)
+    motif_af2_all_heavy = xyz('af2', get_des_motif_all_heavy)
+    T = get_aligner(motif_des_all_heavy, motif_af2_all_heavy)
+    af2_aligned_motif_des_all_heavy = T(motif_des_all_heavy)
+    out['af2_des_motif_aligned_motif_rmsd_all_heavy'] = rmsd(af2_aligned_motif_des_all_heavy, motif_af2_all_heavy).item()
 
     # # Testing
     # motif_des = xyz('des', get_des_motif)

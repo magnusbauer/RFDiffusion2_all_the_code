@@ -98,6 +98,7 @@ def read_metrics(df_path, add_contig_rmsd=True):
     if 'diffuser.type' not in df:
         df['diffuser.type'] = 'diffuser_unknown'
     df['diffuser.type'] = df['diffuser.type'].fillna('diffusion')
+    df['mpnn_index'] = df['mpnn_index'].astype(int)
 
     #get_epoch  = lambda x: re.match('.*_(\w+).*', x).groups()[0]
 
@@ -1627,3 +1628,6 @@ def center_object(obj):
     com = cmd.centerofmass(obj)
     dx = [-e for e in com]
     cmd.translate(dx, obj, -1, 0)
+
+def get_trb_path(row):
+    return os.path.join(row['rundir'], f'{row["name"]}.trb')

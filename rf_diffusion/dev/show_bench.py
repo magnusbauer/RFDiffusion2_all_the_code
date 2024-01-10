@@ -315,7 +315,8 @@ def main(path,
          structs=['X0'],
          pymol_keys=None,
          pymol_url='http://localhost:9123',
-         max_seed = 999999,
+         max_seed = None,
+         only_seed=None,
          pair_seeds=False,
          des=False,
          af2=False,
@@ -327,6 +328,7 @@ def main(path,
          key=None,
          show_origin=False,
          hide_oxygen=False,
+         filt=None,
          ):
     ic(pymol_url)
     pymol.init(pymol_url)
@@ -350,7 +352,15 @@ def main(path,
     #     add_pymol_name(data, pymol_keys)
     # ic(data)
     ic(data.shape)
-    # data = data[data['seed'] < max_seed]
+    if only_seed is not None:
+        data = data[data['seed'] == only_seed]
+    elif max_seed is not None:
+        data = data[data['seed'] <= max_seed]
+    if filt:
+        k, v = filt.split('=')
+        ic(k,v)
+        ic(data.value_counts(k))
+        data = data[data[k].astype(str) == v]
 
     sweeps = get_sweeps(data)
     if len(sweeps):

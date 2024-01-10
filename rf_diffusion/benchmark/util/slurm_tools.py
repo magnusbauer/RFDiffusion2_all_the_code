@@ -1,3 +1,4 @@
+from icecream import ic
 import subprocess, re, os, time
 
 def slurm_submit(cmd, p='cpu', c=1, mem=2, gres=None, J=None, wait_for=[], hold_until_finished=False, log=False, **kwargs):
@@ -22,8 +23,16 @@ def slurm_submit(cmd, p='cpu', c=1, mem=2, gres=None, J=None, wait_for=[], hold_
 
     return slurm_job, proc
 
+def line_count(path):
+    with open(path) as fh:
+        return len(fh.readlines())
+
 def array_submit(job_list_file, p='gpu', gres='gpu:rtx2080:1', wait_for=None, log=False, in_proc=False, **kwargs):
     print(f'array_submit: in_proc: {in_proc}')
+    job_count = line_count(job_list_file)
+    ic(job_count)
+    if job_count == 0:
+        return -1, None
 
     if in_proc:
         with open(job_list_file) as f:

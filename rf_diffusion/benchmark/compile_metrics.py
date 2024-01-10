@@ -25,7 +25,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('datadir',type=str,help='Folder of designs')
     parser.add_argument('--outcsv',type=str,default='compiled_metrics.csv',help='Output filename')
-    parser.add_argument('--cached_trb_df',type=bool,default=False,help='Output filename')
+    parser.add_argument('--cached_trb_df',type=bool,default=True,help='Output filename')
     args = parser.parse_args()
 
     print('finding trbs')
@@ -34,10 +34,14 @@ def main():
 
     print('loading run metadata (base metrics)')
     df_trb_path = os.path.join(args.datadir, 'trb_compiled_metrics.csv')
+    cache_hit = False
     if os.path.exists(df_trb_path) and args.cached_trb_df:
         print('loading run metadata (base metrics) from cached csv')
         df_base = pd.read_csv(df_trb_path)
-    else:
+        if len(df_base) == len(filenames):
+            cache_hit = True
+    
+    if not cache_hit:
         print('loading run metadata (base metrics) from individual trbs, if re-compiling consider passing --cached_trb_df=1 to use the cacheed trb compilation df')
         records = []
         for fn in tqdm(filenames):
@@ -72,7 +76,7 @@ def main():
     # load computed metrics, if they exist
     print('loading computed metrics')
     # accumulate metrics for: no mpnn, mpnn, ligand mpnn
-    df_all_list = []
+    df_all_list = [pd.DataFrame(dict(name=[]))]
 
     # metrics of "no mpnn" designs
     df_nompnn = df_base.copy()
@@ -167,6 +171,8 @@ def main():
 
     # concatenate all designs into one list
     df = pd.concat(df_all_list)
+    if len(df) == 0:
+        df = df_base
 
     # add seq/struc clusters (assumed to be the same for mpnn designs as non-mpnn)
     backbone_metric_dirs = [os.path.join(d, 'csv.*') for d in glob.glob(args.datadir+'/metrics/per_design/*/')]

@@ -87,7 +87,7 @@ def main(conf: HydraConfig) -> list[int]:
                 if conf.slurm.J is not None:
                     job_name = conf.slurm.J 
                 else:
-                    job_name = f'{cohort}_metrics_'+os.path.basename(conf.datadir.strip('/'))
+                    job_name = f'{cohort}_metrics_{metric}_'+os.path.basename(conf.datadir.strip('/'))
                 af2_job, proc = slurm_tools.array_submit(job_fn, p = conf.slurm.p, gres=None if conf.slurm.p=='cpu' else conf.slurm.gres, log=conf.slurm.keep_logs, J=job_name, in_proc=conf.slurm.in_proc)
                 if af2_job > 0:
                     job_ids.append(af2_job)
