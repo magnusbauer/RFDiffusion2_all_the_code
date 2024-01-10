@@ -1,6 +1,6 @@
 # Setup
 ```
-git clone git@github.com:baker-laboratory/rf_diffusion.git PKG_DIR
+git clone -b aa git@github.com:baker-laboratory/rf_diffusion.git PKG_DIR
 cd rf_diffusion
 git submodule init
 git submodule update --init
