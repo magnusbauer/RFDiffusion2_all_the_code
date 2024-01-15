@@ -138,7 +138,7 @@ class TestContigs(unittest.TestCase):
                                     has_termini=[True, True, False])
 
         # Extract the required chain termini from the chains attribute
-        extracted_chain_termini = [(chain[1], chain[2]) for chain in contig_map.chains]
+        extracted_chain_termini = [(chain[0], chain[1]) for chain in aa_model.chain_start_end_from_hal(contig_map.hal)]
 
         # We expect the following termini in the format (N-terminus, C-terminus)
         expected_termini = [(0, 6), (6, 9), (9, 12)]
@@ -160,7 +160,7 @@ class TestContigs(unittest.TestCase):
                                     has_termini=[True, True, False])
 
         # Extract the required chain termini from the chains attribute
-        extracted_chain_termini = [(chain[1], chain[2]) for chain in contig_map.chains]
+        extracted_chain_termini = [(chain[0], chain[1]) for chain in aa_model.chain_start_end_from_hal(contig_map.hal)]
 
         # We expect the following termini in the format (N-terminus, C-terminus)
         expected_termini = [(0, 3), (3, 6), (6, 12)]

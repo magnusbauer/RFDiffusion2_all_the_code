@@ -79,6 +79,27 @@ def same_chain_with_covale(same_chain, covale_bonds):
     same_chain = same_chain_from_chain_letters(chains_after_covale)
     return same_chain
 
+def chain_start_end_from_hal(hal):
+    chains = []
+
+    chain_letters, resi_idxs = zip(*hal)
+
+    previous_chain_letter = chain_letters[0]
+    chain_start = 0
+    total_element_count = 0
+
+    for current_chain_letter in chain_letters:
+        total_element_count += 1
+
+        if current_chain_letter != previous_chain_letter:
+            chains.append((chain_start, total_element_count - 1))
+            previous_chain_letter = current_chain_letter
+            chain_start = total_element_count - 1
+        
+    chains.append((chain_start, total_element_count))
+
+    return chains
+
 @dataclass
 class Indep:
     seq: torch.Tensor # [L]
@@ -761,6 +782,8 @@ class Model:
             new_idx_arr[new_chain_arr == ch] = new_idx_ch
             max_hal_idx = np.max(new_idx_ch)
         
+        chain_start_end = chain_start_end_from_hal(contig_map.hal)
+
         contig_map.hal.extend(zip(new_chain_arr, new_idx_arr))
         chain_id = np.array([c for c, _ in contig_map.hal])
         L_mapped = len(contig_map.hal)
@@ -795,7 +818,7 @@ class Model:
 
         assert len(self.conf.contigmap.has_termini) == contig_map.n_inpaint_chains, "Please specify in contigmap.has_termini for which chains you want to have the termini present."
 
-        for use_termini, (chain_number, chain_start, chain_end, chain_idx) in zip(self.conf.contigmap.has_termini,contig_map.chains):
+        for use_termini, (chain_start, chain_end) in zip(self.conf.contigmap.has_termini,chain_start_end):
             
             if not chain_end>=L_mapped:
                 o.bond_feats[chain_end][chain_end - 1] = 0
