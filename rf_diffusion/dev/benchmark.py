@@ -229,7 +229,7 @@ def get_training_metrics_multi(runid_by_name, n=9999):
     return pd.concat(tmp)
 
 def sorted_value_counts(df, cols):
-    return pd.DataFrame(df.value_counts(cols)).sort_values(cols)
+    return pd.DataFrame(df.value_counts(cols, dropna=False)).sort_values(cols)
 
 def get_inference_metrics_sweep(hp_sweep_run:str, regenerate_cache=False):
     metrics_path = os.path.join(hp_sweep_run, 'metrics_1.csv')
@@ -288,9 +288,9 @@ def strip_group_timestamp(df):
         return group.split('202')[0]
     df['group'] = df['group'].map(f)
 
-def plot_self_consistency_ecdf(ax, df):
+def plot_self_consistency_ecdf(ax, df, **kwargs):
 
-    ax = sns.ecdfplot(ax=ax, data=df, x="rmsd_af2_des", hue='method')
+    ax = sns.ecdfplot(ax=ax, data=df, x="rmsd_af2_des", hue='method', **kwargs)
     xmin = 0
     xmax = 20
     ax.set(xlim=(xmin,xmax))
@@ -308,7 +308,7 @@ def plot_self_consistency_ecdf(ax, df):
     ax.axvline(x=2, color='grey', linestyle='-')
 
 
-def plot_self_consistency_ecdf_benchmark(bench):
+def plot_self_consistency_ecdf_benchmark(bench, **kwargs):
     benchmarks = bench['benchmark'].unique()
 
     print(f'{benchmarks=}')
@@ -320,7 +320,7 @@ def plot_self_consistency_ecdf_benchmark(bench):
     print(f'{axes}')
     for ax, benchmark in zip(axes[0,:], benchmarks):
         df_bench = bench[bench['benchmark'] == benchmark]
-        plot_self_consistency_ecdf(ax, df_bench)
+        plot_self_consistency_ecdf(ax, df_bench, **kwargs)
 
 def show_percents(g):
     # iterate through axes
@@ -612,7 +612,7 @@ def add_cc_columns(df):
         )
 
 
-def best_in_group(df, group_by=['name'], cols=['catalytic_constraints.raw.criterion_1'], ascending=[False], unique_column='seq_id'):
+def best_in_group(df, group_by=['design_id'], cols=['catalytic_constraints.raw.criterion_1'], ascending=[False], unique_column='seq_id'):
     df_small  = df[group_by + cols + [unique_column]]
     grouped = df_small.groupby(group_by).apply(lambda grp: grp.sort_values(cols, ascending=ascending).head(1))
     return pd.merge(df, grouped[unique_column], on=unique_column, how='inner')

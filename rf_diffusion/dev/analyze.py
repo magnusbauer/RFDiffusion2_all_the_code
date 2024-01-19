@@ -1590,7 +1590,11 @@ def parse_rfd_aa_df(df, drop_missing_af2=True):
     # assertpy.assert_that(df['name'].nunique() * 8).is_equal_to(df.shape[0])
     return df
 
-
+def drop_designs_missing_any_af2(df, expected_af2=8):
+    df['has_af2'] = ~df['rmsd_af2_des'].isna()
+    designs = df.groupby('design_id').agg({'has_af2': 'sum'})
+    designs_with_expected_af2 = designs[designs['has_af2'] == expected_af2]
+    return df[df['design_id'].isin(designs_with_expected_af2.index)]
 
 def get_min_max(df, col):
     # Find the row with the minimum value in 'col'
