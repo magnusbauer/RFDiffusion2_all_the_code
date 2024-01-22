@@ -109,11 +109,31 @@ class Indep:
     # SM specific
     bond_feats: torch.Tensor
     chirals: torch.Tensor
-    atom_frames: torch.Tensor
     same_chain: torch.Tensor
-    is_sm: torch.Tensor
     terminus_type: torch.Tensor
     extra_t1d: torch.Tensor = dataclasses.field(default_factory=lambda: None)
+
+    @property
+    def is_sm(self) -> torch.Tensor:
+        return rf2aa.util.is_atom(self.seq)
+
+    @property
+    def atom_frames(self) -> torch.Tensor:
+        is_sm = rf2aa.util.is_atom(self.seq)
+
+        # Make a graph of the small molecule elements
+        is_covalently_bonded = (self.bond_feats >= 1) & (self.bond_feats <= 4)
+        is_covalently_bonded = is_covalently_bonded[is_sm][:, is_sm]
+        G = nx.from_numpy_matrix(is_covalently_bonded.numpy())
+
+        # Get the implied atom_frames
+        atom_frames = rf2aa.util.get_atom_frames(self.seq[is_sm], G)
+
+        # If atom_frames is empty, make it the "right" size
+        if atom_frames.numel() == 0:
+            atom_frames = torch.empty((0, 3, 2), dtype=torch.int64)
+
+        return atom_frames
 
     def chains(self):
         return chain_letters_from_same_chain(self.same_chain)
@@ -683,9 +703,7 @@ def make_indep(pdb, ligand='', center=True, return_metadata=False):
         # SM specific
         bond_feats,
         chirals,
-        atom_frames,
         same_chain,
-        is_sm,
         terminus_type)
     if return_metadata:
         ligand_name_arr = []
@@ -795,8 +813,6 @@ class Model:
         o.xyz[contig_map.hal_idx0] = indep.xyz[contig_map.ref_idx0]
         o.seq = torch.full((L_mapped,), MASKINDEX)
         o.seq[contig_map.hal_idx0] = indep.seq[contig_map.ref_idx0]
-        o.is_sm = torch.full((L_mapped,), 0).bool()
-        o.is_sm[contig_map.hal_idx0] = indep.is_sm[contig_map.ref_idx0]
         o.same_chain = torch.tensor(chain_id[None, :] == chain_id[:, None])
         if not for_partial_diffusion:
             o.xyz = get_init_xyz(o.xyz[None, None], o.is_sm).squeeze()
@@ -1248,9 +1264,7 @@ def adaptor_fix_bb_indep(out):
         # SM specific
         bond_feats,
         chirals,
-        atom_frames,
         same_chain.bool(),
-        rf2aa.tensor_util.assert_squeeze(is_sm),
         terminus_type)
     return indep, atom_mask
 
@@ -1430,8 +1444,6 @@ def pop_mask(indep, pop, break_chirals=False):
 
     pop_sm = pop[indep.is_sm]
     # ASSERT REFERENCES CHECK OUT
-    indep.atom_frames = indep.atom_frames[pop_sm]
-
 
     N     = pop.sum()
     pop2d = pop[None,:] * pop[:,None]
@@ -1441,7 +1453,6 @@ def pop_mask(indep, pop, break_chirals=False):
     indep.idx           = indep.idx[pop]
     indep.bond_feats    = indep.bond_feats[pop2d].reshape(N,N)
     indep.same_chain    = indep.same_chain[pop2d].reshape(N,N)
-    indep.is_sm         = indep.is_sm[pop]
     indep.terminus_type = indep.terminus_type[pop]
 
     pop_i = pop.nonzero()
@@ -1469,13 +1480,12 @@ def slice_indep(indep, pop):
     return indep, cross_bonds
  
 def cat_indeps(indeps, same_chain):
-    indep = Indep(None, None, None, None, None, None, None, None, None)
+    indep = Indep(None, None, None, None, None, None, None, None)
     indep.seq = torch.cat([i.seq for i in indeps])
     indep.xyz = torch.cat([i.xyz for i in indeps])
     indep.idx = torch.cat([i.idx for i in indeps])
     indep.bond_feats = torch.block_diag(*(i.bond_feats for i in indeps))
     indep.same_chain = same_chain
-    indep.is_sm = torch.cat([i.is_sm for i in indeps])
     indep.terminus_type = torch.cat([i.terminus_type for i in indeps])
     L = 0
     all_chirals = []
@@ -1485,7 +1495,6 @@ def cat_indeps(indeps, same_chain):
         all_chirals.append(chirals.clone())
         L += i.length()
     indep.chirals = torch.cat(all_chirals)
-    indep.atom_frames = torch.cat([i.atom_frames for i in indeps])
     return indep
 
 def cat_indeps_same_chain(indeps):
@@ -1523,19 +1532,6 @@ def rearrange_indep(indep, from_i):
     relative_from_absolute_new = torch.zeros(indep.length()).type(torch.LongTensor)
     a[:] = 9999
     relative_from_absolute_new[is_sm_new] = torch.arange(n_sm)
-
-
-    atom_frames_relative_i = indep.atom_frames[:, :, 0]
-    atom_frames_sm_absolute = atom_frames_relative_i + torch.arange(n_sm)[:, None]
-    absolute_from_sm = indep.is_sm.nonzero()[:, 0]
-    atom_frames_absolute = atom_frames_sm_absolute.apply_(lambda i: absolute_from_sm[i])
-    atom_frames_absolute = atom_frames_absolute[from_i_sm_relative]
-    atom_frames_absolute_i_new = atom_frames_absolute.apply_(lambda i: to_i[i])
-    atom_frames_sm_absolute = atom_frames_absolute_i_new.apply_(lambda i: relative_from_absolute_new[i])
-    atom_frames_relative_i_new = atom_frames_sm_absolute - torch.arange(n_sm)[:, None]
-
-    indep.atom_frames[:,:,0] = atom_frames_relative_i_new
-    indep.is_sm = is_sm_new
 
 def motif_c_alpha_com(xyz, is_diffused):
     if torch.sum(~is_diffused) == 0:
@@ -1689,7 +1685,7 @@ class AtomizeResidues:
         that only the tip atoms of the context residues are context and the rest is diffused
         """
         is_motif = self.input_str_mask
-        seq_atomize_all,  xyz_atomize_all, frames_atomize_all, chirals_atomize_all, res_idx_atomize_all = \
+        seq_atomize_all,  xyz_atomize_all, chirals_atomize_all, res_idx_atomize_all = \
             self.generate_atomize_protein_features(is_motif, atom_mask)
         if not res_idx_atomize_all: # no residues atomized, just return the inputs
             return
@@ -1697,7 +1693,6 @@ class AtomizeResidues:
         # update msa feats, xyz, mask, frames and chirals
         total_L = self.update_rf_features_w_atomized_features(seq_atomize_all, \
                                                             xyz_atomize_all, \
-                                                            frames_atomize_all, 
                                                             chirals_atomize_all
                                                             ) 
 
@@ -1724,7 +1719,6 @@ class AtomizeResidues:
         # iterate through residue indices in the structure to atomize
         seq_atomize_all = []
         xyz_atomize_all = []
-        frames_atomize_all = [self.indep.atom_frames]
         chirals_atomize_all = [self.indep.chirals]
         res_idx_atomize_all = [] # indices of residues that end up getting atomized (0-indexed, contiguous)
         res_atomize_all = [] # residues (integer-coded) that end up getting atomized 
@@ -1753,7 +1747,6 @@ class AtomizeResidues:
 
             seq_atomize_all.append(seq_atomize)
             xyz_atomize_all.append(xyz_atomize)
-            frames_atomize_all.append(frames_atomize)
             chirals_atomize_all.append(chirals_atomize)
             res_idx_atomize_all.append(res_idx)
             res_atomize_all.append(residue)
@@ -1795,12 +1788,11 @@ class AtomizeResidues:
         self.atomized_res_idx = res_idx_atomize_all
         self.atomized_idx = idx_atomize_all
 
-        return seq_atomize_all, xyz_atomize_all, frames_atomize_all, chirals_atomize_all, res_idx_atomize_all
+        return seq_atomize_all, xyz_atomize_all, chirals_atomize_all, res_idx_atomize_all
 
     def update_rf_features_w_atomized_features(self, \
                                         seq_atomize_all, \
                                         xyz_atomize_all, \
-                                        frames_atomize_all, \
                                         chirals_atomize_all, 
                                         ):
         """
@@ -1830,7 +1822,6 @@ class AtomizeResidues:
         self.indep.idx = torch.cat((self.indep.idx, idx_atomize))
         
         # handle sm specific features- atom_frames, chirals
-        self.indep.atom_frames = torch.cat(frames_atomize_all)
         self.indep.chirals = torch.cat(chirals_atomize_all)
         self.indep.terminus_type = torch.cat((self.indep.terminus_type, torch.zeros(atomize_L).long()))
         return total_L
@@ -2159,8 +2150,6 @@ def transform_indep(indep, is_res_str_shown, is_atom_str_shown, use_guideposts, 
     with open_indep(indep, is_covale) as covale:
         # Get obmol of combined atomized residues and covalent sm
         obmol, _ = get_obmol(covale.xyz[:,1], covale.seq, covale.bond_feats)
-        G = rf2aa.util.get_nxgraph(obmol)
-        covale.atom_frames = rf2aa.util.get_atom_frames(covale.seq, G)
         covale.chirals = rf2aa.kinematics.get_chirals(obmol, covale.xyz[:, 1])
     assertpy.assert_that(len(is_diffused)).is_equal_to(indep.length())
     return indep, is_diffused, is_masked_seq, atomizer, gp_to_ptn_idx0

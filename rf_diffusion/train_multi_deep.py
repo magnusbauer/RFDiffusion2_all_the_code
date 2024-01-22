@@ -955,7 +955,6 @@ class Trainer():
 
                         is_diffused = is_diffused.to(gpu)
                         indep.seq = indep.seq.to(gpu)
-                        indep.is_sm = indep.is_sm.to(gpu)
                         indep.xyz = indep.xyz.to(gpu)
                         indep.same_chain = indep.same_chain.to(gpu)
                         indep.idx = indep.idx.to(gpu)

@@ -28,8 +28,6 @@ def atomize(indep, is_residue_atomized, atomize_H=False):
     atom_mask[:, rf2aa.chemical.NHEAVYPROT:] = False # no Hs
     atomizer.featurize_atomized_residues(atom_mask)
     indep_atomized, input_str_mask, input_seq_mask = atomizer.return_input_tensors()
-    # is_sm = atomized_indices_res(atomizer, is_residue_atomized)
-    indep_atomized.is_sm = rf2aa.util.is_atom(indep_atomized.seq)
     atomizer.atomized_length = indep_atomized.length()
     return indep_atomized, atomizer
 

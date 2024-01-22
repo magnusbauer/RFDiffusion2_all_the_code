@@ -11,16 +11,15 @@ import numpy as np
 from icecream import ic
 
 import rf2aa
-import aa_model
-from aa_model import AtomizeResidues, Indep, Model, make_indep
-import atomize
-import test_utils
-from aa_model import Model, make_indep
+from rf_diffusion import aa_model
+from rf_diffusion.aa_model import Model, make_indep
+from rf_diffusion import atomize
+from rf_diffusion import test_utils
 import inference.utils
-import contigs
+from rf_diffusion import contigs
 import pytest
 from rf2aa import tensor_util
-import run_inference
+from rf_diffusion import run_inference
 ic.configureOutput(includeContext=True)
 
 class TestRearrange(unittest.TestCase):

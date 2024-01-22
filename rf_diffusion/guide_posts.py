@@ -99,7 +99,6 @@ def copy_and_append_indep_features(mask: torch.tensor,
     indep.bond_feats = append_indices(indep.bond_feats, ptn_idx0, dim=1)
     indep.same_chain = append_indices(indep.same_chain, ptn_idx0, dim=0)
     indep.same_chain = append_indices(indep.same_chain, ptn_idx0, dim=1)
-    indep.is_sm = append_indices(indep.is_sm, ptn_idx0, to_fill_value=False)
     indep.terminus_type = append_indices(indep.terminus_type, ptn_idx0, to_fill_value=0)
 
     return indep, new_to_ptn_idx0
