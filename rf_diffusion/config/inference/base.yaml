@@ -58,6 +58,7 @@ inference:
   flexible_ligand: False
   center_motif: True
   classifier_free_guidance_scale: 1
+  idealize_sidechain_outputs: False
 
 contigmap:
   contigs: ['20', 'A3-23', '30']

@@ -44,6 +44,7 @@ from rf_diffusion import guide_posts as gp
 import copy
 from rf_diffusion import atomize
 from rf_diffusion.dev import idealize_backbone
+from rf_diffusion.idealize import idealize_pose
 from tqdm import trange
 ic.configureOutput(includeContext=True)
 
@@ -257,8 +258,16 @@ def sample_one(sampler, simple_logging=False):
             idx=indep.idx[is_protein]
         )
 
+    is_diffused = sampler.is_diffused.clone()
+
     # deatomize features, if applicable
-    if (sampler.model_adaptor.atomizer is not None):
+    atomizer = sampler.model_adaptor.atomizer
+    if atomizer is not None:
+        indep_atomized = indep.clone()
+
+        # deatomize `is_diffused`
+        is_diffused = atomize.deatomize_mask(atomizer, indep_atomized, is_diffused)
+
         init_seq_stack = copy.deepcopy(seq_stack)
         indep, px0_xyz_stack, denoised_xyz_stack, seq_stack = \
             deatomize_sampler_outputs(sampler, indep, px0_xyz_stack, denoised_xyz_stack, seq_stack)
@@ -267,13 +276,13 @@ def sample_one(sampler, simple_logging=False):
             xyz_stack_new = []
             for i in range(len(v)):
                 xyz_i = aa_model.pad_dim(v[i], 1, rf2aa.chemical.NTOTAL, torch.nan)
-
-                seq_, xyz_, idx_, bond_feats_, same_chain_ = \
-                    sampler.model_adaptor.atomizer.get_deatomized_features(init_seq_stack[i], xyz_i)
-                xyz_stack_new.append(xyz_)
+                indep_atomized.seq = init_seq_stack[i].argmax(-1)
+                indep_atomized.xyz = xyz_i
+                indep_deatomized = atomizer.deatomize(indep_atomized)
+                xyz_stack_new.append(indep_deatomized.xyz)
             traj_stack[k] = torch.stack(xyz_stack_new)
 
-    return indep, denoised_xyz_stack, px0_xyz_stack, seq_stack, raw, traj_stack
+    return indep, denoised_xyz_stack, px0_xyz_stack, seq_stack, is_diffused, raw, traj_stack
 
 def add_implicit_side_chain_atoms(seq, act_on_residue, xyz, xyz_with_sc):
     '''
@@ -310,35 +319,35 @@ def deatomize_sampler_outputs(sampler, indep, px0_xyz_stack, denoised_xyz_stack,
     de-atomized versions, but other features will remain unchanged (and
     therefore become inconsistent).
     """
-    indep.xyz = aa_model.pad_dim(indep.xyz, 1, rf2aa.chemical.NTOTAL, torch.nan)
-    indep = atomize.deatomize(sampler.model_adaptor.atomizer, indep)
-    indep.seq = torch.where(~indep.is_sm * indep.seq >= rf2aa.chemical.UNKINDEX, 0, indep.seq)
+    atomizer = sampler.model_adaptor.atomizer
     px0_xyz_stack_new = []
     denoised_xyz_stack_new = []
     seq_stack_new = []
     for i in range(len(px0_xyz_stack)):
         px0_xyz = aa_model.pad_dim(px0_xyz_stack[i], 1, rf2aa.chemical.NTOTAL, torch.nan)
         denoised_xyz = aa_model.pad_dim(denoised_xyz_stack[i], 1, rf2aa.chemical.NTOTAL, torch.nan)
+        indep.seq = seq_stack[i].argmax(-1)
 
-        seq_, xyz_, idx_, bond_feats_, same_chain_ = \
-            sampler.model_adaptor.atomizer.get_deatomized_features(seq_stack[i], px0_xyz)
-        px0_xyz_stack_new.append(xyz_)
+        indep.xyz = px0_xyz
+        indep_deatomized = atomizer.deatomize(indep)
+        px0_xyz_stack_new.append(indep_deatomized.xyz)
 
-        seq_, xyz_, idx_, bond_feats_, same_chain_ = \
-            sampler.model_adaptor.atomizer.get_deatomized_features(seq_stack[i], denoised_xyz)
-        denoised_xyz_stack_new.append(xyz_)
-        seq_cat = torch.argmax(seq_, dim=-1)
+        indep.xyz = denoised_xyz
+        indep_deatomized = atomizer.deatomize(indep)
+        denoised_xyz_stack_new.append(indep_deatomized.xyz)
+
+        seq_ = torch.nn.functional.one_hot(indep_deatomized.seq, rf2aa.chemical.NAATOKENS)
         alanine_one_hot = torch.nn.functional.one_hot(torch.tensor([0]), rf2aa.chemical.NAATOKENS)
-        cond=~indep.is_sm[...,None] * (seq_ >= rf2aa.chemical.UNKINDEX)
+        cond = ~indep_deatomized.is_sm[...,None] * (seq_ >= rf2aa.chemical.UNKINDEX)
         seq_ = torch.where(cond, alanine_one_hot, seq_)
         seq_stack_new.append(seq_)
     denoised_xyz_stack_new = torch.stack(denoised_xyz_stack_new)
     px0_xyz_stack_new = torch.stack(px0_xyz_stack_new)
 
-    return indep, px0_xyz_stack_new, denoised_xyz_stack_new, seq_stack_new
+    return indep_deatomized, px0_xyz_stack_new, denoised_xyz_stack_new, seq_stack_new
 
 
-def save_outputs(sampler, out_prefix, indep, denoised_xyz_stack, px0_xyz_stack, seq_stack, raw, traj_stack):
+def save_outputs(sampler, out_prefix, indep, denoised_xyz_stack, px0_xyz_stack, seq_stack, is_diffused, raw, traj_stack):
     log = logging.getLogger(__name__)
 
     final_seq = seq_stack[-1]
@@ -370,6 +379,9 @@ def save_outputs(sampler, out_prefix, indep, denoised_xyz_stack, px0_xyz_stack, 
         match_idx_by_gp_idx = {}
         for k, v in gp_alone_to_diffused_idx0.items():
             match_idx_by_gp_idx[idx_by_gp_sequential_idx[k]] = v
+        gp_idx, match_idx = zip(*match_idx_by_gp_idx.items())
+        gp_idx = np.array(gp_idx)
+        match_idx = np.array(match_idx)
 
         gp_contig_mappings = gp.get_infered_mappings(
             gp_to_contig_idx0,
@@ -378,16 +390,16 @@ def save_outputs(sampler, out_prefix, indep, denoised_xyz_stack, px0_xyz_stack, 
         )
 
         if sampler._conf.inference.guidepost_xyz_as_design and len(match_idx_by_gp_idx):
-            gp_idx, match_idx = zip(*match_idx_by_gp_idx.items())
-            gp_idx = np.array(gp_idx)
-            match_idx = np.array(match_idx)
             seq_design[match_idx] = seq_design[gp_idx]
             if sampler._conf.inference.guidepost_xyz_as_design_bb:
                 xyz_design[match_idx] = xyz_design[gp_idx]
             else:
                 xyz_design[match_idx, 4:] = xyz_design[gp_idx, 4:]
+                
         xyz_design = xyz_design[~is_gp]
         seq_design = seq_design[~is_gp]
+        is_diffused[match_idx] = is_diffused[gp_idx]
+        is_diffused = is_diffused[~is_gp]
 
     # Save outputs
     out_head, out_tail = os.path.split(out_prefix)
@@ -401,8 +413,21 @@ def save_outputs(sampler, out_prefix, indep, denoised_xyz_stack, px0_xyz_stack, 
     # pX0 last step
     out_unidealized = os.path.join(unidealized_dir, f'{out_tail}.pdb')
     aa_model.write_traj(out_unidealized, xyz_design[None,...], seq_design, indep.bond_feats, ligand_name_arr=sampler.contig_map.ligand_names, chain_Ls=chain_Ls, idx_pdb=indep.idx)
+
+    # Save idealized pX0 last step
+    log.info('Idealizing sidechains for pX0 of the last step...')
     out_idealized = f'{out_prefix}.pdb'
-    idealize_backbone.rewrite(out_unidealized, out_idealized)
+    xyz_design_idealized = xyz_design.clone()[None]
+
+    if sampler._conf.inference.idealize_sidechain_outputs:
+        # Only idealize residues that diffused (ie - were not a backbone motif)
+        xyz_design_idealized[0, is_diffused] = idealize_pose(
+            xyz_design[None, is_diffused],
+            seq_design[None, is_diffused]
+        )[0]
+
+    aa_model.write_traj(out_idealized, xyz_design_idealized, seq_design, indep.bond_feats, ligand_name_arr=sampler.contig_map.ligand_names, chain_Ls=chain_Ls, idx_pdb=indep.idx)
+    idealize_backbone.rewrite(out_idealized, out_idealized)
     des_path = os.path.abspath(out_idealized)
 
     # trajectory pdbs

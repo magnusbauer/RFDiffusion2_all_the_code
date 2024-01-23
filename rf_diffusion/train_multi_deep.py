@@ -1058,7 +1058,8 @@ class Trainer():
                     t=little_t/self.diffuser.T,
                     is_diffused=is_diffused.cpu(),
                     point_types=aa_model.get_point_types(indep, atomizer),
-                    pred_crds_stack=pred_crds[:, 0].cpu()
+                    pred_crds_stack=pred_crds[:, 0].cpu(),
+                    atomizer_spec=None if atomizer is None else aa_model.AtomizerSpec(atomizer.deatomized_state, atomizer.residue_to_atomize),
                 )
                 pdb_dir = os.path.join(self.outdir, 'training_pdbs')
                 n_processed = self.conf.batch_size*world_size * counter
@@ -1156,7 +1157,7 @@ class Trainer():
                         indep_write.xyz[:,:14] = xyz[:,:14]
                         pymol_names = indep_write.write_pdb(f'{output_pdb_prefix}_{suffix}.pdb')
                         if atomizer:
-                            indep_write = atomize.deatomize(atomizer, indep_write)
+                            indep_write = atomizer.deatomize(indep_write)
                             indep_write.write_pdb(f'{output_pdb_prefix}_{suffix}_deatomized.pdb')
                 timer.checkpoint('pdb writing')
 

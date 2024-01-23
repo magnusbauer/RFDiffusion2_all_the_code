@@ -1,5 +1,7 @@
+from __future__ import annotations  # allows circular imports for type hinting
+
 import copy
-from collections import defaultdict
+from collections import defaultdict, namedtuple
 
 import torch
 from icecream import ic
@@ -18,38 +20,13 @@ def set_nonexistant_atoms_to_nan(xyz, seq, H_exists=False):
     xyz[~atom_mask] = torch.nan
     return xyz
 
-def atomize(indep, is_residue_atomized, atomize_H=False):
-    assert not atomize_H, 'not supported'
-    indep = copy.deepcopy(indep)
-
-    assert not (is_residue_atomized * indep.is_sm).any(), 'cannot atomize small molecule atoms'
-    atomizer = aa_model.AtomizeResidues(indep, is_residue_atomized)
-    atom_mask = rf2aa.util.allatom_mask[indep.seq]
-    atom_mask[:, rf2aa.chemical.NHEAVYPROT:] = False # no Hs
-    atomizer.featurize_atomized_residues(atom_mask)
-    indep_atomized, input_str_mask, input_seq_mask = atomizer.return_input_tensors()
-    atomizer.atomized_length = indep_atomized.length()
-    return indep_atomized, atomizer
-
-def deatomize(atomizer, indep_atomized):
-    if len(atomizer.atomized_res)==0:
-        return indep_atomized
-    indep = copy.deepcopy(atomizer.indep_initial_copy)
-    seq_one_hot = torch.nn.functional.one_hot(indep_atomized.seq, rf2aa.chemical.NAATOKENS)
-    deatomized_seq_one_hot, indep.xyz, indep.idx, indep.bond_feats, _ = atomizer.get_deatomized_features(
-        seq_one_hot, indep_atomized.xyz)
-    
-    indep.seq = torch.argmax(deatomized_seq_one_hot, dim=-1)
-
-    return indep
-
 def atomized_indices_atoms(atomizer, atom_names_by_res):
     atom_idx_by_res = atomizer.get_atom_idx_by_res()
     named_i = []
     for res_i, atom_names in atom_names_by_res.items():
         assert isinstance(res_i, int), res_i
         atomized_residue_idxs = atom_idx_by_res[res_i]
-        original_aa = atomizer.indep_initial_copy.seq[res_i]
+        original_aa = atomizer.deatomized_state[res_i].aa
         within_res_atom_idxs = {atom_name:i for i,atom_name in enumerate(e for e in rf2aa.chemical.aa2long[original_aa] if e is not None)}
 
         # Strip whitespace
@@ -90,7 +67,7 @@ def get_res_atom_name_by_atomized_idx(atomizer):
     atomized_res_idx_from_res = atomizer.get_atom_idx_by_res()
     res_idx_atom_name_by_atomized_idx = {}
     for res_idx, atomized_res_idx in atomized_res_idx_from_res.items():
-        original_aa = atomizer.indep_initial_copy.seq[res_idx]
+        original_aa = atomizer.deatomized_state[res_idx].aa
         atom_name_by_within_res_idx = {i:atom_name for i,atom_name in enumerate(e for e in rf2aa.chemical.aa2long[original_aa] if e is not None)}
         for within_res_atom_idx, atom_idx in enumerate(atomized_res_idx):
             res_idx_atom_name_by_atomized_idx[atom_idx.item()] = (
@@ -153,13 +130,13 @@ def atom_indices(atomizer, res_mask, atom_names_by_res):
 
 def create_masks(atomizer, is_res_str_shown, is_atom_str_shown):
 
-    is_atom_seq_shown = {res_i: [e for e in rf2aa.chemical.aa2long[atomizer.indep_initial_copy.seq[res_i]][:rf2aa.chemical.NHEAVYPROT] if e is not None]
+    is_atom_seq_shown = {res_i: [e for e in rf2aa.chemical.aa2long[atomizer.deatomized_state[res_i].aa][:rf2aa.chemical.NHEAVYPROT] if e is not None]
                             for res_i in is_atom_str_shown.keys()}
     is_res_seq_shown = is_res_str_shown
     return create_masks_str_seq(atomizer, is_res_str_shown, is_res_seq_shown, is_atom_str_shown, is_atom_seq_shown)
 
 def create_masks_str_seq(atomizer, is_res_str_shown, is_res_seq_shown, is_atom_str_shown, is_atom_seq_shown):
-    L = atomizer.atomized_length
+    L = len(atomizer.atomized_state)
     str_shown_indices = atom_indices(atomizer, is_res_str_shown, is_atom_str_shown)
     seq_shown_indices = atom_indices(atomizer, is_res_seq_shown, is_atom_seq_shown)
     is_diffused = torch.ones(L).bool()
@@ -185,7 +162,46 @@ def atomize_and_mask(indep, is_res_str_shown, is_atom_str_shown):
     for k in is_atom_str_shown.keys():
         is_atomized[k] = True
 
-    indep, atomizer = atomize(indep, is_atomized)
+    deatomized_state = aa_model.get_atomization_state(indep)
+    atomizer = aa_model.AtomizeResidues(deatomized_state, is_atomized)
+    indep = atomizer.atomize(indep)
+
     indep.same_chain = indep.same_chain.bool()
     is_diffused, is_masked_seq = create_masks(atomizer, is_res_str_shown, is_atom_str_shown)
     return indep, is_diffused, is_masked_seq, atomizer
+
+def deatomize_mask(atomizer: aa_model.AtomizeResidues, indep, mask: torch.Tensor) -> torch.Tensor:
+    '''
+    Takes a mask (of boolean values) for a protein with atomized resiudes
+    and deatomizes it. If any atom in the deatomized residue was True, 
+    that residue's value will be True in the deatomized mask.
+
+    Inputs
+        atomizer: Object to map between atomized and deatomized protein representions.
+        mask (L_atomized,): An array of boolean values for the atomized protein.
+
+    Returns
+        mask_deatomized (L_deatomized,): An array of boolean values for the deatomized protein.
+    '''
+    # Don't want to change the input objects
+    indep = indep.clone()
+
+    # Shape checks
+    assert len(atomizer.atomized_state) == indep.length()
+    assert len(atomizer.atomized_state) == len(mask)
+
+    # dtype check
+    assert mask.dtype == torch.bool
+
+    # Spoof the mask values as the CA x-coordinate
+    indep.xyz = torch.zeros_like(indep.xyz)
+    indep.xyz[:, 1, 0] = mask.float()
+
+    # "Deatomize"
+    indep_deatomized = atomizer.deatomize(indep)
+
+    # If any atom of a residue is True, so is the whole residue
+    mask_deatomized = indep_deatomized.xyz[..., 0].bool().any(-1)
+
+    return mask_deatomized
+    

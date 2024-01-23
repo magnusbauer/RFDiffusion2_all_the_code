@@ -81,13 +81,8 @@ class TestTransform(unittest.TestCase):
             assertpy.assert_that(atomized_res_bonds[CB, CG1].item()).is_equal_to(1)
             
             # Deatomize
-            indep_deatomized = atomize.deatomize(atomizer, indep)
+            indep_deatomized = atomizer.deatomize(indep)
             n_gp = len(is_atom_str_shown) + n_res_shown
-            want_same_chain = torch.ones(indep_deatomized.length()).bool()
-            # No longer testing, as same_chain is not considered by the network.
-            # want_same_chain[-n_gp:] = False
-            want_same_chain[indep_deatomized.is_sm] = False
-            assertpy.assert_that(indep_deatomized.same_chain[0].tolist()).is_equal_to(want_same_chain.tolist())
             is_gp = torch.zeros(indep_deatomized.length()).bool()
             is_gp[-n_gp:] = True
             aa_model.pop_mask(indep_deatomized, ~is_gp)

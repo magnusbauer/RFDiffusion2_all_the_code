@@ -14,7 +14,7 @@ from hydra.core.hydra_config import HydraConfig
 from icecream import ic
 import torch
 import numpy as np
-import pickle
+import os
 
 import test_utils
 import run_inference

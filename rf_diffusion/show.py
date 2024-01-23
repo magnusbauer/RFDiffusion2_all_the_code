@@ -31,7 +31,7 @@ def one(indep, atomizer, name=''):
         name = f'protein_{get_counter()}'
 
     if atomizer:
-        indep = atomize.deatomize(atomizer, indep)
+        indep = atomizer.deatomize(indep)
     pdb = f'/tmp/{name}.pdb'
     names = indep.write_pdb(pdb)
 

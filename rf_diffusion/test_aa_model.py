@@ -194,7 +194,10 @@ class AAModelTestCase(unittest.TestCase):
 
         atom_mask = rf2aa.util.allatom_mask[indep.seq]
         atom_mask[:, 14:] = False # no Hs
-        indep, atomizer = atomize.atomize(indep, input_str_mask)
+
+        deatomized_state = aa_model.get_atomization_state(indep)
+        atomizer = aa_model.AtomizeResidues(deatomized_state, input_str_mask)
+        indep = atomizer.atomize(indep)
         num_atoms = torch.sum(atom_mask[input_mask])
 
         # original length, remove the residue nodes that are popped and add new atom nodes for those residues

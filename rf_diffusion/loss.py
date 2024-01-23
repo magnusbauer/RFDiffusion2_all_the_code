@@ -8,8 +8,6 @@ from rf2aa.scoring import HbHybType
 from icecream import ic
 from rf_diffusion.diff_util import th_min_angle 
 
-# torch.autograd.set_detect_anomaly(True)
-
 # Loss functions for the training
 # 1. BB rmsd loss
 # 2. distance loss (or 6D loss?)

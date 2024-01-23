@@ -3,6 +3,7 @@ from functools import wraps
 from collections import OrderedDict
 import inspect
 import torch
+from dataclasses import asdict
 import numpy as np
 from icecream import ic
 import itertools
@@ -13,9 +14,12 @@ import networkx as nx
 from rf2aa import chemical
 from rf_diffusion import loss
 from rf_se3_diffusion.data import r3_diffuser
-from abc import abstractmethod
-from rf2aa import chemical
+from abc import abstractmethod, ABC
+from rf2aa import util_module
 from data import utils as du
+from rf_diffusion import idealize
+from rf_diffusion import atomize
+from rf_diffusion import aa_model
 
 def calc_displacement(pred, true):
     """
@@ -133,7 +137,7 @@ def rigid_loss_input(indep, input_crds, true_crds, is_diffused, point_types, **k
 ###################################
 # Metric class. Similar to Potentials class.
 ###################################
-class Metric:
+class Metric(ABC):
     @abstractmethod
     def __init__(self, conf=None):
         pass
@@ -207,6 +211,63 @@ class VarianceNormalizedInputTransMSE(Metric):
         ):
 
         return self.get_variance_normalized_mse(input_crds, true_crds, t, is_diffused)
+
+class IdealizedResidueRMSD(Metric):
+    '''
+    Adjusts torsion angles in the residues to minimize the rmsd
+    with the predicted coordinates. Returns the mean rmsd over all
+    atoms in atomized residues.
+
+    Note: The torsion angle optimizing is a local search and
+    is not guaranteed to retrun the global optimum.
+    '''
+
+    def __init__(self, conf):
+        pass
+
+    def __call__(
+        self,
+        indep,
+        pred_crds: torch.Tensor,
+        atomizer_spec,
+        **kwargs
+        ):
+        '''
+        Inputs
+            indep: Indep of the *atomized* protein
+            pred_crds (L, n_atoms=3, 3)
+            atomizer_spec: Info needed to instantiate an atomizer.
+
+        Currently does not suppor batching
+        '''
+        device = pred_crds.device
+
+        if atomizer_spec is None:
+            return torch.tensor(torch.nan)
+
+        # Shape check
+        L, n_atoms = pred_crds.shape[:2]
+        assert (3 <= n_atoms) and (n_atoms <= 36), f'{n_atoms=}'
+
+        # Pad pred_crds to 36 atoms
+        pred_crds_padded = torch.zeros(L, 36, 3, device=device)
+        pred_crds_padded[:, :3] = pred_crds
+        indep.xyz = pred_crds_padded.detach()
+
+        # Make an atomizer
+        atomizer = aa_model.AtomizeResidues(**asdict(atomizer_spec))
+
+        # Deatomize
+        indep_deatomized = atomizer.deatomize(indep)
+
+        # Idealize only atomized residues
+        rmsd = idealize.idealize_pose(
+            xyz=indep_deatomized.xyz[None, atomizer_spec.residue_to_atomize].detach(),
+            seq=indep_deatomized.seq[None, atomizer_spec.residue_to_atomize].detach(),
+            steps=kwargs.pop('steps', 100)
+        )[1]
+        
+        return rmsd[0].detach()
 
 def displacement(indep, true_crds, pred_crds, is_diffused, point_types, **kwargs):
     
@@ -302,8 +363,9 @@ class MetricManager:
         input_crds: torch.Tensor, 
         t: float, 
         is_diffused: torch.Tensor,
-        point_types: np.array,
+        point_types: np.ndarray,
         pred_crds_stack: torch.Tensor = None,
+        atomizer_spec: aa_model.AtomizerSpec = None,
         ) -> dict:
         '''
         Inputs
@@ -314,6 +376,7 @@ class MetricManager:
             t: Time in the diffusion process. Between 0 and 1.
             is_diffused (L,): True if the residue was diffused.
             point_types (L,): 'L': Ligand, 'R': Residue, 'AB': Atomized backbone, 'AS': Atomized sidechain
+            atomizer_spec: Info needed to instantiate an atomizer.
         Returns
             Dictionary of the name of the metric and what it returned.
         '''
@@ -338,6 +401,7 @@ class MetricManager:
                 is_diffused=is_diffused,
                 point_types=point_types,
                 pred_crds_stack=pred_crds_stack,
+                atomizer_spec=atomizer_spec,
             )
             metric_results[name] = metric_output
 
