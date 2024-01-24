@@ -216,15 +216,10 @@ class TestWriteTrajs(unittest.TestCase):
         row = show_bench.get_sdata(str(pdb)).iloc[0]
         x0_path = analyze.get_traj_path(row, 'X0')
         got = parse_traj(x0_path)
-
-        REWRITE=False
-        cmp = partial(tensor_util.cmp, atol=1e-2, rtol=0)
-        test_utils.assert_matches_golden(self, golden, got, rewrite=REWRITE, custom_comparator=cmp)
-
-
         x0_path = analyze.get_traj_path(row, 'cond')
         got_2 = parse_traj(x0_path)
-        test_utils.assert_matches_golden(self, golden, got_2, rewrite=REWRITE, custom_comparator=cmp)
+        cmp = partial(tensor_util.cmp, atol=1e-2, rtol=0)
+        test_utils.assertEqual(self, cmp, got, got_2)
     
     def test_write_base(self):
         self.assert_generates(
