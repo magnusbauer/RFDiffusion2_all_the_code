@@ -4,6 +4,10 @@ import logging
 
 from rf_diffusion import aa_model
 
+def get_center_of_mass(xyz14, mask):
+    assert mask.any()
+    points = xyz14[mask]
+    return points.mean(dim=0)
 
 def add_conditional_inputs(indep, metadata, masks_1d, conditioning_cfg):
 
@@ -25,9 +29,21 @@ def add_conditional_inputs(indep, metadata, masks_1d, conditioning_cfg):
     if is_atom_str_shown:
         is_atom_str_shown = {maybe_item(res_i):v for res_i, v in is_atom_str_shown.items()}
     
-    logging.debug(
-        f'{is_atom_str_shown=}, {is_res_str_shown=}'
+    logging.info(
+        f'{is_atom_str_shown=}, {is_res_str_shown.nonzero()[:, 0]=}'
     )
+
+    motif_atom_name_by_res_idx = {}
+    for i in is_res_str_shown.nonzero()[:,0]:
+        motif_atom_name_by_res_idx[i] = aa_model.CA_ONLY
+    motif_atom_name_by_res_idx.update(is_atom_str_shown)
+    is_motif14 = aa_model.make_is_motif14(indep.seq, motif_atom_name_by_res_idx)
+    center_of_mass_mask = is_motif14
+    if not center_of_mass_mask.any():
+        # Unconditional case
+        center_of_mass_mask[:, 1] = True
+
+    indep.xyz -= get_center_of_mass(indep.xyz, center_of_mass_mask)
 
     pre_transform_length = indep.length()
     use_guideposts = (torch.rand(1) < conditioning_cfg["P_IS_GUIDEPOST_EXAMPLE"]).item()

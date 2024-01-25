@@ -302,6 +302,28 @@ def get_atom_names(seq_token):
     atom_names = rf2aa.chemical.aa2long[seq_token][:rf2aa.chemical.NHEAVYPROT]
     return [a.strip() for a in atom_names if a != None]
 
+CA_ONLY = 'CA_ONLY'
+
+within_res_atom_idx = {}
+for i, atom_names in enumerate(rf2aa.chemical.aa2long):
+    within_res_atom_idx[i] = {}
+    for j, atom_name in enumerate(atom_names):
+        if atom_name is None:
+            continue
+        within_res_atom_idx[i][atom_name.strip()] = j
+
+def make_is_motif14(seq, atom_name_by_res_idx):
+    is_motif14 = torch.zeros((len(seq), 14)).bool()
+    for res_idx, atom_names in atom_name_by_res_idx.items():
+        if atom_names == 'CA_ONLY':
+            is_motif14[res_idx, 1] = True
+        else:
+            aa = seq[res_idx].item()
+            for atom_name in atom_names:
+                atom_i  = within_res_atom_idx[aa][atom_name.strip()]
+                is_motif14[res_idx, atom_i] = True
+    return is_motif14
+
 
 backbone_atoms = ['N', 'C', 'CA', 'O']
 POINT_LIGAND = 'L'

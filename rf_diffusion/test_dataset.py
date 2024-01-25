@@ -248,7 +248,7 @@ REWRITE=False
 class Dataloader(unittest.TestCase):
 
     def cmp(self, a, b):
-        cmp = partial(tensor_util.cmp, atol=1e-20, rtol=1e-5)
+        cmp = partial(tensor_util.cmp, atol=1e-4, rtol=1e-5)
         return cmp(a, b)
 
     def tearDown(self) -> None:

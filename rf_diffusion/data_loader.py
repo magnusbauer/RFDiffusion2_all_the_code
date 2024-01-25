@@ -1771,7 +1771,6 @@ class DistilledDataset(data.Dataset):
             indep.extra_t1d = features.get_extra_t1d(indep, self.conf.extra_t1d, is_gp=is_gp, t_cont=t_cont, **self.conf.extra_t1d_params)
 
             run_inference.seed_all(mask_gen_seed) # Reseed the RNGs for test stability.
-            aa_model.centre(indep, is_diffused)
             indep_t, diffuser_out = aa_model.diffuse(self.conf, self.diffuser, indep, is_diffused, t)
 
             # Compute all strictly dependent model inputs from the independent inputs.
