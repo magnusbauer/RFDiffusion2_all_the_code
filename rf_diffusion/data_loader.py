@@ -3,6 +3,7 @@ import itertools
 import traceback
 import pprint
 import assertpy
+import addict
 import torch.nn.functional as F
 import copy
 import time
@@ -46,6 +47,7 @@ from rf_diffusion import error
 from rf_diffusion import show
 from rf_diffusion import features
 from rf_diffusion import distributions
+from rf_diffusion import conditioning
 
 
 USE_DEFAULT = '__USE_DEFAULT__'
@@ -1719,17 +1721,35 @@ class TransformedDataset(data.Dataset):
 
     def __init__(self,
                  dataset,
-                 transform):
-            self.transform = transform
+                 transforms):
+            self.transforms = transforms
             self.dataset = dataset
             
         
     def __getitem__(self, index):
-        raw = self.dataset[index]
-        return self.transform(**raw)
-    
+        feats = self.dataset[index]
+        for t in self.transforms:
+            feats = t(**feats)
+            # feats.update(feats_out)
+        return feats
+
     def __len__(self):
         return len(self.dataset)
+
+def feature_tuple_from_feature_dict(**kwargs):
+    return (
+            kwargs['indep'],
+            kwargs['rfi'],
+            kwargs['chosen_dataset'],
+            kwargs['sel_item'],
+            kwargs['t'],
+            kwargs['is_diffused'],
+            kwargs['task'],
+            kwargs['atomizer'],
+            kwargs['masks_1d'],
+            kwargs['diffuser_out'],
+            kwargs['item_context']
+    )
 
 class DistilledDataset(data.Dataset):
     def __init__(self, dataset_configs, params, diffuser, preprocess_param, conf, homo=None, p_homo_cut=0.5, **kwargs):
@@ -1745,19 +1765,7 @@ class DistilledDataset(data.Dataset):
         self.conf = self.dataset.conf
         self.preprocess_param = self.dataset.preprocess_param
         self.model_adaptor = self.dataset.model_adaptor
-        def transform(indep, atom_mask, metadata, chosen_dataset, sel_item, task, masks_1d, item_context, mask_gen_seed, **kwargs):
-            import addict
-            from rf_diffusion import conditioning
-            indep, is_diffused, is_masked_seq, is_gp, atomizer = conditioning.add_conditional_inputs(
-                indep,
-                metadata,
-                masks_1d,
-                conditioning_cfg=addict.Dict({
-                    'P_IS_GUIDEPOST_EXAMPLE': self.params['P_IS_GUIDEPOST_EXAMPLE'],
-                    'guidepost_bonds': self.conf.guidepost_bonds,
-                })
-            )
-
+        def diffuse(indep, is_gp, metadata, chosen_dataset, sel_item, task, masks_1d, item_context, mask_gen_seed, is_masked_seq, is_diffused, atomizer, **kwargs):
             if self.conf.diffuser.time_type == 'discrete':
                 t = random.randint(1, self.conf.diffuser.T)
                 t_cont = t / self.conf.diffuser.T
@@ -1786,8 +1794,33 @@ class DistilledDataset(data.Dataset):
 
             run_inference.seed_all(mask_gen_seed) # Reseed the RNGs for test stability.
             indep.metadata = metadata
-            return indep, rfi, chosen_dataset, sel_item, t, is_diffused, task, atomizer, masks_1d, diffuser_out, item_context
-        self.dataset = TransformedDataset(self.dataset, transform)
+            return dict(
+                indep=indep,
+                rfi=rfi,
+                chosen_dataset=chosen_dataset,
+                sel_item=sel_item,
+                t=t,
+                is_diffused=is_diffused,
+                task=task,
+                atomizer=atomizer,
+                masks_1d=masks_1d,
+                diffuser_out=diffuser_out,
+                item_context=item_context)
+        # self.dataset = TransformedDataset(self.dataset, transform)
+        self.dataset = TransformedDataset(
+            self.dataset,
+            transforms=(
+                partial(
+                        conditioning.add_conditional_inputs,
+                        conditioning_cfg=addict.Dict({
+                            'P_IS_GUIDEPOST_EXAMPLE': self.params['P_IS_GUIDEPOST_EXAMPLE'],
+                            'guidepost_bonds': self.conf.guidepost_bonds,
+                        })
+                ),
+                diffuse,
+                feature_tuple_from_feature_dict,
+            )
+        )
     
     def __getitem__(self, i):
         return self.dataset[i]

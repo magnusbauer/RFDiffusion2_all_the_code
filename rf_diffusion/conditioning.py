@@ -9,7 +9,7 @@ def get_center_of_mass(xyz14, mask):
     points = xyz14[mask]
     return points.mean(dim=0)
 
-def add_conditional_inputs(indep, metadata, masks_1d, conditioning_cfg):
+def add_conditional_inputs(indep, metadata, masks_1d, conditioning_cfg, **kwargs):
 
     aa_model.pop_mask(indep, masks_1d['pop'])
     # atom_mask = atom_mask[masks_1d['pop']]
@@ -54,7 +54,17 @@ def add_conditional_inputs(indep, metadata, masks_1d, conditioning_cfg):
     is_gp = torch.full((indep.length(),), True)
     is_gp[:pre_transform_length] = False
     aa_model.assert_valid_seq_mask(indep, is_masked_seq)
-    return indep, is_diffused, is_masked_seq, is_gp, atomizer
+    
+    return dict(
+        indep=indep,
+        is_diffused=is_diffused,
+        is_masked_seq=is_masked_seq,
+        is_gp=is_gp,
+        atomizer=atomizer,
+        metadata=metadata,
+        masks_1d=masks_1d,
+        **kwargs
+    )
 
 
 def center_motif(indep, metadata, masks_1d, conditioning_cfg):
