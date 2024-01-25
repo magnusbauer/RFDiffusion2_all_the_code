@@ -1697,329 +1697,123 @@ class DistilledDatasetUnnoised(data.Dataset):
                 run_inference.seed_all(mask_gen_seed) # Reseed the RNGs for test stability.
                 masks_1d = mask_generator.generate_masks(indep, task, self.params, chosen_dataset, None, atom_mask=atom_mask[:, :rf2aa.chemical.NHEAVYPROT], metadata=metadata)
 
-                aa_model.pop_mask(indep, masks_1d['pop'])
-                atom_mask = atom_mask[masks_1d['pop']]
-                masks_1d['input_str_mask'] = masks_1d['input_str_mask'][masks_1d['pop']]
-                masks_1d['is_atom_motif'] = aa_model.reindex_dict(masks_1d['is_atom_motif'], masks_1d['pop'])
-                metadata['covale_bonds'] = aa_model.reindex_covales(metadata['covale_bonds'], masks_1d['pop'])
-
-                is_res_str_shown = masks_1d['input_str_mask']
-                is_atom_str_shown = masks_1d['is_atom_motif']
-
-                # Cast to non-tensor
-                is_atom_str_shown = is_atom_str_shown or {}
-                def maybe_item(i):
-                    if hasattr(i, 'item'):
-                        return i.item()
-                    return i
-                if is_atom_str_shown:
-                    is_atom_str_shown = {maybe_item(res_i):v for res_i, v in is_atom_str_shown.items()}
-
-                pre_transform_length = indep.length()
-                use_guideposts = (torch.rand(1) < self.params["P_IS_GUIDEPOST_EXAMPLE"]).item()
-                masks_1d['use_guideposts'] = use_guideposts
-                indep, is_diffused, is_masked_seq, atomizer, _ = aa_model.transform_indep(indep, is_res_str_shown, is_atom_str_shown, use_guideposts, guidepost_bonds=self.conf.guidepost_bonds, metadata=metadata)
-
-                # # HACK: gp indices may be lost during atomization, so we assume they are at the end of the protein.
-                # is_gp = torch.full((indep.length(),), True)
-                # is_gp[:pre_transform_length] = False
-
-                # indep.extra_t1d = features.get_extra_t1d(indep, self.conf.extra_t1d, is_gp=is_gp, t_cont=t_cont, **self.conf.extra_t1d_params)
-                aa_model.assert_valid_seq_mask(indep, is_masked_seq)
-
-                run_inference.seed_all(mask_gen_seed) # Reseed the RNGs for test stability.
-                # aa_model.centre(indep, is_diffused)
-                # indep_t = indep
-                # diffuser_out = None
-                # if self.conf.diffuse:
-                #     indep_t, diffuser_out = aa_model.diffuse(self.conf, self.diffuser, indep, is_diffused, t)
-
-                # # Compute all strictly dependent model inputs from the independent inputs.
-                # if self.preprocess_param['randomize_frames']:
-                #     print('randomizing frames')
-                #     indep_t.xyz = aa_model.randomly_rotate_frames(indep_t.xyz)
-                # aa_model.mask_indep(indep_t, is_masked_seq)
-                # rfi = self.model_adaptor.prepro(indep_t, t, is_diffused)
-
-                # Sanity checks
-                # if torch.sum(~is_diffused) > 0:
-                #     assert torch.mean(rfi.xyz[:,~is_diffused,1] - indep.xyz[None,~is_diffused,1]) < 0.001
-
-                run_inference.seed_all(mask_gen_seed) # Reseed the RNGs for test stability.
-                indep.metadata = metadata
                 return {
                     'indep': indep,
+                    'atom_mask': atom_mask,
+                    'metadata': metadata,
                     'chosen_dataset': chosen_dataset,
                     'sel_item': sel_item,
-                    'is_diffused': is_diffused,
                     'task': task,
-                    'atomizer': atomizer,
                     'masks_1d': masks_1d,
-                    'item_context': item_context
+                    'item_context': item_context,
+                    'mask_gen_seed': mask_gen_seed,
                 }
+
             processed = process_out(out)
             return processed
 
     def __getitem__(self, index):
         return self.getitem_unsafe(index)
+
+class TransformedDataset(data.Dataset):
+
+    def __init__(self,
+                 dataset,
+                 transform):
+            self.transform = transform
+            self.dataset = dataset
+            
+        
+    def __getitem__(self, index):
+        raw = self.dataset[index]
+        return self.transform(**raw)
+    
+    def __len__(self):
+        return len(self.dataset)
 
 class DistilledDataset(data.Dataset):
-    def __init__(self,
-                 dataset_configs,
-                 params,
-                 diffuser,
-                 preprocess_param,
-                 conf,
-                 homo=None,
-                 p_homo_cut=0.5):
-        
-        self.homo = homo if homo is not None else pd.DataFrame()
-        self.params = params
-        self.p_task = [1.0]
-        self.task_names = ['diff']
-        self.unclamp_cut = 0.9
-        self.p_homo_cut = p_homo_cut
-        self.dataset_configs = dataset_configs
+    def __init__(self, dataset_configs, params, diffuser, preprocess_param, conf, homo=None, p_homo_cut=0.5, **kwargs):
+        self.diffuser = diffuser
+        self.dataset = DistilledDatasetUnnoised(
+            dataset_configs,
+            params,
+            preprocess_param,
+            conf,
+            homo=homo,
+            p_homo_cut=p_homo_cut)
+        self.params = self.dataset.params
+        self.conf = self.dataset.conf
+        self.preprocess_param = self.dataset.preprocess_param
+        self.model_adaptor = self.dataset.model_adaptor
+        def transform(indep, atom_mask, metadata, chosen_dataset, sel_item, task, masks_1d, item_context, mask_gen_seed, **kwargs):
+            # conditioning.indep.
 
-        # initialise diffusion class
-        self.diffuser     = diffuser
+            metadata = indep.metadata
+            aa_model.pop_mask(indep, masks_1d['pop'])
+            atom_mask = atom_mask[masks_1d['pop']]
+            masks_1d['input_str_mask'] = masks_1d['input_str_mask'][masks_1d['pop']]
+            masks_1d['is_atom_motif'] = aa_model.reindex_dict(masks_1d['is_atom_motif'], masks_1d['pop'])
+            metadata['covale_bonds'] = aa_model.reindex_covales(metadata['covale_bonds'], masks_1d['pop'])
 
-        # get torsion variables
-        self.preprocess_param = preprocess_param
+            is_res_str_shown = masks_1d['input_str_mask']
+            is_atom_str_shown = masks_1d['is_atom_motif']
 
-        self.conf = conf
-        self.model_adaptor = aa_model.Model(conf)
-        self.last_idx = None
-        def fallback_out():
-            spoof = fallback_spoof
-            mask_gen_seed = spoof['mask_gen_seed']
-            sel_item = spoof['sel_item']
-            chosen_dataset = spoof['chosen_dataset']
-            dataset_config = self.dataset_configs[chosen_dataset]
-            out = dataset_config.task_loaders(
-                        sel_item,
-                        {**rf2aa.data_loader.default_dataloader_params, **self.params, "P_ATOMIZE_MODRES": -1}, num_protein_chains=1, num_ligand_chains=1, 
-                        fixbb=True,
-                    )
-            return out
-        self.fallback_out = fallback_out
+            # Cast to non-tensor
+            is_atom_str_shown = is_atom_str_shown or {}
+            def maybe_item(i):
+                if hasattr(i, 'item'):
+                    return i.item()
+                return i
+            if is_atom_str_shown:
+                is_atom_str_shown = {maybe_item(res_i):v for res_i, v in is_atom_str_shown.items()}
 
-    def __len__(self):
-        return sum(len(d.ids) for d in self.dataset_configs.values())
+            pre_transform_length = indep.length()
+            use_guideposts = (torch.rand(1) < self.params["P_IS_GUIDEPOST_EXAMPLE"]).item()
+            masks_1d['use_guideposts'] = use_guideposts
+            indep, is_diffused, is_masked_seq, atomizer, _ = aa_model.transform_indep(indep, is_res_str_shown, is_atom_str_shown, use_guideposts, guidepost_bonds=self.conf.guidepost_bonds, metadata=metadata)
 
-    def dataset_index_from_index(self, index):
-        cur_index = index
-        for dataset_name, config in self.dataset_configs.items():
-            n_ids = len(config.ids)
-            if cur_index < n_ids:
-                return dataset_name, cur_index
-            cur_index -= n_ids
-        raise Exception(f'index {index} greater than combined sum of datasets: {len(self)}')
-    
-    def range_by_dataset_name(self):
-        d = {}
-        counter = 0
-        for dataset_name, config in self.dataset_configs.items():
-            n_ids = len(config.ids)
-            d[dataset_name] = (counter, counter + n_ids)
-            counter += n_ids
-        return d
+            # HACK: gp indices may be lost during atomization, so we assume they are at the end of the protein.
+            is_gp = torch.full((indep.length(),), True)
+            is_gp[:pre_transform_length] = False
 
-    def getitem_unsafe(self, index):
-        mask_gen_seed = np.random.randint(0, 99999999)
-        p_unclamp = np.random.rand()
-        task_idx = np.random.choice(np.arange(len(self.task_names)), 1, p=self.p_task)[0]
-        task = self.task_names[task_idx]
-
-        chosen_dataset, index = self.dataset_index_from_index(index)
-        # Uncomment to debug fallback dataset
-        # if chosen_dataset == 'sm_complex':
-        #     raise Exception('sm_complex debug fail')
-        dataset_config = self.dataset_configs[chosen_dataset]
-        ID = dataset_config.ids[index]
-        if chosen_dataset == "sm_complex":
-            sel_item = rf2aa.data_loader.sample_item_sm_compl(dataset_config.dic, ID)
-        else:
-            sel_item = rf2aa.data_loader.sample_item(dataset_config.dic, ID)
-
-        # use fixbb settings for MSA generation if not sequence to structure task  
-        fixbb = task != "seq2str"
-        
-        # For reproducibility.
-        if self.conf['spoof_item']:
-            if hasattr(self, 'spoofed'):
-                raise Exception('stopping after succesful spoofing of one item')
-            spoof = eval(self.conf['spoof_item'])
-            mask_gen_seed = spoof['mask_gen_seed']
-            sel_item = spoof['sel_item']
-            task = spoof['task']
-            chosen_dataset = spoof['chosen_dataset']
-            dataset_config = self.dataset_configs[chosen_dataset]
-            self.spoofed=True
-        run_inference.seed_all(mask_gen_seed) # Reseed the RNGs for test stability.
-
-        item_context = pprint.pformat({
-            'chosen_dataset': chosen_dataset,
-            'index': index,
-            'sel_item': sel_item,
-            'task': task,
-            'mask_gen_seed': mask_gen_seed}, indent=4)
-        
-        with error.context(item_context):
-            if chosen_dataset == 'cn':
-                raise NotImplementedError("new aa dataset don't have backwards compatibility with CN set")
-                chosen_loader = dataset_config.task_loaders[task]
-                out = chosen_loader(sel_item[0], self.params)
-
-            elif chosen_dataset == 'negative':
-                raise NotImplementedError("new aa dataset don't have backwards compatibility with negative set")
-                out = dataset_config.task_loaders(sel_item[0], sel_item[1], sel_item[2], sel_item[3], self.params, negative=True)
-
-            elif chosen_dataset == 'compl':
-                chosen_loader = dataset_config.task_loaders[task]
-                out = chosen_loader(sel_item, 
-                    {**rf2aa.data_loader.default_dataloader_params, **self.params}, fixbb=fixbb)
-            elif chosen_dataset == 'pdb' or chosen_dataset == 'pdb_aa':
-                chosen_loader = dataset_config.task_loaders[task]
-                # if p_unclamp > self.unclamp_cut:
-                #     out = chosen_loader(sel_item[0], self.params, self.homo, unclamp=True, p_homo_cut=self.p_homo_cut)
-                # else:
-                #     out = chosen_loader(sel_item[0], self.params, self.homo, unclamp=False, p_homo_cut=self.p_homo_cut)
-                out = chosen_loader(sel_item, 
-                    {**rf2aa.data_loader.default_dataloader_params, **self.params}, self.homo, p_homo_cut=-1.0,fixbb=fixbb)
-            elif chosen_dataset == 'fb':
-                # print('Chose fb')
-                chosen_loader = self.fb_loaders[task]
-                if p_unclamp > self.unclamp_cut:
-                    out = chosen_loader(sel_item, self.params, unclamp=True, fixbb=fixbb)
-                else:
-                    out = chosen_loader(sel_item, self.params, unclamp=False,fixbb=fixbb)
-            elif chosen_dataset in {'sm_complex', 'sm_compl_covale', 'sm_compl_asmb', 'sm_compl_multi', 'metal_compl'}:
-                num_protein_chains = None
-                num_ligand_chains = None
-                if chosen_dataset in {'sm_complex', 'sm_compl_covale'}:
-                    num_protein_chains = 1
-                    num_ligand_chains = 1
-                out = dataset_config.task_loaders(
-                    sel_item,
-                    {**rf2aa.data_loader.default_dataloader_params, **self.params, "P_ATOMIZE_MODRES": -1},
-                    num_protein_chains=num_protein_chains, num_ligand_chains=num_ligand_chains,
-                    fixbb=fixbb,
-                )
+            if self.conf.diffuser.time_type == 'discrete':
+                t = random.randint(1, self.conf.diffuser.T)
+                t_cont = t / self.conf.diffuser.T
+            elif self.conf.diffuser.time_type == 'continuous':
+                distribution = getattr(distributions, self.conf.diffuser.t_distribution)
+                t_cont = distribution.rvs(1)[0]
+                t =  t_cont * self.conf.diffuser.T
             else:
-                raise Exception(f'chosen_dataset {chosen_dataset} not implemented')
-            
-            assert fixbb
-            assert chosen_dataset != 'complex', f'complex requires passing same_chain to mask_generators, and this is not implemented'
+                raise ValueError(f"Invalid option: {self.conf.diffuser.time_type}. Please choose from <'discrete', 'continuous'>.")
 
-            def process_out(out):
-                # Convert template-based modeling inputs to a description of a single structure (the query structure).
-                indep, atom_mask = aa_model.adaptor_fix_bb_indep(out)
+            indep.extra_t1d = features.get_extra_t1d(indep, self.conf.extra_t1d, is_gp=is_gp, t_cont=t_cont, **self.conf.extra_t1d_params)
+            aa_model.assert_valid_seq_mask(indep, is_masked_seq)
 
-                if indep.is_sm.all():
-                    raise Exception('is_sm is true for all indices')
-                
-                # Uncomment for debugging weird heteroatoms from the rf2aa dataloaders
-                # from dev import analyze
-                # analyze.make_network_cmd(show.cmd)
-                # analyze.clear()
-                # show.one(indep, None, 'both')
-                # # analyze.make_network_cmd(show.cmd)
-                # prot, _ = show.one(aa_model.slice_indep(indep, ~indep.is_sm)[0], None, 'prot')
-                # het, _ = show.one(aa_model.slice_indep(indep, indep.is_sm)[0], None, 'het')
+            run_inference.seed_all(mask_gen_seed) # Reseed the RNGs for test stability.
+            aa_model.centre(indep, is_diffused)
+            indep_t, diffuser_out = aa_model.diffuse(self.conf, self.diffuser, indep, is_diffused, t)
 
-                pop = aa_model.is_occupied(indep, atom_mask)
-                # For now, do not pop unoccupied small molecule atoms, exit instead, as popping them can lose covale information.
-                unoccupied_sm = (~pop) * indep.is_sm
-                # ic(chosen_dataset, unoccupied_sm.any())
-                if unoccupied_sm.any():
-                    raise Exception(f'there are small molecule atoms that are unoccupied at indices:  {unoccupied_sm.nonzero()[:,0]}')
-                aa_model.pop_mask(indep, pop)
-                atom_mask = atom_mask[pop]
-                # name, names = show.one(indep, None, 'before_deatomize_covales')
-                # show.cmd.do(f'util.cbc {name}')
+            # Compute all strictly dependent model inputs from the independent inputs.
+            if self.preprocess_param['randomize_frames']:
+                print('randomizing frames')
+                indep_t.xyz = aa_model.randomly_rotate_frames(indep_t.xyz)
+            aa_model.mask_indep(indep_t, is_masked_seq)
+            rfi = self.model_adaptor.prepro(indep_t, t, is_diffused)
 
-                if self.conf.dataloader.max_residues > -1:
-                    # Kind of hacky as it may break covales.  Only for debugging.
-                    pop = indep.is_sm.clone()
-                    residue_indices = torch.where(~indep.is_sm)[0]
-                    residue_indices = residue_indices[:self.conf.dataloader.max_residues]
-                    pop[residue_indices] = True
-                    aa_model.pop_mask(indep, pop)
-                    atom_mask = atom_mask[pop]
+            # Sanity checks
+            if torch.sum(~is_diffused) > 0:
+                assert torch.mean(rfi.xyz[:,~is_diffused,1] - indep.xyz[None,~is_diffused,1]) < 0.001
 
-                indep, atom_mask, metadata = aa_model.deatomize_covales(indep, atom_mask)
-
-                # Mask the independent inputs.
-                run_inference.seed_all(mask_gen_seed) # Reseed the RNGs for test stability.
-                masks_1d = mask_generator.generate_masks(indep, task, self.params, chosen_dataset, None, atom_mask=atom_mask[:, :rf2aa.chemical.NHEAVYPROT], metadata=metadata)
-
-                aa_model.pop_mask(indep, masks_1d['pop'])
-                atom_mask = atom_mask[masks_1d['pop']]
-                masks_1d['input_str_mask'] = masks_1d['input_str_mask'][masks_1d['pop']]
-                masks_1d['is_atom_motif'] = aa_model.reindex_dict(masks_1d['is_atom_motif'], masks_1d['pop'])
-                metadata['covale_bonds'] = aa_model.reindex_covales(metadata['covale_bonds'], masks_1d['pop'])
-
-                is_res_str_shown = masks_1d['input_str_mask']
-                is_atom_str_shown = masks_1d['is_atom_motif']
-
-                # Cast to non-tensor
-                is_atom_str_shown = is_atom_str_shown or {}
-                def maybe_item(i):
-                    if hasattr(i, 'item'):
-                        return i.item()
-                    return i
-                if is_atom_str_shown:
-                    is_atom_str_shown = {maybe_item(res_i):v for res_i, v in is_atom_str_shown.items()}
-
-                pre_transform_length = indep.length()
-                use_guideposts = (torch.rand(1) < self.params["P_IS_GUIDEPOST_EXAMPLE"]).item()
-                masks_1d['use_guideposts'] = use_guideposts
-                indep, is_diffused, is_masked_seq, atomizer, _ = aa_model.transform_indep(indep, is_res_str_shown, is_atom_str_shown, use_guideposts, guidepost_bonds=self.conf.guidepost_bonds, metadata=metadata)
-
-                # HACK: gp indices may be lost during atomization, so we assume they are at the end of the protein.
-                is_gp = torch.full((indep.length(),), True)
-                is_gp[:pre_transform_length] = False
-
-                if self.conf.diffuser.time_type == 'discrete':
-                    t = random.randint(1, self.conf.diffuser.T)
-                    t_cont = t / self.conf.diffuser.T
-                elif self.conf.diffuser.time_type == 'continuous':
-                    distribution = getattr(distributions, self.conf.diffuser.t_distribution)
-                    t_cont = distribution.rvs(1)[0]
-                    t =  t_cont * self.conf.diffuser.T
-                else:
-                    raise ValueError(f"Invalid option: {self.conf.diffuser.time_type}. Please choose from <'discrete', 'continuous'>.")
-
-                indep.extra_t1d = features.get_extra_t1d(indep, self.conf.extra_t1d, is_gp=is_gp, t_cont=t_cont, **self.conf.extra_t1d_params)
-                aa_model.assert_valid_seq_mask(indep, is_masked_seq)
-
-                run_inference.seed_all(mask_gen_seed) # Reseed the RNGs for test stability.
-                aa_model.centre(indep, is_diffused)
-                indep_t = indep
-                diffuser_out = None
-                if self.conf.diffuse:
-                    indep_t, diffuser_out = aa_model.diffuse(self.conf, self.diffuser, indep, is_diffused, t)
-
-                # Compute all strictly dependent model inputs from the independent inputs.
-                if self.preprocess_param['randomize_frames']:
-                    print('randomizing frames')
-                    indep_t.xyz = aa_model.randomly_rotate_frames(indep_t.xyz)
-                aa_model.mask_indep(indep_t, is_masked_seq)
-                rfi = self.model_adaptor.prepro(indep_t, t, is_diffused)
-
-                # Sanity checks
-                if torch.sum(~is_diffused) > 0:
-                    assert torch.mean(rfi.xyz[:,~is_diffused,1] - indep.xyz[None,~is_diffused,1]) < 0.001
-
-                run_inference.seed_all(mask_gen_seed) # Reseed the RNGs for test stability.
-                indep.metadata = metadata
-                return indep, rfi, chosen_dataset, sel_item, t, is_diffused, task, atomizer, masks_1d, diffuser_out, item_context
-            processed = process_out(out)
-            return processed
-
-    def __getitem__(self, index):
-        return self.getitem_unsafe(index)
+            run_inference.seed_all(mask_gen_seed) # Reseed the RNGs for test stability.
+            indep.metadata = metadata
+            return indep, rfi, chosen_dataset, sel_item, t, is_diffused, task, atomizer, masks_1d, diffuser_out, item_context
+        self.dataset = TransformedDataset(self.dataset, transform)
+    
+    def __getitem__(self, i):
+        return self.dataset[i]
+    
+    def __len__(self):
+        return len(self.dataset)
 
 class DatasetWithFallback(data.Dataset):
 
