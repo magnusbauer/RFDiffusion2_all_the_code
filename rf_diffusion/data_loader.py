@@ -1746,35 +1746,17 @@ class DistilledDataset(data.Dataset):
         self.preprocess_param = self.dataset.preprocess_param
         self.model_adaptor = self.dataset.model_adaptor
         def transform(indep, atom_mask, metadata, chosen_dataset, sel_item, task, masks_1d, item_context, mask_gen_seed, **kwargs):
-            # conditioning.indep.
-
-            metadata = indep.metadata
-            aa_model.pop_mask(indep, masks_1d['pop'])
-            atom_mask = atom_mask[masks_1d['pop']]
-            masks_1d['input_str_mask'] = masks_1d['input_str_mask'][masks_1d['pop']]
-            masks_1d['is_atom_motif'] = aa_model.reindex_dict(masks_1d['is_atom_motif'], masks_1d['pop'])
-            metadata['covale_bonds'] = aa_model.reindex_covales(metadata['covale_bonds'], masks_1d['pop'])
-
-            is_res_str_shown = masks_1d['input_str_mask']
-            is_atom_str_shown = masks_1d['is_atom_motif']
-
-            # Cast to non-tensor
-            is_atom_str_shown = is_atom_str_shown or {}
-            def maybe_item(i):
-                if hasattr(i, 'item'):
-                    return i.item()
-                return i
-            if is_atom_str_shown:
-                is_atom_str_shown = {maybe_item(res_i):v for res_i, v in is_atom_str_shown.items()}
-
-            pre_transform_length = indep.length()
-            use_guideposts = (torch.rand(1) < self.params["P_IS_GUIDEPOST_EXAMPLE"]).item()
-            masks_1d['use_guideposts'] = use_guideposts
-            indep, is_diffused, is_masked_seq, atomizer, _ = aa_model.transform_indep(indep, is_res_str_shown, is_atom_str_shown, use_guideposts, guidepost_bonds=self.conf.guidepost_bonds, metadata=metadata)
-
-            # HACK: gp indices may be lost during atomization, so we assume they are at the end of the protein.
-            is_gp = torch.full((indep.length(),), True)
-            is_gp[:pre_transform_length] = False
+            import addict
+            from rf_diffusion import conditioning
+            indep, is_diffused, is_masked_seq, is_gp, atomizer = conditioning.add_conditional_inputs(
+                indep,
+                metadata,
+                masks_1d,
+                conditioning_cfg=addict.Dict({
+                    'P_IS_GUIDEPOST_EXAMPLE': self.params['P_IS_GUIDEPOST_EXAMPLE'],
+                    'guidepost_bonds': self.conf.guidepost_bonds,
+                })
+            )
 
             if self.conf.diffuser.time_type == 'discrete':
                 t = random.randint(1, self.conf.diffuser.T)
@@ -1787,7 +1769,6 @@ class DistilledDataset(data.Dataset):
                 raise ValueError(f"Invalid option: {self.conf.diffuser.time_type}. Please choose from <'discrete', 'continuous'>.")
 
             indep.extra_t1d = features.get_extra_t1d(indep, self.conf.extra_t1d, is_gp=is_gp, t_cont=t_cont, **self.conf.extra_t1d_params)
-            aa_model.assert_valid_seq_mask(indep, is_masked_seq)
 
             run_inference.seed_all(mask_gen_seed) # Reseed the RNGs for test stability.
             aa_model.centre(indep, is_diffused)
