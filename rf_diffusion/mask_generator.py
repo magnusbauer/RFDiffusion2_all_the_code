@@ -1160,15 +1160,23 @@ def generate_masks(indep, task, loader_params, chosen_dataset, full_chain=None, 
     if task != 'seq2str':
        assert torch.sum(~input_seq_mask) > 0, f'Task = {task}, dataset = {chosen_dataset}, full chain = {full_chain}'
 
+    # Make dictionary keys integers, not torch scalars.
+    if is_atom_motif:
+        is_atom_motif = {maybe_item(res_i):v for res_i, v in is_atom_motif.items()}
+
     mask_dict = {
                 'input_str_mask':input_str_mask,
-                'is_atom_motif': is_atom_motif,
+                'is_atom_motif': is_atom_motif or {},
                 'pop': pop,
                 'mask_name': mask_name
                 }
     
     return mask_dict
 
+def maybe_item(i):
+    if hasattr(i, 'item'):
+        return i.item()
+    return i
 
 def choose_contiguous_atom_motif(res):
     """

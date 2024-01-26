@@ -1810,6 +1810,8 @@ class DistilledDataset(data.Dataset):
         self.dataset = TransformedDataset(
             self.dataset,
             transforms=(
+                conditioning.pop_mask,
+                conditioning.center,
                 partial(
                         conditioning.add_conditional_inputs,
                         conditioning_cfg=addict.Dict({

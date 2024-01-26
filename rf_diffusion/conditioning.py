@@ -9,28 +9,42 @@ def get_center_of_mass(xyz14, mask):
     points = xyz14[mask]
     return points.mean(dim=0)
 
-def add_conditional_inputs(indep, metadata, masks_1d, conditioning_cfg, **kwargs):
+# def get_masks():
+#     aa_model.pop_mask(indep, masks_1d['pop'])
+#     # atom_mask = atom_mask[masks_1d['pop']]
+#     masks_1d['input_str_mask'] = masks_1d['input_str_mask'][masks_1d['pop']]
+#     masks_1d['is_atom_motif'] = aa_model.reindex_dict(masks_1d['is_atom_motif'], masks_1d['pop'])
+#     metadata['covale_bonds'] = aa_model.reindex_covales(metadata['covale_bonds'], masks_1d['pop'])
 
+#     is_res_str_shown = masks_1d['input_str_mask']
+#     is_atom_str_shown = masks_1d['is_atom_motif']
+
+def pop_mask(indep, metadata, masks_1d, **kwargs):
     aa_model.pop_mask(indep, masks_1d['pop'])
     # atom_mask = atom_mask[masks_1d['pop']]
     masks_1d['input_str_mask'] = masks_1d['input_str_mask'][masks_1d['pop']]
     masks_1d['is_atom_motif'] = aa_model.reindex_dict(masks_1d['is_atom_motif'], masks_1d['pop'])
     metadata['covale_bonds'] = aa_model.reindex_covales(metadata['covale_bonds'], masks_1d['pop'])
+    is_atom_str_shown = masks_1d['is_atom_motif']
+    is_atom_str_shown
+    return dict(
+        indep=indep,
+        metadata=metadata,
+        masks_1d=masks_1d,
+        **kwargs
+    )
+
+def center(indep, masks_1d, **kwargs):
 
     is_res_str_shown = masks_1d['input_str_mask']
     is_atom_str_shown = masks_1d['is_atom_motif']
 
-    # Cast to non-tensor
-    is_atom_str_shown = is_atom_str_shown or {}
-    def maybe_item(i):
-        if hasattr(i, 'item'):
-            return i.item()
-        return i
-    if is_atom_str_shown:
-        is_atom_str_shown = {maybe_item(res_i):v for res_i, v in is_atom_str_shown.items()}
-    
+    # For debugging
+    is_sm_shown = indep.is_sm[is_res_str_shown.nonzero()[:, 0]]
+    n_atomic_motif = is_sm_shown.sum()
+    n_residue_motif = (~is_sm_shown).sum()
     logging.info(
-        f'{is_atom_str_shown=}, {is_res_str_shown.nonzero()[:, 0]=}'
+        f'{n_atomic_motif=} {n_residue_motif=} {is_atom_str_shown=} {is_res_str_shown.nonzero()[:, 0]=}', 
     )
 
     motif_atom_name_by_res_idx = {}
@@ -44,6 +58,16 @@ def add_conditional_inputs(indep, metadata, masks_1d, conditioning_cfg, **kwargs
         center_of_mass_mask[:, 1] = True
 
     indep.xyz -= get_center_of_mass(indep.xyz, center_of_mass_mask)
+    return dict(
+        indep=indep,
+        masks_1d=masks_1d,
+        **kwargs
+    )
+
+
+def add_conditional_inputs(indep, metadata, masks_1d, conditioning_cfg, **kwargs):
+    is_res_str_shown = masks_1d['input_str_mask']
+    is_atom_str_shown = masks_1d['is_atom_motif']
 
     pre_transform_length = indep.length()
     use_guideposts = (torch.rand(1) < conditioning_cfg["P_IS_GUIDEPOST_EXAMPLE"]).item()
