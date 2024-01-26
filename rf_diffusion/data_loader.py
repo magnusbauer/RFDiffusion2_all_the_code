@@ -1718,6 +1718,10 @@ class DistilledDatasetUnnoised(data.Dataset):
         return self.getitem_unsafe(index)
 
 class TransformedDataset(data.Dataset):
+    '''
+    Applies transformations to a dataset following the pytorch Transformation paradigm:
+    https://pytorch.org/tutorials/beginner/basics/transforms_tutorial.html
+    '''
 
     def __init__(self,
                  dataset,
@@ -1730,7 +1734,6 @@ class TransformedDataset(data.Dataset):
         feats = self.dataset[index]
         for t in self.transforms:
             feats = t(**feats)
-            # feats.update(feats_out)
         return feats
 
     def __len__(self):
@@ -1754,17 +1757,19 @@ def feature_tuple_from_feature_dict(**kwargs):
 class DistilledDataset(data.Dataset):
     def __init__(self, dataset_configs, params, diffuser, preprocess_param, conf, homo=None, p_homo_cut=0.5, **kwargs):
         self.diffuser = diffuser
-        self.dataset = DistilledDatasetUnnoised(
+        dataset = DistilledDatasetUnnoised(
             dataset_configs,
             params,
             preprocess_param,
             conf,
             homo=homo,
             p_homo_cut=p_homo_cut)
-        self.params = self.dataset.params
-        self.conf = self.dataset.conf
-        self.preprocess_param = self.dataset.preprocess_param
-        self.model_adaptor = self.dataset.model_adaptor
+
+        self.params = dataset.params
+        self.conf = dataset.conf
+        self.preprocess_param = dataset.preprocess_param
+        self.model_adaptor = dataset.model_adaptor
+
         def diffuse(indep, is_gp, metadata, chosen_dataset, sel_item, task, masks_1d, item_context, mask_gen_seed, is_masked_seq, is_diffused, atomizer, **kwargs):
             if self.conf.diffuser.time_type == 'discrete':
                 t = random.randint(1, self.conf.diffuser.T)
@@ -1806,9 +1811,9 @@ class DistilledDataset(data.Dataset):
                 masks_1d=masks_1d,
                 diffuser_out=diffuser_out,
                 item_context=item_context)
-        # self.dataset = TransformedDataset(self.dataset, transform)
+
         self.dataset = TransformedDataset(
-            self.dataset,
+            dataset,
             transforms=(
                 conditioning.pop_mask,
                 conditioning.center,

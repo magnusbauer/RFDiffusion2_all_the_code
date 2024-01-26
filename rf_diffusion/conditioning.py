@@ -9,19 +9,8 @@ def get_center_of_mass(xyz14, mask):
     points = xyz14[mask]
     return points.mean(dim=0)
 
-# def get_masks():
-#     aa_model.pop_mask(indep, masks_1d['pop'])
-#     # atom_mask = atom_mask[masks_1d['pop']]
-#     masks_1d['input_str_mask'] = masks_1d['input_str_mask'][masks_1d['pop']]
-#     masks_1d['is_atom_motif'] = aa_model.reindex_dict(masks_1d['is_atom_motif'], masks_1d['pop'])
-#     metadata['covale_bonds'] = aa_model.reindex_covales(metadata['covale_bonds'], masks_1d['pop'])
-
-#     is_res_str_shown = masks_1d['input_str_mask']
-#     is_atom_str_shown = masks_1d['is_atom_motif']
-
 def pop_mask(indep, metadata, masks_1d, **kwargs):
     aa_model.pop_mask(indep, masks_1d['pop'])
-    # atom_mask = atom_mask[masks_1d['pop']]
     masks_1d['input_str_mask'] = masks_1d['input_str_mask'][masks_1d['pop']]
     masks_1d['is_atom_motif'] = aa_model.reindex_dict(masks_1d['is_atom_motif'], masks_1d['pop'])
     metadata['covale_bonds'] = aa_model.reindex_covales(metadata['covale_bonds'], masks_1d['pop'])
@@ -66,6 +55,10 @@ def center(indep, masks_1d, **kwargs):
 
 
 def add_conditional_inputs(indep, metadata, masks_1d, conditioning_cfg, **kwargs):
+    '''
+    Duplicates/masks parts of a protein to create a conditional input.
+    i.e. creates guideposts, performs atomization, applies masks.
+    '''
     is_res_str_shown = masks_1d['input_str_mask']
     is_atom_str_shown = masks_1d['is_atom_motif']
 
@@ -89,10 +82,3 @@ def add_conditional_inputs(indep, metadata, masks_1d, conditioning_cfg, **kwargs
         masks_1d=masks_1d,
         **kwargs
     )
-
-
-def center_motif(indep, metadata, masks_1d, conditioning_cfg):
-    pass
-
-def center_motif_even_unconditional(indep, metadata, masks_1d, conditioning_cfg):
-    pass

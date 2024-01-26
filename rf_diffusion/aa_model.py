@@ -313,6 +313,14 @@ for i, atom_names in enumerate(rf2aa.chemical.aa2long):
         within_res_atom_idx[i][atom_name.strip()] = j
 
 def make_is_motif14(seq, atom_name_by_res_idx):
+    '''
+    Converts a mapping of residue_index:atom_names to an Lx14 binary mask.
+
+    Params:
+        seq [L]: sequence tokens
+        atom_name_by_res_idx: Dict[int]-> list<string> like {2:['CA', 'N']}
+            The character CA_ONLY refers to index 1 in the final dimension of the output mask.
+    '''
     is_motif14 = torch.zeros((len(seq), 14)).bool()
     for res_idx, atom_names in atom_name_by_res_idx.items():
         if atom_names == 'CA_ONLY':
