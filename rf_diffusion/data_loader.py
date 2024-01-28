@@ -1811,23 +1811,17 @@ class DistilledDataset(data.Dataset):
                 masks_1d=masks_1d,
                 diffuser_out=diffuser_out,
                 item_context=item_context)
-
-        self.dataset = TransformedDataset(
-            dataset,
-            transforms=(
-                conditioning.pop_mask,
-                conditioning.center,
-                partial(
-                        conditioning.add_conditional_inputs,
-                        conditioning_cfg=addict.Dict({
-                            'P_IS_GUIDEPOST_EXAMPLE': self.params['P_IS_GUIDEPOST_EXAMPLE'],
-                            'guidepost_bonds': self.conf.guidepost_bonds,
-                        })
-                ),
-                diffuse,
-                feature_tuple_from_feature_dict,
+        
+        transforms = []
+        for transform_name in self.conf.transforms.names:
+            transforms.append(
+                getattr(conditioning, transform_name)(**self.conf.transforms.configs[transform_name]),
             )
-        )
+        transforms.extend([
+            diffuse,
+            feature_tuple_from_feature_dict
+        ])
+        self.dataset = TransformedDataset(dataset, transforms)
     
     def __getitem__(self, i):
         return self.dataset[i]

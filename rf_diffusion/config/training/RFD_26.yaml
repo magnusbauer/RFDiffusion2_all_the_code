@@ -217,3 +217,15 @@ use_nonechucks: false
 restart_timer: false
 pin_memory: true
 num_workers: 1
+transforms:
+  names:
+    - PopMask
+    - Center
+    - AddConditionalInputs
+
+  configs:
+    PopMask: {}
+    Center: {}
+    AddConditionalInputs:
+      p_is_guidepost_example: ${dataloader.P_IS_GUIDEPOST_EXAMPLE}
+      guidepost_bonds: ${guidepost_bonds}
