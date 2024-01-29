@@ -126,7 +126,6 @@ def catalytic_constraints_inner(pdb, mpnn_packed: bool):
         # f['name'] = utils.process_target(pdb, parse_hetatom=True, center=False)
         indeps[name] = aa_model.make_indep(pdb, ligand=None if name == 'af2' else ligand)
         is_atomized = ~indeps[name].is_sm
-        # indeps_a[name], atomizers[name] = atomize.atomize(indeps[name], is_atomized)
         atomization_state = aa_model.get_atomization_state(indeps[name])
         atomizers[name] = aa_model.AtomizeResidues(atomization_state, is_atomized)
         indeps_a[name] = atomizers[name].atomize(indeps[name])
