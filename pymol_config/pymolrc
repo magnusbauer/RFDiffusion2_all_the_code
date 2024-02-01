@@ -1,0 +1,15 @@
+run colors.py
+run mass_good_rainbow.py
+
+get_colors
+get_lighting
+alias cyc, pdbdircyclerlite;
+alias plasma, spectrum count, 0x4200F0_0xF551AD_0xFFFE51;
+
+
+alias hydrophobic, select hydrophobes,(resn ala+gly+val+ile+leu+phe+met; show sticks, (hydrophobes and (!name c+n+o)); color orange,hydrophobes
+
+set sphere_scale, 0.3;
+set sphere_transparency, 0.5; 
+
+set internal_gui_width, 500

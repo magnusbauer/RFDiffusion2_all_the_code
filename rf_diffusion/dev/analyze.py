@@ -19,6 +19,9 @@ import numpy as np
 from rf_diffusion import aa_model
 import rf_diffusion.parsers as parsers
 import rf_diffusion.util as util
+import rf_diffusion
+PKG_DIR = rf_diffusion.__path__[0]
+REPO_DIR = os.path.dirname(PKG_DIR)
 
 import sys
 from rf_diffusion.dev.pymol import cmd
@@ -1341,7 +1344,8 @@ def set_remote_cmd(remote_ip):
 def clear():
     cmd.reinitialize('everything')
     cmd.delete('all')
-    cmd.do('@~/.pymolrc')
+    cmd.do(f'cd {REPO_DIR}/pymol_config')
+    cmd.do('@./pymolrc')
 
 def register_full_atom(pred, true, log=False, gamma=0.95):
     '''
