@@ -10,11 +10,11 @@ from icecream import ic
 import rf2aa.chemical
 from rf2aa.chemical import NAATOKENS, MASKINDEX, NTOTAL, NHEAVYPROT
 import rf2aa.util
-import rf2aa.data_loader
+import rf2aa.data.data_loader
 from rf2aa.util_module import XYZConverter
-from rf2aa.RoseTTAFoldModel import RoseTTAFoldModule
+from rf2aa.model.RoseTTAFoldModel import LegacyRoseTTAFoldModule
 from rf2aa.kinematics import xyz_to_c6d, c6d_to_bins, xyz_to_t2d, get_chirals
-import rf2aa.parsers
+import rf2aa.data.parsers
 import rf2aa.tensor_util
 import rf_diffusion.aa_model as aa_model
 import dataclasses
@@ -145,7 +145,6 @@ class Sampler:
         self.initialized=True
 
         # Assemble config from the checkpoint
-        ic(self._conf.inference.ckpt_path)
         weights_pkl = du.read_pkl(
             self._conf.inference.ckpt_path, use_torch=True,
                 map_location=self.device)
@@ -434,7 +433,7 @@ class NRBStyleSelfCond(Sampler):
         ##################################
         do_self_cond = ((t < self._conf.diffuser.T) and (t != self._conf.diffuser.partial_T)) and self._conf.inference.str_self_cond
         if do_self_cond:
-            rfi = aa_model.self_cond(indep, rfi, rfo)
+            rfi = aa_model.self_cond(indep, rfi, rfo, use_cb=self._conf.preprocess.use_cb_to_get_pair_dist)
 
         if self.symmetry is not None:
             idx_pdb, self.chain_idx = self.symmetry.res_idx_procesing(res_idx=idx_pdb)
@@ -483,7 +482,6 @@ class NRBStyleSelfCond(Sampler):
         #     x_t_1, seq_t_1 = self.symmetry.apply_symmetry(x_t_1, seq_t_1)
 
         # return px0, x_t_1, seq_t_1, model_out['rfo'], {}
-    
         return px0, get_x_t_1(rigids_t, indep.xyz, self.is_diffused), get_seq_one_hot(indep.seq), model_out['rfo'], {'traj':{}}
 
 def get_x_t_1(rigids_t, xyz, is_diffused):
@@ -520,7 +518,7 @@ class FlowMatching(Sampler):
         ##################################
         do_self_cond = ((t < self._conf.diffuser.T) and (t != self._conf.diffuser.partial_T)) and self._conf.inference.str_self_cond
         if do_self_cond:
-            rfi = aa_model.self_cond(indep, rfi, rfo)
+            rfi = aa_model.self_cond(indep, rfi, rfo, use_cb=self._conf.preprocess.use_cb_to_get_pair_dist)
 
         if self.symmetry is not None:
             idx_pdb, self.chain_idx = self.symmetry.res_idx_procesing(res_idx=idx_pdb)

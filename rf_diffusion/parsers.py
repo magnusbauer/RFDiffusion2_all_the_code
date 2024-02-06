@@ -9,7 +9,7 @@ import random
 import rf_diffusion.util as util
 import gzip
 import rf2aa.util
-import rf2aa.parsers
+import rf2aa.data.parsers
 import rf_diffusion.error
 
 to1letter = {
@@ -338,7 +338,7 @@ def load_ligand_from_pdb(fn, lig_name=None, remove_H=True):
         sys.exit(f'ERROR (load_ligand_from_pdb): no HETATM records found in file {fn}.')
 
     mol, msa_sm, ins_sm, xyz_sm, mask_sm = \
-        rf2aa.parsers.parse_mol("".join(stream), filetype="pdb", string=True, remove_H=remove_H,
+        rf2aa.data.parsers.parse_mol("".join(stream), filetype="pdb", string=True, remove_H=remove_H,
                                 find_automorphs=False)
     G = rf2aa.util.get_nxgraph(mol)
     bond_feats_sm = rf2aa.util.get_bond_feats(mol)

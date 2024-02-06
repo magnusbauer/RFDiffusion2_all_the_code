@@ -70,7 +70,24 @@ contigmap:
   has_termini: [True]
   intersperse: null
 
+rf:
+  model:
+    use_chiral_l1: ${model.use_chiral_l1}
+    use_lj_l1: ${model.use_lj_l1}
+    use_atom_frames: ${model.use_atom_frames}
+    use_same_chain: ${model.use_same_chain}
+    recycling_type: ${model.recycling_type}
+    enable_same_chain: ${model.enable_same_chain}
+    refiner_topk: ${model.refiner_topk}
+
 model:
+  use_chiral_l1: True
+  use_lj_l1: True
+  use_atom_frames: True
+  use_same_chain: True
+  recycling_type: all
+  enable_same_chain: True
+  refiner_topk: 128
   n_extra_block: 4
   n_main_block: 32
   n_ref_block: 4
@@ -173,6 +190,7 @@ preprocess:
   predict_previous: False
   randomize_frames: False
   annotate_termini: True
+  use_cb_to_get_pair_dist: True
   
 logging:
   inputs: False

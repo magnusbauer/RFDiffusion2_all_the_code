@@ -21,7 +21,8 @@ from rf_diffusion.parsers import parse_a3m, parse_pdb
 from rf_diffusion.chemical import INIT_CRDS
 from rf_diffusion.kinematics import xyz_to_t2d
 import sys
-import rf2aa.data_loader
+import rf2aa.data.data_loader
+import rf2aa.data.compose_dataset
 import rf2aa.util
 import rf2aa.tensor_util
 from rf2aa.tensor_util import assert_equal
@@ -123,7 +124,7 @@ def set_data_loader_params(args):
         "MASK_MAX_PROPORTION":args.mask_max_proportion,
         "MASK_BROKEN_PROPORTION":args.mask_broken_proportion,
         "SPOOF_ITEM":args.spoof_item,
-        "MOL_DIR":rf2aa.data_loader.default_dataloader_params['MOL_DIR'],
+        "MOL_DIR":rf2aa.data.compose_dataset.default_dataloader_params['MOL_DIR'],
         "DISCONTIGUOUS_CROP": True,
         "USE_GUIDE_POSTS": args.use_guide_posts
     }
@@ -1080,7 +1081,7 @@ def loader_pdb_fixbb(item, params, homo = None, unclamp=False, pick_top=False,p_
     xyz_t = xyz_prev.clone()[None]
     mask_t = mask_prev[None].clone()
     atom_frames=torch.zeros(seq.shape)
-    bond_feats = rf2aa.data_loader.get_protein_bond_feats(L).long()
+    bond_feats = rf2aa.data.data_loader.get_protein_bond_feats(L).long()
     chirals=torch.Tensor()
     is_sm = torch.zeros(L).bool()
     return seq, msa, msa_masked, msa_full, mask_msa, true_crds, atom_mask, idx_pdb, xyz_t, t1d, mask_t, xyz_prev, mask_prev, same_chain, unclamp, negative, atom_frames, bond_feats, chirals, is_sm
@@ -1369,9 +1370,9 @@ def default_dataset_configs(loader_param, debug=False):
     #     sm_compl_items, sm_items, valid_pdb, valid_homo, valid_compl, valid_neg, valid_na_compl, 
     #     valid_na_neg, valid_rna, valid_sm_compl, valid_sm_compl_ligclus, valid_sm_compl_strict, 
     #     valid_sm, valid_pep, homo
-    # ) = rf2aa.data_loader.get_train_valid_set({**rf2aa.data_loader.default_dataloader_params, **loader_param, **{'DATAPKL': loader_param['DATAPKL_AA']}}, no_match_okay=debug)
+    # ) = rf2aa.data.data_loader.get_train_valid_set({**rf2aa.data.compose_dataset.default_dataloader_params, **loader_param, **{'DATAPKL': loader_param['DATAPKL_AA']}}, no_match_okay=debug)
     ic(loader_param)
-    dataloader_params = copy.deepcopy(rf2aa.data_loader.default_dataloader_params)
+    dataloader_params = copy.deepcopy(rf2aa.data.compose_dataset.default_dataloader_params)
     overrides = [
         ['DATAPKL_AA', 'DATAPKL'],
         ['MOL_DIR', 'MOL_DIR'],
@@ -1385,7 +1386,7 @@ def default_dataset_configs(loader_param, debug=False):
             dataloader_params[k_rf2aa] = v
 
     train_ID_dict, valid_ID_dict, weights_dict, train_dict, valid_dict, homo, chid2hash, chid2taxid = \
-            rf2aa.data_loader.get_train_valid_set({**rf2aa.data_loader.default_dataloader_params, \
+            rf2aa.data.data_loader.get_train_valid_set({**rf2aa.data.compose_dataset.default_dataloader_params, \
             **dataloader_params},
             no_match_okay=debug, diffusion_training=True, add_negatives=False)
 
@@ -1399,44 +1400,44 @@ def default_dataset_configs(loader_param, debug=False):
 
     #all the pdb sets use the default rf2aa loader_pdb, but the fixbb adaptor will not be applied to the seq2str task
     pdb_config = WeightedDataset(train_ID_dict["pdb"], train_dict["pdb"], {
-        'seq2str':      rf2aa.data_loader.loader_pdb,
-        'str2seq':      rf2aa.data_loader.loader_pdb, 
-        'str2seq_full': rf2aa.data_loader.loader_pdb, 
-        'hal':          rf2aa.data_loader.loader_pdb, 
-        'hal_ar':       rf2aa.data_loader.loader_pdb,
-        'diff':         rf2aa.data_loader.loader_pdb},
+        'seq2str':      rf2aa.data.data_loader.loader_pdb,
+        'str2seq':      rf2aa.data.data_loader.loader_pdb, 
+        'str2seq_full': rf2aa.data.data_loader.loader_pdb, 
+        'hal':          rf2aa.data.data_loader.loader_pdb, 
+        'hal_ar':       rf2aa.data.data_loader.loader_pdb,
+        'diff':         rf2aa.data.data_loader.loader_pdb},
         weights_dict["pdb"])
 
     # def pdb_aa_loader_fixbb(item, *args, **kwargs):
     #     return sm_compl_loader_fixbb(item + [()], *args, **kwargs)
 
     pdb_aa_config = WeightedDataset(train_ID_dict["pdb"], train_dict["pdb"], {
-        'seq2str':      rf2aa.data_loader.loader_pdb,
-        'str2seq':      rf2aa.data_loader.loader_pdb, 
-        'str2seq_full': rf2aa.data_loader.loader_pdb, 
-        'hal':          rf2aa.data_loader.loader_pdb, 
-        'hal_ar':       rf2aa.data_loader.loader_pdb,
-        'diff':         rf2aa.data_loader.loader_pdb},
+        'seq2str':      rf2aa.data.data_loader.loader_pdb,
+        'str2seq':      rf2aa.data.data_loader.loader_pdb, 
+        'str2seq_full': rf2aa.data.data_loader.loader_pdb, 
+        'hal':          rf2aa.data.data_loader.loader_pdb, 
+        'hal_ar':       rf2aa.data.data_loader.loader_pdb,
+        'diff':         rf2aa.data.data_loader.loader_pdb},
         weights_dict["pdb"])
 
 
     compl_config = WeightedDataset(train_ID_dict["compl"], train_dict["compl"], {
-        'seq2str':     rf2aa.data_loader.loader_complex,
-        'str2seq':     rf2aa.data_loader.loader_complex, 
-        'str2seq_full':rf2aa.data_loader.loader_complex, 
-        'hal':         rf2aa.data_loader.loader_complex, 
-        'hal_ar':      rf2aa.data_loader.loader_complex,
-        'diff':        rf2aa.data_loader.loader_complex},
+        'seq2str':     rf2aa.data.data_loader.loader_complex,
+        'str2seq':     rf2aa.data.data_loader.loader_complex, 
+        'str2seq_full':rf2aa.data.data_loader.loader_complex, 
+        'hal':         rf2aa.data.data_loader.loader_complex, 
+        'hal_ar':      rf2aa.data.data_loader.loader_complex,
+        'diff':        rf2aa.data.data_loader.loader_complex},
         weights_dict["compl"])
     
     # neg_config = WeightedDataset(neg_IDs, neg_dict, loader_complex, neg_weights)
     # fb_config = WeightedDataset(train_ID_dict["fb"], train_dict["fb"], {
-    #                     'seq2str':      rf2aa.data_loader.loader_fb,
-    #                     'str2seq':      rf2aa.data_loader.loader_fb, 
-    #                     'str2seq_full': rf2aa.data_loader.loader_fb, 
-    #                     'hal':          rf2aa.data_loader.loader_fb, 
-    #                     'hal_ar':       rf2aa.data_loader.loader_fb,
-    #                     'diff':         rf2aa.data_loader.loader_fb},
+    #                     'seq2str':      rf2aa.data.data_loader.loader_fb,
+    #                     'str2seq':      rf2aa.data.data_loader.loader_fb, 
+    #                     'str2seq_full': rf2aa.data.data_loader.loader_fb, 
+    #                     'hal':          rf2aa.data.data_loader.loader_fb, 
+    #                     'hal_ar':       rf2aa.data.data_loader.loader_fb,
+    #                     'diff':         rf2aa.data.data_loader.loader_fb},
     #                     weights_dict["fb"])
     # cn_config = WeightedDataset(cn_IDs, cn_dict, {
     #                     'seq2str':      None,
@@ -1446,7 +1447,7 @@ def default_dataset_configs(loader_param, debug=False):
     #                     'hal_ar':       loader_cn_fixbb,
     #                     'diff':         loader_cn_fixbb},
     #                     cn_weights)
-    sm_compl_loader_fixbb = partial(rf2aa.data_loader.loader_sm_compl_assembly, \
+    sm_compl_loader_fixbb = partial(rf2aa.data.data_loader.loader_sm_compl_assembly, \
                                 chid2hash=chid2hash,chid2taxid=chid2taxid)
     sm_compl_config = WeightedDataset(
                 train_ID_dict["sm_compl"], train_dict["sm_compl"], sm_compl_loader_fixbb, weights_dict["sm_compl"])
@@ -1543,7 +1544,7 @@ class DistilledDatasetUnnoised(data.Dataset):
             dataset_config = self.dataset_configs[chosen_dataset]
             out = dataset_config.task_loaders(
                         sel_item,
-                        {**rf2aa.data_loader.default_dataloader_params, **self.params, "P_ATOMIZE_MODRES": -1}, num_protein_chains=1, num_ligand_chains=1, 
+                        {**rf2aa.data.compose_dataset.default_dataloader_params, **self.params, "P_ATOMIZE_MODRES": -1}, num_protein_chains=1, num_ligand_chains=1, 
                         fixbb=True,
                     )
             return out
@@ -1583,9 +1584,9 @@ class DistilledDatasetUnnoised(data.Dataset):
         dataset_config = self.dataset_configs[chosen_dataset]
         ID = dataset_config.ids[index]
         if chosen_dataset == "sm_complex":
-            sel_item = rf2aa.data_loader.sample_item_sm_compl(dataset_config.dic, ID)
+            sel_item = rf2aa.data.data_loader.sample_item_sm_compl(dataset_config.dic, ID)
         else:
-            sel_item = rf2aa.data_loader.sample_item(dataset_config.dic, ID)
+            sel_item = rf2aa.data.data_loader.sample_item(dataset_config.dic, ID)
 
         # use fixbb settings for MSA generation if not sequence to structure task  
         fixbb = task != "seq2str"
@@ -1623,7 +1624,7 @@ class DistilledDatasetUnnoised(data.Dataset):
             elif chosen_dataset == 'compl':
                 chosen_loader = dataset_config.task_loaders[task]
                 out = chosen_loader(sel_item, 
-                    {**rf2aa.data_loader.default_dataloader_params, **self.params}, fixbb=fixbb)
+                    {**rf2aa.data.compose_dataset.default_dataloader_params, **self.params}, fixbb=fixbb)
             elif chosen_dataset == 'pdb' or chosen_dataset == 'pdb_aa':
                 chosen_loader = dataset_config.task_loaders[task]
                 # if p_unclamp > self.unclamp_cut:
@@ -1631,7 +1632,7 @@ class DistilledDatasetUnnoised(data.Dataset):
                 # else:
                 #     out = chosen_loader(sel_item[0], self.params, self.homo, unclamp=False, p_homo_cut=self.p_homo_cut)
                 out = chosen_loader(sel_item, 
-                    {**rf2aa.data_loader.default_dataloader_params, **self.params}, self.homo, p_homo_cut=-1.0,fixbb=fixbb)
+                    {**rf2aa.data.compose_dataset.default_dataloader_params, **self.params}, self.homo, p_homo_cut=-1.0,fixbb=fixbb)
             elif chosen_dataset == 'fb':
                 # print('Chose fb')
                 chosen_loader = self.fb_loaders[task]
@@ -1647,7 +1648,7 @@ class DistilledDatasetUnnoised(data.Dataset):
                     num_ligand_chains = 1
                 out = dataset_config.task_loaders(
                     sel_item,
-                    {**rf2aa.data_loader.default_dataloader_params, **self.params, "P_ATOMIZE_MODRES": -1},
+                    {**rf2aa.data.compose_dataset.default_dataloader_params, **self.params, "P_ATOMIZE_MODRES": -1},
                     num_protein_chains=num_protein_chains, num_ligand_chains=num_ligand_chains,
                     fixbb=fixbb,
                 )
@@ -1660,7 +1661,6 @@ class DistilledDatasetUnnoised(data.Dataset):
             def process_out(out):
                 # Convert template-based modeling inputs to a description of a single structure (the query structure).
                 indep, atom_mask = aa_model.adaptor_fix_bb_indep(out)
-
                 if indep.is_sm.all():
                     raise Exception('is_sm is true for all indices')
                 

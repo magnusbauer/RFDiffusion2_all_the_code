@@ -15,7 +15,7 @@ import torch
 from icecream import ic
 
 from rf_diffusion.inference.utils import parse_pdb
-import rf2aa.parsers
+import rf2aa.data.parsers
 import rf2aa.chemical
 from rf_diffusion.parsers import load_ligand_from_pdb, load_ligands_from_pdb
 from rf2aa.util import kabsch

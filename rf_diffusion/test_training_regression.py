@@ -3,8 +3,8 @@ import sys
 import dataclasses
 import hydra
 from hydra import compose, initialize
-from rf2aa.RoseTTAFoldModel import RoseTTAFoldModule as RoseTTAFoldModuleReal
-from rf2aa.RoseTTAFoldModel import RoseTTAFoldModule
+from rf2aa.model.RoseTTAFoldModel import LegacyRoseTTAFoldModule as RoseTTAFoldModuleReal
+from rf2aa.model.RoseTTAFoldModel import LegacyRoseTTAFoldModule
 import torch
 from torch import tensor
 import shlex
@@ -92,7 +92,7 @@ def run_regression(self, overrides, golden_name, call_number=1, assert_loss=Fals
     
     conf = construct_conf(overrides)
     train = train_multi_deep.make_trainer(conf)
-    fake_forward = mock.patch.object(RoseTTAFoldModule, "__call__", autospec=True)
+    fake_forward = mock.patch.object(LegacyRoseTTAFoldModule, "__call__", autospec=True)
     a = mock.patch.object(torch.cuda.amp.GradScaler, "scale", autospec=True)
     with fake_forward as mock_forward:
         with a as b:
@@ -171,7 +171,7 @@ class Loss(unittest.TestCase):
         run_inference.make_deterministic()
         conf = construct_conf(['experiment.gamma=0.999'])
         train = train_multi_deep.make_trainer(conf)
-        fake_forward = mock.patch.object(RoseTTAFoldModule, "__call__", autospec=True)
+        fake_forward = mock.patch.object(LegacyRoseTTAFoldModule, "__call__", autospec=True)
         a = mock.patch.object(torch.cuda.amp.GradScaler, "scale", autospec=True)
         with fake_forward as mock_forward:
             with a as b:

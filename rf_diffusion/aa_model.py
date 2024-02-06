@@ -11,9 +11,9 @@ from icecream import ic
 from assertpy import assert_that
 from rf2aa.chemical import NAATOKENS, MASKINDEX, NTOTAL, NHEAVYPROT, UNKINDEX
 import rf2aa.util
-from rf2aa import parsers
+from rf2aa.data import parsers
 from dataclasses import dataclass
-from rf2aa.data_loader import MSAFeaturize, MSABlockDeletion, merge_a3m_homo, merge_a3m_hetero
+from rf2aa.data.data_loader import MSAFeaturize, MSABlockDeletion, merge_a3m_homo, merge_a3m_hetero
 from rf2aa.kinematics import xyz_to_c6d, c6d_to_bins, xyz_to_t2d, get_chirals
 from rf2aa.util_module import XYZConverter
 import rf2aa.tensor_util
@@ -1130,8 +1130,9 @@ class Model:
         xyz_t = torch.zeros(1,2,L,3)
         t2d = torch.zeros(1,2,L,L,68)
 
+        use_cb = self.conf.preprocess.use_cb_to_get_pair_dist
         t2d_xt, mask_t_2d_remade = util.get_t2d(
-            xyz, indep.is_sm, indep.atom_frames)
+            xyz, indep.is_sm, indep.atom_frames, use_cb=use_cb)
         t2d[0,0] = t2d_xt[0]
         xyz_t[0,0] = xyz[0,:,1]
 
@@ -1157,7 +1158,7 @@ class Model:
         xyz[0, is_diffused*~indep.is_sm,3:] = torch.nan
         xyz[0, indep.is_sm,14:] = 0
         xyz[0, is_protein_motif, 14:] = 0
-        dist_matrix = rf2aa.data_loader.get_bond_distances(indep.bond_feats)
+        dist_matrix = rf2aa.data.data_loader.get_bond_distances(indep.bond_feats)
         
         t1d = torch.tile(t1d, (1,2,1,1))
         # Xt template is at index 0, Self-conditioning template is at index 1 (if self conditioning is active)
@@ -1673,23 +1674,21 @@ def mask_indep(indep, is_diffused):
 #     return
 
 
-def self_cond_new(indep, rfi, rfo):
+def self_cond_new(indep, rfi, rfo, use_cb=False):
     # RFI is already batched
     B = 1
     L = indep.xyz.shape[0]
     rfi_sc = copy.deepcopy(rfi)
     zeros = torch.zeros(B,1,L,36-3,3).float().to(rfi.xyz.device)
     xyz_t = torch.cat((rfo.xyz[-1:], zeros), dim=-2) # [B,T,L,27,3]
-    ic(xyz_t[0].shape, rfi.atom_frames.shape)
     t2d, mask_t_2d_remade = util.get_t2d(
-        xyz_t[0], indep.is_sm, rfi.atom_frames[0])
+        xyz_t[0], indep.is_sm, rfi.atom_frames[0], use_cb=use_cb)
     t2d = t2d[None] # Add batch dimension # [B,T,L,L,44]
-    ic(rfi_sc.xyz_t.shape, rfi_sc.t2d.shape)
     rfi_sc.xyz_t[0,1] = xyz_t[0, 0, :, 1]
     rfi_sc.t2d[0, 1] = t2d[0, 0]
     return rfi_sc
 
-def self_cond(indep, rfi, rfo):
+def self_cond(indep, rfi, rfo, use_cb=False):
     # RFI is already batched
     B = 1
     L = indep.xyz.shape[0]
@@ -1697,7 +1696,7 @@ def self_cond(indep, rfi, rfo):
     zeros = torch.zeros(B,1,L,36-3,3).float().to(rfi.xyz.device)
     xyz_t = torch.cat((rfo.xyz[-1:], zeros), dim=-2) # [B,T,L,27,3]
     t2d, mask_t_2d_remade = util.get_t2d(
-        xyz_t[0], indep.is_sm, rfi.atom_frames[0])
+        xyz_t[0], indep.is_sm, rfi.atom_frames[0], use_cb=use_cb)
     t2d = t2d[None] # Add batch dimension # [B,T,L,L,44]
     rfi_sc.xyz_t[0,1] = xyz_t[0, 0, :, 1]
     rfi_sc.t2d[0, 1] = t2d[0, 0]
@@ -2012,8 +2011,11 @@ class AtomizeResidues:
             C_resolved = (not C_term) and indep_deatomized.idx[res_idx+1]-indep_deatomized.idx[res_idx] == 1
             N_resolved = (not N_term) and indep_deatomized.idx[res_idx]-indep_deatomized.idx[res_idx-1] == 1
 
-            seq_atomize, _, xyz_atomize, _, frames_atomize, bond_feats_atomize, C_index, chirals_atomize = \
+            seq_atomize, _, xyz_atomize, _, frames_atomize, bond_feats_atomize, ra, chirals_atomize = \
                             rf2aa.util.atomize_protein(res_idx, indep_deatomized.seq[None], xyz, atom_mask, n_res_atomize=1)
+            r,a = ra.T
+            C_index = torch.all(ra==torch.tensor([r[-1],2]),dim=1).nonzero()
+            
             natoms = seq_atomize.shape[0]
             # update the chirals to be after all the other residues
             chirals_atomize[:, :-1] += L

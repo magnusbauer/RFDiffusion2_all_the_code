@@ -28,13 +28,13 @@ from torch.utils import data
 from omegaconf import DictConfig, OmegaConf
 
 import rf2aa.chemical
-import rf2aa.data_loader
+import rf2aa.data.data_loader
 import rf2aa.util
-import rf2aa.loss
+import rf2aa.loss.loss
 import rf2aa.tensor_util
 from rf2aa.tensor_util import assert_equal
 from rf2aa.util_module import XYZConverter
-from rf2aa.RoseTTAFoldModel import RoseTTAFoldModule
+from rf2aa.model.RoseTTAFoldModel import LegacyRoseTTAFoldModule
 from rf_diffusion import loss_aa
 from rf_diffusion.metrics import MetricManager
 from rf_diffusion import run_inference
@@ -914,6 +914,8 @@ class Trainer():
 
                 unroll_performed = False
 
+                use_cb = self.conf.preprocess.use_cb_to_get_pair_dist
+
                 # Some percentage of the time, provide the model with the model's prediction of x_0 | x_t+1
                 # When little_t == T should not unroll as we cannot go back further in time.
                 self_cond = not (little_t == self.conf.diffuser.T) and (torch.tensor(self.conf['prob_self_cond']) > torch.rand(1))
@@ -935,7 +937,7 @@ class Trainer():
                                         # return_raw=False
                                         )
                                 rfo = model_out['rfo']
-                                rfi = aa_model.self_cond(indep, rfi, rfo)
+                                rfi = aa_model.self_cond(indep, rfi, rfo, use_cb=use_cb)
                                 xyz_prev_orig = rfi.xyz[0,:,:14].clone()
 
                 timer.checkpoint('self-conditioning')
@@ -967,7 +969,10 @@ class Trainer():
                         mask_2d = mask_BB[:,None,:] * mask_BB[:,:,None] # ignore pairs having missing residues
                         # assert torch.sum(mask_2d) > 0, "mask_2d is blank"
                         true_crds_frame = rf2aa.util.xyz_to_frame_xyz(true_crds, indep.seq[None], indep.atom_frames[None])
-                        c6d = rf2aa.kinematics.xyz_to_c6d(true_crds_frame)
+                        kinematics_params = copy.deepcopy(rf2aa.kinematics.PARAMS)
+                        kinematics_params['USE_CB'] = use_cb
+                        c6d = rf2aa.kinematics.xyz_to_c6d(true_crds_frame, params=kinematics_params)
+                        #c6d = rf2aa.kinematics.xyz_to_c6d(true_crds_frame)
                         negative = torch.tensor([False])
                         c6d = rf2aa.kinematics.c6d_to_bins(c6d, indep.same_chain[None], negative=negative)
 

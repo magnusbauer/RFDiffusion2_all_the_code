@@ -21,8 +21,8 @@ import run_inference
 from functools import partial
 from rf2aa import tensor_util
 import rf2aa.chemical
-from rf2aa.RoseTTAFoldModel import RoseTTAFoldModule
-import rf2aa.loss
+from rf2aa.model.RoseTTAFoldModel import LegacyRoseTTAFoldModule
+import rf2aa.loss.loss
 from rf_diffusion.inference import model_runners
 from rf_diffusion import aa_model
 from rf_diffusion import inference
@@ -88,8 +88,8 @@ class TestRegression(unittest.TestCase):
             'inference.contig_as_guidepost=True',
         ])
 
-        func_sig = signature(RoseTTAFoldModule.forward)
-        fake_forward = mock.patch.object(RoseTTAFoldModule, "forward", autospec=True)
+        func_sig = signature(LegacyRoseTTAFoldModule.forward)
+        fake_forward = mock.patch.object(LegacyRoseTTAFoldModule, "forward", autospec=True)
 
         def side_effect(self, *args, **kwargs):
             ic("mock forward", type(self), side_effect.call_count)
@@ -692,8 +692,8 @@ class TestInference(unittest.TestCase):
             'inference.str_self_cond=0',
         ])
 
-        func_sig = signature(RoseTTAFoldModule.forward)
-        fake_forward = mock.patch.object(RoseTTAFoldModule, "forward", autospec=True)
+        func_sig = signature(LegacyRoseTTAFoldModule.forward)
+        fake_forward = mock.patch.object(LegacyRoseTTAFoldModule, "forward", autospec=True)
 
         def side_effect(self, *args, **kwargs):
             ic("mock forward", type(self), side_effect.call_count)
@@ -769,7 +769,7 @@ class TestInference(unittest.TestCase):
         # Backbone only
         backbone_atom_mask = torch.zeros((n_motif, 14)).bool()
         backbone_atom_mask[:,:3] = True
-        backbone_rmsd = rf2aa.loss.calc_crd_rmsd(
+        backbone_rmsd = rf2aa.loss.loss.calc_crd_rmsd(
                 torch.tensor(input_motif_xyz)[None],
                 torch.tensor(output_motif_xyz)[None],
                 backbone_atom_mask[None])
@@ -779,7 +779,7 @@ class TestInference(unittest.TestCase):
 
         # All atoms
         atom_mask[:, 3] = False  # Exclude bb O because it can move around depending on non-motif residue placement.
-        rmsd = rf2aa.loss.calc_crd_rmsd(
+        rmsd = rf2aa.loss.loss.calc_crd_rmsd(
                 torch.tensor(input_motif_xyz)[None],
                 torch.tensor(output_motif_xyz)[None],
                 torch.tensor(atom_mask)[None])
