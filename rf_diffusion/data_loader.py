@@ -1908,10 +1908,10 @@ class DistributedWeightedSampler(data.Sampler):
 
     def __iter__(self):
         # deterministically shuffle based on epoch
-        print('Just entered DistributedWeightedSampler __iter__')
         g = torch.Generator()
         g.manual_seed(self.epoch)
         run_inference.seed_all(self.epoch * self.num_replicas + self.rank) # Reseed the RNGs for test stability.
+        self.epoch += 1
 
         # get indices (fb + pdb models)
         # indices = torch.arange(len(self.dataset))

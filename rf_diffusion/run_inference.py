@@ -270,7 +270,7 @@ def sample_one(sampler, simple_logging=False):
 
         init_seq_stack = copy.deepcopy(seq_stack)
         indep, px0_xyz_stack, denoised_xyz_stack, seq_stack = \
-            deatomize_sampler_outputs(sampler, indep, px0_xyz_stack, denoised_xyz_stack, seq_stack)
+            deatomize_sampler_outputs(sampler.model_adaptor.atomizer, indep, px0_xyz_stack, denoised_xyz_stack, seq_stack)
         
         for k, v in traj_stack.items():
             xyz_stack_new = []
@@ -319,7 +319,6 @@ def deatomize_sampler_outputs(sampler, indep, px0_xyz_stack, denoised_xyz_stack,
     de-atomized versions, but other features will remain unchanged (and
     therefore become inconsistent).
     """
-    atomizer = sampler.model_adaptor.atomizer
     px0_xyz_stack_new = []
     denoised_xyz_stack_new = []
     seq_stack_new = []

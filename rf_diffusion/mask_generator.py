@@ -1,4 +1,5 @@
 import random
+import logging
 import sys
 import copy
 
@@ -373,8 +374,9 @@ def _get_tip_mask(indep, atom_mask, *args,
         is_motif[indep.is_sm] = True
         return is_motif, None
     valid_idx = is_valid_for_atomization.nonzero()[:,0]
+    n_valid_targets = is_valid_for_atomization.sum()
     
-    n_atomize = random.randint(n_atomize_min, n_atomize_max)
+    n_atomize = random.randint(n_atomize_min, min(n_atomize_max, n_valid_targets))
     atomize_i = np.random.choice(valid_idx, n_atomize, replace=False)
 
     is_atom_motif = {}

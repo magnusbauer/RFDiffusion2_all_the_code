@@ -20,7 +20,7 @@ class XMLRPCWrapperProxy(object):
         try:
             return self.wrapped(*args, **kw)
         except Exception as e:
-            all_args = args
+            all_args = tuple(map(str, args))
             all_args += tuple(f'{k}={v}' for k,v in kw.items())
             raise Exception(f"cmd.{self.name}('{','.join(all_args)})'") from e
 

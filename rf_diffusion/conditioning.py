@@ -34,7 +34,7 @@ class Center:
         is_sm_shown = indep.is_sm[is_res_str_shown.nonzero()[:, 0]]
         n_atomic_motif = is_sm_shown.sum()
         n_residue_motif = (~is_sm_shown).sum()
-        logging.info(
+        logging.debug(
             f'{n_atomic_motif=} {n_residue_motif=} {is_atom_str_shown=} {is_res_str_shown.nonzero()[:, 0]=}', 
         )
 
