@@ -88,7 +88,6 @@ def clear():
     analyze.clear()
 
 def is_rf_diff(row):
-    ic(row.keys())
     if "inference_outputs" in row['pdb_path']:
         return False
     k = 'resume_scheduler'

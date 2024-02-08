@@ -311,7 +311,7 @@ def add_implicit_side_chain_atoms(seq, act_on_residue, xyz, xyz_with_sc):
 
     return xyz
 
-def deatomize_sampler_outputs(sampler, indep, px0_xyz_stack, denoised_xyz_stack, seq_stack):
+def deatomize_sampler_outputs(atomizer, indep, px0_xyz_stack, denoised_xyz_stack, seq_stack):
     """Converts atomized residues back to residue-as-residue representation in
     the outputs of a single design trajectory.
 
