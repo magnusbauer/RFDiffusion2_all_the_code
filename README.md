@@ -1,31 +1,36 @@
 # Setup
+Let's define some paths. Begin by `cd`ing to any directory you like.
 ```
-git clone -b aa git@github.com:baker-laboratory/rf_diffusion.git PKG_DIR
-cd rf_diffusion
+REPO_NAME="rf_diffusion_repo"  # Set REPO_NAME to be anything you like.
+REPO_DIR="$PWD/$REPO_NAME"
+```
+Now clone the repo.
+```
+git clone -b aa git@github.com:baker-laboratory/rf_diffusion.git $REPO_NAME
+cd $REPO_DIR
 git submodule init
 git submodule update --init
 ```
 ## Verify tests pass
 ```
-export PYTHONPATH="${PYTHONPATH}:PKG_DIR"
-cd rf_diffusion
+export PYTHONPATH="${PYTHONPATH}:$REPO_DIR"
+cd $REPO_DIR/rf_diffusion
 apptainer exec /software/containers/users/dtischer/rf_diffusion_aa.sif pytest --disable-warnings -s -m "not nondeterministic"
 ```
-
 ## A note about running scripts in this repo
 Many of the python scripts in this repo are executable. That is, you don't need to do `python some_script.py` or `my_container.sif some_script.py`. The are several environmental variables and flags that need to be set properly for the scripts to run. Rather than asking the user to set these correctly each time (which is error prone), we have a script to do this prep work under the hood for you! 
 
 Any scripts (like `rf_diffusion/benchmark/pipeline.py` and `rf_diffusion/run_inference.py`) that have the shebang line `#!/net/software/containers/users/dtischer/shebang_rf_se3_diffusion_dev.sh` can be executed directly. If you need to run a script without that line, you need to do
 ```
-export PYTHONPATH="${PYTHONPATH}:PKG_DIR"
+export PYTHONPATH="${PYTHONPATH}:$REPO_DIR"
 /usr/bin/apptainer run --nv --slurm --env PYTHONPATH="\$PYTHONPATH:$PYTHONPATH" /net/software/containers/users/dtischer/rf_diffusion_aa.sif path/to/script.py ...
 ```
 
 # Simple inference pipeline run
 ## Running inference
-To run a demo of some of the inference capabilities, including enzyme design from tip atoms, enzyme design from tip atoms of unknown sequence position, ligand binder design, traditional contiguous motif scaffolding, and molecular glue design (binder to protein:small_molecule complex).  (See `PKG_DIR/rf_diffusion/benchmark/demo.json` for how these tasks are declared)
+To run a demo of some of the inference capabilities, including enzyme design from tip atoms, enzyme design from tip atoms of unknown sequence position, ligand binder design, traditional contiguous motif scaffolding, and molecular glue design (binder to protein:small_molecule complex).  (See `$REPO_DIR/rf_diffusion/benchmark/demo.json` for how these tasks are declared)
 
-`PKG_DIR/rf_diffusion/benchmark/pipeline.py --config-name=demo_design_only`
+`$REPO_DIR/rf_diffusion/benchmark/pipeline.py --config-name=demo_only_design`
 
 This will print the directory the designs are created in:
 ic| conf.outdir: OUTDIR
@@ -43,7 +48,7 @@ Find your hostname with
 `hostname -I`
 
 Then run:
-`PKG_DIR/rf_diffusion/dev/show_bench.py --clear=True 'OUTDIR/*.pdb' --pymol_url=http://HOSTNAME:9123`
+`$REPO_DIR/rf_diffusion/dev/show_bench.py --clear=True 'OUTDIR/*.pdb' --pymol_url=http://HOSTNAME:9123`
 
 You should see multiple designs (such as this enzyme design) render in your pymol session:
 ![retroaldolase_demo](images/demo_output_retroaldolase.png)
@@ -53,7 +58,7 @@ To render some of the nice colors, you may need to add the files in `pymol_confi
 ## Running inference (OUTSIDE OF DIGS)
 To run a simple pipeline with no mpnn/scoring for the tip atom case:
 
-`PKG_DIR/rf_diffusion/benchmark/pipeline.py --config-name=retroaldolase_demo_nodigs`
+`$REPO_DIR/rf_diffusion/benchmark/pipeline.py --config-name=retroaldolase_demo_nodigs`
 
 ## Running catalytic constraint benchmarking
 
