@@ -416,6 +416,13 @@ class NRBStyleSelfCond(Sampler):
             tors_t_1: (L, ?) The updated torsion angles of the next  step.
             plddt: (L, 1) Predicted lDDT of x0.
         '''
+    
+        if self._conf.inference.get('recenter_xt'):
+            indep_cond = copy.deepcopy(indep)
+            indep_uncond_com = indep.xyz[:,1,:].mean(dim=0)
+            indep.xyz = indep.xyz - indep_uncond_com
+            indep = aa_model.make_conditional_indep(indep, indep_cond, self.is_diffused)
+
         extra_t1d_names = getattr(self._conf, 'extra_t1d', [])
         t_cont = t/self._conf.diffuser.T
         indep.extra_t1d = features.get_extra_t1d_inference(indep, extra_t1d_names, self._conf.extra_t1d_params, self._conf.inference.conditions, is_gp=indep.is_gp, t_cont=t_cont)
