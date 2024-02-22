@@ -9,13 +9,13 @@ import assertpy
 
 import rf_diffusion.aa_model as aa_model
 import rf2aa.util
-import rf2aa.chemical
+from rf2aa.chemical import ChemicalData as ChemData
 import numpy as np
 
 def set_nonexistant_atoms_to_nan(xyz, seq, H_exists=False):
-    atom_mask = rf2aa.util.allatom_mask[seq]
+    atom_mask = ChemData().allatom_mask[seq]
     if not H_exists:
-        atom_mask[:, rf2aa.chemical.NHEAVYPROT:] = False # no Hs
+        atom_mask[:, ChemData().NHEAVYPROT:] = False # no Hs
     xyz = xyz.clone()
     xyz[~atom_mask] = torch.nan
     return xyz
@@ -27,7 +27,7 @@ def atomized_indices_atoms(atomizer, atom_names_by_res):
         assert isinstance(res_i, int), res_i
         atomized_residue_idxs = atom_idx_by_res[res_i]
         original_aa = atomizer.deatomized_state[res_i].aa
-        within_res_atom_idxs = {atom_name:i for i,atom_name in enumerate(e for e in rf2aa.chemical.aa2long[original_aa] if e is not None)}
+        within_res_atom_idxs = {atom_name:i for i,atom_name in enumerate(e for e in ChemData().aa2long[original_aa] if e is not None)}
 
         # Strip whitespace
         within_res_atom_idxs = {atom_name.strip():i for atom_name,i in within_res_atom_idxs.items()}
@@ -37,7 +37,7 @@ def atomized_indices_atoms(atomizer, atom_names_by_res):
             try:
                 within_res_atom_idx = within_res_atom_idxs[atom_name]
             except KeyError as e:
-                raise KeyError(f'{atom_name} not one of the known atoms for residue {res_i} with seq {rf2aa.chemical.num2aa[original_aa]}: {list(within_res_atom_idxs.keys())}') from e
+                raise KeyError(f'{atom_name} not one of the known atoms for residue {res_i} with seq {ChemData().num2aa[original_aa]}: {list(within_res_atom_idxs.keys())}') from e
             atom_i = atomized_residue_idxs[within_res_atom_idx].item()
             named_i.append(atom_i)
 
@@ -68,7 +68,7 @@ def get_res_atom_name_by_atomized_idx(atomizer):
     res_idx_atom_name_by_atomized_idx = {}
     for res_idx, atomized_res_idx in atomized_res_idx_from_res.items():
         original_aa = atomizer.deatomized_state[res_idx].aa
-        atom_name_by_within_res_idx = {i:atom_name for i,atom_name in enumerate(e for e in rf2aa.chemical.aa2long[original_aa] if e is not None)}
+        atom_name_by_within_res_idx = {i:atom_name for i,atom_name in enumerate(e for e in ChemData().aa2long[original_aa] if e is not None)}
         for within_res_atom_idx, atom_idx in enumerate(atomized_res_idx):
             res_idx_atom_name_by_atomized_idx[atom_idx.item()] = (
                 # f'{rf2aa.chemical.num2aa[original_aa]}{atomizer.indep_initial_copy.idx[res_idx]}'
@@ -130,7 +130,7 @@ def atom_indices(atomizer, res_mask, atom_names_by_res):
 
 def create_masks(atomizer, is_res_str_shown, is_atom_str_shown):
 
-    is_atom_seq_shown = {res_i: [e for e in rf2aa.chemical.aa2long[atomizer.deatomized_state[res_i].aa][:rf2aa.chemical.NHEAVYPROT] if e is not None]
+    is_atom_seq_shown = {res_i: [e for e in ChemData().aa2long[atomizer.deatomized_state[res_i].aa][:ChemData().NHEAVYPROT] if e is not None]
                             for res_i in is_atom_str_shown.keys()}
     is_res_seq_shown = is_res_str_shown
     return create_masks_str_seq(atomizer, is_res_str_shown, is_res_seq_shown, is_atom_str_shown, is_atom_seq_shown)

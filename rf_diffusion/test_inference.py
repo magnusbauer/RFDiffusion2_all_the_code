@@ -20,7 +20,8 @@ import test_utils
 import run_inference
 from functools import partial
 from rf2aa import tensor_util
-import rf2aa.chemical
+
+from rf2aa.chemical import ChemicalData as ChemData
 from rf2aa.model.RoseTTAFoldModel import LegacyRoseTTAFoldModule
 import rf2aa.loss.loss
 from rf_diffusion.inference import model_runners
@@ -719,7 +720,7 @@ class TestInference(unittest.TestCase):
             # Technically only the first 3 indices are used by the network, but helpful to check to understand
             # inconsistencies in the alpha tensor computed from these coordinates.
             c['xyz'] = mapped_call['xyz'][0,is_motif]
-            is_sidechain_torsion = torch.ones(3*rf2aa.chemical.NTOTALDOFS).bool()
+            is_sidechain_torsion = torch.ones(3*ChemData().NTOTALDOFS).bool()
             is_sidechain_torsion[0:2] = False
             is_sidechain_torsion[3:5] = False
             c['alpha'] = mapped_call['alpha_t'][0,0,is_motif]

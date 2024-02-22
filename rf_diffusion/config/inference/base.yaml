@@ -80,6 +80,7 @@ rf:
     recycling_type: ${model.recycling_type}
     enable_same_chain: ${model.enable_same_chain}
     refiner_topk: ${model.refiner_topk}
+    get_quaternion: ${model.get_quaternion}
 
 model:
   use_chiral_l1: True
@@ -89,6 +90,7 @@ model:
   recycling_type: all
   enable_same_chain: True
   refiner_topk: 128
+  get_quaternion: True
   n_extra_block: 4
   n_main_block: 32
   n_ref_block: 4

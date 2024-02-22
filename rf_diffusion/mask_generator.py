@@ -16,6 +16,8 @@ import assertpy
 from collections import OrderedDict
 import rf_diffusion.aa_model as aa_model
 from functools import partial
+
+from rf2aa.chemical import ChemicalData as ChemData
 from rf_diffusion import error
 from rf_diffusion import tip_atoms
 
@@ -33,7 +35,7 @@ def make_covale_compatible(get_mask):
         covalently_modified_res_motif = set(motif_idx).intersection(set(covale_res_i))
         for res_i in covalently_modified_res_motif:
             seq_token = indep.seq[res_i]
-            atom_names = rf2aa.chemical.aa2long[seq_token][:rf2aa.chemical.NHEAVYPROT]
+            atom_names = ChemData().aa2long[seq_token][:ChemData().NHEAVYPROT]
             atom_names = [a if a is None else a.strip() for a in atom_names]
             atom_names = np.array(atom_names, dtype=np.str_)
             n_atoms_expected = (atom_names != 'None').sum()
@@ -277,7 +279,7 @@ def get_atom_names_within_n_bonds(res, source_node, n_bonds):
     bond_graph = nx.from_numpy_matrix(bond_feats.numpy())
     paths = nx.single_source_shortest_path_length(bond_graph, source=source_node,cutoff=n_bonds)
     atoms_within_n_bonds = paths.keys()
-    atom_names = [rf2aa.chemical.aa2long[res][i] for i in atoms_within_n_bonds]
+    atom_names = [ChemData().aa2long[res][i] for i in atoms_within_n_bonds]
     return atom_names
 
 def tip_crd(indep, i):
@@ -288,8 +290,8 @@ def tip_crd(indep, i):
 def tip_idx(indep, i):
     '''Returns the coordinates of the tip atom of residue index i'''
     aa = indep.seq[i]
-    tip_atom_name = rf2aa.chemical.aa2tip[aa].strip()
-    tip_idx_within_res = next(i for i, atom_name in enumerate(rf2aa.chemical.aa2long[aa]) if atom_name.strip() == tip_atom_name)
+    tip_atom_name = ChemData().aa2tip[aa].strip()
+    tip_idx_within_res = next(i for i, atom_name in enumerate(ChemData().aa2long[aa]) if atom_name.strip() == tip_atom_name)
     return tip_idx_within_res
 
 def _get_tip_gaussian_mask(indep, atom_mask, *args, std_dev=8, show_tip=False, **kwargs):
@@ -1192,20 +1194,20 @@ def choose_contiguous_atom_motif(res):
     paths = rf2aa.util.find_all_paths_of_length_n(bond_graph, 2)
     paths.extend(rf2aa.util.find_all_paths_of_length_n(bond_graph, 3))
     chosen_path = random.choice(paths)
-    atom_names = [rf2aa.chemical.aa2long[res][i] for i in chosen_path]
+    atom_names = [ChemData().aa2long[res][i] for i in chosen_path]
     return atom_names
 
 
 def get_residue_bond_feats(res, include_H=False):
-    bond_feats = torch.zeros((rf2aa.chemical.NTOTAL, rf2aa.chemical.NTOTAL))
-    for j, bond in enumerate(rf2aa.chemical.aabonds[res]):
-        start_idx = rf2aa.chemical.aa2long[res].index(bond[0])
-        end_idx = rf2aa.chemical.aa2long[res].index(bond[1])
+    bond_feats = torch.zeros((ChemData().NTOTAL, ChemData().NTOTAL))
+    for j, bond in enumerate(ChemData().aabonds[res]):
+        start_idx = ChemData().aa2long[res].index(bond[0])
+        end_idx = ChemData().aa2long[res].index(bond[1])
 
         # maps the 2d index of the start and end indices to btype
-        bond_feats[start_idx, end_idx] = rf2aa.chemical.aabtypes[res][j]
-        bond_feats[end_idx, start_idx] = rf2aa.chemical.aabtypes[res][j]
+        bond_feats[start_idx, end_idx] = ChemData().aabtypes[res][j]
+        bond_feats[end_idx, start_idx] = ChemData().aabtypes[res][j]
     
     if not include_H:
-        bond_feats = bond_feats[:rf2aa.chemical.NHEAVYPROT, :rf2aa.chemical.NHEAVYPROT]
+        bond_feats = bond_feats[:ChemData().NHEAVYPROT, :ChemData().NHEAVYPROT]
     return bond_feats

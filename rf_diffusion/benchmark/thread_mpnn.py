@@ -16,9 +16,10 @@ from icecream import ic
 
 from rf_diffusion.inference.utils import parse_pdb
 import rf2aa.data.parsers
-import rf2aa.chemical
+from rf2aa.chemical import ChemicalData as ChemData
 from rf_diffusion.parsers import load_ligand_from_pdb, load_ligands_from_pdb
 from rf2aa.util import kabsch
+from rf_diffusion import write_file
 import assertpy
 
 
@@ -34,7 +35,7 @@ def get_args():
 
     return args
 
-aa_123 = {val:key for key,val in rf2aa.chemical.aa_321.items()}
+aa_123 = {val:key for key,val in ChemData().aa_321.items()}
 
 def main():
     args = get_args()
@@ -104,11 +105,11 @@ def main():
             
         # combine protein & ligand features
         L = sum(Ls)
-        xyz = torch.zeros((L,rf2aa.chemical.NTOTAL,3))
+        xyz = torch.zeros((L,ChemData().NTOTAL,3))
         xyz[:L_prot, :N_atoms_prot] = xyz_prot
         xyz[L_prot:, 1] = xyz_sm[0,:]
 
-        mask = torch.zeros((L, rf2aa.chemical.NTOTAL)).bool()
+        mask = torch.zeros((L, ChemData().NTOTAL)).bool()
         mask[:L_prot, :4] = mask_prot[:, :4] # omit sidechain atoms
         mask[idx_motif, :14] = mask_prot[idx_motif, :14]
         mask[L_prot:, 1] = mask_sm[0]
@@ -128,7 +129,7 @@ def main():
                 print('writing file', outdir+name+f"_{i}.pdb")
                 seq = lines[2*i + 3].strip() # 2nd seq is 1st design
                 seq_num = torch.tensor([rf2aa.util.aa2num[aa_123[a]] for a in seq])
-                pdbstr = rf2aa.util.writepdb(
+                pdbstr = write_file.writepdb(
                     os.path.join(outdir, name+f"_{i}.pdb"),
                     atoms = xyz,
                     atom_mask = mask,

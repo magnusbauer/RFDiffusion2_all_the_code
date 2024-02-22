@@ -7,7 +7,7 @@
 	url = git@github.com:baker-laboratory/frame-flow.git
 [submodule "lib/rf2aa"]
 	path = lib/rf2aa
-	url = git@github.com:baker-laboratory/rf_all_atom.git
+    url = git@git.ipd.uw.edu:jue/RF2-allatom.git
 [submodule "lib/fused_mpnn/fused_mpnn"]
 	path = lib/fused_mpnn/fused_mpnn
 	url = git@github.com:baker-laboratory/fused_mpnn.git

@@ -7,10 +7,6 @@ from scipy.spatial.transform import Slerp
 
 from rf_diffusion.util import rigid_from_3_points, get_torsions
 
-from rf_diffusion.util import torsion_indices as TOR_INDICES 
-from rf_diffusion.util import torsion_can_flip as TOR_CAN_FLIP
-from rf_diffusion.util import reference_angles as REF_ANGLES
-
 from rf_diffusion.util_module import ComputeAllAtomCoords
 
 from rf_diffusion.diff_util import th_min_angle, th_interpolate_angles, get_aa_schedule 

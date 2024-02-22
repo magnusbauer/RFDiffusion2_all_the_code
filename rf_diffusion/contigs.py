@@ -4,7 +4,7 @@ import random
 from icecream import ic
 from collections import OrderedDict
 
-import rf2aa.chemical
+from rf2aa.chemical import ChemicalData as ChemData
 
 
 class ContigMap():
@@ -166,7 +166,7 @@ class ContigMap():
     
     def atom_names(self, chain, residue_idx):
         seq_token = self.seq(chain, residue_idx)
-        atom_names = [atom_name.strip() for atom_name in rf2aa.chemical.aa2long[seq_token][:rf2aa.chemical.NHEAVYPROT] if atom_name is not None]
+        atom_names = [atom_name.strip() for atom_name in ChemData().aa2long[seq_token][:ChemData().NHEAVYPROT] if atom_name is not None]
         return atom_names
 
     def expand_sampled_mask(self):

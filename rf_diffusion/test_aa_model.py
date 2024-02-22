@@ -18,6 +18,7 @@ from rf_diffusion import test_utils
 import inference.utils
 from rf_diffusion import contigs
 import pytest
+from rf2aa.chemical import ChemicalData as ChemData
 from rf2aa import tensor_util
 from rf_diffusion import run_inference
 ic.configureOutput(includeContext=True)
@@ -192,7 +193,7 @@ class AAModelTestCase(unittest.TestCase):
         input_indep = copy.deepcopy(indep)
         input_mask = copy.deepcopy(input_str_mask)
 
-        atom_mask = rf2aa.util.allatom_mask[indep.seq]
+        atom_mask = ChemData().allatom_mask[indep.seq]
         atom_mask[:, 14:] = False # no Hs
 
         deatomized_state = aa_model.get_atomization_state(indep)

@@ -22,7 +22,8 @@ from rf2aa import tensor_util
 from rf_se3_diffusion.data import se3_diffuser
 from rf_diffusion import aa_model
 import show
-import rf2aa.chemical
+
+from rf2aa.chemical import ChemicalData as ChemData
 import pytest
 
 cmd = analyze.cmd
@@ -516,7 +517,7 @@ class Dataloader(unittest.TestCase):
 
         # Set the minimum number of amino acids to check per dataset
         MIN_AA_COUNT = 5
-        aa_count_tmp = {rf2aa.chemical.num2aa[aa_int]: 0 for aa_int in range(20)}
+        aa_count_tmp = {ChemData().num2aa[aa_int]: 0 for aa_int in range(20)}
         aa_count_by_dataset = {}
         for dataset_name, prob in zip(conf_train.dataloader.DATASETS.split(','), conf_train.dataloader.DATASET_PROB):
             if prob > 0:

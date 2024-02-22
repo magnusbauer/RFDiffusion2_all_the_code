@@ -9,7 +9,8 @@ import torch.nn.functional as F
 import dataclasses
 from icecream import ic
 from assertpy import assert_that
-from rf2aa.chemical import NAATOKENS, MASKINDEX, NTOTAL, NHEAVYPROT, UNKINDEX
+from rf2aa.chemical import ChemicalData as ChemData
+from rf2aa.chemical import initialize_chemdata
 import rf2aa.util
 from rf2aa.data import parsers
 from dataclasses import dataclass
@@ -21,9 +22,6 @@ import torch
 import copy
 import numpy as np
 from rf_diffusion.kinematics import get_init_xyz
-from rf2aa.chemical import MASKINDEX
-import rf2aa.chemical
-from rf2aa import chemical
 import rf_diffusion.util as util
 from rf_diffusion.parsers import parse_pdb_lines_target
 import networkx as nx
@@ -33,6 +31,7 @@ import random
 import rf_diffusion.guide_posts as gp
 import rf_diffusion.rotation_conversions as rotation_conversions
 import rf_diffusion.atomize as atomize
+from rf_diffusion import write_file
 
 import os, sys
 import rf_se3_diffusion.data.utils as du
@@ -42,20 +41,14 @@ import rf_diffusion.features as features
 
 NINDEL=1
 NTERMINUS=2
-NMSAFULL=NAATOKENS+NINDEL+NTERMINUS
-NMSAMASKED=NAATOKENS+NAATOKENS+NINDEL+NINDEL+NTERMINUS
-
-MSAFULL_N_TERM = NAATOKENS+NINDEL
-MSAFULL_C_TERM = MSAFULL_N_TERM+1
-
-MSAMASKED_N_TERM = 2*NAATOKENS + 2*NINDEL
-MSAMASKED_C_TERM = 2*NAATOKENS + 2*NINDEL + 1
 
 N_TERMINUS = 1
 C_TERMINUS = 2
 
 UNIQUE_LIGAND="__UNIQUE_LIGAND"
 alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+
+CA_ONLY = 'CA_ONLY'
 
 def chain_letters_from_same_chain(same_chain):
     L = same_chain.shape[0]
@@ -150,7 +143,7 @@ class Indep:
 
         # Get the implied atom_frames
         sm_seq = self.seq[is_sm].cpu()
-        atom_frames = rf2aa.util.get_atom_frames(sm_seq, G)
+        atom_frames = rf2aa.util.get_atom_frames(sm_seq, G, omit_permutation=False)
 
         # If atom_frames is empty, make it the "right" size
         if atom_frames.numel() == 0:
@@ -177,7 +170,7 @@ class Indep:
         seq = torch.where(seq == 20, 0, seq)
         seq = torch.where(seq == 21, 0, seq)
         chain_letters = self.chains()
-        return rf2aa.util.writepdb_file(fh,
+        return write_file.writepdb_file(fh,
             torch.nan_to_num(self.xyz[:,:14]), seq, idx_pdb=self.idx, chain_letters=chain_letters, bond_feats=self.bond_feats[None], **kwargs)
 
     def ca_dists(self):
@@ -209,8 +202,8 @@ class Indep:
         # return np.chararray([rf2aa.chemical.num2aa[s] for s in self.seq], unicode=False)
     
     def has_heavy_atoms_and_seq(self, atom_mask):
-        want_atom_mask = rf2aa.util.allatom_mask[self.seq]
-        has_all_heavy_atoms = (want_atom_mask[:,:rf2aa.chemical.NHEAVYPROT] == atom_mask[:,:rf2aa.chemical.NHEAVYPROT]).all(dim=-1)
+        want_atom_mask = ChemData().allatom_mask[self.seq]
+        has_all_heavy_atoms = (want_atom_mask[:,:ChemData().NHEAVYPROT] == atom_mask[:,:ChemData().NHEAVYPROT]).all(dim=-1)
         has_sequence = self.seq < 20
         return has_all_heavy_atoms * ~self.is_sm * has_sequence
     
@@ -223,7 +216,7 @@ class Indep:
         o = []
 
         def atom_label(i):
-            return (i, rf2aa.chemical.num2aa[self.seq[i]])
+            return (i, ChemData().num2aa[self.seq[i]])
         for a,b,c in atom_frames_absolute.tolist():
             o.append(
                 (atom_label(a), atom_label(b), atom_label(c))
@@ -255,7 +248,7 @@ class Indep:
         assertpy.assert_that(indep.same_chain.dtype).is_equal_to(torch.bool)
 
     def atom_label(self, i):
-        return (i, rf2aa.chemical.num2aa[self.seq[i]])
+        return (i, ChemData().num2aa[self.seq[i]])
     
     def human_readable_2d_mask(self, mask):
         o = []
@@ -282,7 +275,7 @@ def what_is_diffused(indep, is_diffused, atomizer):
 
 
 def human_readable_seq(seq):
-    return [rf2aa.chemical.num2aa[s] for s in seq]
+    return [ChemData().num2aa[s] for s in seq]
 
 def is_monotonic(idx):
     idx_pad = torch.concat([idx, torch.tensor([9999])])
@@ -299,18 +292,8 @@ def assert_valid_seq_mask(indep, is_masked_seq):
         raise Exception('Sequence mask is invalid: atom indices are sequence masked.')
     
 def get_atom_names(seq_token):
-    atom_names = rf2aa.chemical.aa2long[seq_token][:rf2aa.chemical.NHEAVYPROT]
+    atom_names = ChemData().aa2long[seq_token][:ChemData().NHEAVYPROT]
     return [a.strip() for a in atom_names if a != None]
-
-CA_ONLY = 'CA_ONLY'
-
-within_res_atom_idx = {}
-for i, atom_names in enumerate(rf2aa.chemical.aa2long):
-    within_res_atom_idx[i] = {}
-    for j, atom_name in enumerate(atom_names):
-        if atom_name is None:
-            continue
-        within_res_atom_idx[i][atom_name.strip()] = j
 
 def make_is_motif14(seq, atom_name_by_res_idx):
     '''
@@ -321,6 +304,14 @@ def make_is_motif14(seq, atom_name_by_res_idx):
         atom_name_by_res_idx: Dict[int]-> list<string> like {2:['CA', 'N']}
             The character CA_ONLY refers to index 1 in the final dimension of the output mask.
     '''
+    within_res_atom_idx = {}
+    for i, atom_names in enumerate(ChemData().aa2long):
+        within_res_atom_idx[i] = {}
+        for j, atom_name in enumerate(atom_names):
+            if atom_name is None:
+                continue
+            within_res_atom_idx[i][atom_name.strip()] = j
+
     is_motif14 = torch.zeros((len(seq), 14)).bool()
     for res_idx, atom_names in atom_name_by_res_idx.items():
         if atom_names == 'CA_ONLY':
@@ -609,7 +600,7 @@ def parse_ligand(pdb, ligand):
 
     mol, seq_sm, _, xyz_sm, _ = parsers.parse_mol("".join(stream), filetype="pdb", string=True, find_automorphs=False)
     G = rf2aa.util.get_nxgraph(mol)
-    atom_frames = rf2aa.util.get_atom_frames(seq_sm, G)
+    atom_frames = rf2aa.util.get_atom_frames(seq_sm, G, omit_permutation=False)
     chirals = get_chirals(mol, xyz_sm[0])
     bond_feats = rf2aa.util.get_bond_feats(mol)
     return xyz_sm[0], seq_sm, atom_frames, chirals, bond_feats
@@ -706,7 +697,7 @@ def make_indep(pdb, ligand='', center=True, return_metadata=False):
     else:
         Ls.append(0)
 
-    xyz = torch.full((sum(Ls), NTOTAL, 3), np.nan).float()
+    xyz = torch.full((sum(Ls), ChemData().NTOTAL, 3), np.nan).float()
     xyz[:Ls[0], :nprotatoms, :] = xyz_prot
     if ligand:
         xyz[Ls[0]:, 1, :] = xyz_sm
@@ -814,7 +805,8 @@ class Model:
 
     def __init__(self, conf):
         self.conf = conf
-        self.NTOKENS = rf2aa.chemical.NAATOKENS
+        initialize_chemdata(self.conf)
+        self.NTOKENS = ChemData().NAATOKENS
         self.atomizer = None
         self.converter = XYZConverter()
 
@@ -864,7 +856,7 @@ class Model:
             o.xyz = torch.full((L_mapped, NATOMS, 3), np.nan)
 
         o.xyz[contig_map.hal_idx0] = indep.xyz[contig_map.ref_idx0]
-        o.seq = torch.full((L_mapped,), MASKINDEX)
+        o.seq = torch.full((L_mapped,), ChemData().MASKINDEX)
         o.seq[contig_map.hal_idx0] = indep.seq[contig_map.ref_idx0]
         o.same_chain = torch.tensor(chain_id[None, :] == chain_id[:, None])
         if not for_partial_diffusion:
@@ -931,7 +923,7 @@ class Model:
 	    # However, these have no semantic value.  TODO: Remove the network's reliance on these coordinates.
         sm_ca = o.xyz[o.is_sm, 1]
         o.xyz[o.is_sm,:3] = sm_ca[...,None,:]
-        o.xyz[o.is_sm] += chemical.INIT_CRDS
+        o.xyz[o.is_sm] += ChemData().INIT_CRDS
         
         contig_map.ligand_names = np.full(o.length(), '', dtype='<U3')
         contig_map.ligand_names[contig_map.hal_idx0.astype(int)] = metadata['ligand_names'][contig_map.ref_idx0]
@@ -977,18 +969,22 @@ class Model:
         NINDEL = 1
         ### msa_masked ###
         ##################
-        msa_masked = torch.zeros((1,1,L,2*NAATOKENS+NINDEL*2+NTERMINUS))
+        msa_masked = torch.zeros((1,1,L,2*ChemData().NAATOKENS+NINDEL*2+NTERMINUS))
 
-        msa_masked[:,:,:,:NAATOKENS] = seq_one_hot[None, None]
-        msa_masked[:,:,:,NAATOKENS:2*NAATOKENS] = seq_one_hot[None, None]
+        msa_masked[:,:,:,:ChemData().NAATOKENS] = seq_one_hot[None, None]
+        msa_masked[:,:,:,ChemData().NAATOKENS:2*ChemData().NAATOKENS] = seq_one_hot[None, None]
+        MSAMASKED_N_TERM = 2*ChemData().NAATOKENS + 2*NINDEL
+        MSAMASKED_C_TERM = 2*ChemData().NAATOKENS + 2*NINDEL + 1
         if self.conf.preprocess.annotate_termini:
             msa_masked[:,:,:,MSAMASKED_N_TERM] = (indep.terminus_type == N_TERMINUS).float()
             msa_masked[:,:,:,MSAMASKED_C_TERM] = (indep.terminus_type == C_TERMINUS).float()
 
         ### msa_full ###
         ################
-        msa_full = torch.zeros((1,1,L,NAATOKENS+NINDEL+NTERMINUS))
-        msa_full[:,:,:,:NAATOKENS] = seq_one_hot[None, None]
+        msa_full = torch.zeros((1,1,L,ChemData().NAATOKENS+NINDEL+NTERMINUS))
+        msa_full[:,:,:,:ChemData().NAATOKENS] = seq_one_hot[None, None]
+        MSAFULL_N_TERM = ChemData().NAATOKENS+NINDEL
+        MSAFULL_C_TERM = MSAFULL_N_TERM+1 
         if self.conf.preprocess.annotate_termini:
             msa_full[:,:,:,MSAFULL_N_TERM] = (indep.terminus_type == N_TERMINUS).float()
             msa_full[:,:,:,MSAFULL_C_TERM] = (indep.terminus_type == C_TERMINUS).float()
@@ -1001,8 +997,8 @@ class Model:
 
         #seqt1d = torch.clone(seq)
         seq_cat_shifted = seq_one_hot.argmax(dim=-1)
-        seq_cat_shifted[seq_cat_shifted>=MASKINDEX] -= 1
-        t1d = torch.nn.functional.one_hot(seq_cat_shifted, num_classes=NAATOKENS-1)
+        seq_cat_shifted[seq_cat_shifted>=ChemData().MASKINDEX] -= 1
+        t1d = torch.nn.functional.one_hot(seq_cat_shifted, num_classes=ChemData().NAATOKENS-1)
         t1d = t1d[None, None] # [L, NAATOKENS-1] --> [1,1,L, NAATOKENS-1]
         # for idx in range(L):
             
@@ -1030,9 +1026,9 @@ class Model:
             xyz_t[is_diffused,3:,:] = float('nan')
         #xyz_t[:,3:,:] = float('nan')
 
-        assert_that(xyz_t.shape).is_equal_to((L,NHEAVYPROT,3))
+        assert_that(xyz_t.shape).is_equal_to((L,ChemData().NHEAVYPROT,3))
         xyz_t=xyz_t[None, None]
-        xyz_t = torch.cat((xyz_t, torch.full((1,1,L,NTOTAL-NHEAVYPROT,3), float('nan'))), dim=3)
+        xyz_t = torch.cat((xyz_t, torch.full((1,1,L,ChemData().NTOTAL-ChemData().NHEAVYPROT,3), float('nan'))), dim=3)
 
         ### t2d ###
         ###########
@@ -1069,13 +1065,13 @@ class Model:
         # get torsion angles from templates
         seq_tmp = t1d[...,:-1].argmax(dim=-1).reshape(-1,L)
 
-        alpha, _, alpha_mask, _ = self.converter.get_torsions(xyz_t.reshape(-1,L,rf2aa.chemical.NTOTAL,3), seq_tmp)
+        alpha, _, alpha_mask, _ = self.converter.get_torsions(xyz_t.reshape(-1,L,ChemData().NTOTAL,3), seq_tmp)
             #rf2aa.util.torsion_indices, rf2aa.util.torsion_can_flip, rf2aa.util.reference_angles)
         alpha_mask = torch.logical_and(alpha_mask, ~torch.isnan(alpha[...,0]))
         alpha[torch.isnan(alpha)] = 0.0
-        alpha = alpha.reshape(-1,L,rf2aa.chemical.NTOTALDOFS,2)
-        alpha_mask = alpha_mask.reshape(-1,L,rf2aa.chemical.NTOTALDOFS,1)
-        alpha_t = torch.cat((alpha, alpha_mask), dim=-1).reshape(-1, L, 3*rf2aa.chemical.NTOTALDOFS) # [n,L,30]
+        alpha = alpha.reshape(-1,L,ChemData().NTOTALDOFS,2)
+        alpha_mask = alpha_mask.reshape(-1,L,ChemData().NTOTALDOFS,1)
+        alpha_t = torch.cat((alpha, alpha_mask), dim=-1).reshape(-1, L, 3*ChemData().NTOTALDOFS) # [n,L,30]
 
         alpha_t = alpha_t.unsqueeze(1) # [n,I,L,30]
         alpha_t = alpha_t.tile((1,2,1,1))
@@ -1122,7 +1118,7 @@ class Model:
         
         # return msa_masked, msa_full, seq[None], torch.squeeze(xyz_t, dim=0), idx, t1d, t2d, xyz_t, alpha_t
         mask_t = torch.ones(1,2,L,L).bool()
-        sctors = torch.zeros((1,L,rf2aa.chemical.NTOTALDOFS,2))
+        sctors = torch.zeros((1,L,ChemData().NTOTALDOFS,2))
 
         xyz = torch.squeeze(xyz_t, dim=0)
 
@@ -1162,7 +1158,7 @@ class Model:
         
         t1d = torch.tile(t1d, (1,2,1,1))
         # Xt template is at index 0, Self-conditioning template is at index 1 (if self conditioning is active)
-        t1d[0,1,:,NAATOKENS-1] = -1 # This distiniguishes the templates to the model.
+        t1d[0,1,:,ChemData().NAATOKENS-1] = -1 # This distiniguishes the templates to the model.
         # ic(t1d[0,:,:4,NAATOKENS-1]) # Will look like [[conf, -1], [conf, -1], ...], 0 < conf < 1
 
         # Note: should be batched
@@ -1227,7 +1223,7 @@ def write_traj(path, xyz_stack, seq, bond_feats, natoms=23, **kwargs):
         bond_feats = bond_feats[None]
     with open(path, 'w') as fh:
         for i, xyz in enumerate(xyz23):
-            rf2aa.util.writepdb_file(fh, xyz, seq, bond_feats=bond_feats, modelnum=i, **kwargs)
+            write_file.writepdb_file(fh, xyz, seq, bond_feats=bond_feats, modelnum=i, **kwargs)
 
 def minifier(argument_map):
     argument_map['out_9'] = None
@@ -1255,12 +1251,12 @@ class Atom:
     element: int
 
 def get_obmol(xyz_sm, seq_sm, bond_feats_sm):
-    atomnumbyatomtype = {v:k for k,v in chemical.atomnum2atomtype.items()}
+    atomnumbyatomtype = {v:k for k,v in ChemData().atomnum2atomtype.items()}
     akeys = []
     atoms = []
     bonds = []
     for i, (_, seq) in enumerate(zip(xyz_sm, seq_sm)):
-        atom_name = chemical.num2aa[seq]
+        atom_name = ChemData().num2aa[seq]
         atomnum = atomnumbyatomtype[atom_name]
         # xyz.append(xyz_i)
         atoms.append(Atom(atomnum))
@@ -1304,6 +1300,8 @@ def adaptor_fix_bb_indep(out):
 
     is_sm = rf2aa.util.is_atom(seq)
 
+    MSAFULL_N_TERM = ChemData().NAATOKENS+NINDEL
+    MSAFULL_C_TERM = MSAFULL_N_TERM+1
     is_n_terminus = msa_full[0, 0, :, MSAFULL_N_TERM].bool()
     is_c_terminus = msa_full[0, 0, :, MSAFULL_C_TERM].bool()
     terminus_type = torch.zeros(msa_masked.shape[2], dtype=int)
@@ -1362,7 +1360,7 @@ def deatomize_covales(indep, atom_mask):
     is_res_to_atomized_ca_correspondence = is_res_to_atomized_ca * is_ca_close
     for res_idx0, atomized_ca_idx0 in is_res_to_atomized_ca_correspondence.nonzero():
         original_aa = indep.seq[res_idx0]
-        atom_names = rf2aa.chemical.aa2long[original_aa]
+        atom_names = ChemData().aa2long[original_aa]
         a = indep.xyz[res_idx0][None,...]
         b = indep.xyz[(metadata['type'] == TYPE_ATOMIZED_COV), 1][None,...]
         dist = torch.cdist(a,b)
@@ -1432,12 +1430,12 @@ def deatomize_covales(indep, atom_mask):
 
 def missing_atom_names(indep, atom_mask, res_i):
     seq = indep.seq[res_i]
-    all_atom_mask = rf2aa.util.allatom_mask[seq]
-    all_atom_names = np.array(rf2aa.chemical.aa2long[seq][:rf2aa.chemical.NHEAVYPROT], dtype=np.str_)
-    all_atom_names = all_atom_names[all_atom_mask[:rf2aa.chemical.NHEAVYPROT]]
+    all_atom_mask = ChemData().allatom_mask[seq]
+    all_atom_names = np.array(ChemData().aa2long[seq][:ChemData().NHEAVYPROT], dtype=np.str_)
+    all_atom_names = all_atom_names[all_atom_mask[:ChemData().NHEAVYPROT]]
     have_atom_mask = atom_mask[res_i]
-    have_atom_names = np.array(rf2aa.chemical.aa2long[seq][:rf2aa.chemical.NHEAVYPROT], dtype=np.str_)
-    have_atom_names = have_atom_names[have_atom_mask[:rf2aa.chemical.NHEAVYPROT]]
+    have_atom_names = np.array(ChemData().aa2long[seq][:ChemData().NHEAVYPROT], dtype=np.str_)
+    have_atom_names = have_atom_names[have_atom_mask[:ChemData().NHEAVYPROT]]
     return [a for a in all_atom_names if a not in have_atom_names]
 
 def fetch_connected_nodes(G, node, seen = None):
@@ -1654,7 +1652,7 @@ def forward(model, rfi, **kwargs):
     return RFO(*model(**{**rfi_dict, **kwargs}))
 
 def mask_indep(indep, is_diffused):
-    indep.seq[is_diffused] = MASKINDEX
+    indep.seq[is_diffused] = ChemData().MASKINDEX
 
 # def get_xyz_t_t2d(atom_frames, is_sm, xyz):
 #     '''
@@ -1842,7 +1840,7 @@ class AtomizeResidues:
         
         # Insert 1D info for the new residue
         ## Annoyingly, the "fill" value for nonexistent atoms is not zero. Need to infer it here.
-        atom_mask = rf2aa.util.allatom_mask[indep_deatomized.seq]
+        atom_mask = ChemData().allatom_mask[indep_deatomized.seq]
         n_atoms = indep_deatomized.xyz.shape[1]
         atom_mask = atom_mask[:, :n_atoms]  # clip to the number of atoms that are in xyz
         xyz_fill = indep_deatomized.xyz[~atom_mask]
@@ -1853,7 +1851,7 @@ class AtomizeResidues:
             xyz_fill = torch.full((3,), torch.nan)
 
         xyz_deatomized = torch.full((n_atoms, 3), np.nan)
-        xyz_deatomized[:NHEAVYPROT] = xyz_fill
+        xyz_deatomized[:ChemData().NHEAVYPROT] = xyz_fill
         xyz_deatomized[:len(deatomized_idx0)] = indep_deatomized.xyz[deatomized_idx0, 1]
         
         indep_deatomized.xyz = insert_tensor(
@@ -1977,15 +1975,15 @@ class AtomizeResidues:
     def _generate_atomize_protein_features(self, indep_deatomized, residue_to_atomize):        
         L = indep_deatomized.length()
         is_protein_motif = residue_to_atomize * ~indep_deatomized.is_sm
-        allatom_mask = rf2aa.util.allatom_mask.clone() # 1 if that atom index exists for that residue and 0 if it doesnt
+        allatom_mask = ChemData().allatom_mask.clone() # 1 if that atom index exists for that residue and 0 if it doesnt
         allatom_mask[:, 14:] = False # no Hs
         atom_mask = allatom_mask[indep_deatomized.seq]
 
         # make xyz the right dimensions for atomization
-        xyz = torch.full((L, rf2aa.chemical.NTOTAL, 3), np.nan).float()
+        xyz = torch.full((L, ChemData().NTOTAL, 3), np.nan).float()
         xyz[:, :14] = indep_deatomized.xyz[:, :14]
 
-        aa2long_ = [[x.strip() if x is not None else None for x in y] for y in rf2aa.chemical.aa2long]
+        aa2long_ = [[x.strip() if x is not None else None for x in y] for y in ChemData().aa2long]
         # iterate through residue indices in the structure to atomize
         seq_atomize_all = []
         xyz_atomize_all = []
@@ -2096,10 +2094,10 @@ class AtomizeResidues:
         total_L = orig_L + atomize_L
         xyz_atomize_all = rf2aa.util.cartprodcat(xyz_atomize_all)
         N_symmetry = xyz_atomize_all.shape[0]
-        xyz = torch.full((N_symmetry, total_L, NTOTAL, 3), np.nan).float()
+        xyz = torch.full((N_symmetry, total_L, ChemData().NTOTAL, 3), np.nan).float()
         xyz[:, :orig_L, :natoms, :] = indep_deatomized.xyz.expand(N_symmetry, orig_L, natoms, 3)
         xyz[:, orig_L:, 1, :] = xyz_atomize_all
-        xyz[:, orig_L:, :3, :] += rf2aa.chemical.INIT_CRDS[:3]
+        xyz[:, orig_L:, :3, :] += ChemData().INIT_CRDS[:3]
         #ignoring permutation symmetry for now, network should learn permutations at low T
         indep_atomized.xyz = xyz[0]
         
@@ -2150,7 +2148,7 @@ class AtomizeResidues:
         new_atomization_states = []
         for idx0 in idx0s:
             removed_residue = atomization_state[idx0]
-            atom_names = (name for name in chemical.aa2long[removed_residue.aa][:chemical.NHEAVY] if name is not None)
+            atom_names = (name for name in ChemData().aa2long[removed_residue.aa][:ChemData().NHEAVY] if name is not None)
             new_atomization_states += [
                 AtomizedLabel(
                     coarse_idx0=removed_residue.coarse_idx0, 
@@ -2493,7 +2491,7 @@ def open_indep(indep, is_open):
         setattr(indep, key, value)
 
 def residue_atoms(res):
-    return [n.strip() for n in rf2aa.chemical.aa2long[res][:14] if n is not None]
+    return [n.strip() for n in ChemData().aa2long[res][:14] if n is not None]
 
 def make_conditional_indep(indep, indep_original, is_diffused):
     assert indep.is_sm[~is_diffused].all(), f'sequence unmasking not yet implemented, only coordinate conditioning, so only atomized/small molecule motifs are allowed'

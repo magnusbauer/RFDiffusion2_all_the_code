@@ -36,7 +36,7 @@ from alphafold.model import model
 from jax.lib import xla_bridge
 from alphafold.model.tf import shape_placeholders                                                        
 import tensorflow.compat.v1 as tf
-import rf2aa.chemical
+from rf2aa.chemical import ChemicalData as ChemData
 
 os.environ['TF_FORCE_UNIFIED_MEMORY'] = '1'
 os.environ['XLA_PYTHON_CLIENT_MEM_FRACTION'] = '2.0'
@@ -501,10 +501,10 @@ def main():
                 #     if 'con' in k and k != 'config':
                 #         print(f"{k}:{trb[k]}")
                 def get_atom_idx(aa, atom_names):
-                    i_by_name = {name if name is None else name.strip():i for i, name in enumerate(rf2aa.chemical.aa2long[aa])}
+                    i_by_name = {name if name is None else name.strip():i for i, name in enumerate(ChemData().aa2long[aa])}
                     ii = []
                     for a in atom_names:
-                        assert a in i_by_name, f'{a=}, {i_by_name=}, {rf2aa.chemical.num2aa[aa]}'
+                        assert a in i_by_name, f'{a=}, {i_by_name=}, {ChemData().num2aa[aa]}'
                         ii.append(i_by_name[a])
                     return ii
                 

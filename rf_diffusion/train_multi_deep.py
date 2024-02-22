@@ -27,7 +27,7 @@ import torch.nn as nn
 from torch.utils import data
 from omegaconf import DictConfig, OmegaConf
 
-import rf2aa.chemical
+from rf2aa.chemical import ChemicalData as ChemData
 import rf2aa.data.data_loader
 import rf2aa.util
 import rf2aa.loss.loss
@@ -171,14 +171,14 @@ class Trainer():
         self.diffuser.T = conf.diffuser.T
 
         # for all-atom str loss
-        self.ti_dev = rf2aa.util.torsion_indices
-        self.ti_flip = rf2aa.util.torsion_can_flip
-        self.ang_ref = rf2aa.util.reference_angles
-        self.l2a = rf2aa.util.long2alt
+        self.ti_dev = ChemData().torsion_indices
+        self.ti_flip = ChemData().torsion_can_flip
+        self.ang_ref = ChemData().reference_angles
+        self.l2a = ChemData().long2alt
 
-        self.hbtypes = rf2aa.util.hbtypes
-        self.hbbaseatoms = rf2aa.util.hbbaseatoms
-        self.hbpolys = rf2aa.util.hbpolys
+        self.hbtypes = ChemData().hbtypes
+        self.hbbaseatoms = ChemData().hbbaseatoms
+        self.hbpolys = ChemData().hbpolys
 
         # loss & final activation function
         self.loss_fn = nn.CrossEntropyLoss(reduction='none')

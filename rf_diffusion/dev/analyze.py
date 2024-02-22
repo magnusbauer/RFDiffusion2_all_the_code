@@ -16,6 +16,8 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 # from tqdm.notebook import trange, tqdm
 import numpy as np
+
+from rf2aa.chemical import ChemicalData as ChemData
 from rf_diffusion import aa_model
 import rf_diffusion.parsers as parsers
 import rf_diffusion.util as util
@@ -1496,7 +1498,7 @@ def rigid_loss(r):
     is_atom_str_shown = {}
     for i in range(indep_motif_des.length()):
         res = indep_motif_des.seq[i]
-        atom_names = [n.strip() for n in rf2aa.chemical.aa2long[res][:14] if n is not None]
+        atom_names = [n.strip() for n in ChemData().aa2long[res][:14] if n is not None]
         is_atom_str_shown[i] = atom_names
     is_res_str_shown = torch.zeros((indep_motif_des.length(),)).bool()
     true_atomized, is_diffused, is_masked_seq, atomizer = atomize.atomize_and_mask(indep_motif_native, is_res_str_shown, is_atom_str_shown)

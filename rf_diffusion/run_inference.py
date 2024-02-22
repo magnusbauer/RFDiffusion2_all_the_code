@@ -30,7 +30,6 @@ import torch
 from omegaconf import DictConfig, OmegaConf
 import hydra
 import logging
-# from rf_diffusion.util import writepdb_multi, writepdb
 from icecream import ic
 from hydra.core.hydra_config import HydraConfig
 import numpy as np
@@ -39,6 +38,7 @@ import glob
 from rf_diffusion.inference import model_runners
 import rf2aa.tensor_util
 import rf2aa.util
+from rf2aa.chemical import ChemicalData as ChemData
 from rf_diffusion import aa_model
 from rf_diffusion import guide_posts as gp
 import copy
@@ -197,7 +197,7 @@ def sample_one(sampler, simple_logging=False):
         # Null-case: no diffusion performed.
         px0_xyz_stack.append(sampler.indep_orig.xyz)
         denoised_xyz_stack.append(indep.xyz)
-        alanine_one_hot = torch.nn.functional.one_hot(torch.tensor(torch.zeros((indep.length(),), dtype=int)), rf2aa.chemical.NAATOKENS)
+        alanine_one_hot = torch.nn.functional.one_hot(torch.tensor(torch.zeros((indep.length(),), dtype=int)), ChemData().NAATOKENS)
         seq_stack.append(alanine_one_hot)
     
     # Flip order for better visualization in pymol
@@ -275,7 +275,7 @@ def sample_one(sampler, simple_logging=False):
         for k, v in traj_stack.items():
             xyz_stack_new = []
             for i in range(len(v)):
-                xyz_i = aa_model.pad_dim(v[i], 1, rf2aa.chemical.NTOTAL, torch.nan)
+                xyz_i = aa_model.pad_dim(v[i], 1, ChemData().NTOTAL, torch.nan)
                 indep_atomized.seq = init_seq_stack[i].argmax(-1)
                 indep_atomized.xyz = xyz_i
                 indep_deatomized = atomizer.deatomize(indep_atomized)
@@ -303,7 +303,7 @@ def add_implicit_side_chain_atoms(seq, act_on_residue, xyz, xyz_with_sc):
     assert len(seq) == L
     assert len(act_on_residue) == L
 
-    replace_sc_atom = rf2aa.util.allatom_mask[seq][:, :n_atoms]
+    replace_sc_atom = ChemData().allatom_mask[seq][:, :n_atoms]
     replace_sc_atom[:, :5] = False  # Does not add cb, since that can be calculated from N, CA and C
     replace_sc_atom[~act_on_residue] = False
 
@@ -323,8 +323,8 @@ def deatomize_sampler_outputs(atomizer, indep, px0_xyz_stack, denoised_xyz_stack
     denoised_xyz_stack_new = []
     seq_stack_new = []
     for i in range(len(px0_xyz_stack)):
-        px0_xyz = aa_model.pad_dim(px0_xyz_stack[i], 1, rf2aa.chemical.NTOTAL, torch.nan)
-        denoised_xyz = aa_model.pad_dim(denoised_xyz_stack[i], 1, rf2aa.chemical.NTOTAL, torch.nan)
+        px0_xyz = aa_model.pad_dim(px0_xyz_stack[i], 1, ChemData().NTOTAL, torch.nan)
+        denoised_xyz = aa_model.pad_dim(denoised_xyz_stack[i], 1, ChemData().NTOTAL, torch.nan)
         indep.seq = seq_stack[i].argmax(-1)
 
         indep.xyz = px0_xyz
@@ -335,9 +335,9 @@ def deatomize_sampler_outputs(atomizer, indep, px0_xyz_stack, denoised_xyz_stack
         indep_deatomized = atomizer.deatomize(indep)
         denoised_xyz_stack_new.append(indep_deatomized.xyz)
 
-        seq_ = torch.nn.functional.one_hot(indep_deatomized.seq, rf2aa.chemical.NAATOKENS)
-        alanine_one_hot = torch.nn.functional.one_hot(torch.tensor([0]), rf2aa.chemical.NAATOKENS)
-        cond = ~indep_deatomized.is_sm[...,None] * (seq_ >= rf2aa.chemical.UNKINDEX)
+        seq_ = torch.nn.functional.one_hot(indep_deatomized.seq, ChemData().NAATOKENS)
+        alanine_one_hot = torch.nn.functional.one_hot(torch.tensor([0]), ChemData().NAATOKENS)
+        cond = ~indep_deatomized.is_sm[...,None] * (seq_ >= ChemData().UNKINDEX)
         seq_ = torch.where(cond, alanine_one_hot, seq_)
         seq_stack_new.append(seq_)
     denoised_xyz_stack_new = torch.stack(denoised_xyz_stack_new)

@@ -1,8 +1,7 @@
 import torch
 
 from rf2aa.util_module import XYZConverter
-from rf2aa.util import allatom_mask
-from rf2aa import chemical
+from rf2aa.chemical import ChemicalData as ChemData
 
 
 def calc_residue_rmsds(xyz1, xyz2, seq, eps=1e-6):
@@ -24,8 +23,8 @@ def calc_residue_rmsds(xyz1, xyz2, seq, eps=1e-6):
     assert seq.shape == xyz1.shape[:-2], f'{seq.shape=} {xyz1.shape=}'
     
     # Only calculate things over real valued coordinates
-    is_canonically_resolved = allatom_mask[seq]  # (..., L, 36)
-    is_canonically_resolved[..., chemical.NHEAVY:] = False
+    is_canonically_resolved = ChemData().allatom_mask[seq]  # (..., L, 36)
+    is_canonically_resolved[..., ChemData().NHEAVY:] = False
     xyz1_is_resolved = ~torch.isnan(xyz1).any(-1)
     xyz2_is_resolved = ~torch.isnan(xyz2).any(-1)
     is_heavy_atom_resolved = xyz1_is_resolved & xyz2_is_resolved & is_canonically_resolved

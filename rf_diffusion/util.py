@@ -6,7 +6,7 @@ import torch
 
 import scipy.sparse
 
-from rf2aa.chemical import *
+from rf2aa.chemical import ChemicalData as ChemData
 from rf_diffusion.scoring import *
 
 import rf2aa.kinematics
@@ -94,11 +94,11 @@ def get_tor_mask(seq, torsion_indices, mask_in=None):
     tors_mask[:,-1,0] = False
 
     # mask for additional angles
-    tors_mask[:,:,7] = seq!=aa2num['GLY']
-    tors_mask[:,:,8] = seq!=aa2num['GLY']
-    tors_mask[:,:,9] = torch.logical_and( seq!=aa2num['GLY'], seq!=aa2num['ALA'] )
-    tors_mask[:,:,9] = torch.logical_and( tors_mask[:,:,9], seq!=aa2num['UNK'] )
-    tors_mask[:,:,9] = torch.logical_and( tors_mask[:,:,9], seq!=aa2num['MAS'] )
+    tors_mask[:,:,7] = seq!=ChemData().aa2num['GLY']
+    tors_mask[:,:,8] = seq!=ChemData().aa2num['GLY']
+    tors_mask[:,:,9] = torch.logical_and( seq!=ChemData().aa2num['GLY'], seq!=ChemData().aa2num['ALA'] )
+    tors_mask[:,:,9] = torch.logical_and( tors_mask[:,:,9], seq!=ChemData().aa2num['UNK'] )
+    tors_mask[:,:,9] = torch.logical_and( tors_mask[:,:,9], seq!=ChemData().aa2num['MAS'] )
 
     if mask_in != None:
         # mask for missing atoms
@@ -122,7 +122,7 @@ def get_torsions(xyz_in, seq, torsion_indices, torsion_can_flip, ref_angles, mas
     
     # torsions to restrain to 0 or 180degree
     tors_planar = torch.zeros((B, L, 10), dtype=torch.bool, device=xyz_in.device)
-    tors_planar[:,:,5] = seq == aa2num['TYR'] # TYR chi 3 should be planar
+    tors_planar[:,:,5] = seq == ChemData().aa2num['TYR'] # TYR chi 3 should be planar
 
     # idealize given xyz coordinates before computing torsion angles
     xyz = xyz_in.clone()
@@ -256,14 +256,14 @@ def writepdb(filename, atoms, seq, binderlen=None, idx_pdb=None, bfacts=None, ch
             chain = chain_idx[i]
         if (len(atomscpu.shape)==2):
             f.write ("%-6s%5s %4s %3s %s%4d    %8.3f%8.3f%8.3f%6.2f%6.2f\n"%(
-                    "ATOM", ctr, " CA ", num2aa[s],
+                    "ATOM", ctr, " CA ", ChemData().num2aa[s],
                     chain, idx_pdb[i], atomscpu[i,0], atomscpu[i,1], atomscpu[i,2],
                     1.0, Bfacts[i] ) )
             ctr += 1
         elif atomscpu.shape[1]==3:
             for j,atm_j in enumerate([" N  "," CA "," C  "]):
                 f.write ("%-6s%5s %4s %3s %s%4d    %8.3f%8.3f%8.3f%6.2f%6.2f\n"%(
-                        "ATOM", ctr, atm_j, num2aa[s],
+                        "ATOM", ctr, atm_j, ChemData().num2aa[s],
                         chain, idx_pdb[i], atomscpu[i,j,0], atomscpu[i,j,1], atomscpu[i,j,2],
                         1.0, Bfacts[i] ) )
                 ctr += 1
@@ -271,7 +271,7 @@ def writepdb(filename, atoms, seq, binderlen=None, idx_pdb=None, bfacts=None, ch
             natoms = atomscpu.shape[1]
             if (natoms!=14 and natoms!=27):
                 assert False, f'bad size: {atoms.shape}, must be [L, 14|27,...]'
-            atms = aa2long[s]
+            atms = ChemData().aa2long[s]
             # his prot hack
             if (s==8 and torch.linalg.norm( atomscpu[i,9,:]-atomscpu[i,5,:] ) < 1.7):
                 atms = (
@@ -282,24 +282,24 @@ def writepdb(filename, atoms, seq, binderlen=None, idx_pdb=None, bfacts=None, ch
             for j,atm_j in enumerate(atms):
                 if (j<natoms and atm_j is not None): # and not torch.isnan(atomscpu[i,j,:]).any()):
                     f.write ("%-6s%5s %4s %3s %s%4d    %8.3f%8.3f%8.3f%6.2f%6.2f\n"%(
-                        "ATOM", ctr, atm_j, num2aa[s],
+                        "ATOM", ctr, atm_j, ChemData().num2aa[s],
                         chain, idx_pdb[i], atomscpu[i,j,0], atomscpu[i,j,1], atomscpu[i,j,2],
                         1.0, Bfacts[i] ) )
                     ctr += 1
 
-
+"""
 # resolve tip atom indices
 tip_indices = torch.full((22,), 0)
 for i in range(22):
-    tip_atm = aa2tip[i]
-    atm_long = aa2long[i]
+    tip_atm = ChemData().aa2tip[i]
+    atm_long = ChemData().aa2long[i]
     tip_indices[i] = atm_long.index(tip_atm)
 
 # resolve torsion indices
 torsion_indices = torch.full((22,4,4),0)
 torsion_can_flip = torch.full((22,10),False,dtype=torch.bool)
 for i in range(22):
-    i_l, i_a = aa2long[i], aa2longalt[i]
+    i_l, i_a = ChemData().aa2long[i], ChemData().aa2longalt[i]
     for j in range(4):
         if torsions[i][j] is None:
             continue
@@ -310,6 +310,7 @@ for i in range(22):
                 torsion_can_flip[i,3+j] = True ##bb tors never flip
 # HIS is a special case
 torsion_can_flip[8,4]=False
+"""
 
 def get_mu_xt_x0(xt, px0, t, schedule, alphabar_schedule, eps=1e-6):
     """

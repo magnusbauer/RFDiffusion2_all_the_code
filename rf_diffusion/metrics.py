@@ -11,7 +11,7 @@ from rf_diffusion import bond_geometry
 import sys
 from rf_diffusion.aa_model import Indep
 import networkx as nx
-from rf2aa import chemical
+from rf2aa.chemical import ChemicalData as ChemData
 from rf_diffusion import loss
 from rf_se3_diffusion.data import r3_diffuser
 from abc import abstractmethod, ABC
@@ -282,7 +282,7 @@ def true_bond_lengths(indep, true_crds, **kwargs):
     Calculates the min, max, and mean bond lengths for each bond type.
     '''
     out = {}
-    for bond_type in chemical.num2btype[1:]:
+    for bond_type in ChemData().num2btype[1:]:
         is_bonded = torch.triu(indep.bond_feats == bond_type)
         i, j = torch.where(is_bonded)
         true_dist = torch.norm(true_crds[i,1]-true_crds[j,1],dim=-1)

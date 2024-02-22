@@ -27,7 +27,7 @@ from rf_diffusion import parsers
 from rf2aa.util import kabsch
 import tree
 import numpy as np
-import rf2aa.chemical
+from rf2aa.chemical import ChemicalData as ChemData
 from rf_diffusion.data_loader import no_batch_collate_fn
 import rf_diffusion
 from rf_diffusion import aa_model
@@ -370,7 +370,7 @@ def compare_aa_atom_order(xyz_cmp, xyz_ref, aa_int):
         False: Atoms in xyz_cmp are permuted compared to xyz_ref.
         None: Could not match all atoms, so no conclusion can be drawn.
     '''
-    aa3 = rf2aa.chemical.num2aa[aa_int]
+    aa3 = ChemData().num2aa[aa_int]
     
     # Compare only resolved atoms
     is_resolved_cmp = is_atom_resolved(xyz_cmp)
@@ -394,7 +394,7 @@ def compare_aa_atom_order(xyz_cmp, xyz_ref, aa_int):
         msg = []
         # Find out what atom_names are not ordered correctly
         for cmp_idx0, ref_idx0 in zip(*torch.where(out_of_order)):
-            atom_name = rf2aa.chemical.aa2long[aa_int][ref_idx0]
+            atom_name = ChemData().aa2long[aa_int][ref_idx0]
             msg.append(f'For {aa3}, expected {atom_name} to be at position {ref_idx0} but was at position {cmp_idx0} instead!')
 
         return False, ' '.join(msg)
@@ -430,7 +430,7 @@ def detect_permuted_aa_atoms(indep_train, item_context: dict):
     n_aligned_res = torch.tensor([torch.diagonal(same_aa, offset).sum().item() for offset in range(L_target)])
     offset_max_aligned_res = n_aligned_res.argmax()
 
-    results = {rf2aa.chemical.num2aa[aa_int]: [] for aa_int in range(20)}
+    results = {ChemData().num2aa[aa_int]: [] for aa_int in range(20)}
     if n_aligned_res[offset_max_aligned_res] < 5:
         print(f'Fewer than 5 consecutive residues could be aligned. Skipping {item_context}')
 
@@ -452,7 +452,7 @@ def detect_permuted_aa_atoms(indep_train, item_context: dict):
             xyz_cmp = indep_xyz_aligned[indep_i]
             xyz_ref = target_feats['xyz'][target_i]
             aa_int = target_feats['seq'][target_i]
-            aa3 = rf2aa.chemical.num2aa[aa_int]
+            aa3 = ChemData().num2aa[aa_int]
             results[aa3].append(compare_aa_atom_order(xyz_cmp, xyz_ref, aa_int))
 
     return results

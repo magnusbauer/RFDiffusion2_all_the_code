@@ -148,6 +148,7 @@ preprocess:
   use_cb_to_get_pair_dist: True
 spoof_item: ''
 dataloader:
+  OMIT_PERMUTATE: False
   BLOCKCUT: 5
   CN_DICT: /home/jwatson3/torch/cn_ideal/cn_ideal_train_test.pt
   CN_DIR: /home/jwatson3/torch/cn_ideal
@@ -210,6 +211,7 @@ dataloader:
   use_validation_config: False
   mask: {}
   p_msa_mask: 0.0
+  use_phospate_frames_for_NA: True
 data:
   samples_per_eval_length: 1
   num_eval_lengths: 1

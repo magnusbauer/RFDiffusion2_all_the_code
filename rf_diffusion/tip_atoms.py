@@ -3,7 +3,7 @@ import random
 import torch
 import networkx as nx
 
-import rf2aa.chemical
+from rf2aa.chemical import ChemicalData as ChemData
 
 O_INDEX = 3
 
@@ -20,17 +20,17 @@ def choose_furthest_from_oxygen(res):
 
 
 def get_residue_bond_feats(res, include_H=False):
-    bond_feats = torch.zeros((rf2aa.chemical.NTOTAL, rf2aa.chemical.NTOTAL))
-    for j, bond in enumerate(rf2aa.chemical.aabonds[res]):
-        start_idx = rf2aa.chemical.aa2long[res].index(bond[0])
-        end_idx = rf2aa.chemical.aa2long[res].index(bond[1])
+    bond_feats = torch.zeros((ChemData().NTOTAL, ChemData().NTOTAL))
+    for j, bond in enumerate(ChemData().aabonds[res]):
+        start_idx = ChemData().aa2long[res].index(bond[0])
+        end_idx = ChemData().aa2long[res].index(bond[1])
 
         # maps the 2d index of the start and end indices to btype
-        bond_feats[start_idx, end_idx] = rf2aa.chemical.aabtypes[res][j]
-        bond_feats[end_idx, start_idx] = rf2aa.chemical.aabtypes[res][j]
+        bond_feats[start_idx, end_idx] = ChemData().aabtypes[res][j]
+        bond_feats[end_idx, start_idx] = ChemData().aabtypes[res][j]
     
     if not include_H:
-        bond_feats = bond_feats[:rf2aa.chemical.NHEAVYPROT, :rf2aa.chemical.NHEAVYPROT]
+        bond_feats = bond_feats[:ChemData().NHEAVYPROT, :ChemData().NHEAVYPROT]
     return bond_feats
 
 def nodes_at_distance(G, start):

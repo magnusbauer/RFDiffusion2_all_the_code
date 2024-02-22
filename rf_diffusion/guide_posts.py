@@ -26,7 +26,7 @@ from __future__ import annotations  # allows circular references in type hinting
 import torch
 import numpy as np
 from icecream import ic
-import rf2aa.chemical
+from rf2aa.chemical import ChemicalData as ChemData
 from typing import Tuple, List
 
 def make_guideposts(indep: Indep, is_gp: torch.Tensor, placement: str=None) -> Tuple[Indep, torch.Tensor]:

@@ -21,13 +21,12 @@ from rf_diffusion.parsers import parse_a3m, parse_pdb
 from rf_diffusion.chemical import INIT_CRDS
 from rf_diffusion.kinematics import xyz_to_t2d
 import sys
-import rf2aa.data.data_loader
 import rf2aa.data.compose_dataset
 import rf2aa.util
 import rf2aa.tensor_util
 from rf2aa.tensor_util import assert_equal
 import rf2aa.kinematics
-import rf2aa.chemical
+from rf2aa.chemical import ChemicalData as ChemData
 import rf_diffusion.guide_posts as gp
 
 # for diffusion training
@@ -1073,7 +1072,7 @@ def loader_pdb_fixbb(item, params, homo = None, unclamp=False, pick_top=False,p_
     n_templates = 1
     C, L = seq.shape
 
-    n_pad = rf2aa.chemical.NTOTAL - 27
+    n_pad = ChemData().NTOTAL - 27
     #xyz_prev = F.pad(input=xyz_prev, pad=(0, n_pad, 0), mode='constant', value=0)
     xyz_prev = F.pad(input=xyz_prev, pad=(0, 0, 0, n_pad), mode='constant', value=0)
     true_crds = F.pad(input=true_crds, pad=(0, 0, 0, n_pad), mode='constant', value=0)
@@ -1448,7 +1447,7 @@ def default_dataset_configs(loader_param, debug=False):
     #                     'diff':         loader_cn_fixbb},
     #                     cn_weights)
     sm_compl_loader_fixbb = partial(rf2aa.data.data_loader.loader_sm_compl_assembly, \
-                                chid2hash=chid2hash,chid2taxid=chid2taxid)
+                                    chid2hash=chid2hash,chid2taxid=chid2taxid,remove_residue=False)
     sm_compl_config = WeightedDataset(
                 train_ID_dict["sm_compl"], train_dict["sm_compl"], sm_compl_loader_fixbb, weights_dict["sm_compl"])
     
@@ -1697,7 +1696,7 @@ class DistilledDatasetUnnoised(data.Dataset):
 
                 # Mask the independent inputs.
                 run_inference.seed_all(mask_gen_seed) # Reseed the RNGs for test stability.
-                masks_1d = mask_generator.generate_masks(indep, task, self.params, chosen_dataset, None, atom_mask=atom_mask[:, :rf2aa.chemical.NHEAVYPROT], metadata=metadata)
+                masks_1d = mask_generator.generate_masks(indep, task, self.params, chosen_dataset, None, atom_mask=atom_mask[:, :ChemData().NHEAVYPROT], metadata=metadata)
 
                 return {
                     'indep': indep,

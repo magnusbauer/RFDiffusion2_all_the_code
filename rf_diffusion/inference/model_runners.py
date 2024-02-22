@@ -7,8 +7,7 @@ from omegaconf import DictConfig, OmegaConf, open_dict
 import data_loader
 from icecream import ic
 
-import rf2aa.chemical
-from rf2aa.chemical import NAATOKENS, MASKINDEX, NTOTAL, NHEAVYPROT
+from rf2aa.chemical import ChemicalData as ChemData
 import rf2aa.util
 import rf2aa.data.data_loader
 from rf2aa.util_module import XYZConverter
@@ -103,7 +102,7 @@ def sample_init(
             assert indep.xyz.shape[0] ==  L + torch.sum(indep.is_sm), f"there must be a coordinate in the input PDB for each residue implied by the contig string for partial diffusion.  length of input PDB != length of contig string: {indep.xyz.shape[0]} != {L+torch.sum(indep.is_sm)}"
             assert torch.all(is_diffused[indep.is_sm] == 0), f"all ligand atoms must be in the motif"
         assert (mappings['con_hal_idx0'] == mappings['con_ref_idx0']).all(), f"all positions in the input PDB must correspond to the same index in the output pdb: {list(zip(mappings['con_hal_idx0'], mappings['con_ref_idx0']))=}"
-    indep.seq[is_seq_masked] = rf2aa.chemical.MASKINDEX
+    indep.seq[is_seq_masked] = ChemData().MASKINDEX
     # Diffuse the contig-mapped coordinates 
     if for_partial_diffusion:
         t_step_input = conf.diffuser.partial_T
@@ -286,8 +285,8 @@ class Sampler:
         self.ang_ref = rf2aa.util.reference_angles
         self.fi_dev = rf2aa.util.frame_indices
         self.l2a = rf2aa.util.long2alt
-        self.aamask = rf2aa.util.allatom_mask
-        self.num_bonds = rf2aa.util.num_bonds
+        self.aamask = ChemData().allatom_mask
+        self.num_bonds = ChemData().num_bonds
         self.atom_type_index = rf2aa.util.atom_type_index
         self.ljlk_parameters = rf2aa.util.ljlk_parameters
         self.lj_correction_parameters = rf2aa.util.lj_correction_parameters
@@ -430,7 +429,7 @@ class NRBStyleSelfCond(Sampler):
 
         rf2aa.tensor_util.to_device(rfi, self.device)
         seq_init = torch.nn.functional.one_hot(
-                indep.seq, num_classes=rf2aa.chemical.NAATOKENS).to(self.device).float()
+                indep.seq, num_classes=ChemData().NAATOKENS).to(self.device).float()
         seq_t = torch.clone(seq_init)
         seq_in = torch.clone(seq_init)
         # B,N,L = xyz_t.shape[:3]
@@ -501,7 +500,7 @@ def get_x_t_1(rigids_t, xyz, is_diffused):
 
 def get_seq_one_hot(seq):
     seq_init = torch.nn.functional.one_hot(
-            seq, num_classes=rf2aa.chemical.NAATOKENS).float()
+            seq, num_classes=ChemData().NAATOKENS).float()
     return seq_init.cpu()
     # seq_t = torch.clone(seq_init)
     # seq_t_1 = seq_t
