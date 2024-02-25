@@ -8,6 +8,9 @@ import math
 from icecream import ic
 cmd = analyze.cmd
 
+import logging
+logger = logging.getLogger(__name__)
+
 def combine_selectors(objs, selectors):
     s = {}
     for o in objs:
@@ -36,6 +39,12 @@ def get_motif_spec(row, traj=False):
         is_atom_motif = trb['motif']
     else:
         is_atom_motif = trb.get('atomize_indices2atomname', {})
+    
+    if traj and 'is_atomized' in trb:
+        for k in trb['is_atomized']:
+            if k not in is_atom_motif:
+                is_atom_motif[k] = []
+
     idx = trb['indep']['idx']
     atom_names_by_res_idx = {}
     for i0, atom_names in is_atom_motif.items():
@@ -48,9 +57,8 @@ def get_motif_spec(row, traj=False):
             if resi not in atom_names_by_res_idx:
                 atom_names_by_res_idx[resi] = 'RES'
 
+    logger.debug(f'{traj=} {is_atom_motif=}')
     return atom_names_by_res_idx
-
-
 
 
 # def load_pdbs(pdbs):
@@ -93,10 +101,14 @@ def is_rf_diff(row):
     k = 'resume_scheduler'
     if k in row:
         return math.isnan(row[k])
+    k = 'inference.contig_as_guidepost'
+    if k in row:
+        return math.isnan(row[k])
     return True
 
 import random
 def show(row, structs = {'X0'}, af2=False, des=True, des_color=None, hetatm_color=None, mpnn_packed=False, rosetta_lig=False, ga_lig=False, hydrogenated=False, unbond_motif=True, extras=None):
+    logger.debug(f"{row.get('inference.contig_as_guidepost')=}")
     # x0_pdb = analyze.get_design_pdb(row)
     # print(f'{row["extras"]=}')
     extras = row.get('extras', '{}')
@@ -203,6 +215,7 @@ def show(row, structs = {'X0'}, af2=False, des=True, des_color=None, hetatm_colo
     obj_selectors = {}
     for label in pymol_objects:
         is_traj = label in structs
+        logger.debug(f'{is_rf_diff(row)=}')
         if is_rf_diff(row):
             trb = analyze.get_trb(row)
             atom_names_by_res_idx = {resi: ['ALL'] for ch, resi in trb['con_hal_pdb_idx']}

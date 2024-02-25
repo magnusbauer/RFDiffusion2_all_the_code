@@ -268,6 +268,9 @@ class Indep:
                 not self.is_sm.any() and
                 contiguous
                 )
+    
+    def set_device(self, device):
+        rf2aa.tensor_util.to_device(self, device)
 
 def what_is_diffused(indep, is_diffused, atomizer):
     point_ids = get_point_ids(indep, atomizer)
@@ -815,8 +818,7 @@ class Model:
         # assert set(rfi_dict.keys()) - set()
         return RFO(*self.model(**{**rfi_dict, **kwargs}))
 
-
-    def insert_contig(self, indep, contig_map, partial_T=False, metadata=None, for_partial_diffusion=False):
+    def insert_contig_pre_atomization(self, indep, contig_map, partial_T=False, metadata=None, for_partial_diffusion=False):
         if metadata is None:
             print("warning, insert contig with no metadata is not handled gracefully")
             metadata = defaultdict(dict)
@@ -910,7 +912,18 @@ class Model:
 
         # Check if self.conf.inference.contig_as_guidepost is compatible with how the model was trained
         validate_guideposting_strategy(self.conf)
+        masks_1d = {
+            'input_str_mask': is_res_str_shown,
+            'is_atom_motif': is_atom_str_shown,
+        }
+        return o, masks_1d
 
+    def insert_contig(self, indep, contig_map, partial_T=False, metadata=None, for_partial_diffusion=False):
+        o, masks_1d = self.insert_contig_pre_atomization(indep, contig_map, partial_T, metadata, for_partial_diffusion)
+
+        is_res_str_shown = masks_1d['input_str_mask']
+        is_atom_str_shown = masks_1d['is_atom_motif']
+        
         pre_transform_length = o.length()
         o, is_diffused, is_seq_masked, self.atomizer, contig_map.gp_to_ptn_idx0 = transform_indep(o, is_diffused, is_res_str_shown, is_atom_str_shown, self.conf.inference.contig_as_guidepost, 'anywhere', self.conf.guidepost_bonds, metadata=metadata)
         # HACK: gp indices may be lost during atomization, so we assume they are at the end of the protein.

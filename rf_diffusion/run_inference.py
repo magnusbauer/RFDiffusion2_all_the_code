@@ -48,6 +48,8 @@ from rf_diffusion.idealize import idealize_pose
 from tqdm import trange
 ic.configureOutput(includeContext=True)
 
+logger = logging.getLogger(__name__)
+
 def make_deterministic(seed=0, ignore_if_cuda=False):
     # if not (ignore_if_cuda and torch.cuda.device_count() > 0):
     #     torch.use_deterministic_algorithms(True)

@@ -5,6 +5,7 @@ import fire
 import glob
 from icecream import ic
 
+import logging
 import os
 from rf_diffusion.dev import show_tip_pa
 
@@ -19,6 +20,8 @@ import os
 from rf_diffusion.dev import show_tip_pa
 from rf_diffusion.dev import show_tip_row
 from rf_diffusion.dev import analyze
+
+logger = logging.getLogger(__name__)
 
 def model_generator(traj_path, seq=False):
     with open(traj_path) as f:
@@ -328,9 +331,12 @@ def main(path,
          key=None,
          show_origin=False,
          hide_oxygen=False,
+         debug=False,
          filt=None,
          ):
     ic(pymol_url)
+    if debug:
+        logging.basicConfig(level=logging.DEBUG)
     pymol.init(pymol_url)
     # cmd = analyze.get_cmd(pymol_url)
     # analyze.cmd = cmd
@@ -363,6 +369,7 @@ def main(path,
         data = data[data[k].astype(str) == v]
 
     sweeps = get_sweeps(data)
+    logger.debug(f'{sweeps=}')
     if len(sweeps):
         if key:
             keys = [key]

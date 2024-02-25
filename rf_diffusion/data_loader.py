@@ -1,3 +1,4 @@
+import logging
 import torch
 import itertools
 import traceback
@@ -47,6 +48,8 @@ from rf_diffusion import show
 from rf_diffusion import features
 from rf_diffusion import distributions
 from rf_diffusion import conditioning
+
+logger = logging.getLogger(__name__)
 
 USE_DEFAULT = '__USE_DEFAULT__'
 
@@ -1714,6 +1717,12 @@ class DistilledDatasetUnnoised(data.Dataset):
     def __getitem__(self, index):
         return self.getitem_unsafe(index)
 
+def get_class_name(f):
+    clas = getattr(f, '__class__', None)
+    if clas == None:
+        return None
+    return getattr(clas, '__qualname__')
+
 class TransformedDataset(data.Dataset):
     '''
     Applies transformations to a dataset following the pytorch Transformation paradigm:
@@ -1729,8 +1738,14 @@ class TransformedDataset(data.Dataset):
         
     def __getitem__(self, index):
         feats = self.dataset[index]
+        logger.debug(f'Transform inputs: {feats.keys()}')
         for t in self.transforms:
+            feats_before = set(feats.keys())
             feats = t(**feats)
+            feats_after = set(feats.keys())
+            new_feats = feats_after - feats_before
+            removed_feats = feats_before - feats_after
+            logger.debug(f'Transform: {get_class_name(t)} added: {new_feats}    removed: {removed_feats}')
         return feats
 
     def __len__(self):

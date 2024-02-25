@@ -4,17 +4,22 @@ import logging
 
 from rf_diffusion import aa_model
 
+logger = logging.getLogger(__name__)
+
 def get_center_of_mass(xyz14, mask):
-    assert mask.any()
+    assert mask.any(), f'{mask=}'
     points = xyz14[mask]
     return points.mean(dim=0)
 
 class PopMask:
     def __call__(self, indep, metadata, masks_1d, **kwargs):
+        
+        logger.debug(f'{ masks_1d["pop"]=} {indep.length()=} {masks_1d["pop"].shape}')
         aa_model.pop_mask(indep, masks_1d['pop'])
         masks_1d['input_str_mask'] = masks_1d['input_str_mask'][masks_1d['pop']]
         masks_1d['is_atom_motif'] = aa_model.reindex_dict(masks_1d['is_atom_motif'], masks_1d['pop'])
         metadata['covale_bonds'] = aa_model.reindex_covales(metadata['covale_bonds'], masks_1d['pop'])
+        metadata['ligand_names'] = np.array(['LIG']*indep.length(),  dtype='<U3')
         is_atom_str_shown = masks_1d['is_atom_motif']
         is_atom_str_shown
         return dict(
@@ -79,7 +84,7 @@ class AddConditionalInputs:
         is_gp[:pre_transform_length] = False
         aa_model.assert_valid_seq_mask(indep, is_masked_seq)
         
-        return dict(
+        return kwargs | dict(
             indep=indep,
             is_diffused=is_diffused,
             is_masked_seq=is_masked_seq,
@@ -87,5 +92,5 @@ class AddConditionalInputs:
             atomizer=atomizer,
             metadata=metadata,
             masks_1d=masks_1d,
-            **kwargs
+            contig_as_guidepost=use_guideposts,
         )

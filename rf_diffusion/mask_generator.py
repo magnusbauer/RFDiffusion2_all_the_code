@@ -21,6 +21,7 @@ from rf_diffusion.chemical import ChemicalData as ChemData
 from rf_diffusion import error
 from rf_diffusion import tip_atoms
 
+logger = logging.getLogger(__name__)
 
 def make_covale_compatible(get_mask):
     @wraps(get_mask)
@@ -430,6 +431,9 @@ def _get_entirely_atomized(indep, atom_mask, crop=9999, *args, **kwargs):
     is_motif = torch.zeros(indep.length()).bool()
     for k in is_atom_motif.keys():
         pop[k] = True
+    if pop.sum() == 0:
+        # Fall back to unconditional if none are atomizable
+        pop = torch.ones_like(indep.is_sm)
     return is_motif, is_atom_motif, pop
 
 def _get_triple_contact(xyz, low_prop, high_prop, broken_prop, xyz_less_than=6, seq_dist_greater_than=10, len_low=1, len_high=3):
@@ -637,6 +641,8 @@ def get_diffusion_mask(
         diff_mask_probs, **kwargs):
     
     mask_probs = list(diff_mask_probs.items())
+    logger.debug(f'{mask_probs=}')
+    logger.debug(f'{[(m.name, p) for m,p in mask_probs]=}')
     masks = [m for m, _ in mask_probs]
     props = [p for _, p in mask_probs]
     get_mask = np.random.choice(masks, p=props)
@@ -645,6 +651,7 @@ def get_diffusion_mask(
     if not indep.is_sm.any():
         get_mask = sm_mask_fallback.get(get_mask, get_mask)
 
+    logger.debug(f'{get_mask.name=}')
     with error.context(f'mask - {get_mask.name}'):
         return get_mask(indep, atom_mask, low_prop=low_prop, high_prop=high_prop, broken_prop=broken_prop, **kwargs), get_mask.name
 
