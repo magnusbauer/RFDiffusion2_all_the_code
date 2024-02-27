@@ -4,7 +4,7 @@ inference:
   input_pdb: test_data/1qys.pdb
   num_designs: 10
   design_startnum: 0
-  ckpt_path: /net/scratch/ahern/se3_diffusion/training/rfd_26_varnorm_50/rfd_26_varnorm_502023-11-13_19:27:32.575646/rank_0/models/RFD_17.pt
+  ckpt_path: /net/scratch/ahern/se3_diffusion/training/fm_tip_resume_24/fm_tip_resume_242023-12-03_14:20:34.490797/rank_0/models/RFD_44.pt
   ppi_design: False
   autogenerate_contigs: False
   symmetry: null
