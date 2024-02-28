@@ -1384,7 +1384,7 @@ def default_dataset_configs(loader_param, debug=False):
         if v is not None:
             dataloader_params[k_rf2aa] = v
 
-    train_ID_dict, valid_ID_dict, weights_dict, train_dict, valid_dict, homo, chid2hash, chid2taxid = \
+    train_ID_dict, valid_ID_dict, weights_dict, train_dict, valid_dict, homo, chid2hash, chid2taxid, *extra = \
             rf2aa.data.data_loader.get_train_valid_set({**rf2aa.data.compose_dataset.default_dataloader_params, \
             **dataloader_params},
             no_match_okay=debug, diffusion_training=True, add_negatives=False)

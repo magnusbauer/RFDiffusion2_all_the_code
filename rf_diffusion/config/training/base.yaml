@@ -103,6 +103,7 @@ rf:
     copy_main_block_template: false
     main_block: None
     lj_lin: 0.75
+    get_quaternion: True
   ckpt_path: null
 model:
   embed:
