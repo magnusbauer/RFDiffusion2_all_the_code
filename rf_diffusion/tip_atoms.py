@@ -3,7 +3,7 @@ import random
 import torch
 import networkx as nx
 
-from rf2aa.chemical import ChemicalData as ChemData
+from rf_diffusion.chemical import ChemicalData as ChemData
 
 O_INDEX = 3
 

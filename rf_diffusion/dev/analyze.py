@@ -17,7 +17,7 @@ import matplotlib.pyplot as plt
 # from tqdm.notebook import trange, tqdm
 import numpy as np
 
-from rf2aa.chemical import ChemicalData as ChemData
+from rf_diffusion.chemical import ChemicalData as ChemData
 from rf_diffusion import aa_model
 import rf_diffusion.parsers as parsers
 import rf_diffusion.util as util

@@ -7,7 +7,7 @@ from omegaconf import DictConfig, OmegaConf, open_dict
 import data_loader
 from icecream import ic
 
-from rf2aa.chemical import ChemicalData as ChemData
+from rf_diffusion.chemical import ChemicalData as ChemData
 import rf2aa.util
 import rf2aa.data.data_loader
 from rf2aa.util_module import XYZConverter

@@ -4,7 +4,7 @@ import random
 from icecream import ic
 from collections import OrderedDict
 
-from rf2aa.chemical import ChemicalData as ChemData
+from rf_diffusion.chemical import ChemicalData as ChemData
 
 
 class ContigMap():

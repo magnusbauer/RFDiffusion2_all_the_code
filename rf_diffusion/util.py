@@ -6,7 +6,7 @@ import torch
 
 import scipy.sparse
 
-from rf2aa.chemical import ChemicalData as ChemData
+from rf_diffusion.chemical import ChemicalData as ChemData
 from rf_diffusion.scoring import *
 
 import rf2aa.kinematics

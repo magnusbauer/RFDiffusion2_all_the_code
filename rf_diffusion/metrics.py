@@ -11,7 +11,7 @@ from rf_diffusion import bond_geometry
 import sys
 from rf_diffusion.aa_model import Indep
 import networkx as nx
-from rf2aa.chemical import ChemicalData as ChemData
+from rf_diffusion.chemical import ChemicalData as ChemData
 from rf_diffusion import loss
 from rf_se3_diffusion.data import r3_diffuser
 from abc import abstractmethod, ABC

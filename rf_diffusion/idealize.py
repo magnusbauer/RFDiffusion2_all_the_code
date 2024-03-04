@@ -1,7 +1,7 @@
 import torch
 
 from rf2aa.util_module import XYZConverter
-from rf2aa.chemical import ChemicalData as ChemData
+from rf_diffusion.chemical import ChemicalData as ChemData
 
 
 def calc_residue_rmsds(xyz1, xyz2, seq, eps=1e-6):

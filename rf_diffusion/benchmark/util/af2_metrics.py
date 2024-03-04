@@ -36,7 +36,7 @@ from alphafold.model import model
 from jax.lib import xla_bridge
 from alphafold.model.tf import shape_placeholders                                                        
 import tensorflow.compat.v1 as tf
-from rf2aa.chemical import ChemicalData as ChemData
+from rf_diffusion.chemical import ChemicalData as ChemData
 
 os.environ['TF_FORCE_UNIFIED_MEMORY'] = '1'
 os.environ['XLA_PYTHON_CLIENT_MEM_FRACTION'] = '2.0'

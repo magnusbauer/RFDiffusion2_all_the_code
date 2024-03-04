@@ -17,7 +17,7 @@ from collections import OrderedDict
 import rf_diffusion.aa_model as aa_model
 from functools import partial
 
-from rf2aa.chemical import ChemicalData as ChemData
+from rf_diffusion.chemical import ChemicalData as ChemData
 from rf_diffusion import error
 from rf_diffusion import tip_atoms
 

@@ -11,12 +11,8 @@ from rf_diffusion.util_module import ComputeAllAtomCoords
 
 from rf_diffusion.diff_util import th_min_angle, th_interpolate_angles, get_aa_schedule 
 from rf_diffusion.diffusion import get_beta_schedule, cosine_interp
-
-from rf_diffusion.chemical import INIT_CRDS 
-import rf_diffusion.igso3 as igso3
-import time 
-
 from icecream import ic  
+import rf_diffusion.igso3 as igso3
 
 
 torch.set_printoptions(sci_mode=False)

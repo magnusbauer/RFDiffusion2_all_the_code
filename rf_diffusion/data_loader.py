@@ -18,7 +18,6 @@ import ast
 from dateutil import parser
 import numpy as np
 from rf_diffusion.parsers import parse_a3m, parse_pdb
-from rf_diffusion.chemical import INIT_CRDS
 from rf_diffusion.kinematics import xyz_to_t2d
 import sys
 import rf2aa.data.compose_dataset
@@ -26,7 +25,7 @@ import rf2aa.util
 import rf2aa.tensor_util
 from rf2aa.tensor_util import assert_equal
 import rf2aa.kinematics
-from rf2aa.chemical import ChemicalData as ChemData
+from rf_diffusion.chemical import ChemicalData as ChemData
 import rf_diffusion.guide_posts as gp
 
 # for diffusion training
@@ -48,7 +47,6 @@ from rf_diffusion import show
 from rf_diffusion import features
 from rf_diffusion import distributions
 from rf_diffusion import conditioning
-
 
 USE_DEFAULT = '__USE_DEFAULT__'
 
@@ -884,7 +882,7 @@ def featurize_single_chain(msa, ins, tplt, pdb, params, unclamp=False, pick_top=
     chain_idx = torch.ones((len(crop_idx), len(crop_idx))).long()
 
     # replace missing with blackholes & conovert NaN to zeros to avoid any NaN problems during loss calculation
-    init = INIT_CRDS.reshape(1, 27, 3).repeat(len(xyz), 1, 1)
+    init = ChemData().INIT_CRDS.reshape(1, 27, 3).repeat(len(xyz), 1, 1)
     xyz = torch.where(mask[...,None], xyz, init).contiguous()
     xyz = torch.nan_to_num(xyz)
     
@@ -924,7 +922,7 @@ def featurize_single_chain_fixbb(msa, pdb, params, unclamp=False, pick_top=False
     chain_idx = torch.ones((len(crop_idx), len(crop_idx))).long()
 
     # replace missing with blackholes & conovert NaN to zeros to avoid any NaN problems during loss calculation
-    init = INIT_CRDS.reshape(1, 27, 3).repeat(len(xyz), 1, 1)
+    init = ChemData().INIT_CRDS.reshape(1, 27, 3).repeat(len(xyz), 1, 1)
     xyz = torch.where(mask[...,None], xyz, init).contiguous()
     xyz = torch.nan_to_num(xyz)
 
@@ -1000,7 +998,7 @@ def featurize_homo(msa_orig, ins_orig, tplt, pdbA, pdbid, interfaces, params, pi
         xyz_prev = xyz_prev[crop_idx]
     
     # replace missing with blackholes & conovert NaN to zeros to avoid any NaN problems during loss calculation
-    init = INIT_CRDS.reshape(1, 1, 27, 3).repeat(npairs, xyz.shape[1], 1, 1)
+    init = ChemData().INIT_CRDS.reshape(1, 1, 27, 3).repeat(npairs, xyz.shape[1], 1, 1)
     xyz = torch.where(mask[...,None], xyz, init).contiguous()
     xyz = torch.nan_to_num(xyz)
     
@@ -1262,7 +1260,7 @@ def loader_complex(item, L_s, taxID, assem, params, negative=False, pick_top=Tru
         chain_idx = chain_idx[sel][:,sel]
     
     # replace missing with blackholes & conovert NaN to zeros to avoid any NaN problems during loss calculation
-    init = INIT_CRDS.reshape(1, 27, 3).repeat(len(xyz), 1, 1)
+    init = ChemData().INIT_CRDS.reshape(1, 27, 3).repeat(len(xyz), 1, 1)
     xyz = torch.where(mask[...,None], xyz, init).contiguous()
     xyz = torch.nan_to_num(xyz)
     
@@ -1342,7 +1340,7 @@ def loader_complex_fixbb(item, L_s, taxID, assem, params, negative=False, pick_t
     idx = idx[sel]
     chain_idx = chain_idx[sel][:,sel]
     # replace missing with blackholes & conovert NaN to zeros to avoid any NaN problems during loss calculation
-    init = INIT_CRDS.reshape(1, 27, 3).repeat(len(xyz), 1, 1)
+    init = ChemData().INIT_CRDS.reshape(1, 27, 3).repeat(len(xyz), 1, 1)
     xyz = torch.where(mask[...,None], xyz, init).contiguous()
     xyz = torch.nan_to_num(xyz)
 

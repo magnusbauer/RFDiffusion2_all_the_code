@@ -3,7 +3,7 @@ from collections import defaultdict
 import numpy as np
 import torch
 
-from rf2aa.chemical import ChemicalData as ChemData
+from rf_diffusion.chemical import ChemicalData as ChemData
 from rf2aa.scoring import *
 
 def writepdb(filename, *args, file_mode='w', **kwargs, ):

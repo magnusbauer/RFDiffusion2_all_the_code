@@ -38,7 +38,7 @@ import glob
 from rf_diffusion.inference import model_runners
 import rf2aa.tensor_util
 import rf2aa.util
-from rf2aa.chemical import ChemicalData as ChemData
+from rf_diffusion.chemical import ChemicalData as ChemData
 from rf_diffusion import aa_model
 from rf_diffusion import guide_posts as gp
 import copy

@@ -7,7 +7,7 @@ import numpy as np
 from diffusion import get_beta_schedule
 from inference.utils import get_next_ca, get_next_frames
 import rf2aa.tensor_util
-from rf2aa.chemical import ChemicalData as ChemData
+from rf_diffusion.chemical import ChemicalData as ChemData
 from rf2aa.tensor_util import assert_equal
 
 def sample_blosum_mutations(seq, *args, **kwargs):

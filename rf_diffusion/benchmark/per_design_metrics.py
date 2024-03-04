@@ -18,7 +18,7 @@ import rf_diffusion.dev.analyze
 import analysis.metrics
 from rf_diffusion import aa_model
 from rf_diffusion import atomize
-from rf2aa.chemical import ChemicalData as ChemData
+from rf_diffusion.chemical import ChemicalData as ChemData
 from rf_diffusion import bond_geometry
 from rf_diffusion.dev import benchmark as bm
 

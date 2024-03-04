@@ -23,7 +23,7 @@ from rf_se3_diffusion.data import se3_diffuser
 from rf_diffusion import aa_model
 import show
 
-from rf2aa.chemical import ChemicalData as ChemData
+from rf_diffusion.chemical import ChemicalData as ChemData
 import pytest
 
 cmd = analyze.cmd

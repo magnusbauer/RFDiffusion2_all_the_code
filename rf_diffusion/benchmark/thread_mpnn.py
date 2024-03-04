@@ -16,7 +16,7 @@ from icecream import ic
 
 from rf_diffusion.inference.utils import parse_pdb
 import rf2aa.data.parsers
-from rf2aa.chemical import ChemicalData as ChemData
+from rf_diffusion.chemical import ChemicalData as ChemData
 from rf_diffusion.parsers import load_ligand_from_pdb, load_ligands_from_pdb
 from rf2aa.util import kabsch
 from rf_diffusion import write_file

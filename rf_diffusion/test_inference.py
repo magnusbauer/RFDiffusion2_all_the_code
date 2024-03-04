@@ -21,7 +21,7 @@ import run_inference
 from functools import partial
 from rf2aa import tensor_util
 
-from rf2aa.chemical import ChemicalData as ChemData
+from rf_diffusion.chemical import ChemicalData as ChemData
 from rf2aa.model.RoseTTAFoldModel import LegacyRoseTTAFoldModule
 import rf2aa.loss.loss
 from rf_diffusion.inference import model_runners

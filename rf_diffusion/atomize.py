@@ -9,7 +9,7 @@ import assertpy
 
 import rf_diffusion.aa_model as aa_model
 import rf2aa.util
-from rf2aa.chemical import ChemicalData as ChemData
+from rf_diffusion.chemical import ChemicalData as ChemData
 import numpy as np
 
 def set_nonexistant_atoms_to_nan(xyz, seq, H_exists=False):

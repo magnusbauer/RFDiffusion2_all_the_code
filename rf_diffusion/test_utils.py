@@ -27,7 +27,7 @@ from rf_diffusion import parsers
 from rf2aa.util import kabsch
 import tree
 import numpy as np
-from rf2aa.chemical import ChemicalData as ChemData
+from rf_diffusion.chemical import ChemicalData as ChemData
 from rf_diffusion.data_loader import no_batch_collate_fn
 import rf_diffusion
 from rf_diffusion import aa_model

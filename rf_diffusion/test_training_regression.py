@@ -3,7 +3,7 @@ import sys
 import dataclasses
 import hydra
 from hydra import compose, initialize
-from rf2aa.chemical import ChemicalData as ChemData
+from rf_diffusion.chemical import ChemicalData as ChemData
 from rf2aa.model.RoseTTAFoldModel import LegacyRoseTTAFoldModule as RoseTTAFoldModuleReal
 from rf2aa.model.RoseTTAFoldModel import LegacyRoseTTAFoldModule
 import torch

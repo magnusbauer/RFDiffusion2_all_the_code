@@ -9,7 +9,7 @@ import torch.nn.functional as F
 import dataclasses
 from icecream import ic
 from assertpy import assert_that
-from rf2aa.chemical import ChemicalData as ChemData
+from rf_diffusion.chemical import ChemicalData as ChemData
 from rf2aa.chemical import initialize_chemdata
 import rf2aa.util
 from rf2aa.data import parsers
@@ -805,7 +805,6 @@ class Model:
 
     def __init__(self, conf):
         self.conf = conf
-        initialize_chemdata(self.conf)
         self.NTOKENS = ChemData().NAATOKENS
         self.atomizer = None
         self.converter = XYZConverter()

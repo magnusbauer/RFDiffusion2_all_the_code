@@ -27,7 +27,7 @@ import torch.nn as nn
 from torch.utils import data
 from omegaconf import DictConfig, OmegaConf
 
-from rf2aa.chemical import ChemicalData as ChemData
+from rf_diffusion.chemical import ChemicalData as ChemData
 import rf2aa.data.data_loader
 import rf2aa.util
 import rf2aa.loss.loss

@@ -212,7 +212,6 @@ dataloader:
   use_validation_config: False
   mask: {}
   p_msa_mask: 0.0
-  use_phospate_frames_for_NA: True
 data:
   samples_per_eval_length: 1
   num_eval_lengths: 1

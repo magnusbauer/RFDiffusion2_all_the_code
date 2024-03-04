@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 from icecream import ic
-from rf_diffusion.chemical import INIT_CRDS
+from rf_diffusion.chemical import ChemicalData as ChemData
 
 PARAMS = {
     "DMIN"    : 2.0,
@@ -288,8 +288,7 @@ def get_init_xyz(xyz_t, is_sm):
     # is_sm: [L]
     # ouput: xyz (B, T, L, 14, 3)
     B, T, L = xyz_t.shape[:3]
-    #init = INIT_CRDS.to(xyz_t.device).reshape(1,1,1,36,3).repeat(B,T,L,1,1)
-    init = INIT_CRDS.to(xyz_t.device).reshape(1,1,1,36,3)
+    init = ChemData().INIT_CRDS.to(xyz_t.device).reshape(1,1,1,36,3)
     init = init.repeat(B,T,L,1,1)
     # replace small mol N and C coords with nans
     init[:,:,is_sm, 0] = torch.nan

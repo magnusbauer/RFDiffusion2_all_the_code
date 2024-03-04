@@ -18,7 +18,7 @@ from rf_diffusion import test_utils
 import inference.utils
 from rf_diffusion import contigs
 import pytest
-from rf2aa.chemical import ChemicalData as ChemData
+from rf_diffusion.chemical import ChemicalData as ChemData
 from rf2aa import tensor_util
 from rf_diffusion import run_inference
 ic.configureOutput(includeContext=True)

@@ -9,7 +9,7 @@ import random
 import rf_diffusion.util as util
 import gzip
 import rf2aa.util
-from rf2aa.chemical import ChemicalData as ChemData
+from rf_diffusion.chemical import ChemicalData as ChemData
 import rf2aa.data.parsers
 import rf_diffusion.error
 
