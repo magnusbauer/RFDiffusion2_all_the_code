@@ -1,7 +1,3 @@
-[submodule "rf_se3_diffusion"]
-	path = rf_se3_diffusion
-	url = git@github.com:w-ahern/rf_se3_diffusion.git
-	branch = no_submodule
 [submodule "lib/se3_flow_matching"]
 	path = lib/se3_flow_matching
 	url = git@github.com:baker-laboratory/frame-flow.git
