@@ -32,6 +32,11 @@ class TestAtomization(unittest.TestCase):
             [0],
             None,
         ),
+        (
+            {'contigs': ['A126-127'], 'inpaint_str':['A126-126']},
+            [0],
+            None,
+        ),
         # Should fail as you cannot atomize C-terminal residues
         # (
         #     {'contigs': ['A517-518']},

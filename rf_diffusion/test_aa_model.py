@@ -420,6 +420,41 @@ class TestTwoChains(unittest.TestCase):
         assertpy.assert_that(indep_contig.bond_feats[5][6]).is_equal_to(0)
         assertpy.assert_that(indep_contig.bond_feats[6][5]).is_equal_to(0)
 
+    def test_inpaint_str(self):
+        ''' 
+        Binder design without specifying the structure of a peptide a priori at inference. inpaint_str is set for the residues in the motif that should keep their sequence identity but have their structure diffused.
+        This test makes sure that is_diffused is set to True for the residues indicated in inpaint_str and is_seq_masked is set to False to keep the sequence unchanged.
+        '''
+        
+        input_pdb = './benchmark/input/2j0l.pdb'
+        ligand_name = 'ANP'
+
+        conf = test_utils.construct_conf_single(config_name='two_chains_ligand', inference=True)
+        conf.contigmap.has_termini = [True, True]
+        adaptor = aa_model.Model(conf)
+
+        run_inference.seed_all()
+        indep, metadata = aa_model.make_indep(input_pdb, ligand_name, return_metadata=True)
+        target_feats = inference.utils.process_target(input_pdb)
+        contig_map = contigs.ContigMap(target_feats,
+                                    contigs=['A676-677_2-2'],
+                                    inpaint_str=['A676-677'])
+
+        _, is_diffused, is_seq_masked = adaptor.insert_contig(indep, contig_map, metadata=metadata)
+
+        # The motif (first two residues) should be diffused since inpaint_str is set for those residues, so is_diffused should be True.
+        # is_diffused for the binder (third, fourth residue) is set to True.
+        # For the ligand (31 atoms) is_diffused is set to False since the ligand should keep its structure.
+        expected_is_diffused = torch.tensor([ True,  True,  True,  True] + [False]*31)
+
+        # The motif (first two residues) should keep their sequence identity so is_seq_masked should be False. Hence the sequence is not masked, so the model knows about the sequence.
+        # is_seq_masked for the binder (third, fourth residue) is set to True to mask the sequence identity from the model to get different binder sequences.
+        # For the ligand (31 atoms) is_seq_masked is set to False since the atom identities should not be changed.
+        expected_is_seq_masked = torch.tensor([False, False,  True,  True] + [False]*31)
+
+        assertpy.assert_that(is_diffused.tolist()).is_equal_to(expected_is_diffused.tolist())
+        assertpy.assert_that(is_seq_masked.tolist()).is_equal_to(expected_is_seq_masked.tolist())
+
 class TestConditionalIndep(unittest.TestCase):
     def test_all(self):
         indep = make_indep('benchmark/input/gaa.pdb', 'LG1')

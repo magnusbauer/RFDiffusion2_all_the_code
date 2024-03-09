@@ -56,7 +56,7 @@ class TestTransform(unittest.TestCase):
             is_res_str_shown = torch.zeros(indep.length()).bool()
             is_res_str_shown[res_str_shown_idx] = True
             n_res_shown = is_res_str_shown.sum()
-            indep, is_diffused, is_masked_seq, atomizer, _ = aa_model.transform_indep(indep, is_res_str_shown, is_atom_str_shown, True, metadata=metadata)
+            indep, is_diffused, is_masked_seq, atomizer, _ = aa_model.transform_indep(indep, ~is_res_str_shown, is_res_str_shown, is_atom_str_shown, True, metadata=metadata)
             is_diffused_deatomized = atomize.convert_atomized_mask(atomizer, is_diffused)
 
             n_ligand = indep_init.is_sm.sum()

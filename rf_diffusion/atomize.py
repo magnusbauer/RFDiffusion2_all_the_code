@@ -128,11 +128,12 @@ def atom_indices(atomizer, res_mask, atom_names_by_res):
     assert set(res_i).isdisjoint(set(atom_i))
     return res_i + atom_i
 
-def create_masks(atomizer, is_res_str_shown, is_atom_str_shown):
+def create_masks(atomizer, is_diffused, is_res_str_shown, is_atom_str_shown):
 
     is_atom_seq_shown = {res_i: [e for e in ChemData().aa2long[atomizer.deatomized_state[res_i].aa][:ChemData().NHEAVYPROT] if e is not None]
                             for res_i in is_atom_str_shown.keys()}
     is_res_seq_shown = is_res_str_shown
+    is_res_str_shown = is_diffused
     return create_masks_str_seq(atomizer, is_res_str_shown, is_res_seq_shown, is_atom_str_shown, is_atom_seq_shown)
 
 def create_masks_str_seq(atomizer, is_res_str_shown, is_res_seq_shown, is_atom_str_shown, is_atom_seq_shown):
@@ -146,7 +147,7 @@ def create_masks_str_seq(atomizer, is_res_str_shown, is_res_seq_shown, is_atom_s
 
     return is_diffused, is_masked_seq
 
-def atomize_and_mask(indep, is_res_str_shown, is_atom_str_shown):
+def atomize_and_mask(indep, is_diffused, is_res_str_shown, is_atom_str_shown):
     '''
     Params:
         is_atom_str_shown: map from 0-indexed residues to motif atom names:
@@ -167,7 +168,7 @@ def atomize_and_mask(indep, is_res_str_shown, is_atom_str_shown):
     indep = atomizer.atomize(indep)
 
     indep.same_chain = indep.same_chain.bool()
-    is_diffused, is_masked_seq = create_masks(atomizer, is_res_str_shown, is_atom_str_shown)
+    is_diffused, is_masked_seq = create_masks(atomizer, is_diffused, is_res_str_shown, is_atom_str_shown)
     return indep, is_diffused, is_masked_seq, atomizer
 
 def deatomize_mask(atomizer: aa_model.AtomizeResidues, indep, mask: torch.Tensor) -> torch.Tensor:

@@ -894,10 +894,13 @@ class Model:
             is_diffused_sm = torch.ones(n_sm).bool()
         is_diffused = torch.cat((is_diffused_prot, is_diffused_sm))
         is_atom_str_shown = contig_map.atomize_indices2atomname
+        inpaint_seq = torch.from_numpy(contig_map.inpaint_seq)
         # The motifs for atomization are double-counted.
         if is_atom_str_shown:
             is_diffused[list(is_atom_str_shown.keys())] = True
-        is_res_str_shown = ~is_diffused
+            inpaint_seq[list(is_atom_str_shown.keys())] = False
+        is_res_str_shown = torch.cat((inpaint_seq, ~is_diffused_sm))
+
         for i, ((res_i, atom_name), sm_i, bond_type) in enumerate(metadata['covale_bonds']):
             res_i = hal_by_ref_d[res_i]
             sm_i = hal_by_ref_d[sm_i]
@@ -909,7 +912,7 @@ class Model:
         validate_guideposting_strategy(self.conf)
 
         pre_transform_length = o.length()
-        o, is_diffused, is_seq_masked, self.atomizer, contig_map.gp_to_ptn_idx0 = transform_indep(o, is_res_str_shown, is_atom_str_shown, self.conf.inference.contig_as_guidepost, 'anywhere', self.conf.guidepost_bonds, metadata=metadata)
+        o, is_diffused, is_seq_masked, self.atomizer, contig_map.gp_to_ptn_idx0 = transform_indep(o, is_diffused, is_res_str_shown, is_atom_str_shown, self.conf.inference.contig_as_guidepost, 'anywhere', self.conf.guidepost_bonds, metadata=metadata)
         # HACK: gp indices may be lost during atomization, so we assume they are at the end of the protein.
         is_gp = torch.full((o.length(),), True)
         is_gp[:pre_transform_length] = False
@@ -2281,11 +2284,10 @@ def make_guideposts(indep, is_motif):
     indep_cat.bond_feats[is_inter_gp * ~has_sm] = GP_BOND
     return indep_cat, gp_to_ptn_idx0
 
-def transform_indep(indep, is_res_str_shown, is_atom_str_shown, use_guideposts, guidepost_placement='anywhere', guidepost_bonds=True, metadata=None):
+def transform_indep(indep, is_diffused, is_res_str_shown, is_atom_str_shown, use_guideposts, guidepost_placement='anywhere', guidepost_bonds=True, metadata=None):
     indep = copy.deepcopy(indep)
     use_atomize = is_atom_str_shown is not None
     # use_atomize = is_atom_str_shown is not None and len(is_atom_str_shown) > 0
-    is_diffused = ~is_res_str_shown
     is_masked_seq = ~is_res_str_shown
     atomizer = None
     gp_to_ptn_idx0 = None
@@ -2305,11 +2307,14 @@ def transform_indep(indep, is_res_str_shown, is_atom_str_shown, use_guideposts, 
         is_diffused[list(gp_to_ptn_idx0.values())] = True
         n_gp = len(gp_to_ptn_idx0)
         is_diffused = torch.cat((is_diffused, torch.zeros((n_gp,)).bool()))
+        is_res_str_shown[list(gp_to_ptn_idx0.values())] = False
+        is_res_str_shown = torch.cat((is_res_str_shown, ~torch.zeros((n_gp,)).bool()))
         if use_atomize:
             gp_from_ptn_idx0 = {v:k for k,v in gp_to_ptn_idx0.items()}
             is_atom_str_shown = {gp_from_ptn_idx0[k]: v for k,v in is_atom_str_shown.items()}
             # Remove redundancy
             is_diffused[list(is_atom_str_shown.keys())] = True
+            is_res_str_shown[list(is_atom_str_shown.keys())] = False
             cov_resis = [gp_from_ptn_idx0[res_i] for (res_i, _), _, _ in metadata['covale_bonds']]
             for i, (a, b, t) in enumerate(metadata['covale_bonds']):
                 res_i, atom_name = a
@@ -2326,7 +2331,7 @@ def transform_indep(indep, is_res_str_shown, is_atom_str_shown, use_guideposts, 
         is_ligand = indep.is_sm
         # is_diffused[indep.is_sm] = False
         is_atom_str_shown = {k.item() if hasattr(k, 'item') else k :v for k,v in is_atom_str_shown.items()}
-        indep, is_diffused, is_masked_seq, atomizer = atomize.atomize_and_mask(indep, ~is_diffused, is_atom_str_shown)
+        indep, is_diffused, is_masked_seq, atomizer = atomize.atomize_and_mask(indep, ~is_diffused, is_res_str_shown, is_atom_str_shown)
         # TODO: Handle sequence masking more elegantly
         is_masked_seq[indep.is_sm] = False
         assertpy.assert_that(indep.is_sm.sum()).is_equal_to(indep.atom_frames.shape[0])
