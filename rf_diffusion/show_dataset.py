@@ -24,7 +24,7 @@ from rf_diffusion.data_loader import (
     #Dataset, DatasetComplex, 
     DistilledDataset, DistributedWeightedSampler
 )
-from rf_se3_diffusion.data import se3_diffuser
+from rf_diffusion.frame_diffusion.data import se3_diffuser
 from rf_diffusion import aa_model
 
 import rf_diffusion.dev.show_tip_row

@@ -19,7 +19,7 @@ from dev import analyze, show_tip_pa
 from rf_diffusion.data_loader import get_fallback_dataset_and_dataloader
 from rf_diffusion import test_utils
 from rf2aa import tensor_util
-from rf_se3_diffusion.data import se3_diffuser
+from rf_diffusion.frame_diffusion.data import se3_diffuser
 from rf_diffusion import aa_model
 import show
 

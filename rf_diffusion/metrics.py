@@ -13,10 +13,10 @@ from rf_diffusion.aa_model import Indep
 import networkx as nx
 from rf_diffusion.chemical import ChemicalData as ChemData
 from rf_diffusion import loss
-from rf_se3_diffusion.data import r3_diffuser
+from rf_diffusion.frame_diffusion.data import r3_diffuser
 from abc import abstractmethod, ABC
 from rf2aa import util_module
-from data import utils as du
+from rf_diffusion.frame_diffusion.data import utils as du
 from rf_diffusion import idealize
 from rf_diffusion import atomize
 from rf_diffusion import aa_model

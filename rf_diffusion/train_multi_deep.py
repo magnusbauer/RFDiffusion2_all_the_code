@@ -57,7 +57,7 @@ from scheduler import get_stepwise_decay_schedule_with_warmup
 from rf_diffusion import rotation_conversions as rot_conv
 from rf_diffusion import test_utils
 from openfold.utils import rigid_utils as ru
-from rf_se3_diffusion.data import all_atom
+from rf_diffusion.frame_diffusion.data import all_atom
 from se3_flow_matching.data import all_atom as all_atom_fm
 from rf_diffusion.reshape_weights import changed_dimensions, get_t1d_updates
 
@@ -163,9 +163,6 @@ class Trainer():
         self.conf=conf
         self._exp_conf = conf.experiment
         self.metric_manager = MetricManager(conf)
-
-        # Initialize experiment objects
-        from rf_se3_diffusion.data import se3_diffuser
 
         self.diffuser = noisers.get(self.conf.diffuser)
         self.diffuser.T = conf.diffuser.T
@@ -805,7 +802,7 @@ class Trainer():
         return model_path
 
     def init_model(self, device):
-        from rf_se3_diffusion.rf_score.model import RFScore
+        from rf_diffusion.frame_diffusion.rf_score.model import RFScore
         model = RFScore(self.conf.rf.model, self.diffuser, device).to(device)
         # if self.log_inputs:
         #     pickle_dir, self.pickle_counter = pickle_function_call(model, 'forward', 'training', minifier=aa_model.minifier)

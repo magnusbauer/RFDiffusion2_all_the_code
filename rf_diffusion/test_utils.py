@@ -20,7 +20,7 @@ from rf_diffusion.data_loader import (
 )
 from torch.utils import data
 from omegaconf import DictConfig
-from rf_se3_diffusion.data import se3_diffuser
+from rf_diffusion.frame_diffusion.data import se3_diffuser
 
 import urllib
 from rf_diffusion import parsers

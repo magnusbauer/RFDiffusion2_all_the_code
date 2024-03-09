@@ -5,7 +5,7 @@ from icecream import ic
 import torch
 import hydra
 from omegaconf import DictConfig
-from rf_score.model import RFScore
+from rf_diffusion.frame_diffusion.rf_score.model import RFScore
 
 def get_t1d_updates(model_d, weight_d, n):
     d_t1d_old = weight_d['model.templ_emb.templ_stack.proj_t1d.weight'].shape[1]

@@ -28,12 +28,10 @@ import torch.nn.functional as nn
 import rf_diffusion.util as util
 import hydra
 from hydra.core.hydra_config import HydraConfig
-from rf_se3_diffusion.data import all_atom
-import rf_se3_diffusion.data.utils as du
+from rf_diffusion.frame_diffusion.data import all_atom
+import rf_diffusion.frame_diffusion.data.utils as du
 from openfold.utils.rigid_utils import Rigid
-from rf_se3_diffusion import rf_score
-from rf_se3_diffusion.rf_score.model import RFScore
-from rf_se3_diffusion.data import se3_diffuser
+from rf_diffusion.frame_diffusion.rf_score.model import RFScore
 from rf_diffusion import features
 import os
 from rf_diffusion import noisers
@@ -144,6 +142,7 @@ class Sampler:
         self.initialized=True
 
         # Assemble config from the checkpoint
+        ic(self._conf.inference.ckpt_path)
         weights_pkl = du.read_pkl(
             self._conf.inference.ckpt_path, use_torch=True,
                 map_location=self.device)

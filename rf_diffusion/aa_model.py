@@ -34,8 +34,8 @@ import rf_diffusion.atomize as atomize
 from rf_diffusion import write_file
 
 import os, sys
-import rf_se3_diffusion.data.utils as du
-from rf_se3_diffusion.data import all_atom
+import rf_diffusion.frame_diffusion.data.utils as du
+from rf_diffusion.frame_diffusion.data import all_atom
 import rf_diffusion.features as features
 
 

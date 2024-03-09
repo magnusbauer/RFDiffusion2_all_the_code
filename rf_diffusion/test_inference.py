@@ -27,7 +27,7 @@ import rf2aa.loss.loss
 from rf_diffusion.inference import model_runners
 from rf_diffusion import aa_model
 from rf_diffusion import inference
-import rf_se3_diffusion.data.utils as du
+import rf_diffusion.frame_diffusion.data.utils as du
 import rf_diffusion
 from rf_diffusion.dev import analyze
 from rf_diffusion.dev import show_bench
