@@ -20,6 +20,11 @@ from rf_diffusion.frame_diffusion.data import utils as du
 from rf_diffusion import idealize
 from rf_diffusion import atomize
 from rf_diffusion import aa_model
+from rf_diffusion import guide_posts as gp
+from rf2aa.util_module import XYZConverter
+
+import logging
+logger = logging.getLogger(__name__)
 
 def calc_displacement(pred, true):
     """
@@ -223,7 +228,7 @@ class IdealizedResidueRMSD(Metric):
     '''
 
     def __init__(self, conf):
-        pass
+        self.n_steps = conf.idealization_metric_n_steps
 
     def __call__(
         self,
@@ -251,7 +256,7 @@ class IdealizedResidueRMSD(Metric):
 
         # Pad pred_crds to 36 atoms
         pred_crds_padded = torch.zeros(L, 36, 3, device=device)
-        pred_crds_padded[:, :3] = pred_crds
+        pred_crds_padded[:, :3] = pred_crds[:, :3]
         indep.xyz = pred_crds_padded.detach()
 
         # Make an atomizer
@@ -261,13 +266,99 @@ class IdealizedResidueRMSD(Metric):
         indep_deatomized = atomizer.deatomize(indep)
 
         # Idealize only atomized residues
-        rmsd = idealize.idealize_pose(
-            xyz=indep_deatomized.xyz[None, atomizer_spec.residue_to_atomize].detach(),
-            seq=indep_deatomized.seq[None, atomizer_spec.residue_to_atomize].detach(),
-            steps=kwargs.pop('steps', 100)
-        )[1]
-        
-        return rmsd[0].detach()
+        logger.debug(f'{indep_deatomized.xyz.device=}')
+        logger.debug(f'{atomizer_spec.residue_to_atomize.device=}')
+        rmsd, per_residue_rmsd = idealize.idealize_pose(
+            xyz=indep_deatomized.xyz[None, atomizer_spec.residue_to_atomize.detach().cpu()].detach(),
+            seq=indep_deatomized.seq[None, atomizer_spec.residue_to_atomize.detach().cpu()].detach(),
+            steps=self.n_steps,
+        )[1:3]
+        return {
+            'rmsd': rmsd[0].detach(),
+            'per_residue_rmsd': per_residue_rmsd[0].detach(),
+        }
+
+def get_guidepost_corresponding_indices(indep, is_gp):
+    # gp_to_contig_idx0 = sampler.contig_map.gp_to_ptn_idx0  # map from gp_idx0 to the ptn_idx0 in the contig string.
+    # is_gp = torch.zeros_like(indep.seq, dtype=bool)
+    # is_gp[list(gp_to_contig_idx0.keys())] = True
+
+    # Infer which diffused residues ended up on top of the guide post residues
+    diffused_xyz = indep.xyz[~is_gp * ~indep.is_sm]
+    gp_alone_xyz = indep.xyz[is_gp]
+
+    idx_by_gp_sequential_idx = torch.nonzero(is_gp)[:,0].numpy()
+    gp_alone_to_diffused_idx0 = gp.greedy_guide_post_correspondence(diffused_xyz, gp_alone_xyz)
+    match_idx_by_gp_idx = {}
+    for k, v in gp_alone_to_diffused_idx0.items():
+        match_idx_by_gp_idx[idx_by_gp_sequential_idx[k]] = v
+    gp_idx, match_idx = zip(*match_idx_by_gp_idx.items())
+    gp_idx = np.array(gp_idx)
+    match_idx = np.array(match_idx)
+
+
+    return gp_idx, match_idx
+
+# WIP
+def all_atom_rigid(indep, true_crds, pred_crds, atomizer_spec, **kwargs):
+
+    '''
+    Computes bond length / rigid group violations after placing guideposts.
+    '''
+
+    indep_pred = copy.deepcopy(indep)
+    indep_pred.xyz = pred_crds
+    indep.xyz = true_crds
+
+    ic(
+        indep.xyz - indep_pred.xyz
+    )
+
+    atomizer = aa_model.AtomizeResidues(**asdict(atomizer_spec))
+    indep_pred = atomizer.deatomize(indep_pred)
+    indep = atomizer.deatomize(indep)
+
+    is_gp = torch.zeros_like(indep.is_sm).bool()
+    is_gp[atomizer_spec.residue_to_atomize] = True
+
+    ic(
+        indep_pred.length(),
+        is_gp.shape,
+    )
+    gp_idx, match_idx = get_guidepost_corresponding_indices(indep_pred, is_gp)
+    indep_pred.xyz[match_idx] = indep_pred.xyz[gp_idx]
+    indep_pred.seq[match_idx] = indep_pred.seq[gp_idx]
+    indep_pred, _ = aa_model.slice_indep(indep_pred, ~is_gp)
+    # indep_pred = indep_pred[~is_gp]
+
+    indep.seq[match_idx] = indep.seq[gp_idx]
+
+    indep, cross_bonds = aa_model.slice_indep(indep, ~is_gp)
+
+    was_gp = np.nonzero(match_idx)[0]
+
+    xyz_converter = XYZConverter()
+    null_torsions = torch.zeros((1, is_gp.sum(), 20, 2))
+    RTframes, xyz_ideal = xyz_converter.compute_all_atom(indep.seq[was_gp][None], indep.xyz[was_gp][None], null_torsions)
+    xyz_ideal = xyz_ideal[0] # Remove null batch dimension
+    indep.xyz[was_gp, 4:] = xyz_ideal[:, 4:14]
+
+    def atomize_fully(indep):
+        return atomize.atomize_and_mask(indep, ~indep.is_sm, {})
+    
+    indep_pred.seq[~indep.is_sm & ~was_gp] = 0
+    indep.seq[~indep.is_sm & ~was_gp] = 0
+
+    indep_pred, _, _, _ = atomize_fully(indep_pred)
+    indep, is_diffused, _, atomizer = atomize_fully(indep)
+
+    point_types = aa_model.get_point_types(indep, atomizer)
+    ic(
+        indep.xyz - indep_pred.xyz
+    )
+    mean_bond_length_deviations = atom_bonds(indep, true_crds=indep.xyz, pred_crds=indep_pred.xyz, is_diffused=torch.ones(indep.length()).bool(), point_types=point_types)
+    return mean_bond_length_deviations
+
 
 def displacement(indep, true_crds, pred_crds, is_diffused, point_types, **kwargs):
     

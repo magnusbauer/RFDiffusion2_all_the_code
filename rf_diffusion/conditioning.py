@@ -83,6 +83,7 @@ class AddConditionalInputs:
         is_gp = torch.full((indep.length(),), True)
         is_gp[:pre_transform_length] = False
         aa_model.assert_valid_seq_mask(indep, is_masked_seq)
+        indep.is_gp = is_gp
         
         return kwargs | dict(
             indep=indep,

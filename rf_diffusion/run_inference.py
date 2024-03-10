@@ -143,7 +143,6 @@ def sample_one(sampler, simple_logging=False):
     # For intermediate output logging
     indep = sampler.sample_init()
     log = logging.getLogger(__name__)
-    log.debug(sampler._conf.denoiser.noise_scale, sampler._conf.denoiser.center)
 
     traj_stack = defaultdict(list)
     denoised_xyz_stack = []

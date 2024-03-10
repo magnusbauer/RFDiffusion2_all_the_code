@@ -11,7 +11,7 @@ from rf_diffusion import aa_model
 from rf_diffusion.benchmark import compile_metrics
 
 
-def calc_atom_bond_loss(indep, pred_xyz, true_xyz, is_diffused, point_types):
+def calc_atom_bond_loss(indep, pred_xyz, true_xyz, is_diffused, point_types, masks=None):
     """
     Loss on distances between bonded atoms
     """
@@ -37,6 +37,8 @@ def calc_atom_bond_loss(indep, pred_xyz, true_xyz, is_diffused, point_types):
     bond_losses = {}
     is_bonded = torch.triu(indep.bond_feats > 0)
     for (a, a_mask), (b, b_mask) in itertools.combinations_with_replacement(mask_by_name.items(), 2):
+        if masks and f'{a}:{b}' not in masks:
+            continue
         is_pair = a_mask[..., None] * b_mask[None, ...]
         is_pair = torch.triu(is_pair)
         is_bonded_pair = is_bonded * is_pair

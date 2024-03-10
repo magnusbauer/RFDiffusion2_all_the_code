@@ -88,6 +88,12 @@ def idealize_pose(xyz, seq, steps=100, lr=1e-1):
         loss.backward()
         optimizer.step()
         losses.append(float(loss))
+    
+    # Calculate ideal coordinates
+    RTframes, xyz_ideal = xyz_converter.compute_all_atom(seq, xyz, torsions)
+    
+    # Calc rmsd
+    rmsd, per_residue_rmsd = calc_residue_rmsds(xyz, xyz_ideal, seq)
 
     return xyz_ideal.detach(), rmsd.detach(), per_residue_rmsd.detach(), losses
 

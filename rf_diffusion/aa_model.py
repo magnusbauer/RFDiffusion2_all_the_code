@@ -1024,7 +1024,7 @@ class Model:
         
         ## Str Confidence
         # Set confidence to 1 where diffusion mask is True, else 1-t/T
-        strconf = torch.zeros((L,)).float()
+        strconf = torch.zeros((L,)).float().to(is_diffused.device)
         strconf[~is_diffused] = 1.
         strconf[is_diffused] = 1. - t/self.conf.diffuser.T
         strconf = strconf[None,None,...,None]
@@ -1043,7 +1043,7 @@ class Model:
 
         assert_that(xyz_t.shape).is_equal_to((L,ChemData().NHEAVYPROT,3))
         xyz_t=xyz_t[None, None]
-        xyz_t = torch.cat((xyz_t, torch.full((1,1,L,ChemData().NTOTAL-ChemData().NHEAVYPROT,3), float('nan'))), dim=3)
+        xyz_t = torch.cat((xyz_t, torch.full((1,1,L,ChemData().NTOTAL-ChemData().NHEAVYPROT,3), float('nan')).to(xyz_t.device)), dim=3)
 
         ### t2d ###
         ###########

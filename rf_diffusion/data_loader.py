@@ -1740,9 +1740,9 @@ class TransformedDataset(data.Dataset):
         feats = self.dataset[index]
         logger.debug(f'Transform inputs: {feats.keys()}')
         for t in self.transforms:
-            feats_before = set(feats.keys())
+            feats_before = set(feats.keys()) if isinstance(feats, dict) else set()
             feats = t(**feats)
-            feats_after = set(feats.keys())
+            feats_after = set(feats.keys()) if isinstance(feats, dict) else set()
             new_feats = feats_after - feats_before
             removed_feats = feats_before - feats_after
             logger.debug(f'Transform: {get_class_name(t)} added: {new_feats}    removed: {removed_feats}')
@@ -1919,6 +1919,7 @@ class DistributedWeightedSampler(data.Sampler):
         self.replacement = replacement
 
     def __iter__(self):
+        logger.info(f"DEBUG: {self.epoch}")
         # deterministically shuffle based on epoch
         g = torch.Generator()
         g.manual_seed(self.epoch)

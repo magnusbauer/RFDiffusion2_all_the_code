@@ -2,6 +2,10 @@ import unittest
 import copy
 import time
 import torch
+from icecream import ic
+from omegaconf import OmegaConf
+import pickle
+import io
 
 import rf_diffusion
 PKG_DIR = rf_diffusion.__path__[0]
@@ -24,7 +28,8 @@ class TestIdealizedResidueRMSD(unittest.TestCase):
             'pred_crds_stack': info['metrics_inputs']['pred_crds_stack'],
             'atomizer_spec': info['metrics_inputs']['atomizer_spec'],
         }
-        self.idealized_residue_rmsd = metrics.IdealizedResidueRMSD(None)
+        conf = OmegaConf.create({'idealization_metric_n_steps': 100})
+        self.idealized_residue_rmsd = metrics.IdealizedResidueRMSD(conf)
         
     def test_call_speed(self):
         '''
@@ -54,13 +59,13 @@ class TestIdealizedResidueRMSD(unittest.TestCase):
         metrics_inputs = copy.deepcopy(self.metrics_inputs)
 
         # 100 steps is the default
-        rmsd_100 = self.idealized_residue_rmsd(**metrics_inputs)
+        rmsd_100 = self.idealized_residue_rmsd(**metrics_inputs)['rmsd']
 
         metrics_inputs['steps'] = 200
-        rmsd_200 = self.idealized_residue_rmsd(**metrics_inputs)
+        rmsd_200 = self.idealized_residue_rmsd(**metrics_inputs)['rmsd']
 
         metrics_inputs['steps'] = 300
-        rmsd_300 = self.idealized_residue_rmsd(**metrics_inputs)
+        rmsd_300 = self.idealized_residue_rmsd(**metrics_inputs)['rmsd']
         
         # All rmsds should be about the same
         rmsds = torch.tensor([rmsd_100, rmsd_200, rmsd_300])
@@ -68,3 +73,23 @@ class TestIdealizedResidueRMSD(unittest.TestCase):
 
         self.assertLess(rmsd_range, 0.1, 'Idealizing a residue for 100 steps did not reach a minima.')
 
+class CPU_Unpickler(pickle.Unpickler):
+    def find_class(self, module, name):
+        if module == 'torch.storage' and name == '_load_from_bytes':
+            return lambda b: torch.load(io.BytesIO(b), map_location='cpu')
+        else: return super().find_class(module, name)
+
+# WIP
+# class TestAllAtomRigid(unittest.TestCase):
+#     def test_bond_lengths(self):
+#         with open('epoch-0_step-0_i-0_DATASET-pdb_aa_MASK-get_tip_mask_POSITIONED-False_nSM-14_nMOTIF-4_r3t-0.979796_so3t-0.979796_info.pkl', 'rb') as fh:
+#             info = CPU_Unpickler(fh).load()
+        
+#         metrics_inputs = info['metrics_inputs']
+
+#         out = metrics.all_atom_rigid(**metrics_inputs)
+#         ic(out)
+#         ic(out['any_any:any_any'])
+
+if __name__ == '__main__':
+        unittest.main()
