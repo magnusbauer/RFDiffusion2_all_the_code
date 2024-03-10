@@ -1919,7 +1919,6 @@ class DistributedWeightedSampler(data.Sampler):
         self.replacement = replacement
 
     def __iter__(self):
-        logger.info(f"DEBUG: {self.epoch}")
         # deterministically shuffle based on epoch
         g = torch.Generator()
         g.manual_seed(self.epoch)

@@ -14,7 +14,6 @@ def get_center_of_mass(xyz14, mask):
 class PopMask:
     def __call__(self, indep, metadata, masks_1d, **kwargs):
         
-        logger.debug(f'{ masks_1d["pop"]=} {indep.length()=} {masks_1d["pop"].shape}')
         aa_model.pop_mask(indep, masks_1d['pop'])
         masks_1d['input_str_mask'] = masks_1d['input_str_mask'][masks_1d['pop']]
         masks_1d['is_atom_motif'] = aa_model.reindex_dict(masks_1d['is_atom_motif'], masks_1d['pop'])
