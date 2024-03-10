@@ -915,6 +915,7 @@ class Model:
         masks_1d = {
             'input_str_mask': is_res_str_shown,
             'is_atom_motif': is_atom_str_shown,
+            'is_diffused': is_diffused,
         }
         return o, masks_1d
 
@@ -923,6 +924,7 @@ class Model:
 
         is_res_str_shown = masks_1d['input_str_mask']
         is_atom_str_shown = masks_1d['is_atom_motif']
+        is_diffused = masks_1d['is_diffused']
         
         pre_transform_length = o.length()
         o, is_diffused, is_seq_masked, self.atomizer, contig_map.gp_to_ptn_idx0 = transform_indep(o, is_diffused, is_res_str_shown, is_atom_str_shown, self.conf.inference.contig_as_guidepost, 'anywhere', self.conf.guidepost_bonds, metadata=metadata)
