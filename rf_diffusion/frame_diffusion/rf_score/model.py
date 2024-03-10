@@ -278,7 +278,11 @@ class RFScore(nn.Module):
         B, I, L, _  = rfo.quat.shape
 
         curr_rigids = rigids_from_rfo(rfo, rigids_t.get_rots())
-        trans_score, rot_score = calc_score(curr_rigids, rigids_t, self.diffuser, t)
+
+        trans_score = None
+        rot_score = None
+        if self.diffuser is not None:
+            trans_score, rot_score = calc_score(curr_rigids, rigids_t, self.diffuser, t)
 
         psi_pred = torch.rand((B,I,L,2)).to(curr_rigids.device)
         bb_representations = all_atom.compute_backbone(curr_rigids, psi_pred)

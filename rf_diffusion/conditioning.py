@@ -3,6 +3,7 @@ import torch
 import logging
 
 from rf_diffusion import aa_model
+from rf_diffusion.chemical import ChemicalData as ChemData
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +78,7 @@ class AddConditionalInputs:
         use_guideposts = (torch.rand(1) < self.p_is_guidepost_example).item()
         masks_1d['use_guideposts'] = use_guideposts
         indep, is_diffused, is_masked_seq, atomizer, _ = aa_model.transform_indep(indep, ~is_res_str_shown, is_res_str_shown, is_atom_str_shown, use_guideposts, guidepost_bonds=self.guidepost_bonds, metadata=metadata)
+        indep.seq[is_masked_seq] = ChemData().MASKINDEX
 
         # HACK: gp indices may be lost during atomization, so we assume they are at the end of the protein.
         is_gp = torch.full((indep.length(),), True)
