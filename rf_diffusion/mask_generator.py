@@ -480,6 +480,7 @@ def _get_diffusion_mask_islands(xyz, *args, island_len_min=1, island_len_max=15,
     n_islands = np.random.randint(n_islands_min, n_islands_max)
     for _ in range(n_islands):
         mask_length = np.random.randint(island_len_min, island_len_max)
+        mask_length = min(mask_length, L)
         high_start = L - mask_length
         start = random.randint(0, high_start)
         is_motif[start:start+mask_length] = True

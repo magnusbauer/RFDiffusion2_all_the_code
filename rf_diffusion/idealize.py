@@ -3,6 +3,8 @@ import torch
 from rf2aa.util_module import XYZConverter
 from rf_diffusion.chemical import ChemicalData as ChemData
 
+from icecream import ic
+
 
 def calc_residue_rmsds(xyz1, xyz2, seq, eps=1e-6):
     '''
@@ -65,14 +67,21 @@ def idealize_pose(xyz, seq, steps=100, lr=1e-1):
     assert xyz.shape[-2:] == (36, 3)
     assert xyz.shape[:2] == seq.shape
 
+    # Since empty tensors as input to torch.einsum is not handled by some versions of torch, see https://github.com/pytorch/pytorch/issues/111757
+    # exit early to avoid this corner case.  (Encountered in xyz_converter.compute_all_atom)
+    B = xyz.shape[0]
+    if torch.numel(xyz) == 0:
+        return xyz, torch.full((B, 0), torch.nan), torch.full((B, 0), torch.nan), torch.full((B, 0), torch.nan)
+
     # Get the torsion angles initial guess
     xyz_converter = XYZConverter()
     torsions, torsions_alt, tors_mask, tors_planar = xyz_converter.get_torsions(xyz, seq)
 
     # SGD of torsions to minimize heavy atom rmsd
-    torsions = torsions.detach()  # to make a leaf
-    torsions.requires_grad = True
-    optimizer = torch.optim.Adam([torsions], lr=lr)
+    if steps > 0:
+        torsions = torsions.detach()  # to make a leaf
+        torsions.requires_grad = True
+        optimizer = torch.optim.Adam([torsions], lr=lr)
 
     losses = []
     for i in range(steps):
