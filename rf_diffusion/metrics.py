@@ -273,9 +273,11 @@ class IdealizedResidueRMSD(Metric):
             seq=indep_deatomized.seq[None, atomizer_spec.residue_to_atomize.detach().cpu()].detach(),
             steps=self.n_steps,
         )[1:3]
+        any_residues_to_idealize = atomizer_spec.residue_to_atomize.any()
         return {
-            'rmsd': rmsd[0].detach(),
-            'per_residue_rmsd': per_residue_rmsd[0].detach(),
+            'rmsd_mean': per_residue_rmsd[0].detach().mean() if any_residues_to_idealize else float('nan'),
+            'rmsd_max': per_residue_rmsd[0].detach().max() if any_residues_to_idealize else float('nan'),
+            'rmsd_min': per_residue_rmsd[0].detach().min() if any_residues_to_idealize else float('nan'),
         }
 
 def get_guidepost_corresponding_indices(indep, is_gp):

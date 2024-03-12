@@ -1738,14 +1738,15 @@ class TransformedDataset(data.Dataset):
         
     def __getitem__(self, index):
         feats = self.dataset[index]
-        logger.debug(f'Transform inputs: {feats.keys()}')
+        logger.debug(f'Transform root inputs: {set(feats.keys()) if isinstance(feats, dict) else type(feats)}')
         for t in self.transforms:
             feats_before = set(feats.keys()) if isinstance(feats, dict) else set()
             feats = t(**feats)
             feats_after = set(feats.keys()) if isinstance(feats, dict) else set()
             new_feats = feats_after - feats_before
             removed_feats = feats_before - feats_after
-            logger.debug(f'Transform: {get_class_name(t)} added: {new_feats}    removed: {removed_feats}')
+            logger.debug(f'Transform[{get_class_name(t)}] added: {new_feats}    removed: {removed_feats}')
+        logger.debug(f'Transform root outputs: {set(feats.keys()) if isinstance(feats, dict) else type(feats)}')
         return feats
 
     def __len__(self):

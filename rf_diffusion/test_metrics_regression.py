@@ -59,13 +59,13 @@ class TestIdealizedResidueRMSD(unittest.TestCase):
         metrics_inputs = copy.deepcopy(self.metrics_inputs)
 
         # 100 steps is the default
-        rmsd_100 = self.idealized_residue_rmsd(**metrics_inputs)['rmsd']
+        rmsd_100 = self.idealized_residue_rmsd(**metrics_inputs)['rmsd_mean']
 
         metrics_inputs['steps'] = 200
-        rmsd_200 = self.idealized_residue_rmsd(**metrics_inputs)['rmsd']
+        rmsd_200 = self.idealized_residue_rmsd(**metrics_inputs)['rmsd_mean']
 
         metrics_inputs['steps'] = 300
-        rmsd_300 = self.idealized_residue_rmsd(**metrics_inputs)['rmsd']
+        rmsd_300 = self.idealized_residue_rmsd(**metrics_inputs)['rmsd_mean']
         
         # All rmsds should be about the same
         rmsds = torch.tensor([rmsd_100, rmsd_200, rmsd_300])
