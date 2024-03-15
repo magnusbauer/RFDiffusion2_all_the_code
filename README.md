@@ -90,3 +90,11 @@ Use $METRICS_DATAFRAME_PATH in the provided analysis notebook `notebooks/analyze
 
 If you do not have the dependencies to run this notebook in your default kernel, use this sif as a kernel `/net/software/containers/users/dtischer/rf_diffusion_aa.sif` following instructions in https://wiki.ipd.uw.edu/it/digs/apptainer#jupyter
 
+## Running catalytic constraint design + benchmarking
+`$REPO_DIR/rf_diffusion/benchmark/pipeline.py --config-name=sh_benchmark_1_tip-true_selfcond-false_seqposition_truefalse_T150`
+
+This will make 50 * 2 [+/- sequence position] * 6 [6 different active site descriptions] = 600 designs = 600 * 8 (MPNN runs/design) = 4800 sequences
+
+All motifs are tip atom motifs for 150 timesteps with no self-conditioning
+
+

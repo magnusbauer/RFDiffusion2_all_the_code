@@ -1,0 +1,21 @@
+defaults:
+  - pipeline
+
+sweep:
+  command_args: >
+    --config-name=aa
+    inference.ckpt_path=
+      /net/scratch/ahern/se3_diffusion/training/fm_tip_resume_24/fm_tip_resume_242023-12-03_14:20:34.490797/rank_0/models/RFD_45.pt
+    inference.contig_as_guidepost=True|False
+    diffuser.T=150
+    contigmap.shuffle=True
+    inference.str_self_cond=False
+    POST(()|(contigmap.contig_atoms=null))
+
+  # benchmark_json: /home/ahern/projects/aa/rf_diffusion_flow/rf_diffusion/benchmark/serine_hydrolase/bm_121123.json
+  benchmark_json: serine_hydrolase/bm_121123.json
+  benchmarks: all
+  num_per_condition: 50
+  num_per_job: 10
+  
+outdir: /net/scratch/ahern/se3_diffusion/benchmarks/${now:%Y-%m-%d}_${now:%H-%M-%S}_sh_benchmark_1_tip-true_selfcond-false_seqposition_truefalse_T150
