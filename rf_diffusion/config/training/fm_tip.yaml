@@ -46,3 +46,13 @@ diffuser:
 
 benchmark:
   pipeline_yaml: 'training_benchmarks.yaml'
+
+rf:
+  model:
+    use_chiral_l1: True
+    use_lj_l1: True
+    use_atom_frames: True
+    use_same_chain: True
+    recycling_type: all
+    enable_same_chain: True
+    refiner_topk: 128

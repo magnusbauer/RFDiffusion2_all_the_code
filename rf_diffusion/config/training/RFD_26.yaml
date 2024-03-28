@@ -36,6 +36,7 @@ experiment:
   keep_only_last_ckpt: false
 rf:
   model:
+    get_quaternion: True
     n_extra_block: 4
     n_main_block: 32
     n_ref_block: 4
@@ -114,11 +115,16 @@ metrics:
 n_write_pdb: 30
 saves_per_epoch: 2
 preprocess:
+  use_cb_to_get_pair_dist: True
   randomize_frames: false
   sidechain_input: false
   d_t1d: 22
 spoof_item: ''
 dataloader:
+  OMIT_PERMUTATE: False
+  RADIAL_CROP: True
+  p_msa_mask: 0.0
+  use_phospate_frames_for_NA: True
   BLOCKCUT: 5
   CN_DICT: /home/jwatson3/torch/cn_ideal/cn_ideal_train_test.pt
   CN_DIR: /home/jwatson3/torch/cn_ideal
