@@ -3,6 +3,7 @@ import torch
 import logging
 
 from rf_diffusion import aa_model
+from rf_diffusion.aa_model import Indep
 from rf_diffusion.chemical import ChemicalData as ChemData
 
 logger = logging.getLogger(__name__)
@@ -59,6 +60,62 @@ class Center:
             masks_1d=masks_1d,
             **kwargs
         )
+
+class CenterPostTranform:
+    """
+    A class recentering around the diffused frames. Allows jittering of the center to prevent overfitting
+    and memorization of exact placement of ligands / fixed motifs relative to center of mass.
+    Must be used after AddConditionalInputs
+
+    Attributes:
+        jitter (float): The expected average distance between the center point and the origin
+        jitter_clip (float): The maximum amount of distance between the center point and origin. Set this depending on
+            the size of jitter, possibly 3 * jitter
+        center_type (str): The type of centering to apply. Options are 'is_diffused' and 'is_not_diffused'
+    """
+    def __init__(self, jitter: float = 0.0,
+                 jitter_clip: float = 50.0,
+                 center_type: str = 'is_diffused'):
+        self.jitter = jitter
+        self.jitter_clip = jitter_clip
+        self.center_type = center_type
+        assert center_type in ['is_diffused', 'is_not_diffused'], "must use 'is_diffused' or 'is_not_diffused' for center_type"
+
+    """
+    Centering around diffused atoms for traning stability and design control during inference.
+    could solve the problem of the proteins drifting off and ligands being centered. Need to pair with
+    extra flags and new parser at inference to specify diffusion origin. This code reduces the requirement
+    for the model to learn large center of mass translations. However, it is more prone to memorization 
+    of the training data if there are not many examples since data leak occurs under this training 
+    regime. This is because the model can memorize the exact placement of the ligands and fixed motifs
+    """
+    def __call__(self, indep: Indep, is_diffused: torch.Tensor, **kwargs):
+        center_of_mass_mask = torch.zeros(indep.xyz.shape[:2], dtype=torch.bool)
+        if self.center_type == 'is_diffused':
+            center_of_mass_mask[is_diffused,1] = True  # CA atoms (position 1) of each frame forms center of rigid translations
+        elif self.center_type == 'is_not_diffused':
+            center_of_mass_mask[~is_diffused,1] = True        
+
+        if not center_of_mass_mask.any():
+            # Unconditional case just in case nothing is diffused
+            center_of_mass_mask[:, 1] = True
+
+        # Calculate center and jitter
+        gauss_norm_3d_mean = 1.5956947  # The mean norm of 3D gaussians
+        center = get_center_of_mass(indep.xyz, center_of_mass_mask)
+        jitter_amount = torch.randn_like(center) / gauss_norm_3d_mean * self.jitter
+        if torch.norm(jitter_amount).item() > self.jitter_clip:
+            jitter_amount = jitter_amount / torch.norm(jitter_amount) * self.jitter_clip 
+        center += jitter_amount
+
+        # Apply centering
+        indep.xyz = indep.xyz - center
+        
+        return dict(
+            indep=indep,
+            is_diffused=is_diffused,
+            **kwargs
+        )        
 
 
 class AddConditionalInputs:
