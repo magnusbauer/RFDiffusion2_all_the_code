@@ -1,4 +1,4 @@
-#!/net/software/containers/users/dtischer/shebang_rf_se3_diffusion_dev.sh
+#!/usr/bin/env -S /bin/sh -c '"$(dirname "$0")/../exec/rf_diffusion_aa_shebang.sh" "$0" "$@"'
 #
 # Takes a folder of pdb & trb files, generates MPNN features (fixing AAs at
 # contig positions), makes list of MPNN jobs on batches of those designs,

@@ -1,4 +1,4 @@
-#!/net/software/containers/users/dtischer/shebang_rf_se3_diffusion_dev.sh
+#!/usr/bin/env -S /bin/sh -c '"$(dirname "$0")/../exec/rf_diffusion_aa_shebang.sh" "$0" "$@"'
 #
 # Breakup a foldseek job on a dir of many pdbs in several chunks, which run as separate jobs.
 

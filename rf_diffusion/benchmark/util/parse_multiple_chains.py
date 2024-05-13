@@ -1,4 +1,4 @@
-#!/net/software/containers/users/ahern/shebang_rf_se3_diffusion.sh
+#!/usr/bin/env -S /bin/sh -c '"$(dirname "$0")/../../exec/rf_diffusion_aa_shebang.sh" "$0" "$@"'
 #
 # Modified version of pdb parsing script for mpnn that takes a list of files as
 # input rather than a folder. Does both initial parsing and fixed positions.

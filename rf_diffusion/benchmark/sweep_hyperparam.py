@@ -1,4 +1,4 @@
-#!/net/software/containers/users/dtischer/shebang_rf_se3_diffusion_dev.sh
+#!/usr/bin/env -S /bin/sh -c '"$(dirname "$0")/../exec/rf_diffusion_aa_shebang.sh" "$0" "$@"'
 #
 # Generates and slurm array jobs for hyperparameter sweeps on design
 # scripts, optionally submits array job and outputs slurm job ID

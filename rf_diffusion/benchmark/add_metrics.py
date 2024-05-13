@@ -1,4 +1,4 @@
-#!/net/software/containers/users/dtischer/shebang_rf_se3_diffusion_dev.sh
+#!/usr/bin/env -S /bin/sh -c '"$(dirname "$0")/../exec/rf_diffusion_aa_shebang.sh" "$0" "$@"'
 #
 # Takes a folder of pdb & trb files, generates list of AF2 prediction & scoring
 # jobs on batches of those designs, and optionally submits slurm array job and
