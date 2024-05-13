@@ -6,6 +6,7 @@ from collections import defaultdict
 
 from functools import partial
 import warnings
+import mdtraj as md
 
 # Hack for autobenching
 PKG_DIR = os.path.abspath(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
@@ -25,7 +26,6 @@ from rf_diffusion import atomize
 from rf_diffusion.dev import analyze
 from rf_diffusion.inference import utils
 import rf_diffusion.dev.analyze
-import analysis.metrics
 from rf_diffusion import aa_model
 from rf_diffusion import atomize
 from rf_diffusion.chemical import ChemicalData as ChemData
@@ -377,26 +377,35 @@ def rigid_loss(r):
 def invert(d):
    return {v: k for k,v in d.items()}
 
+
+from rf_diffusion.dev.show_bench import parse_traj
+def get_last_px0(row):
+    px0_traj_path = analyze.get_traj_path(row, 'X0')
+    if not os.path.exists(px0_traj_path):
+        px0_traj_path = analyze.get_traj_path(row, 'x0')
+
+    # get_pdb_lines_traj(px0_traj_path)
+    parsed = parse_traj(px0_traj_path, n=1)[0]
+    print(f"{parsed.keys()=}")
+    return parsed['xyz']
+
 def guidepost(pdb):
     row = analyze.make_row_from_traj(pdb[:-4])
     o = {}
     trb = analyze.get_trb(row)
-    gp_by_motif = invert(trb['motif_by_gp'])
-    motif_by_placed = {k:v for k,v in zip(
-            trb['con_hal_idx0'],
-            trb['con_hal_idx0_literal'],
-    )}
-    gp_i = []
-    bb_i = []
-    for bb_ii in trb['con_hal_idx0']:
-        bb_i.append(bb_ii)
-        gp_i.append(gp_by_motif[motif_by_placed[bb_ii]])
+    config = trb['config']
 
-    gp_i = np.array(gp_i)
-    bb_i = np.array(bb_i)
-    gp_motif = trb['indep']['xyz'][gp_i]
-    bb_motif = trb['indep']['xyz'][bb_i]
-    ca_dist = np.linalg.norm(gp_motif[:, 1] - bb_motif[:, 1], axis=-1)
+    if config['inference']['contig_as_guidepost']:
+
+        bb_i = np.array(trb['con_hal_idx0'])
+        gp_i = np.array(list(trb['motif'].keys()))
+
+        deatomized_xyz = get_last_px0(row)
+        gp_motif = deatomized_xyz[gp_i]
+        bb_motif = deatomized_xyz[bb_i]
+        ca_dist = np.linalg.norm(gp_motif[:, 1] - bb_motif[:, 1], axis=-1)
+    else:
+        ca_dist = np.zeros((1,), dtype=float)
     o['ca_dist.max'] = np.max(ca_dist)
     o['ca_dist.min'] = np.min(ca_dist)
     o['ca_dist.mean'] = np.mean(ca_dist)
@@ -471,10 +480,34 @@ def backbone(pdb):
             record[f'ligand_dist_{maybe_af2}_{maybe_c_alpha}_min'] = dgram.min().item()
 
     # Secondary structure and radius of gyration
-    record.update(analysis.metrics.calc_mdtraj_metrics(pdb))
+    record.update(calc_mdtraj_metrics(pdb))
     # Broken due to residue indexing.
     # record['rigid_loss'] = rigid_loss(row)
     return record
+
+def calc_mdtraj_metrics(pdb_path):
+    try:
+        traj = md.load(pdb_path)
+        pdb_ss = md.compute_dssp(traj, simplified=True)
+        pdb_coil_percent = np.mean(pdb_ss == 'C')
+        pdb_helix_percent = np.mean(pdb_ss == 'H')
+        pdb_strand_percent = np.mean(pdb_ss == 'E')
+        pdb_ss_percent = pdb_helix_percent + pdb_strand_percent 
+        pdb_rg = md.compute_rg(traj)[0]
+    except IndexError as e:
+        print('Error in calc_mdtraj_metrics: {}'.format(e))
+        pdb_ss_percent = 0.0
+        pdb_coil_percent = 0.0
+        pdb_helix_percent = 0.0
+        pdb_strand_percent = 0.0
+        pdb_rg = 0.0
+    return {
+        'non_coil_percent': pdb_ss_percent,
+        'coil_percent': pdb_coil_percent,
+        'helix_percent': pdb_helix_percent,
+        'strand_percent': pdb_strand_percent,
+        'radius_of_gyration': pdb_rg,
+    }
 
 # For debugging, can be run like:
 # python -m fire /home/ahern/projects/aa/rf_diffusion_flow/rf_diffusion/benchmark/per_sequence_metrics.py single --metric guidepost --pdb=/net/scratch/ahern/se3_diffusion/benchmarks/2023-12-18_20-48-06_cc_sh_schedule_sweep/run_siteD_troh1_cond1_0-atomized-bb-False.pdb

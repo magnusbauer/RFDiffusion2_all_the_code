@@ -1,3 +1,5 @@
+import types
+
 import numpy as np
 import torch
 import logging
@@ -5,6 +7,7 @@ import logging
 from rf_diffusion import aa_model
 from rf_diffusion.aa_model import Indep
 from rf_diffusion.chemical import ChemicalData as ChemData
+from rf_diffusion.contigs import ContigMap
 
 logger = logging.getLogger(__name__)
 
@@ -123,7 +126,7 @@ class AddConditionalInputs:
         self.p_is_guidepost_example = p_is_guidepost_example
         self.guidepost_bonds = guidepost_bonds
 
-    def __call__(self, indep, metadata, masks_1d, **kwargs):
+    def __call__(self, indep, metadata, masks_1d, contig_map=types.SimpleNamespace(), **kwargs):
         '''
         Duplicates/masks parts of a protein to create a conditional input.
         i.e. creates guideposts, performs atomization, applies masks.
@@ -134,7 +137,7 @@ class AddConditionalInputs:
         pre_transform_length = indep.length()
         use_guideposts = (torch.rand(1) < self.p_is_guidepost_example).item()
         masks_1d['use_guideposts'] = use_guideposts
-        indep, is_diffused, is_masked_seq, atomizer, _ = aa_model.transform_indep(indep, ~is_res_str_shown, is_res_str_shown, is_atom_str_shown, use_guideposts, guidepost_bonds=self.guidepost_bonds, metadata=metadata)
+        indep, is_diffused, is_masked_seq, atomizer, contig_map.gp_to_ptn_idx0 = aa_model.transform_indep(indep, ~is_res_str_shown, is_res_str_shown, is_atom_str_shown, use_guideposts, guidepost_bonds=self.guidepost_bonds, metadata=metadata)
 
         masks_1d['is_masked_seq']=is_masked_seq
         # HACK: gp indices may be lost during atomization, so we assume they are at the end of the protein.
@@ -152,4 +155,42 @@ class AddConditionalInputs:
             metadata=metadata,
             masks_1d=masks_1d,
             contig_as_guidepost=use_guideposts,
+            contig_map=contig_map,
         )
+
+def get_contig_map(indep, input_str_mask, is_atom_motif):
+
+    motif_resis = sorted(list(set(
+        indep.idx[input_str_mask].tolist() +
+        indep.idx[list(is_atom_motif.keys())].tolist()
+    )))
+
+    contigs = []
+    for ch, i in zip(indep.chains(), indep.idx):
+        if i in motif_resis:
+            contigs.append(f'{ch}{i}-{i}')
+        else:
+            contigs.append(f'1-1')
+    contig_atoms = {}
+    for i, atom_names in is_atom_motif.items():
+        contig_atoms[f'{indep.chains()[i]}{indep.idx[i]}'] = atom_names
+
+    contig_map_args = {
+        'parsed_pdb': {
+            'seq': indep.seq.numpy(),
+            'pdb_idx': [(ch,int(i)) for ch, i in zip(indep.chains(), indep.idx)],
+        },
+        'contigs': [','.join(contigs)],
+        'contig_atoms': str({idx: ','.join(atom_names) for idx, atom_names in contig_atoms.items()}),
+    }
+    return ContigMap(**contig_map_args)
+
+class ReconstructContigMap:
+
+    def __call__(self, indep, masks_1d, **kwargs):
+        contig_map = get_contig_map(indep, masks_1d['input_str_mask'], masks_1d['is_atom_motif'])
+        return dict(
+            contig_map=contig_map,
+            indep=indep,
+            masks_1d=masks_1d,
+        ) | kwargs

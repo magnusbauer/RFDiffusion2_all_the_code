@@ -23,6 +23,8 @@ from datetime import datetime
 from rf2aa import tensor_util
 from openfold.utils.rigid_utils import Rotation,Rigid
 from rf_diffusion.frame_diffusion.data import utils as du
+import logging
+logger = logging.getLogger(__name__)
 
 # class AttrDict(dict):
 #     def __init__(self, *args, **kwargs):
@@ -182,18 +184,36 @@ def rfi_from_input_feats(input_feats):
     return aa_model_converter.prepro(indep, input_feats['t'].to('cpu') * T, is_diffused.to('cpu'))
 
 class RFScore(nn.Module):
-    def __init__(self, model_conf, diffuser, device):
+    def __init__(self, model_conf, diffuser, device, stopgrad_rotations=True):
         self.diffuser = diffuser
+        self.stopgrad_rotations=stopgrad_rotations
         super(RFScore, self).__init__()
 
-        self.aamask = ChemData().allatom_mask.to(device)
-        self.num_bonds = ChemData().num_bonds.to(device)
-        self.atom_type_index = ChemData().atom_type_index.to(device)
-        self.ljlk_parameters = ChemData().ljlk_parameters.to(device)
-        self.lj_correction_parameters = ChemData().lj_correction_parameters.to(device)
-        self.cb_len = ChemData().cb_length_t.to(device)
-        self.cb_ang = ChemData().cb_angle_t.to(device)
-        self.cb_tor = ChemData().cb_torsion_t.to(device)
+        self.register_buffer('aamask',
+            ChemData().allatom_mask.int(), persistent=False
+        )
+        self.register_buffer('num_bonds',
+            ChemData().num_bonds, persistent=False
+        )
+        self.register_buffer('atom_type_index',
+            ChemData().atom_type_index, persistent=False,
+        )
+        self.register_buffer('ljlk_parameters',
+            ChemData().ljlk_parameters, persistent=False,
+        )
+        self.register_buffer('lj_correction_parameters',
+            ChemData().lj_correction_parameters.int(), persistent=False,
+        )
+        self.register_buffer('cb_len',
+            ChemData().cb_length_t, persistent=False
+        )
+        self.register_buffer('cb_ang',
+            ChemData().cb_angle_t, persistent=False
+        )
+        self.register_buffer('cb_tor',
+            ChemData().cb_torsion_t, persistent=False
+        )
+
 
         # self.register_buffer('buffer_aa_mask', self.aamask)
         # self.register_buffer('buffer_num_bonds', self.num_bonds)
@@ -219,18 +239,6 @@ class RFScore(nn.Module):
  
         self.model = model
         self.log_dir = os.path.join('training_pdbs', datetime.now().strftime("%dD_%mM_%YY_%Hh_%Mm_%Ss"))
-
-    # def to(self, device):
-    #     self.aamask = self.aamask.to(device)
-    #     self.num_bonds = self.num_bonds.to(device)
-    #     self.atom_type_index = self.atom_type_index.to(device)
-    #     self.ljlk_parameters = self.ljlk_parameters.to(device)
-    #     self.lj_correction_parameters = self.lj_correction_parameters.to(device)
-    #     self.cb_len = self.cb_len.to(device)
-    #     self.cb_ang = self.cb_ang.to(device)
-    #     self.cb_tor = self.cb_tor.to(device)
-    #     return super(RFScore, self).to(device)
-
 
     def device(self):
         return self.named_parameters().__next__()[1].device
@@ -277,7 +285,7 @@ class RFScore(nn.Module):
 
         B, I, L, _  = rfo.quat.shape
 
-        curr_rigids = rigids_from_rfo(rfo, rigids_t.get_rots())
+        curr_rigids = rigids_from_rfo(rfo, rigids_t.get_rots(), stopgrad_rotations=self.stopgrad_rotations)
 
         trans_score = None
         rot_score = None
@@ -299,7 +307,7 @@ class RFScore(nn.Module):
         }
         return model_out
 
-def rigids_from_rfo(rfo, rots_t):
+def rigids_from_rfo(rfo, rots_t, stopgrad_rotations):
     xyz_stack = rfo.xyz.transpose(0,1)
     B, I, L, _, _ = xyz_stack.shape
     c_alpha = xyz_stack[:,:,:,1,:]
@@ -311,7 +319,8 @@ def rigids_from_rfo(rfo, rots_t):
         # curr_rots = curr_rots.compose_r(Rotation(quats=rfo.quat[:, i]))
         curr_rots = Rotation(quats=rfo.quat[:, i]).compose_q(curr_rots)
         rot_blocks[:, i] = curr_rots.get_quats()
-        curr_rots = curr_rots.detach()
+        if stopgrad_rotations:
+            curr_rots = curr_rots.detach()
     rots_compose = Rotation(quats=rot_blocks)
 
     curr_rigids = Rigid(

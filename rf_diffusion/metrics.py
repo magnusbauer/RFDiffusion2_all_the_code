@@ -235,6 +235,7 @@ class IdealizedResidueRMSD(Metric):
         indep,
         pred_crds: torch.Tensor,
         atomizer_spec,
+        contig_as_guidepost,
         **kwargs
         ):
         '''
@@ -265,15 +266,22 @@ class IdealizedResidueRMSD(Metric):
         # Deatomize
         indep_deatomized = atomizer.deatomize(indep)
 
+        to_idealize = atomizer_spec.residue_to_atomize.detach().cpu()
+        if contig_as_guidepost:
+            match_idx_by_gp_idx = gp.match_guideposts(indep_deatomized, atomizer_spec.residue_to_atomize)
+            logger.debug(f'{match_idx_by_gp_idx=}')
+            indep_deatomized = gp.place_guideposts(indep_deatomized, atomizer_spec.residue_to_atomize, use_guidepost_coordinates_for='all_but_frame')
+            to_idealize = torch.zeros((indep_deatomized.length(),), dtype=bool)
+            match_idx = list(match_idx_by_gp_idx.values())
+            to_idealize[match_idx] = True
+
         # Idealize only atomized residues
-        logger.debug(f'{indep_deatomized.xyz.device=}')
-        logger.debug(f'{atomizer_spec.residue_to_atomize.device=}')
         rmsd, per_residue_rmsd = idealize.idealize_pose(
-            xyz=indep_deatomized.xyz[None, atomizer_spec.residue_to_atomize.detach().cpu()].detach(),
-            seq=indep_deatomized.seq[None, atomizer_spec.residue_to_atomize.detach().cpu()].detach(),
+            xyz=indep_deatomized.xyz[None, to_idealize].detach(),
+            seq=indep_deatomized.seq[None, to_idealize].detach(),
             steps=self.n_steps,
         )[1:3]
-        any_residues_to_idealize = atomizer_spec.residue_to_atomize.any()
+        any_residues_to_idealize = to_idealize.any()
         return {
             'rmsd_mean': per_residue_rmsd[0].detach().mean() if any_residues_to_idealize else float('nan'),
             'rmsd_max': per_residue_rmsd[0].detach().max() if any_residues_to_idealize else float('nan'),
@@ -290,7 +298,7 @@ def get_guidepost_corresponding_indices(indep, is_gp):
     gp_alone_xyz = indep.xyz[is_gp]
 
     idx_by_gp_sequential_idx = torch.nonzero(is_gp)[:,0].numpy()
-    gp_alone_to_diffused_idx0 = gp.greedy_guide_post_correspondence(diffused_xyz, gp_alone_xyz)
+    gp_alone_to_diffused_idx0 = gp.greedy_guide_post_correspondence(diffused_xyz, gp_alone_xyz, permissive=True)
     match_idx_by_gp_idx = {}
     for k, v in gp_alone_to_diffused_idx0.items():
         match_idx_by_gp_idx[idx_by_gp_sequential_idx[k]] = v
@@ -417,8 +425,73 @@ def rotations(indep, pred_crds, true_crds, is_diffused, **kwargs):
     }
     return o
 
+def guidepost_positioning(indep, true_crds, pred_crds, atomizer_spec, pred_logits, true_aa, input_aa, contig_as_guidepost, **kwargs):
+    if pred_logits is None or true_aa is None or input_aa is None:
+        raise Exception('Cannot be called with legacy metrics info pickles')
+    indep_pred = copy.deepcopy(indep)
+    indep_pred.xyz = pred_crds
+    indep.xyz = true_crds
+
+    is_gp = torch.zeros_like(indep.is_sm).bool()
+    if atomizer_spec is not None:
+        atomizer = aa_model.AtomizeResidues(**asdict(atomizer_spec))
+        indep_pred = atomizer.deatomize(indep_pred)
+        indep = atomizer.deatomize(indep)
+        is_gp = torch.zeros_like(indep.is_sm).bool()
+        if contig_as_guidepost:
+            is_gp[atomizer_spec.residue_to_atomize] = True
+    
+    if not is_gp.any():
+        return {}
+
+    true_gp_idx, true_match_idx = get_guidepost_corresponding_indices(indep, is_gp)
+    pred_gp_idx, pred_match_idx = get_guidepost_corresponding_indices(indep_pred, is_gp)
+    
+    pred_gp_idx, pred_match_idx = map(np.array, zip(*sorted(zip(pred_gp_idx, pred_match_idx), key=lambda x: x[1])))
+    true_gp_idx, true_match_idx = map(np.array, zip(*sorted(zip(true_gp_idx, true_match_idx), key=lambda x: x[1])))
+
+    pred_aa = pred_logits.argmax(dim=-1)
+
+    pred_match_seq = pred_aa[pred_match_idx].numpy()
+    true_match_seq = true_aa[true_match_idx].numpy()
+    input_match_seq = input_aa[pred_match_idx].numpy()
+
+    should_change = input_match_seq != true_match_seq
+    did_change = input_match_seq != pred_match_seq
+    correct_seq = pred_match_seq == true_match_seq
+    input_seq_correct = input_match_seq == true_match_seq
+
+    did_change_whole_seq = (input_aa != pred_aa).numpy()
+    input_masked = input_aa.numpy().astype(int) == ChemData().MASKINDEX
+
+    pred_masked = pred_aa.numpy().astype(int) == ChemData().MASKINDEX
+
+
+    return dict(
+        fraction_placed_correctly = (pred_match_idx == true_match_idx).mean(),
+        fraction_pred_sequence_agreement = correct_seq.mean(),
+        fraction_input_sequence_agreement = input_seq_correct.mean(),
+        fraction_change_in_correctness = (correct_seq.astype(float) - input_seq_correct.astype(float)).mean(),
+
+        fraction_should_change_changed_incorrectly = (~correct_seq)[did_change * should_change].mean(),
+        fraction_should_change_did_not_change = (~did_change)[should_change].mean(),
+        fraction_shouldnt_change_changed_incorrectly = (~correct_seq)[~should_change].mean(),
+
+        fraction_masked_changed = did_change_whole_seq[input_masked].mean(),
+        fraction_unmasked_changed = did_change_whole_seq[~input_masked].mean(),
+
+        fraction_input_correct = (input_aa == true_aa).numpy().mean(),
+        fraction_pred_correct = (pred_aa == true_aa).numpy().mean(),
+    )
+
+
 def get_rigids(atom14):
     return du.rigid_frames_from_atom_14(atom14)
+
+def n_atomized(atomizer_spec, **kwargs):
+    if atomizer_spec is None:
+        return 0
+    return {'n': atomizer_spec.residue_to_atomize.sum().item()}
 
 ###################################
 # Metric manager
@@ -456,6 +529,11 @@ class MetricManager:
         point_types: np.ndarray,
         pred_crds_stack: torch.Tensor = None,
         atomizer_spec: aa_model.AtomizerSpec = None,
+        contig_as_guidepost: bool = False,
+        pred_logits: torch.Tensor = None,
+        true_aa: torch.Tensor = None,
+        input_aa: torch.Tensor = None,
+        **kwargs,
         ) -> dict:
         '''
         Inputs
@@ -492,6 +570,10 @@ class MetricManager:
                 point_types=point_types,
                 pred_crds_stack=pred_crds_stack,
                 atomizer_spec=atomizer_spec,
+                contig_as_guidepost=contig_as_guidepost,
+                pred_logits=pred_logits,
+                true_aa=true_aa,
+                input_aa=input_aa,
             )
             metric_results[name] = metric_output
 

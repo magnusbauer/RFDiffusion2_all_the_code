@@ -392,7 +392,7 @@ def _get_tip_mask(indep, atom_mask, *args,
             else:
                 n_atoms = atom_mask[i].sum()
                 seed_atom = np.random.choice(np.arange(n_atoms), 1)[0]
-            n_bonds = np.random.default_rng().geometric(p=1-bond_inclusion_p) - 1
+            n_bonds = np.random.geometric(p=1-bond_inclusion_p) - 1
             atom_names = get_atom_names_within_n_bonds(indep.seq[i], seed_atom, n_bonds)
         assertpy.assert_that(atom_names).does_not_contain(None)
         is_atom_motif[i] = atom_names

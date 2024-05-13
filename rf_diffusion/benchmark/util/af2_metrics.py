@@ -471,7 +471,13 @@ def main():
             idxmap = dict(zip(pdb_ref['pdb_idx'],range(len(pdb_ref['pdb_idx']))))
             trb['con_ref_idx0'] = np.array([idxmap[i] for i in trb['con_ref_pdb_idx']])
             idxmap = dict(zip(pdb_des['pdb_idx'],range(len(pdb_des['pdb_idx']))))
-            trb['con_hal_idx0'] = np.array([idxmap[i] for i in trb['con_hal_pdb_idx']])
+            con_hal_pdb_idx = trb['con_hal_pdb_idx']
+            def untensor(x):
+                if hasattr(x, 'item'):
+                    return x.item()
+                return x
+            con_hal_pdb_idx = [(chain, untensor(idx)) for chain, idx in con_hal_pdb_idx]
+            trb['con_hal_idx0'] = np.array([idxmap[i] for i in con_hal_pdb_idx])
 
         # calculate rmsds
         row['rmsd_af2_des'] = calc_rmsd(xyz_pred[:,:3].reshape(L*3,3), xyz_des[:,:3].reshape(L*3,3))

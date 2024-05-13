@@ -49,7 +49,8 @@ def get_pdb_path(row):
     possible_paths = [
             os.path.join(row['rundir'], 'ligmpnn/packed', f"{row['name']}_{row.get('mpnn_index', -1)}.pdb"),
             os.path.join(row['rundir'], 'ligmpnn', f"{row['name']}_{row.get('mpnn_index')}.pdb"),
-            os.path.join(row['rundir'], f"{row['name']}.pdb")
+            os.path.join(row['rundir'], f"{row['name']}.pdb"),
+            os.path.join(row['rundir'], 'mpnn/packed', f"{row['name']}_{row.get('mpnn_index', -1)}.pdb"),
     ]
     for p in possible_paths:
         if os.path.exists(p):

@@ -271,6 +271,12 @@ class Indep:
     
     def set_device(self, device):
         rf2aa.tensor_util.to_device(self, device)
+    
+    def chain_index(self):
+        '''
+        Returns a list of chain and pdb index like: [('A', 11), ('A', 12), ...]
+        '''
+        return list(zip(self.chains(), self.idx))
 
 def what_is_diffused(indep, is_diffused, atomizer):
     point_ids = get_point_ids(indep, atomizer)

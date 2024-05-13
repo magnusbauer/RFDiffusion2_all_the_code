@@ -96,7 +96,7 @@ def main():
     # MPNN and LigandMPNN metrics
     def _load_mpnn_df(mpnn_dir, df_base):
         def strip_packing_suffix(name):
-            has_packing_suffix = re.match(r'.*\d+_\d+$', name)
+            has_packing_suffix = bool(re.match(r'.*-atomized-bb-(False|True)_\d+_\d+$', name)) or bool(re.match(r'.*cond\d+_\d+_\d+_\d+$', name))
             if has_packing_suffix:
                 return re.sub(r'_\d+$', '', name)
             return name

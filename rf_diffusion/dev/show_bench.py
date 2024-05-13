@@ -20,6 +20,7 @@ import os
 from rf_diffusion.dev import show_tip_pa
 from rf_diffusion.dev import show_tip_row
 from rf_diffusion.dev import analyze
+from rf_diffusion.parsers import parse_pdb_lines_target
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +51,7 @@ def parse_traj(traj_path, n=None):
     # d = defaultdict(list)
     d = []
     for pdb_lines in itertools.islice(model_generator(traj_path), n):
-        o = iu.parse_pdb_lines(pdb_lines.split('\n'), True)
+        o = parse_pdb_lines_target(pdb_lines.split('\n'), True)
         d.append(o)
         # print(list(o.keys()))
         # print(list((k, type(v)) for k,v in o.items()))

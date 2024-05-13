@@ -9,6 +9,7 @@ defaults:
 outdir: ${hydra:runtime.cwd}  # The dir the python script was called from
 start_step: sweep
 stop_step: end
+skip_steps: [foldseek]
 use_ligand: True
 slurm_submit: True
 in_proc: False

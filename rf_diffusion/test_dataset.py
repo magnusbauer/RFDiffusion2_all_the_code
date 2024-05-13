@@ -567,8 +567,8 @@ class TestCenterDiffused(unittest.TestCase):
         return super().tearDown()
 
     def test_center_diffused(self):
-        overrides = ['transforms.names=["PopMask", "AddConditionalInputs", "CenterPostTranform"]',
-                     '+transforms.configs.CenterPostTranform.jitter=0.0'
+        overrides = ['transforms.names=["PopMask", "ReconstructContigMap", "AddConditionalInputs", "CenterPostTranform"]',
+                     '+transforms.configs.CenterPostTranform.jitter=0.0',
                      ]
         
         for mask in ['get_diffusion_mask_islands_partial_ligand', 'get_unconditional_diffusion_mask']:
@@ -581,7 +581,7 @@ class TestCenterDiffused(unittest.TestCase):
                 assertpy.assert_that(torch.norm(com - zero).item()).is_less_than(1e-4)
 
     def test_not_diffused(self):
-        overrides = ['transforms.names=["PopMask", "AddConditionalInputs", "CenterPostTranform"]',
+        overrides = ['transforms.names=["PopMask", "ReconstructContigMap", "AddConditionalInputs", "CenterPostTranform"]',
                      '+transforms.configs.CenterPostTranform.jitter=0.0',
                      '+transforms.configs.CenterPostTranform.center_type="is_not_diffused"',
                      ]

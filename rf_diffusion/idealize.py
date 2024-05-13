@@ -47,6 +47,7 @@ def calc_residue_rmsds(xyz1, xyz2, seq, eps=1e-6):
 
     return rmsd, per_residue_rmsd
 
+@torch.inference_mode(False) # Required to override any enclosing inference_mode(True) context i.e. if model is running in evaluation mode.
 def idealize_pose(xyz, seq, steps=100, lr=1e-1):
     '''
     Adjusts torsion angles to minimize the heavy atom rmsd to the 

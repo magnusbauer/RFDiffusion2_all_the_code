@@ -49,7 +49,7 @@ def main(conf: HydraConfig) -> None:
         print('Waiting for design jobs to finish...', jobid_sweep)
         wait_for_jobs(jobid_sweep)
 
-    if step_in_scope(conf.start_step, conf.stop_step, 'foldseek'):
+    if step_in_scope(conf.start_step, conf.stop_step, 'foldseek') and 'fold_seek' not in conf.skip_steps:
         # Move "orphan" pdbs that somehow lack a trb file
         orphan_dir = f'{conf.outdir}/orphan_pdbs'
         os.makedirs(orphan_dir, exist_ok=True)

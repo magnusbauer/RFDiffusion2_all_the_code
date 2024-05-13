@@ -27,6 +27,7 @@ class TestIdealizedResidueRMSD(unittest.TestCase):
             'point_types': info['metrics_inputs']['point_types'],
             'pred_crds_stack': info['metrics_inputs']['pred_crds_stack'],
             'atomizer_spec': info['metrics_inputs']['atomizer_spec'],
+            'contig_as_guidepost': False,
         }
         conf = OmegaConf.create({'idealization_metric_n_steps': 100})
         self.idealized_residue_rmsd = metrics.IdealizedResidueRMSD(conf)

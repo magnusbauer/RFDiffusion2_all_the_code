@@ -6,6 +6,7 @@ transforms:
 
   configs:
     PopMask: {}
+    ReconstructContigMap: {}
     Center: {}
     AddConditionalInputs:
       p_is_guidepost_example: ${dataloader.P_IS_GUIDEPOST_EXAMPLE}

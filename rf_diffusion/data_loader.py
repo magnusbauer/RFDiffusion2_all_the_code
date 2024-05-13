@@ -1388,7 +1388,7 @@ def default_dataset_configs(loader_param, debug=False):
     train_ID_dict, valid_ID_dict, weights_dict, train_dict, valid_dict, homo, chid2hash, chid2taxid, *extra = \
             rf2aa.data.data_loader.get_train_valid_set({**rf2aa.data.compose_dataset.default_dataloader_params, \
             **dataloader_params},
-            no_match_okay=debug, diffusion_training=True, add_negatives=False)
+            no_match_okay=debug, diffusion_training=True)
 
     if loader_param.use_validation_config:
         train_ID_dict = valid_ID_dict
@@ -1868,7 +1868,7 @@ class DatasetWithFallback(data.Dataset):
 
 class DistributedWeightedSampler(data.Sampler):
     def __init__(self, dataset_configs, dataset_options, dataset_prob, num_example_per_epoch, \
-                 num_replicas=None, rank=None, replacement=False):
+                 num_replicas=None, rank=None, replacement=False, seed_offset=0):
         self.weights_by_dataset = OrderedDict({k:c.weights for k, c in dataset_configs.items()})
         dataset_options = dataset_options.split(",")
         num_datasets = len(dataset_options)
@@ -1918,12 +1918,13 @@ class DistributedWeightedSampler(data.Sampler):
         self.rank = rank
         self.epoch = 0
         self.replacement = replacement
+        self.seed_offset = seed_offset
 
     def __iter__(self):
         # deterministically shuffle based on epoch
         g = torch.Generator()
-        g.manual_seed(self.epoch)
-        run_inference.seed_all(self.epoch * self.num_replicas + self.rank) # Reseed the RNGs for test stability.
+        g.manual_seed(self.epoch + self.seed_offset)
+        run_inference.seed_all(self.epoch * self.num_replicas + self.rank + self.seed_offset) # Reseed the RNGs for test stability.
         self.epoch += 1
 
         # get indices (fb + pdb models)

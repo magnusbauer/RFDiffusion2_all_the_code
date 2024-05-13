@@ -28,6 +28,8 @@ import numpy as np
 from icecream import ic
 from rf_diffusion.chemical import ChemicalData as ChemData
 from typing import Tuple, List
+from rf_diffusion import aa_model
+import copy
 
 def make_guideposts(indep: Indep, is_gp: torch.Tensor, placement: str=None) -> Tuple[Indep, torch.Tensor]:
     '''
@@ -343,7 +345,7 @@ def split_islands(x: torch.Tensor) -> torch.Tensor:
 # Functions to adapt existing contig inputs/outputs if using the guide post features
 #######################
 
-def greedy_guide_post_correspondence(ptn_xyz: torch.Tensor, gp_xyz: torch.Tensor) -> dict:
+def greedy_guide_post_correspondence(ptn_xyz: torch.Tensor, gp_xyz: torch.Tensor, permissive=False, ca_only=True) -> dict:
     '''
     Which guide post frame is closest to which protein frame? Distance metric: RMSD over N, CA, C atoms.
     Assignment done in a greedy manner.
@@ -352,13 +354,18 @@ def greedy_guide_post_correspondence(ptn_xyz: torch.Tensor, gp_xyz: torch.Tensor
         ptn_xyz (L_ptn, 14, 3). Protein xyz coordinates, with the first three atoms being the N, CA and C coordinates.
         gp_xyz (n_gp, 3, 3). Guide post N, CA, C coordinates. 
             (Really, (n_gp, None, 3) will be chopped down to (n_gp, 3, 3).)
+        permissive (bool): if True, never raise an exception due to mapping collisions (useful during model training)
     
     Returns
         gp_to_ptn_idx: dict[guide_post_index: protein_index]. These are 0-indexed. They can be used to index ptn_xyz.
         sampled_mask: Contig string of infered guide post locations
     '''
-    bb_xyz = ptn_xyz[:, :3, :]
-    gp_xyz = gp_xyz[:, :3, :]
+    if ca_only:
+        bb_xyz = ptn_xyz[:, 1:2, :]
+        gp_xyz = gp_xyz[:, 1:2, :]
+    else:
+        bb_xyz = ptn_xyz[:, :3, :]
+        gp_xyz = gp_xyz[:, :3, :]
     n_gp = gp_xyz.shape[0]
     
     bb_xyz = bb_xyz[:, None, :, :]
@@ -369,10 +376,17 @@ def greedy_guide_post_correspondence(ptn_xyz: torch.Tensor, gp_xyz: torch.Tensor
     # greedy assignment
     ptn_idxs = []
     gp_idxs = []
+    assert n_gp <= ptn_xyz.shape[0], f'{n_gp=}, {ptn_xyz.shape[0]=}'
     for _ in range(n_gp):
         vals, idxs = rmsd.min(-1)
         ptn_idx = vals.argmin()
         gp_idx = idxs[ptn_idx]
+        if permissive:
+            while ptn_idx in ptn_idxs:
+                ptn_idx = -1
+                if ptn_idx == -1:
+                    ptn_idx += 1
+
         ptn_idxs.append(int(ptn_idx))
         gp_idxs.append(int(gp_idx))
         
@@ -528,7 +542,7 @@ def contract(pdb_idx):
 def invert(d):
    return {v: k for k,v in d.items()}
 
-def get_infered_mappings(motif_by_gp: dict, infered_by_gp: dict, original_mappings: dict) -> dict:
+def get_infered_mappings(motif_by_gp: dict, infered_by_gp: dict, original_mappings: dict, ch_idx: list = None) -> dict:
     '''
     The original contig mappings are useless. Because guide posts are free to end up anywhere in the protein,
     we need to make new mappings.
@@ -543,6 +557,7 @@ def get_infered_mappings(motif_by_gp: dict, infered_by_gp: dict, original_mappin
         (value) diffused_idx0: Idx0 of the inferred placement of the guidepost from the final diffusion timestep. 
             Could use this to index into indep.xyz.
     original_contig_map: The original contig_map made when the contig string was sampled at the BEGINNING of a trajectory.
+    ch_idx: [('A', 12), ('A', 13)...] chain index description.
 
     Returns
     -------------
@@ -558,6 +573,8 @@ def get_infered_mappings(motif_by_gp: dict, infered_by_gp: dict, original_mappin
     con_hal_idx0 = np.array(con_hal_idx0)
     
     con_hal_pdb_idx = [('A', i+1) for i in con_hal_idx0]  # Assumes we diffused one chain.
+    if ch_idx is not None:
+        con_hal_pdb_idx = [ch_idx[i] for i in con_hal_idx0]  # Assumes we diffused one chain.
     atomize_indices2atomname = {}
     for i, v in original_mappings['atomize_indices2atomname'].items():
         gp_i = gp_by_motif[i]
@@ -570,3 +587,98 @@ def get_infered_mappings(motif_by_gp: dict, infered_by_gp: dict, original_mappin
         'atomize_indices2atomname': atomize_indices2atomname,
         'motif_by_gp': motif_by_gp,
     }
+
+
+
+def place_guideposts(indep, is_gp, use_guidepost_coordinates_for=None):
+    """
+    indep must be deatomized
+    """
+    indep = copy.deepcopy(indep)
+    xyz_design = indep.xyz[:]
+    seq_design = indep.seq[:]
+
+    # Infer which diffused residues ended up on top of the guide post residues
+    diffused_xyz = xyz_design[~is_gp * ~indep.is_sm]
+    gp_alone_xyz = xyz_design[is_gp]
+    idx_by_gp_sequential_idx = torch.nonzero(is_gp)[:,0].numpy()
+    gp_alone_to_diffused_idx0 = greedy_guide_post_correspondence(diffused_xyz, gp_alone_xyz, permissive=True)
+    match_idx_by_gp_idx = {}
+    for k, v in gp_alone_to_diffused_idx0.items():
+        match_idx_by_gp_idx[idx_by_gp_sequential_idx[k]] = v
+    
+    gp_idx, match_idx = zip(*match_idx_by_gp_idx.items())
+    gp_idx = np.array(gp_idx)
+    match_idx = np.array(match_idx)
+
+    if len(match_idx_by_gp_idx):
+        seq_design[match_idx] = seq_design[gp_idx]
+        if use_guidepost_coordinates_for == 'all':
+            xyz_design[match_idx] = xyz_design[gp_idx]
+        elif use_guidepost_coordinates_for == 'sidechain':
+            xyz_design[match_idx, 4:] = xyz_design[gp_idx, 4:]
+        elif use_guidepost_coordinates_for == 'all_but_frame':
+            xyz_design[match_idx, 3:] = xyz_design[gp_idx, 3:]
+        elif use_guidepost_coordinates_for == 'all_but_ca':
+            xyz_design[match_idx, 0] = xyz_design[gp_idx, 0]
+            xyz_design[match_idx, 2:] = xyz_design[gp_idx, 2:]
+        else:
+           raise Exception(f'{use_guidepost_coordinates_for=} not one of the recognized options: ["all", "sidechain", "all_but_ca"]')
+
+    xyz_design = xyz_design[~is_gp]
+    seq_design = seq_design[~is_gp]
+    indep, _ = aa_model.slice_indep(indep, ~is_gp)
+    indep.xyz = xyz_design
+    indep.seq = seq_design
+    return indep
+
+
+def match_guideposts(indep, is_gp):
+    """
+    indep must be deatomized
+    """
+    indep = copy.deepcopy(indep)
+    xyz_design = indep.xyz[:]
+    seq_design = indep.seq[:]
+
+    # Infer which diffused residues ended up on top of the guide post residues
+    diffused_xyz = xyz_design[~is_gp * ~indep.is_sm]
+    gp_alone_xyz = xyz_design[is_gp]
+    idx_by_gp_sequential_idx = torch.nonzero(is_gp)[:,0].numpy()
+    gp_alone_to_diffused_idx0 = greedy_guide_post_correspondence(diffused_xyz, gp_alone_xyz, permissive=True)
+    match_idx_by_gp_idx = {}
+    for k, v in gp_alone_to_diffused_idx0.items():
+        match_idx_by_gp_idx[idx_by_gp_sequential_idx[k]] = v
+    return match_idx_by_gp_idx
+
+
+def update_contig_map(indep, contig_map):
+    """
+    indep must be deatomized
+    """
+    xyz_design = indep.xyz[:]
+    seq_design = indep.seq[:]
+    gp_to_contig_idx0 = contig_map.gp_to_ptn_idx0  # map from gp_idx0 to the ptn_idx0 in the contig string.
+    is_gp = torch.zeros_like(seq_design, dtype=bool)
+    is_gp[list(gp_to_contig_idx0.keys())] = True
+
+    # Infer which diffused residues ended up on top of the guide post residues
+    diffused_xyz = xyz_design[~is_gp * ~indep.is_sm]
+    gp_alone_xyz = xyz_design[is_gp]
+    idx_by_gp_sequential_idx = torch.nonzero(is_gp)[:,0].numpy()
+    gp_alone_to_diffused_idx0 = greedy_guide_post_correspondence(diffused_xyz, gp_alone_xyz, permissive=True)
+    match_idx_by_gp_idx = {}
+    for k, v in gp_alone_to_diffused_idx0.items():
+        match_idx_by_gp_idx[idx_by_gp_sequential_idx[k]] = v
+    gp_idx, match_idx = zip(*match_idx_by_gp_idx.items())
+    gp_idx = np.array(gp_idx)
+    match_idx = np.array(match_idx)
+
+    gp_contig_mappings = get_infered_mappings(
+        gp_to_contig_idx0,
+        match_idx_by_gp_idx,
+        contig_map.get_mappings(),
+        indep.chain_index(),
+    )
+
+    return gp_contig_mappings

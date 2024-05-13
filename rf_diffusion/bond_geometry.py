@@ -10,6 +10,9 @@ import numpy as np
 from rf_diffusion import aa_model
 from rf_diffusion.benchmark import compile_metrics
 
+import logging
+logger = logging.getLogger(__name__)
+
 
 def calc_atom_bond_loss(indep, pred_xyz, true_xyz, is_diffused, point_types, masks=None):
     """
