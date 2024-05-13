@@ -15,15 +15,15 @@ git submodule update --init
 ```
 export PYTHONPATH="${PYTHONPATH}:$REPO_DIR"
 cd $REPO_DIR/rf_diffusion
-apptainer exec /software/containers/users/dtischer/rf_diffusion_aa.sif pytest --disable-warnings -s -m "not nondeterministic"
+apptainer exec exec/bakerlab_rf_diffusion_aa.sif pytest --disable-warnings -s -m "not nondeterministic"
 ```
 ## A note about running scripts in this repo
 Many of the python scripts in this repo are executable. That is, you don't need to do `python some_script.py` or `my_container.sif some_script.py`. The are several environmental variables and flags that need to be set properly for the scripts to run. Rather than asking the user to set these correctly each time (which is error prone), we have a script to do this prep work under the hood for you! 
 
-Any scripts (like `rf_diffusion/benchmark/pipeline.py` and `rf_diffusion/run_inference.py`) that have the shebang line `#!/net/software/containers/users/dtischer/shebang_rf_se3_diffusion_dev.sh` can be executed directly. If you need to run a script without that line, you need to do
+Any scripts (like `rf_diffusion/benchmark/pipeline.py` and `rf_diffusion/run_inference.py`) that have the shebang line `#!/usr/bin/env -S /bin/sh -c '"$(dirname "$0")/exec/rf_diffusion_aa_shebang.sh" "$0" "$@"'` can be executed directly. If you need to run a script without that line, you need to do
 ```
 export PYTHONPATH="${PYTHONPATH}:$REPO_DIR"
-/usr/bin/apptainer run --nv --slurm --env PYTHONPATH="\$PYTHONPATH:$PYTHONPATH" /net/software/containers/users/dtischer/rf_diffusion_aa.sif path/to/script.py ...
+/usr/bin/apptainer run --nv --slurm --env PYTHONPATH="\$PYTHONPATH:$PYTHONPATH" path/to/rf_diffusion/exec/bakerlab_rf_diffusion_aa.sif path/to/script.py ...
 ```
 
 # Simple inference pipeline run
@@ -88,7 +88,7 @@ This will produce a metrics dataframe: $METRICS_DATAFRAME_PATH
 
 Use $METRICS_DATAFRAME_PATH in the provided analysis notebook `notebooks/analyze_catalytic_constraints.ipynb` to analyze success on the various catalytic constraints.
 
-If you do not have the dependencies to run this notebook in your default kernel, use this sif as a kernel `/net/software/containers/users/dtischer/rf_diffusion_aa.sif` following instructions in https://wiki.ipd.uw.edu/it/digs/apptainer#jupyter
+If you do not have the dependencies to run this notebook in your default kernel, use this sif as a kernel `rf_diffusion/exec/bakerlab_rf_diffusion_aa.sif` following instructions in https://wiki.ipd.uw.edu/it/digs/apptainer#jupyter
 
 ## Running catalytic constraint design + benchmarking
 `$REPO_DIR/rf_diffusion/benchmark/pipeline.py --config-name=sh_benchmark_1_tip-true_selfcond-false_seqposition_truefalse_T150`
