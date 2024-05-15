@@ -190,28 +190,28 @@ class RFScore(nn.Module):
         super(RFScore, self).__init__()
 
         self.register_buffer('aamask',
-            ChemData().allatom_mask.int(), persistent=False
+            ChemData().allatom_mask.int().to(device), persistent=False
         )
         self.register_buffer('num_bonds',
-            ChemData().num_bonds, persistent=False
+            ChemData().num_bonds.to(device), persistent=False
         )
         self.register_buffer('atom_type_index',
-            ChemData().atom_type_index, persistent=False,
+            ChemData().atom_type_index.to(device), persistent=False,
         )
         self.register_buffer('ljlk_parameters',
-            ChemData().ljlk_parameters, persistent=False,
+            ChemData().ljlk_parameters.to(device), persistent=False,
         )
         self.register_buffer('lj_correction_parameters',
-            ChemData().lj_correction_parameters.int(), persistent=False,
+            ChemData().lj_correction_parameters.int().to(device), persistent=False,
         )
         self.register_buffer('cb_len',
-            ChemData().cb_length_t, persistent=False
+            ChemData().cb_length_t.to(device), persistent=False
         )
         self.register_buffer('cb_ang',
-            ChemData().cb_angle_t, persistent=False
+            ChemData().cb_angle_t.to(device), persistent=False
         )
         self.register_buffer('cb_tor',
-            ChemData().cb_torsion_t, persistent=False
+            ChemData().cb_torsion_t.to(device), persistent=False
         )
 
 
