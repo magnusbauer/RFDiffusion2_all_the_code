@@ -111,6 +111,14 @@ def convert_atomized_mask(atomizer, mask):
             o[deatomized_i].append('ALL')
         else:
             raise Exception(f'{atomized_i} not found')
+        
+    atm_idx_list = [t[0] for t in res_idx_atom_name_by_atomized_idx.values()]
+    unique_atm_idx_list = list(set(atm_idx_list))
+
+    for atm_idx in unique_atm_idx_list:
+        if atm_idx not in list(o.keys()):
+            o[atm_idx].append('')
+
     return o
 
 def atomized_indices_from_preatomized_res_indices(atomizer, res_indices):
