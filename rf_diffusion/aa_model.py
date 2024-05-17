@@ -114,13 +114,13 @@ class Indep:
         fields are not always leaves.
         '''
         return self.__class__(
-            self.seq.detach(),
-            self.xyz.detach(),
-            self.idx.detach(),
-            self.bond_feats.detach(),
-            self.chirals.detach(),
-            self.same_chain.detach(),
-            self.terminus_type.detach(),
+            copy.deepcopy(self.seq.detach()),
+            copy.deepcopy(self.xyz.detach()),
+            copy.deepcopy(self.idx.detach()),
+            copy.deepcopy(self.bond_feats.detach()),
+            copy.deepcopy(self.chirals.detach()),
+            copy.deepcopy(self.same_chain.detach()),
+            copy.deepcopy(self.terminus_type.detach()),
             copy.deepcopy(self.extra_t1d),
         )
 
