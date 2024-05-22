@@ -1447,7 +1447,14 @@ def default_dataset_configs(loader_param, debug=False):
     #                     'hal_ar':       loader_cn_fixbb,
     #                     'diff':         loader_cn_fixbb},
     #                     cn_weights)
-    sm_compl_loader_fixbb = partial(rf2aa.data.data_loader.loader_sm_compl_assembly, \
+
+    # RF2aa change compat. Can be deleted once aa_dataset_256_subsampled_10.pkl is regenerated
+    if chid2hash is None:
+        chid2hash = {}
+    if chid2taxid is None:
+        chid2taxid = {}
+
+    sm_compl_loader_fixbb = partial(rf2aa.data.loaders.rcsb_loader.loader_sm_compl_assembly, \
                                     chid2hash=chid2hash,chid2taxid=chid2taxid,remove_residue=False)
     sm_compl_config = WeightedDataset(
                 train_ID_dict["sm_compl"], train_dict["sm_compl"], sm_compl_loader_fixbb, weights_dict["sm_compl"])

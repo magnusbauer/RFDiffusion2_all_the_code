@@ -7,6 +7,11 @@ import rf2aa.chemical
 @dataclass
 class ChemConf:
     use_phospate_frames_for_NA=True
+    use_lj_params_for_atoms=False
 
-rf2aa.chemical.initialize_chemdata(ChemConf())
+@dataclass
+class ChemConfConf:
+    chem_params = ChemConf()
+
+rf2aa.chemical.initialize_chemdata(ChemConfConf())
 ChemicalData = rf2aa.chemical.ChemicalData

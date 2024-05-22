@@ -47,10 +47,10 @@ conda install \
 
 # pytorch + dependancies
 conda install \
-   -c nvidia \
+   -c nvidia/label/cuda-12.1.0 \
    -c pytorch \
    -c pyg \
-   -c dglteam/label/cu116 \
+   -c dglteam/label/cu121 \
    -c anaconda \
    pip \
    ipython=8.8.0 \
@@ -60,10 +60,10 @@ conda install \
    seaborn=0.12.2 \
    matplotlib \
    jupyterlab=3.5.0 \
-   pytorch=1.13.1=py3.9_cuda11.6_cudnn8.3.2_0 \
-   pytorch-cuda=11.6 \
+   pytorch==2.2 \
+   pytorch-cuda==12.1 \
+   dgl==2.0.0.cu121 \
    einops=0.7.0 \
-   dgl \
    pyg
 
 

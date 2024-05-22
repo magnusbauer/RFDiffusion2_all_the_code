@@ -226,14 +226,14 @@ class RFScore(nn.Module):
 
         model = rf2aa.model.RoseTTAFoldModel.LegacyRoseTTAFoldModule(
             **model_conf,
-            aamask=self.aamask,
-            atom_type_index=self.atom_type_index,
-            ljlk_parameters=self.ljlk_parameters,
-            lj_correction_parameters=self.lj_correction_parameters,
-            num_bonds=self.num_bonds,
-            cb_len = self.cb_len,
-            cb_ang = self.cb_ang,
-            cb_tor = self.cb_tor,
+            aamask=self.aamask.float(),
+            atom_type_index=self.atom_type_index.float(),
+            ljlk_parameters=self.ljlk_parameters.float(),
+            lj_correction_parameters=self.lj_correction_parameters.float(),
+            num_bonds=self.num_bonds.float(),
+            cb_len = self.cb_len.float(),
+            cb_ang = self.cb_ang.float(),
+            cb_tor = self.cb_tor.float(),
             assert_single_sequence_input=False,
             )
  
