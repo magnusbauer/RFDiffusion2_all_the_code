@@ -682,6 +682,38 @@ class TestInference(unittest.TestCase):
     def tearDown(self):
         hydra.core.global_hydra.GlobalHydra.instance().clear()
     
+
+
+    def test_checkpoint_for_training(self):
+        '''
+        Test that ensures that the checkpoint.checkpoint path through the model doesn't have bugs
+
+        This was an issue around May 23, 2024
+
+        If this test doesn't crash, we're good to go.
+        '''
+        T = 1
+        conf = construct_conf([
+            f'diffuser.T={T}',
+            'inference.num_designs=1',
+            'inference.output_prefix=tmp/test_1',
+            'inference.contig_as_guidepost=False',
+            'inference.str_self_cond=0',
+        ])
+
+        func_sig = signature(LegacyRoseTTAFoldModule.forward)
+        fake_forward = mock.patch.object(LegacyRoseTTAFoldModule, "forward", autospec=True)
+
+        def side_effect(self, *args, **kwargs):
+            ic("mock forward", type(self))
+            kwargs['use_checkpoint'] = True # force the use_checkpoint path (typically used in training)
+            return fake_forward.temp_original(self, *args, **kwargs)
+
+        with fake_forward as mock_forward:
+            mock_forward.side_effect = side_effect
+            run_inference.main(conf)
+
+
     # Test that the motif remains fixed throughout inference.
     def test_motif_remains_fixed(self):
         T = 2
