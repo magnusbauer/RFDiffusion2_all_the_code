@@ -11,6 +11,7 @@ import rf2aa.util
 from dataclasses import dataclass
 import dataclasses
 
+import rf2aa.model.RoseTTAFoldModel
 from rf2aa.chemical import ChemicalData as ChemData
 import rf_diffusion.aa_model
 import addict
