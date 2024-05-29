@@ -38,7 +38,6 @@ def center_ligands(row, des_pdb, out_path=None):
     trb = analyze.get_trb(row)
     potential_xyz = trb['motif_substrate_atoms']
     xyz_het_com = trb['xyz_het_com']
-    xyz_het = indep.xyz[indep.is_sm, 1]
     # xyz_het_com = xyz_het.mean(dim=0)
     indep.xyz[indep.is_sm, 1] -= xyz_het_com
 

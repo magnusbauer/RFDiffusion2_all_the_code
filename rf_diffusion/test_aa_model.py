@@ -1,9 +1,6 @@
 import copy
 from collections import defaultdict
-import shutil
-import os
 from functools import partial
-import sys
 import torch
 import assertpy
 import unittest
@@ -13,11 +10,9 @@ from icecream import ic
 import rf2aa
 from rf_diffusion import aa_model
 from rf_diffusion.aa_model import Model, make_indep
-from rf_diffusion import atomize
 from rf_diffusion import test_utils
 import inference.utils
 from rf_diffusion import contigs
-import pytest
 from rf_diffusion.chemical import ChemicalData as ChemData
 from rf2aa import tensor_util
 from rf_diffusion import run_inference
@@ -90,7 +85,6 @@ class TestRearrange(unittest.TestCase):
 
     def test_split_sm(self):
         indep = make_indep('benchmark/input/gaa.pdb', 'LG1')
-        L = indep.length()
         input_copy = copy.deepcopy(indep)
 
         sm_i = indep.is_sm.nonzero()[:,0]
@@ -124,7 +118,7 @@ class TestOpenIndep(unittest.TestCase):
                 indep.assert_types()
                 input_copy = copy.deepcopy(indep)
                 L = indep.length()
-                with aa_model.open_indep(indep, is_open) as indep_open:
+                with aa_model.open_indep(indep, is_open):
                     pass
                 
                 
@@ -339,7 +333,7 @@ class AAModelTestCase(unittest.TestCase):
         new_bonds = indep_multi.bond_feats != indep_single.bond_feats
         new_bonds = indep_multi.human_readable_2d_symmetric_mask(new_bonds)
         ic(new_bonds)
-        new_bonded_elements = tuple(set([element for _, element in b]) for b in new_bonds)
+        tuple(set([element for _, element in b]) for b in new_bonds)
         # assertpy.assert_that(new_bonded_elements).is_equal_to((set(['C', 'S']),))
         
 class TestTwoChains(unittest.TestCase):

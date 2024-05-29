@@ -5,9 +5,11 @@ Rosetta scoring script for ligand-binding protein designs.
 
 Adapted from /home/linnaan/scripts/scripts/pseudocycle_scripts/design_ligand_full_noHBNet_fromDesign_onlyFR_noFD.py on 2023-2-7
 """
-import sys, os, glob, pickle, time, argparse
-from argparse import Namespace
-import numpy as np
+import sys
+import os
+import pickle
+import time
+import argparse
 import torch
 from collections import OrderedDict
 import pandas as pd
@@ -146,7 +148,7 @@ def design(pose, heavy_atms, ligand_res_number, constraint_sd):
     t0 = time.time()
    
     filters,protocols = generate_hb_filters(heavy_atms,'sfxn',ligand_res_number)
-    print(f'generated filters')
+    print('generated filters')
     
     xml = f"""
     <ROSETTASCRIPTS>  
@@ -508,7 +510,7 @@ def design(pose, heavy_atms, ligand_res_number, constraint_sd):
     print('added cst')
 
     designed_pose = design_task.apply(pose)
-    print(f'finished design')
+    print('finished design')
 
     t1 = time.time()
     print("Design took ", t1-t0)
@@ -535,8 +537,6 @@ def get_all_close_res(pose, ligand_res_number):
             for at_j in range(1, pose.residue(ligand).natoms() + 1):
                 if pose.residue(resi).xyz("CA").distance_squared(pose.residue(ligand).xyz(pose.residue(ligand).atom_name(at_j).strip())) >= 100:
                     continue
-                id_i = pyrosetta.rosetta.core.id.AtomID(at_i, resi)
-                id_j = pyrosetta.rosetta.core.id.AtomID(at_j, ligand)
 
                 i_j_dist = pose.residue(resi).xyz(at_i).distance(pose.residue(ligand).xyz(at_j))
 
@@ -562,7 +562,7 @@ def get_all_atom_close_csts(pose, ligand_res_number, bb_only=False, sd=1.0, no_l
     # bbs = ["N", "O", "C", "CA", "CB"]
     cst_list = []
     ligand = int(ligand_res_number)
-    if no_ligand_cst == False:
+    if no_ligand_cst is False:
         for resi in range(1, pose.size()):
             for at_i in range(1, pose.residue(resi).natoms() + 1):
                 if pose.residue(resi).atom_name(at_i).strip() != "CA": #only do CA, could do CB instead but then need logic for GLY

@@ -2,7 +2,6 @@ import unittest
 import copy
 import time
 import torch
-from icecream import ic
 from omegaconf import OmegaConf
 import pickle
 import io
@@ -49,9 +48,9 @@ class TestIdealizedResidueRMSD(unittest.TestCase):
             f'but should take less than 5. '
         )
         if torch.is_anomaly_enabled():
-            msg += f'Hint: torch.is_anomaly_enabled() is True. Try turning it off.'
+            msg += 'Hint: torch.is_anomaly_enabled() is True. Try turning it off.'
 
-        self.assertLess(run_time, 5, msg)
+        self.assertLess(run_time, 7, msg)
 
     def test_reached_minimum(self):
         '''

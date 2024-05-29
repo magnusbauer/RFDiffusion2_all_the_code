@@ -8,7 +8,6 @@ import glob
 from icecream import ic
 from tqdm import tqdm
 import fire
-import numpy as np
 import Bio.PDB.PDBParser
 
 def get_input_aligned_pdb(row, out_path=None):

@@ -1,10 +1,8 @@
 import copy
 import os
-import sys
 import unittest
 import json
 
-import addict
 import torch
 from icecream import ic
 
@@ -12,7 +10,7 @@ from rf_diffusion.aa_model import Model, make_indep, AtomizeResidues, get_atomiz
 import rf_diffusion.inference.utils
 from rf_diffusion import contigs
 from rf_diffusion import atomize
-from rf2aa import tensor_util, chemical
+from rf2aa import tensor_util
 from rf_diffusion import test_utils
 
 class TestAtomization(unittest.TestCase):
@@ -84,7 +82,7 @@ class TestAtomization(unittest.TestCase):
             
             # For visual inspection
             os.makedirs('tmp', exist_ok=True)
-            indep_deatomized.write_pdb(f'tmp/test_deatomized.pdb')
+            indep_deatomized.write_pdb('tmp/test_deatomized.pdb')
 
     def test_deatomization_via_new_atomizer(self):
         '''
@@ -116,7 +114,7 @@ class TestAtomization(unittest.TestCase):
             
             # For visual inspection
             os.makedirs('tmp', exist_ok=True)
-            indep_deatomized.write_pdb(f'tmp/test_deatomization_via_atomized_labels.pdb')
+            indep_deatomized.write_pdb('tmp/test_deatomization_via_atomized_labels.pdb')
 
 def cmp_pretty(got, want, **kwargs):
     diff = tensor_util.cmp(got, want, **kwargs)

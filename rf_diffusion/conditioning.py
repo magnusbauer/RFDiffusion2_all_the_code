@@ -6,7 +6,6 @@ import logging
 
 from rf_diffusion import aa_model
 from rf_diffusion.aa_model import Indep
-from rf_diffusion.chemical import ChemicalData as ChemData
 from rf_diffusion.contigs import ContigMap
 
 logger = logging.getLogger(__name__)
@@ -170,7 +169,7 @@ def get_contig_map(indep, input_str_mask, is_atom_motif):
         if i in motif_resis:
             contigs.append(f'{ch}{i}-{i}')
         else:
-            contigs.append(f'1-1')
+            contigs.append('1-1')
     contig_atoms = {}
     for i, atom_names in is_atom_motif.items():
         contig_atoms[f'{indep.chains()[i]}{indep.idx[i]}'] = atom_names

@@ -10,7 +10,6 @@ sys.path.append(SE3_DIR)
 
 import pandas as pd
 import fire
-from icecream import ic
 from tqdm import tqdm
 import torch
 

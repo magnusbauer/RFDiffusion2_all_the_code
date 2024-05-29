@@ -1,6 +1,5 @@
 import torch
 import math
-from icecream import ic
 import random
 from blosum62 import p_j_given_i as P_JGI
 import numpy as np
@@ -8,11 +7,9 @@ from diffusion import get_beta_schedule
 from inference.utils import get_next_ca, get_next_frames
 import rf2aa.tensor_util
 from rf_diffusion.chemical import ChemicalData as ChemData
-from rf2aa.tensor_util import assert_equal
 
 def sample_blosum_mutations(seq, *args, **kwargs):
     assert len(seq.shape) == 1
-    L = len(seq)
     is_sm = rf2aa.util.is_atom(seq) # (L)
     sampled_seq = sample_blosum_mutations_protein(seq[~is_sm], *args, **kwargs)
     out_seq = torch.clone(seq)
@@ -127,7 +124,7 @@ def mask_inputs(seq,
     """
     # print('Made it into mask inputs')
     ### Perform diffusion, pick a random t and then let that be the input template and xyz_prev
-    if (not diffuser is None) :
+    if (diffuser is not None) :
 
 
         # NOTE: assert that xyz_t is the TRUE coordinates! Should come from fixbb loader 
@@ -253,7 +250,7 @@ def mask_inputs(seq,
         # JW - moved this here
         mask_msa = torch.stack([mask_msa,mask_msa], dim=0) # [n,I,N_long,L,25]
 
-        if not seq_diffuser is None:
+        if seq_diffuser is not None:
             seq_mask[:,~input_seq_mask.squeeze()] = False # All non-fixed positions are diffused in sequence diffusion
             
             # JW - moved mask_msa masking here
@@ -284,7 +281,6 @@ def mask_inputs(seq,
             decoded_non_motif[1,~aa_masks[1]] = False
 
             decoded_non_motif[:,input_seq_mask.squeeze()] = False      # mark False where motif exists 
-            decode_scoring_mask = torch.clone(decoded_non_motif)
             
             # set (1-decode_mask_frac) proportion to False, keeping <decode_mask_frac> proportion still available 
             # JW - changed this slightly, for scoring purposes.
@@ -327,7 +323,6 @@ def mask_inputs(seq,
 
         if predict_previous:
             true_crds = diffused_fullatoms[-1][None]
-            true_seq  = diffused_seq[-1][None]
 
         # Scale str confidence wrt t 
         # multiplicitavely applied to a default conf mask of 1.0 everywhwere
@@ -337,7 +332,7 @@ def mask_inputs(seq,
         #if model_param['d_time_emb'] > 0:
         # d_time_emb == 0 in paper args
         if False:
-            if not (seq_diffuser is None):
+            if seq_diffuser is not None:
                 raise NotImplementedError("Sinuisoidal timestep embedding isn't implemented for sequence diffusion yet, because sequence diffusion has both sequence & structure timestep")
             # sinusoidal embedding
             input_t1d_str_conf_mask[:,~input_str_mask.squeeze()] = 0
@@ -359,7 +354,7 @@ def mask_inputs(seq,
 
     #seq_mask = input_seq_mask[0] # DJ - old, commenting out bc using seq mask from diffuser 
     seq = torch.stack([seq,seq], dim=0) # [n,I,L]
-    if not seq_diffuser is None:
+    if seq_diffuser is not None:
         raise Exception('not implemented')
         # alldim_diffused_seq = diffused_seq_bits[:,None,:,:] # [n,I,L,20]
         # zeros = torch.zeros(2,1,L,2)
@@ -392,7 +387,7 @@ def mask_inputs(seq,
     ### msa_masked ###
     ################## 
     msa_masked = torch.stack([msa_masked,msa_masked], dim=0) # [n,I,N_short,L,48]
-    if not seq_diffuser is None:
+    if seq_diffuser is not None:
         raise Exception('not implemented')
         msa_masked[...,:20]   = diffused_seq_bits[:,None,None,:,:]
         msa_masked[...,22:42] = diffused_seq_bits[:,None,None,:,:]
@@ -442,7 +437,7 @@ def mask_inputs(seq,
     ################
     msa_full = torch.stack([msa_full,msa_full], dim=0) # [n,I,N_long,L,25]
     
-    if not seq_diffuser is None:
+    if seq_diffuser is not None:
         # These sequences will only go up to 20
         msa_full[...,:20]   = diffused_seq_bits[:,None,None,:,:]
 
@@ -475,7 +470,7 @@ def mask_inputs(seq,
     # NOTE: Not adjusting t1d last dim (confidence) from sequence mask
     t1d = torch.stack([t1d,t1d], dim=0) # [n,I,L,22]
     # NOTE DJ, add the sinusoidal timestep embedding logic here
-    if not seq_diffuser is None:
+    if seq_diffuser is not None:
         t1d[...,:20] = diffused_seq_bits[:,None,:,:]
         
         t1d[...,20]  = 0 # No unknown characters in seq diffusion

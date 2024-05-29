@@ -7,8 +7,6 @@ import hydra
 import numpy as np
 import torch
 from omegaconf import DictConfig
-from torch.utils import data
-from tqdm import tqdm
 
 
 from rf_diffusion.dev import pymol
@@ -17,13 +15,7 @@ pymol.init(pymol_url='http://chesaw.dhcp.ipd:9123')
 cmd = pymol.cmd
 
 from rf_diffusion import show
-from rf_diffusion import atomize
-from rf_diffusion.dev import analyze, show_tip_pa
-from rf_diffusion.data_loader import (
-    get_train_valid_set, loader_pdb, loader_fb, loader_complex, loader_pdb_fixbb, loader_fb_fixbb, loader_complex_fixbb, loader_cn_fixbb, default_dataset_configs,
-    #Dataset, DatasetComplex, 
-    DistilledDataset, DistributedWeightedSampler
-)
+from rf_diffusion.dev import show_tip_pa
 from rf_diffusion.frame_diffusion.data import se3_diffuser
 from rf_diffusion import aa_model
 
@@ -134,7 +126,7 @@ def run(conf: DictConfig) -> None:
             # if atomizer:
             #     _ = atomize.deatomize(atomizer, indep)
             item_context = eval(item_context)
-            chosen_dataset, index = item_context['chosen_dataset'], item_context['index']
+            chosen_dataset, _index = item_context['chosen_dataset'], item_context['index']
             for xyz_label, xyz in [
                     ('true', indep.xyz),
                     # ('input', rfi.xyz[0,:,:14])

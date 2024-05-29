@@ -31,7 +31,6 @@ def th_interpolate_angles(start, end, T, n_diffuse,mindiff=None, radians=True):
         N = int(n_diffuse[i])
         actual_interp = torch.linspace(start[i], start[i]+diff, N)
         whole_interp = torch.full((T,), float(start[i]+diff))
-        temp=torch.clone(whole_interp)
         whole_interp[:N] = actual_interp
         
         interps.append(whole_interp)

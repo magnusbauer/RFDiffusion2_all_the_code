@@ -1,5 +1,4 @@
 import torch
-from icecream import ic
 
 from rf_diffusion import aa_model
 

@@ -1,7 +1,6 @@
 import glob
 import math
 import os
-from rf_diffusion.dev import pymol
 from rf_diffusion.dev import analyze
 # analyze.cmd = analyze.set_remote_cmd('10.64.100.67')
 cmd = analyze.cmd
@@ -13,7 +12,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 from rf_diffusion import metrics
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import OmegaConf
 from rf_diffusion.benchmark import compile_metrics
 
 from rf_diffusion import aa_model
@@ -21,7 +20,6 @@ from rf_diffusion.dev import show_bench
 from rf_diffusion.dev import show_tip_pa
 import tree
 import torch
-from icecream import ic
 
 api = wandb.Api(timeout=150)
 
@@ -265,7 +263,7 @@ def bin_metric(df, metric, bin_width):
 
 def get_runid_by_name(group):
     runid_by_group = {}
-    for run in api.runs(f"bakerlab/fancy-pants", filters={'group':group}):
+    for run in api.runs("bakerlab/fancy-pants", filters={'group':group}):
         runid_by_group[run.name] = run.id
     print(f'{group=}, {runid_by_group=}')
     return runid_by_group
@@ -379,7 +377,7 @@ def plot_self_consistency(bench, x='epoch', hue='benchmark', **kwargs):
     data = get_best(bench)
     data['motif RMSD < 1 & RMSD < 2'] = data['self_consistent_and_motif']
     # g = sns.catplot(data=data, y='motif RMSD < 1 & RMSD < 2', x=x, hue='benchmark', kind='bar', orient='v', height=8.27, aspect=11.7/8.27, legend_out=True, ci=None, **kwargs)
-    g = sns.catplot(data=data, y='motif RMSD < 1 & RMSD < 2', x=x, hue=hue, kind='bar', orient='v', legend_out=True, ci=None, **kwargs)
+    sns.catplot(data=data, y='motif RMSD < 1 & RMSD < 2', x=x, hue=hue, kind='bar', orient='v', legend_out=True, ci=None, **kwargs)
     _ = plt.xticks(rotation=90)
     # show_percents
 
@@ -391,7 +389,7 @@ def plot_self_consistency_no_motif(bench, x='epoch', hue='benchmark', **kwargs):
     data = get_least_in_group_single(bench, 'rmsd_af2_des')
     data['RMSD < 2'] = data['rmsd_af2_des'] < 2.0
     # g = sns.catplot(data=data, y='motif RMSD < 1 & RMSD < 2', x=x, hue='benchmark', kind='bar', orient='v', height=8.27, aspect=11.7/8.27, legend_out=True, ci=None, **kwargs)
-    g = sns.catplot(data=data, y='RMSD < 2', x=x, hue=hue, kind='bar', orient='v', legend_out=True, ci=None, **kwargs)
+    sns.catplot(data=data, y='RMSD < 2', x=x, hue=hue, kind='bar', orient='v', legend_out=True, ci=None, **kwargs)
     _ = plt.xticks(rotation=90)
     # show_percents
 
@@ -622,7 +620,7 @@ def get_cc_passing(df, subtypes=('raw',)):
     for subtype in subtypes:
         prefix = f'catalytic_constraints.{subtype}.'
         filter_names = [f'{prefix}criterion_{i}' for i in range(1,7)] + [f'{prefix}all']
-        filter_names_no_prefix = [f'criterion_{i}' for i in range(1,7)] + [f'criterion_all']
+        filter_names_no_prefix = [f'criterion_{i}' for i in range(1,7)] + ['criterion_all']
         df_remapped = df.rename(columns=dict(zip(filter_names, filter_names_no_prefix)))
         df_remapped['pack'] = subtype
         filter_names = filter_names_no_prefix

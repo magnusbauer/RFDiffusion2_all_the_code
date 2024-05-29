@@ -1,7 +1,9 @@
 #!/usr/bin/env python
 
 import numpy as np
-import sys, argparse, glob, os
+import argparse
+import glob
+import os
 
 num2aa=[
     'ALA','ARG','ASN','ASP','CYS',

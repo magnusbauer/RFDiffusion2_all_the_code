@@ -3,9 +3,7 @@ import torch.nn as nn
 from Embeddings import MSA_emb, Extra_emb, Templ_emb, Recycling, Timestep_emb
 from Track_module import IterativeSimulator
 from AuxiliaryPredictor import DistanceNetwork, MaskedTokenNetwork, ExpResolvedNetwork, LDDTNetwork
-from util import INIT_CRDS
 from opt_einsum import contract as einsum
-from icecream import ic 
 
 class RoseTTAFoldModule(nn.Module):
     def __init__(self, 
@@ -90,7 +88,7 @@ class RoseTTAFoldModule(nn.Module):
         msa_full = self.full_emb(msa_full, seq, idx)
 
         # Do recycling
-        if msa_prev == None:
+        if msa_prev is None:
             msa_prev = torch.zeros_like(msa_latent[:,0])
             pair_prev = torch.zeros_like(pair)
             state_prev = torch.zeros_like(state)

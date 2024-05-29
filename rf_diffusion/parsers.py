@@ -1,12 +1,7 @@
 import sys
 import torch
 import numpy as np
-import scipy
-import scipy.spatial
 import string
-import os,re
-import random
-import rf_diffusion.util as util
 import gzip
 import rf2aa.util
 from rf_diffusion.chemical import ChemicalData as ChemData
@@ -207,7 +202,6 @@ def load_ligand_from_pdb(fn, lig_name=None, remove_H=True):
     mol, msa_sm, ins_sm, xyz_sm, mask_sm = \
         rf2aa.data.parsers.parse_mol("".join(stream), filetype="pdb", string=True, remove_H=remove_H,
                                 find_automorphs=False)
-    G = rf2aa.util.get_nxgraph(mol)
     bond_feats_sm = rf2aa.util.get_bond_feats(mol)
 
     atom_names = []

@@ -10,12 +10,10 @@ import itertools
 from rf_diffusion import bond_geometry
 import sys
 from rf_diffusion.aa_model import Indep
-import networkx as nx
 from rf_diffusion.chemical import ChemicalData as ChemData
 from rf_diffusion import loss
 from rf_diffusion.frame_diffusion.data import r3_diffuser
 from abc import abstractmethod, ABC
-from rf2aa import util_module
 from rf_diffusion.frame_diffusion.data import utils as du
 from rf_diffusion import idealize
 from rf_diffusion import atomize
@@ -44,40 +42,6 @@ def calc_displacement(pred, true):
     true_ca = true[:,1,...]   # (L,3)
 
     return pred_ca - true_ca[None,...]
-
-
-
-def displacement(logit_s, label_s,
-                  logit_aa_s, label_aa_s, mask_aa_s, logit_exp,
-                  pred, pred_tors, true, mask_crds, mask_BB, mask_2d, same_chain,
-                  pred_lddt, idx, dataset, chosen_task, diffusion_mask, t, unclamp=False, negative=False,
-                  w_dist=1.0, w_aa=1.0, w_str=1.0, w_all=0.5, w_exp=1.0,
-                  w_lddt=1.0, w_blen=1.0, w_bang=1.0, w_lj=0.0, w_hb=0.0,
-                  lj_lin=0.75, use_H=False, w_disp=0.0, eps=1e-6, **kwargs):
-    d_clamp = None if unclamp else 10.0
-    disp = calc_displacement(pred, true)
-    dist = torch.norm(disp, dim=-1)
-
-    I, L = dist.shape[0:2]
-    if diffusion_mask is None:
-        diffusion_mask = torch.full((L,), False)
-
-    o = {}
-    for region, mask in (
-            ('given', diffusion_mask),
-            ('masked', ~diffusion_mask),
-            ('total', torch.full_like(diffusion_mask, True))):
-        o[f'displacement_{region}'] = torch.mean(dist[:,mask])
-        fraction_clamped = 0.0
-        if d_clamp is not None:
-            # set squared distance clamp to d_clamp**2
-            d_clamp=torch.tensor(d_clamp)[None].to(dist.device)
-            fraction_clamped = torch.mean((dist>d_clamp).float()).item()
-        o[f'displacement_fraction_clamped_{region}'] = fraction_clamped
-        for i in range(I):
-            o[f'displacement_{region}_i{i}'] = torch.mean(dist[i,mask])
-    
-    return o
  
 def contig_description(diffusion_mask):
     is_contig = diffusion_mask
@@ -463,9 +427,6 @@ def guidepost_positioning(indep, true_crds, pred_crds, atomizer_spec, pred_logit
 
     did_change_whole_seq = (input_aa != pred_aa).numpy()
     input_masked = input_aa.numpy().astype(int) == ChemData().MASKINDEX
-
-    pred_masked = pred_aa.numpy().astype(int) == ChemData().MASKINDEX
-
 
     return dict(
         fraction_placed_correctly = (pred_match_idx == true_match_idx).mean(),

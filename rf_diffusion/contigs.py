@@ -1,8 +1,6 @@
 import sys
 import numpy as np 
 import random
-from icecream import ic
-from collections import OrderedDict
 
 from rf_diffusion.chemical import ChemicalData as ChemData
 

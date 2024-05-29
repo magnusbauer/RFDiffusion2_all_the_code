@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from icecream import ic
 
 class SeqDiffNetSimple(nn.Module):
     def __init__(self, K=None, L=None,T=None, d_hidden=64, n_hidden=16):

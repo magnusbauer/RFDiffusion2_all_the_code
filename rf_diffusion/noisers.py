@@ -1,6 +1,5 @@
 import torch
 import copy
-from icecream import ic
 
 from openfold.utils import rigid_utils as ru
 

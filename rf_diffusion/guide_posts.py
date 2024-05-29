@@ -25,8 +25,6 @@ from __future__ import annotations  # allows circular references in type hinting
 
 import torch
 import numpy as np
-from icecream import ic
-from rf_diffusion.chemical import ChemicalData as ChemData
 from typing import Tuple, List
 from rf_diffusion import aa_model
 import copy
@@ -639,7 +637,6 @@ def match_guideposts(indep, is_gp):
     """
     indep = copy.deepcopy(indep)
     xyz_design = indep.xyz[:]
-    seq_design = indep.seq[:]
 
     # Infer which diffused residues ended up on top of the guide post residues
     diffused_xyz = xyz_design[~is_gp * ~indep.is_sm]

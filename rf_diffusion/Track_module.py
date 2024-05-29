@@ -3,7 +3,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 from opt_einsum import contract as einsum
 import torch.utils.checkpoint as checkpoint
-from util import cross_product_matrix
 from util_module import *
 from Attention_module import *
 from SE3_network import SE3TransformerWrapper
@@ -315,7 +314,7 @@ class IterBlock(nn.Module):
                  d_hidden=32, d_hidden_msa=None, p_drop=0.15,
                  SE3_param={'l0_in_features':32, 'l0_out_features':16, 'num_edge_features':32}):
         super(IterBlock, self).__init__()
-        if d_hidden_msa == None:
+        if d_hidden_msa is None:
             d_hidden_msa = d_hidden
 
         self.msa2msa = MSAPairStr2MSA(d_msa=d_msa, d_pair=d_pair,

@@ -1,23 +1,16 @@
 import copy
-import os
-import sys
 import unittest
-import json
 
 import assertpy
 import torch
 from icecream import ic
 
-from aa_model import Model, make_indep
 import inference.utils
 import contigs
 import atomize
 from rf2aa import tensor_util
-import guide_posts as gp
 import aa_model
 import test_utils
-import addict
-from argparse import Namespace
 ic.configureOutput(includeContext=True)
 
 class TestTransform(unittest.TestCase):
@@ -57,7 +50,6 @@ class TestTransform(unittest.TestCase):
             is_res_str_shown[res_str_shown_idx] = True
             n_res_shown = is_res_str_shown.sum()
             indep, is_diffused, is_masked_seq, atomizer, _ = aa_model.transform_indep(indep, ~is_res_str_shown, is_res_str_shown, is_atom_str_shown, True, metadata=metadata)
-            is_diffused_deatomized = atomize.convert_atomized_mask(atomizer, is_diffused)
 
             n_ligand = indep_init.is_sm.sum()
             n_motif = sum(len(v) for v in is_atom_str_shown.values()) + n_res_shown
@@ -70,7 +62,6 @@ class TestTransform(unittest.TestCase):
             n_gp_atomized = n_valine + n_res_shown
             is_gp = torch.zeros(indep.length()).bool()
             is_gp[-n_gp_atomized:] = True
-            self_bonds = indep.bond_feats[is_gp][:, is_gp]
             is_gp_receptor = ~is_gp.clone() * ~indep.is_sm
             other_bonds = indep.bond_feats[is_gp][:, is_gp_receptor]
             assert torch.all(other_bonds == 7), other_bonds

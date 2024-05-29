@@ -4,7 +4,11 @@
 # scripts, optionally submits array job and outputs slurm job ID
 #
 
-import sys, os, argparse, itertools, json, shutil, re
+import sys
+import os
+import json
+import shutil
+import re
 import numpy as np
 import pandas as pd
 import hydra
@@ -23,9 +27,11 @@ def split_string_with_parentheses(string, delimiter=None):
     ignoring delimiters in between pairs of parentheses.
     '''
     if delimiter is None:
-        is_delimiter = lambda x: x.isspace()
+        def is_delimiter(x):
+            return x.isspace()
     else:
-        is_delimiter = lambda x: x==delimiter
+        def is_delimiter(x):
+            return x == delimiter
     result = []
     current_word = ''
     paren_count = 0
@@ -162,7 +168,6 @@ def main(conf: HydraConfig) -> list[int]:
         conf.num_per_condition = 1
         conf.num_per_job = 1
 
-    args_vals = [] # argument names and lists of values for passing to design script
 
     # default design script
     if conf.command is None:
@@ -309,7 +314,6 @@ def prune_jobs_list(jobs_path):
         fh.writelines(pruned)
     return pruned_path
 
-import re
 def expected_outputs(job):
     output_prefix = re.match('.*inference\.output_prefix=(\S+).*', job).groups()[0]
     design_startnum = re.match('.*inference\.design_startnum=(\S+).*', job).groups()[0]

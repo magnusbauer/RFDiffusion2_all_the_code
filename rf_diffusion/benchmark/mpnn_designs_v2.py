@@ -5,7 +5,9 @@
 # and optionally submits slurm array job and outputs job ID
 # 
 from collections import defaultdict
-import sys, os, argparse, itertools, json, glob
+import sys
+import os
+import glob
 import numpy as np
 import tqdm
 import copy
@@ -160,7 +162,7 @@ def run_mpnn(conf, filenames):
             f'--packed_suffix "" '\
             f'--omit_AA XC ',
             f'--repack_everything {1 if conf.pack_motif else 0}',
-            f'--force_hetatm 1',
+            '--force_hetatm 1',
             file=job_list_file)
     if conf.slurm.submit: job_list_file.close()
 

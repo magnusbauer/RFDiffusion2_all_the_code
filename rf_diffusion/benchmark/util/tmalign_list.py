@@ -1,4 +1,11 @@
-import sys, os, argparse, subprocess, re, shutil, datetime, string, random
+import os
+import argparse
+import subprocess
+import re
+import shutil
+import datetime
+import string
+import random
 import numpy as np
 
 p = argparse.ArgumentParser()

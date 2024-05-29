@@ -1,0 +1,75 @@
+name: run pytest on digs
+on:
+  pull_request:
+    branches: [ "aa" ]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: [self-hosted, Linux, X64, digs]
+    steps:
+    - name: setup
+      run: |
+        echo "SETUP $(pwd)"
+        if [[ -d rf_diffusion ]]; then
+          echo 'CLEANING EXISTING REPO'
+          cd rf_diffusion
+          git reset --hard
+          git clean -d -x -f
+        fi
+        # if [[ -z $ACT ]]; then
+        #   echo removing submodule dirs and reset
+        #   rm -rf ../rf_diffusion/*
+        # fi
+
+    - name: checkout
+      uses: actions/checkout@v3
+
+    - name: checkout submodules
+      run: |
+        bash ci/checkout_submodules.sh "${{ env.ACT }}" ${{ secrets.GITLAB_SHEFFLER }} ${{ secrets.BAKER_RF_DIFFUSION_SHEFFLER }}
+
+    - name: install deps
+      run: |
+        bash ci/install_dependencies.sh
+
+    - name: run ruff
+      run: |
+        bash ci/run_ruff.sh
+        cat ruff.log
+
+    - name: build docs
+      run: |
+        cd doc
+        pip install --user sphinx sphinx-rtd-theme sphinx-mdinclude
+        export PYTHONPATH=..:../rf_diffusion:../rf2aa:../lib/rf2aa/rf2aa/SE3Transformer
+        sphinx-apidoc -o source/api ../rf_diffusion/ ../rf2aa/ &&  make html
+
+    - name: run pytest digs
+      run: |
+        cd rf_diffusion
+        srun --cpus-per-task=12 --mem=64G ../ci/run_pytest.sh parallel 2>&1 | tee pytest_parallel.log
+        srun --cpus-per-task=1 --mem=32G ../ci/run_pytest.sh notparallel 2>&1 | tee pytest_single.log
+
+    - name: check test results
+      run: |
+        python ci/check_test_results.py
+
+    - name: archive pytest_parallel.log
+      uses: actions/upload-artifact@v4
+      with:
+        name: pytest_parallel.log
+        path: rf_diffusion/pytest_parallel.log
+        if-no-files-found: error
+    - name: archive pytest_single.log
+      uses: actions/upload-artifact@v4
+      with:
+        name: pytest_single.log
+        path: rf_diffusion/pytest_single.log
+        if-no-files-found: error
+    - name: archive ruff.log
+      uses: actions/upload-artifact@v4
+      with:
+        name: ruff.log
+        path: ruff.log
+        if-no-files-found: error

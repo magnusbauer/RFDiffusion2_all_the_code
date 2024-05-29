@@ -3,38 +3,29 @@ import torch
 import itertools
 import traceback
 import pprint
-import assertpy
-import addict
 import torch.nn.functional as F
 import copy
 import time
 from dataclasses import dataclass
 from torch.utils import data
-from torch import tensor
-from omegaconf import OmegaConf
 from collections import OrderedDict
 import os
 import csv
-import ast
 from dateutil import parser
 import numpy as np
 from rf_diffusion.parsers import parse_a3m, parse_pdb
 from rf_diffusion.kinematics import xyz_to_t2d
-import sys
 import rf2aa.data.compose_dataset
 import rf2aa.util
 import rf2aa.tensor_util
-from rf2aa.tensor_util import assert_equal
 import rf2aa.kinematics
 from rf_diffusion.chemical import ChemicalData as ChemData
-import rf_diffusion.guide_posts as gp
 
 # for diffusion training
 import rf_diffusion.mask_generator as mask_generator
 from icecream import ic
 import pickle
 import random
-import util
 import math
 from functools import partial
 import pandas as pd
@@ -42,9 +33,7 @@ import torch.distributed as dist
 
 from rf_diffusion import run_inference
 from rf_diffusion import aa_model
-from rf_diffusion import atomize
 from rf_diffusion import error
-from rf_diffusion import show
 from rf_diffusion import features
 from rf_diffusion import distributions
 from rf_diffusion import conditioning
@@ -151,7 +140,7 @@ def MSABlockDeletion(msa, ins, nb=5):
     to_delete = block_start[:,None] + np.arange(block_size)[None,:]
     to_delete = np.unique(np.clip(to_delete, 1, N-1))
     #
-    mask = np.ones(N, np.bool)
+    mask = np.ones(N, bool)
     mask[to_delete] = 0
 
     return msa[mask], ins[mask]
@@ -425,7 +414,6 @@ def TemplFeaturizeFixbb(seq, conf_1d=None):
 
         conf_1d (torch.tensor, optional): Precalcualted confidence tensor
     """
-    L = seq.shape[-1]
     seq=seq[:1]
     t1d  = torch.nn.functional.one_hot(seq, num_classes=21) # one hot sequence
 
@@ -445,13 +433,11 @@ def get_train_valid_set(params, OFFSET=1000000):
         # read validation IDs for PDB set
         val_pdb_ids = set([int(l) for l in open(params['VAL_PDB']).readlines()])
         val_compl_ids = set([int(l) for l in open(params['VAL_COMPL']).readlines()])
-        val_neg_ids = set([int(l)+OFFSET for l in open(params['VAL_NEG']).readlines()])
 
 
         # read validation IDs for PDB set
         val_pdb_ids = set([int(l) for l in open(params['VAL_PDB']).readlines()])
         val_compl_ids = set([int(l) for l in open(params['VAL_COMPL']).readlines()])
-        val_neg_ids = set([int(l)+OFFSET for l in open(params['VAL_NEG']).readlines()])
     
         # read homo-oligomer list
         homo = {}
@@ -741,7 +727,6 @@ def get_spatial_crop(xyz, mask, sel, len_s, params, label, cutoff=10.0, eps=1e-6
 
 def get_spatial_crop_fixbb(xyz, mask, sel, len_s, params, cutoff=10.0, eps=1e-6):
 
-    device = xyz.device
     chainA_idx_max = sel[len_s[0]-1]
 
     #choose which chain to keep whole
@@ -1063,14 +1048,12 @@ def loader_pdb_fixbb(item, params, homo = None, unclamp=False, pick_top=False,p_
 
     # get msa features
     msa = a3m['msa'].long()[:1]
-    l_orig = a3m['msa'].shape[-1]
     
     out = featurize_single_chain_fixbb(msa, pdb, params, unclamp=unclamp, pick_top=pick_top, fb=False)
     if not aa:
         return out
     (seq, msa, msa_masked, msa_full, mask_msa, true_crds, atom_mask, idx_pdb, xyz_t, t1d,         xyz_prev,            same_chain, unclamp, negative, complete_chain, atom_mask) = out
 
-    n_templates = 1
     C, L = seq.shape
 
     n_pad = ChemData().NTOTAL - 27
@@ -1153,7 +1136,6 @@ def loader_fb_fixbb(item, params, unclamp=False, pick_top=False):
 
     # get msa features
     msa = a3m['msa'].long()[:1] #only load first sequence
-    l_orig = msa.shape[1]
     
     return featurize_single_chain_fixbb(msa, pdb, params, unclamp=unclamp, pick_top=pick_top, fb=True)
 
@@ -1545,7 +1527,6 @@ class DistilledDatasetUnnoised(data.Dataset):
         self.last_idx = None
         def fallback_out():
             spoof = fallback_spoof
-            mask_gen_seed = spoof['mask_gen_seed']
             sel_item = spoof['sel_item']
             chosen_dataset = spoof['chosen_dataset']
             dataset_config = self.dataset_configs[chosen_dataset]
@@ -1663,7 +1644,7 @@ class DistilledDatasetUnnoised(data.Dataset):
                 raise Exception(f'chosen_dataset {chosen_dataset} not implemented')
             
             assert fixbb
-            assert chosen_dataset != 'complex', f'complex requires passing same_chain to mask_generators, and this is not implemented'
+            assert chosen_dataset != 'complex', 'complex requires passing same_chain to mask_generators, and this is not implemented'
 
             def process_out(out):
                 # Convert template-based modeling inputs to a description of a single structure (the query structure).
@@ -1726,7 +1707,7 @@ class DistilledDatasetUnnoised(data.Dataset):
 
 def get_class_name(f):
     clas = getattr(f, '__class__', None)
-    if clas == None:
+    if clas is None:
         return None
     return getattr(clas, '__qualname__')
 

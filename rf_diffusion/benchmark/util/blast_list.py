@@ -1,4 +1,5 @@
-import sys, os, argparse, subprocess, re
+import argparse
+import subprocess
 
 p = argparse.ArgumentParser()
 p.add_argument('list', help='List of pairs of fastas')

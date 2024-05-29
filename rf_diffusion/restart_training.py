@@ -4,7 +4,7 @@ from icecream import ic
 import torch
 import hydra
 import omegaconf
-from omegaconf import DictConfig, OmegaConf, open_dict
+from omegaconf import DictConfig, OmegaConf
 
 import rf_diffusion.train_multi_deep
 

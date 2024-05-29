@@ -10,11 +10,10 @@
 #
 # Updated 2022-1-6
 
-import pandas as pd
 import numpy as np
 from pymol import cmd
 from glob import glob
-from os.path import dirname, basename, join
+from os.path import basename, join
 import argparse
 
 p = argparse.ArgumentParser()
@@ -157,10 +156,10 @@ for pdbfile in args.pdbs:
             cmd.group(name+'_group',name)
             cmd.group(name+'_group',name+'_hbonds',quiet=0)
 
-cmd.select(f'contigs_ref', ' or '.join([f'{ref_prefix}{ch}/{i}' for ch,i in pdb_idx_ref]))
+cmd.select('contigs_ref', ' or '.join([f'{ref_prefix}{ch}/{i}' for ch,i in pdb_idx_ref]))
 if not args.nocolor:
     cmd.color(args.colors[0],ref_prefix)
-    cmd.color(args.colors[1],f'contigs_ref')
+    cmd.color(args.colors[1],'contigs_ref')
 if args.show_hbonds:
     refname = ref_prefix.replace('/','')
     cmd.dist(refname+'_hbonds',f"{refname} and not (solvent)",f"{refname} and not (solvent)",quiet=1,mode=2,label=0,reset=1)

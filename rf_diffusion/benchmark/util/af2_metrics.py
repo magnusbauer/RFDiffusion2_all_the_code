@@ -15,7 +15,11 @@
 #
 # Updated 2022-8-4
 
-import os, sys, argparse, glob, time
+import os
+import sys
+import argparse
+import glob
+import time
 
 import re
 import numpy as np
@@ -28,12 +32,10 @@ np.int = np.int32
 np.object = object
 from alphafold.common import protein
 from alphafold.data import pipeline
-from alphafold.data import templates
 from alphafold.model import data
 from alphafold.model import config
 from alphafold.model import model
 
-from jax.lib import xla_bridge
 from alphafold.model.tf import shape_placeholders                                                        
 import tensorflow.compat.v1 as tf
 from rf_diffusion.chemical import ChemicalData as ChemData
@@ -486,8 +488,6 @@ def main():
         if os.path.exists(trbname):
             idx_motif = [i for i,idx in zip(trb['con_hal_idx0'],trb['con_ref_pdb_idx']) 
                          if idx[0]!='R']
-
-            L_motif = len(idx_motif)
 
             idx_motif_ref = [i for i,idx in zip(trb['con_ref_idx0'],trb['con_ref_pdb_idx']) 
                              if idx[0]!='R']

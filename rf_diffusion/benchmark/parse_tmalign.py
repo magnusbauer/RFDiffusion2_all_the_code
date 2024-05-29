@@ -3,7 +3,9 @@
 # Parses TM-align results and saves TM score matrices and TM-score clusters
 # 
 
-import sys, os, argparse, glob
+import os
+import argparse
+import glob
 import numpy as np
 import pandas as pd
 

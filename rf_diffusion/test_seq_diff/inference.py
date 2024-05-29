@@ -1,6 +1,5 @@
 import torch
-from tqdm.notebook import trange, tqdm
-import numpy as np
+from tqdm.notebook import trange
 
 def run_inference(model, seq_diffuser, L, device='cpu'): 
     x_t = seq_diffuser.get_pi(L)

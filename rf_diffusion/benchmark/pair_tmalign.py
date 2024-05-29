@@ -5,7 +5,12 @@
 # comparisons
 # 
 
-import sys, os, argparse, itertools, json, glob, re
+import sys
+import os
+import argparse
+import json
+import glob
+import re
 import numpy as np
 
 script_dir = os.path.dirname(os.path.realpath(__file__))+'/'
@@ -47,7 +52,7 @@ def main():
             for bm in benchmarks for cond in conditions]
     elif args.subdivide == 'prefix':
         prefixes = set(['_'.join(os.path.basename(fn).split('_')[:-1]) 
-            for fn in sorted(glob.glob(args.datadir+f'/*.pdb'))])
+            for fn in sorted(glob.glob(args.datadir+'/*.pdb'))])
         filenames_list = [(f'{pre}', sorted(glob.glob(args.datadir+f'/{pre}_*.pdb')))
             for pre in prefixes]
 

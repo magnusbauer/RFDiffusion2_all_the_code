@@ -1,5 +1,4 @@
 import torch
-from icecream import ic
 import rf_diffusion.potentials.potentials as potentials
 import numpy as np 
 
@@ -18,9 +17,7 @@ def make_contact_matrix(nchain, intra_all=False, inter_all=False, contact_string
     letter2num = {a:i for i,a in enumerate(alphabet)}
     
     contacts   = np.zeros((nchain,nchain))
-    written    = np.zeros((nchain,nchain))
-    
-    
+        
     # intra_all - everything on the diagonal has contact potential
     if intra_all:
         contacts[np.arange(nchain),np.arange(nchain)] = 1
@@ -37,7 +34,7 @@ def make_contact_matrix(nchain, intra_all=False, inter_all=False, contact_string
 
 
     # custom contacts/repulsions from user 
-    if contact_string != None:
+    if contact_string is not None:
         contact_list = contact_string.split(',') 
         for c in contact_list:
             assert len(c) == 3
@@ -104,7 +101,7 @@ class PotentialManager:
 
         # PPI potentials require knowledge about the binderlen which may be detected at runtime
         # This is a mechanism to still allow this info to be used in potentials - NRB 
-        if not ppi_config.binderlen is None:
+        if ppi_config.binderlen is not None:
             binderlen_update   = { 'binderlen': ppi_config.binderlen }
             hotspot_res_update = { 'hotspot_res': ppi_config.hotspot_res }
 

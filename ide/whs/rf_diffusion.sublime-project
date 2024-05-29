@@ -1,0 +1,73 @@
+{
+	"folders":
+	[
+		{
+			"path": "../..",
+			"folder_exclude_patterns": ["lib/rf2aa"]
+		}
+
+	],
+
+
+	"build_systems":
+	[		
+		{
+			"name": "act push",
+			"shell_cmd" : "cd $folder; act push -P self-hosted=-self-hosted &> $folder/sublime_build.log"
+		},
+		{
+			"name": "pytest rf_diffusion",
+			"shell_cmd" : "cd $folder/rf_diffusion; CUDA_VISIBLE_DEVICES=\"\" PYTHONPATH=.. pytest  --disable-warnings -m \"not nondeterministic\" -s -x test_training_regression.py -k test_loss_grad &> $folder/sublime_build.log"
+		},
+		{
+			"name": "test_sym_gp_atomized_lig",
+			"shell_cmd" : "cd $folder/rf_diffusion; PYTHONPATH=.. python test_inference.py  &> $folder/sublime_build.log"
+		},
+		{
+			"name": "pytest rf2aa",
+			"shell_cmd" : "cd $folder/rf2aa; PYTHONPATH=.. pytest -x -s --benchmark-skip tests/test_model.py   &> $folder/sublime_build.log"
+		},
+		{
+			"name": "test_dynparams",
+			"shell_cmd" : "cd $folder/rf2aa;   PYTHONPATH=.. python tests/tools/test_dynamic_parameters.py   &> $folder/sublime_build.log"
+		},
+		{
+			"name": "runtests.py",
+			"shell_cmd": "cd $folder/rf_diffusion; PYTHONPATH=../.. python ../ide/runtests.py $file &> ../sublime_build.log"
+		},
+		{
+			"name": "test_nosym",
+			"shell_cmd" : "cd $folder/rf_diffusion; PYTHONPATH=.. python run_inference.py  contigmap.contigs=[\\'100\\'] diffuser.T=20 inference.num_designs=1 inference.cautious=False inference.output_prefix=./test_nosym/test &> $folder/sublime_build.log"
+		},
+		{
+			"name": "test_c2_small",
+			"shell_cmd" : "cd $folder/rf_diffusion; rm -f *.pdb; PYTHONPATH=.. python run_inference.py --config-name=sym sym.symid=C2 sym.start_radius=0.0 sym.force_radius=30 denoiser.center=true contigmap.contigs=[\\'30\\'] diffuser.T=20 inference.num_designs=1 inference.cautious=False inference.output_prefix=./test_c2_small/test &> $folder/sublime_build.log"
+		},
+		{
+			"name": "test_c2",
+			"shell_cmd" : "cd $folder/rf_diffusion; rm -f *.pdb; PYTHONPATH=.. python run_inference.py sym.symid=C2 sym.start_radius=0.0 denoiser.center=true contigmap.contigs=[\\'60\\'] diffuser.T=20 inference.num_designs=20 inference.cautious=False inference.output_prefix=./test_c2/test &> $folder/sublime_build.log"
+		},
+		{
+			"name": "test_c3",
+			"shell_cmd" : "cd $folder/rf_diffusion; rm -f *.pdb; PYTHONPATH=.. python run_inference.py --config-name sym sym.symid=C3 sym.start_radius=0.0 denoiser.center=true contigmap.contigs=[\\'60\\'] diffuser.T=20 inference.num_designs=1 inference.cautious=False inference.output_prefix=./test_c3/test &> $folder/sublime_build.log"
+		},
+		{
+			"name": "test_c6",
+			"shell_cmd" : "cd $folder/rf_diffusion; rm -f *.pdb; PYTHONPATH=.. python run_inference.py sym.symid=C6 sym.start_radius=5.0 denoiser.center=true contigmap.contigs=[\\'60\\'] diffuser.T=20 inference.num_designs=20 inference.cautious=False inference.output_prefix=./test_c6_center/test &> $folder/sublime_build.log"
+		},
+		{
+			"name": "test_d3",
+			"shell_cmd" : "cd $folder/rf_diffusion; rm -f *.pdb; PYTHONPATH=.. python run_inference.py --config-name=sym sym.symid=D3 sym.start_radius=0.0 denoiser.center=true contigmap.contigs=[\\'60\\'] diffuser.T=20 inference.num_designs=1 inference.cautious=False inference.output_prefix=./test_d3/test &> $folder/sublime_build.log"
+		},
+		{
+			"name": "test_icos",
+			"shell_cmd" : "cd $folder/rf_diffusion; rm -f *.pdb; PYTHONPATH=.. python run_inference.py sym.symid=I --confid-name=sym denoiser.center=true contigmap.contigs=[\\'100\\'] diffuser.T=200 inference.num_designs=10 sym.start_radius=27.0 inference.cautious=False inference.output_prefix=./test_icos_T200_100res_r27_v2/test &> $folder/sublime_build.log"
+		},
+		{
+			"name": "test_icos_fit",
+			"shell_cmd" : "cd $folder/rf_diffusion; rm -f *.pdb; PYTHONPATH=.. python run_inference.py --config-name sym sym.symid=I denoiser.center=true contigmap.contigs=[\\'30\\'] diffuser.T=20 inference.num_designs=1 sym.force_radius=\\'diffuse:[[0,0.5]]:[100.0,False]\\' sym.fit=\\'rfold:[5,10,15,20,25,30,37]\\' sym.max_nsub=4 inference.cautious=False inference.output_prefix=./test_icos_T20_50res_fit/test &> $folder/sublime_build.log"
+		}
+
+
+	]
+}

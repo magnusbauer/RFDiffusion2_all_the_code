@@ -2,26 +2,21 @@ from icecream import ic
 import assertpy
 import numpy as np
 import torch
-from scipy.stats import truncnorm
 import torch.nn as nn
-from typing import Optional, Callable, List, Sequence
+from typing import List
 from openfold.utils.rigid_utils import Rigid
 from rf_diffusion.frame_diffusion.data import all_atom
-from rf2aa.model.RoseTTAFoldModel import LegacyRoseTTAFoldModule
 import rf2aa.util
 from dataclasses import dataclass
 import dataclasses
 
 from rf2aa.chemical import ChemicalData as ChemData
-from rf2aa.util_module import XYZConverter
 import rf_diffusion.aa_model
 import addict
-import numpy as np
 from scipy.interpolate import Akima1DInterpolator
 import os
 from datetime import datetime
-from rf2aa import tensor_util
-from openfold.utils.rigid_utils import Rotation,Rigid
+from openfold.utils.rigid_utils import Rotation
 from rf_diffusion.frame_diffusion.data import utils as du
 import logging
 logger = logging.getLogger(__name__)
@@ -38,7 +33,6 @@ def make_traj_from_rfo(rfi, rfo, traj_pdb):
     all_pred = rfo.xyz
     seq = rfi.seq[0]
     all_pred = torch.cat([xyz_prev_orig[0:1,None,:,:3]]+[all_pred], dim=0)
-    is_prot = ~rf2aa.util.is_atom(seq)
     T = all_pred.shape[0]
     t = np.arange(T)
     n_frames = 1*(T-1)+1
@@ -75,14 +69,11 @@ rf_conf.inference.contig_as_guidepost = True
 
 aa_model_converter = rf_diffusion.aa_model.Model(rf_conf)
 
-import torch
-from dataclasses import dataclass, fields
-from typing import List
+from dataclasses import fields
 
 def stack_dataclass_fields(dataclass_list: List[dataclass]) -> dataclass:
     # Get the field names and types of the dataclass
     field_names = [field.name for field in fields(dataclass_list[0])]
-    field_types = [field.type for field in fields(dataclass_list[0])]
 
     # Initialize lists to store stacked fields
     stacked_fields = [[] for _ in field_names]
@@ -108,7 +99,6 @@ def stack_dataclass_fields(dataclass_list: List[dataclass]) -> dataclass:
 
 def rfi_from_input_feats_batched(input_feats):
     init_frames = input_feats['rigids_t'].type(torch.float32)    
-    device = init_frames.device
     B, L, _ = init_frames.shape
 
     rfis = []
@@ -132,7 +122,6 @@ def rfi_from_input_feats_batched(input_feats):
 def rfi_from_input_feats(input_feats):
     
     init_frames = input_feats['rigids_t'].type(torch.float32)    
-    device = init_frames.device
     B, L, _ = init_frames.shape
     assertpy.assert_that(B).is_equal_to(1)
 
@@ -161,11 +150,9 @@ def rfi_from_input_feats(input_feats):
 
     # Unused small molecule stuff
     chirals = torch.Tensor()
-    atom_frames = torch.zeros((0,3,2))
     bond_feats = torch.zeros((sum(Ls), sum(Ls))).long()
     bond_feats[:Ls[0], :Ls[0]] = rf2aa.util.get_protein_bond_feats(Ls[0])
     terminus_type = torch.zeros(sum(Ls))
-    is_sm = torch.zeros(sum(Ls)).bool()
     
     indep = rf_diffusion.aa_model.Indep(
         seq,

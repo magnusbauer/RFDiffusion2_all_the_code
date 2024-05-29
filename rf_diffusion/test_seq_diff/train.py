@@ -1,8 +1,6 @@
 import torch
-from tqdm.notebook import trange, tqdm
-from icecream import ic
+from tqdm.notebook import trange
 import matplotlib.pyplot as plt
-from tqdm.notebook import trange, tqdm
 import numpy as np
 
 def calc_loss(true, pred, curr, t, seq_diffuser):
@@ -170,7 +168,7 @@ def plot_run(losses, losses_aux, losses_vb, similarity, pseq0s, dataset, show_lo
             plt.figure()
             # lines = plt.plot(pseq0s[:50,0,i,:].numpy())
             for j in range(K):
-                lines = plt.plot(pseq0s[:,0,i,j].numpy(),
+                plt.plot(pseq0s[:,0,i,j].numpy(),
                                 alpha=1 if dataset[0][i] == j else 0.1)
             plt.title(f'residue: {i} logits')
             # plt.legend(torch.arange(20).numpy(), )

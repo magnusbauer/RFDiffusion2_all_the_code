@@ -3,7 +3,7 @@ import subprocess
 import unittest
 
 from icecream import ic
-from deepdiff import DeepDiff
+# from deepdiff import DeepDiff
 
 import error
 import benchmark.sweep_hyperparam
@@ -119,18 +119,6 @@ class TestBenchmark(unittest.TestCase):
                 ic(got, want)
                 self.assertEqual(got, want)
 
-    def test_subprocess_retcode_tee(self):
-        '''This test just serves as documentation for the fact that when using tee, process returncodes are lost.
-        
-        This is why in the pipeline we do not use tee for outputting logs when running in_proc.
-        '''
-        job = '''python raise_exception.py | tee /tmp/trash.log'''
-        print(f'running job: {job}')
-        proc = subprocess.run(job, shell=True)
-        print(f'{proc=}') 
-        print(f'{proc.returncode=}')
-        assertpy.assert_that(proc.returncode).is_equal_to(0)
-    
     def test_subprocess_retcode(self):
         job = '''python raise_exception.py'''
         print(f'running job: {job}')

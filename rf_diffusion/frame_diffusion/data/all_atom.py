@@ -2,9 +2,7 @@
 import torch
 from rf_diffusion.frame_diffusion.data import residue_constants
 from openfold.utils import rigid_utils as ru
-from openfold.data import data_transforms
 from openfold.utils import feats
-from icecream import ic
 
 
 Rigid = ru.Rigid

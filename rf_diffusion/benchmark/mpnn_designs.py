@@ -5,10 +5,11 @@
 # and optionally submits slurm array job and outputs job ID
 # 
 from collections import defaultdict
-import sys, os, argparse, itertools, json, glob
+import sys
+import os
+import glob
 import numpy as np
 import copy
-from icecream import ic
 import hydra
 from hydra.core.hydra_config import HydraConfig
 

@@ -1,25 +1,20 @@
 import pandas as pd
 import numpy as np
 import functools
-import logging
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import OmegaConf
 import pickle
 from dataclasses import dataclass
 from hydra.core.hydra_config import HydraConfig
 import glob
 import os
-import sys
 from itertools import *
 from collections import defaultdict
 import torch
 import re
 from rf_diffusion.inference import utils as iu
 import hydra
-from hydra import compose, initialize
-from rf_diffusion.inference import model_runners
 from rf_diffusion import util
 from icecream import ic
-import matplotlib.pyplot as plt
 import tqdm
 
 
@@ -59,10 +54,6 @@ def c_alpha_rmsd_traj_loop(traj):
     o = torch.stack(o)
     return o
 
-def c_alpha_rmsd_traj(traj):
-    assert traj.ndim == 4
-    return torch.sqrt(torch.mean(torch.sum(torch.square(traj[1:,:,1] - traj[:-1,:,1]), dim=-1), dim=-1))
-
 def c_alpha_rmsd_trajs(a,b):
     assert a.ndim == 4
     assert b.ndim == 4
@@ -89,7 +80,6 @@ def get_examples():
 
 
 
-from datetime import datetime
 
 def reverse(sampler, xyz_true, seq_true, mask, final_steps=None, use_true=False, inject_true_x0=False):
     #true_seq = torch.tensor(parsed['seq'])
@@ -194,10 +184,8 @@ def run_partial_trajectory_sweep(sampler, xyz, seq, mask, T=None):
 
 def get_sampler(conf):
     parsed = iu.parse_pdb(conf.inference.input_pdb)
-    input_xyz = parsed['xyz']
     seq_true = parsed['seq']
     seq_true = torch.tensor(seq_true)
-    L = input_xyz.shape[0]
 
     #conf.contigmap.contigs=[f'{L}']
 

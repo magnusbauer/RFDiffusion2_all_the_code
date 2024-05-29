@@ -3,12 +3,14 @@
 # Compiles metrics from scoring runs into a single dataframe CSV
 #
 
-import os, argparse, glob, re
+import os
+import argparse
+import glob
+import re
 import numpy as np
 import pandas as pd
 from icecream import ic
 from tqdm import tqdm
-import assertpy
 
 def flatten_dictionary(dictionary, parent_key='', separator='.'):
     flattened_dict = {}

@@ -1,13 +1,10 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from opt_einsum import contract as einsum
 import torch.utils.checkpoint as checkpoint
-from util import get_tips
-from util_module import Dropout, create_custom_forward, rbf, init_lecun_normal
+from util_module import create_custom_forward, rbf, init_lecun_normal
 from Attention_module import Attention, FeedForwardLayer, AttentionWithBias
 from Track_module import PairStr2Pair
-from icecream import ic
 import math
 
 # Module contains classes and functions to generate initial embeddings

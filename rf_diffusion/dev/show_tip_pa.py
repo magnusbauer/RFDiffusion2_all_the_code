@@ -1,11 +1,8 @@
 import os
 from rf_diffusion.dev import show_tip_row
-from rf_diffusion.dev.show_tip_row import AND, OR
+from rf_diffusion.dev.show_tip_row import OR
 from rf_diffusion.dev import analyze
-from rf_diffusion import aa_model
-import numpy as np
 import math
-from icecream import ic
 cmd = analyze.cmd
 
 import logging
@@ -115,7 +112,6 @@ def show(row, structs = {'X0'}, af2=False, des=True, des_color=None, hetatm_colo
     extras = eval(extras)
     # print(extras)
 
-    traj_type = 'X0'
     # traj = analyze.load_traj(row, traj_type, traj_type)
     # print(traj)
     # traj_types = ['X0', 'Xt']
@@ -236,7 +232,6 @@ def show(row, structs = {'X0'}, af2=False, des=True, des_color=None, hetatm_colo
         if gp_selector in sels:
             cmd.unbond(sels[gp_selector], show_tip_row.NOT(sels[gp_selector]))
     
-        palette = show_tip_row.color_selectors(sels, verbose=False, des_color=des_color, hetatm_color=hetatm_color)
     if unbond_motif:
         cmd.unbond('chain A', 'chain B')
 

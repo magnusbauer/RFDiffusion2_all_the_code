@@ -5,9 +5,7 @@ import numpy as np
 from Bio import PDB
 import networkx as nx
 import assertpy
-import copy
 import torch
-from icecream import ic
 from collections import defaultdict
 import Bio.PDB.SASA
 # Monkey patch for bug in Biopython

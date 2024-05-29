@@ -4,7 +4,12 @@
 # scripts, optionally submits array job and outputs slurm job ID
 #
 
-import sys, os, argparse, itertools, json, shutil
+import sys
+import os
+import argparse
+import itertools
+import json
+import shutil
 import numpy as np
 
 script_dir = os.path.dirname(os.path.realpath(__file__))+'/'

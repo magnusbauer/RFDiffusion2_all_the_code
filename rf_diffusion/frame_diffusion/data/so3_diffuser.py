@@ -133,7 +133,8 @@ class SO3Diffuser:
         self.discrete_omega = np.linspace(0, np.pi, so3_conf.num_omega+1)[1:]
 
         # Precompute IGSO3 values.
-        replace_period = lambda x: str(x).replace('.', '_')
+        def replace_period(x):
+            return str(x).replace(".", "_")
         cache_dir = os.path.join(
             os.path.dirname(os.path.abspath(__file__)),
             so3_conf.cache_dir,

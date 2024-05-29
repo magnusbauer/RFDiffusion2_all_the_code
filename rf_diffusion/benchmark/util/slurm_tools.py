@@ -1,5 +1,7 @@
 from icecream import ic
-import subprocess, re, os, time
+import subprocess
+import re
+import os
 
 def slurm_submit(cmd, p='cpu', c=1, mem=2, gres=None, J=None, wait_for=[], hold_until_finished=False, log=False, **kwargs):
     '''

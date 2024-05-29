@@ -5,9 +5,10 @@
 # outputs job ID
 # 
 
-import sys, os, argparse, itertools, json, glob
+import sys
+import os
+import glob
 import numpy as np
-from icecream import ic
 import hydra
 from hydra.core.hydra_config import HydraConfig
 

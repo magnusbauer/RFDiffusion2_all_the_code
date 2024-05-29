@@ -3,12 +3,10 @@
 import sys
 import os
 sys.path.append('/home/ahern/tools/pdb-tools/')
-import shutil
 import glob
 from icecream import ic
 from tqdm import tqdm
 import fire
-import numpy as np
 from pdbtools import *
 import io
 
@@ -41,7 +39,7 @@ def main(input_dir, output_dir=None, prefix='', cautious=True):
                 ic(ligand, len(het))
                 het = io.StringIO(''.join(het))
                 hets.append(het)
-        with open(pdb) as fh, open(pdb) as fh2:
+        with open(pdb) as fh, open(pdb):
             prot = pdb_delhetatm.run(fh)
             o = pdb_merge.run([prot] + hets)
             # o = pdb_sort.run(o, [])

@@ -1,7 +1,6 @@
 import random
 import logging
 import sys
-import copy
 
 import torch
 import scipy.stats
@@ -107,7 +106,6 @@ def get_contacts(xyz, xyz_less_than=5, seq_dist_greater_than=10):
 
     is_close_xyz = dist < xyz_less_than
 
-    idx = torch.ones_like(dist).nonzero()
     seq_dist = torch.abs(torch.arange(L)[None] - torch.arange(L)[:,None])
     is_far_seq = torch.abs(seq_dist) > seq_dist_greater_than
 
@@ -192,7 +190,6 @@ def _get_sm_contacts(
     picked = crds[is_motif]
     dist_conf = (picked[:, None] - sm_crds[ None]).pow(2).sum(dim=-1).sqrt()
     dist_conf = dist_conf.nan_to_num(9999)
-    picked_distances = dist_conf.min(-1)[0].min(-1)[0]
     #ic(is_motif, n_sample, picked_distances, dist_cutoff, indices)
 
     return is_motif, {}
@@ -235,9 +232,7 @@ def _get_closest_tip_atoms(indep, atom_mask,
     _, closest_idx = torch.topk(dist, n_sample + n_beyond_closest, largest=False)
     is_sampled[closest_idx] = True
     is_sampled[dist < dist_cutoff] = True
-    n_contacts_before = is_sampled.sum()
     is_sampled[~is_valid_for_atomization] = False
-    n_contacts_after = is_sampled.sum()
     #ic(f'After removing residue contacts with unresolved heavy atoms: {n_contacts_before} --> {n_contacts_after}')
 
     is_sampled_het = torch.zeros(L).bool()
@@ -904,8 +899,6 @@ def generate_masks(indep, task, loader_params, chosen_dataset, full_chain=None, 
     input_seq_mask = torch.ones(L).bool()
     input_str_mask = torch.ones(L).bool()
     input_floating_mask = -1
-    input_t1d_str_conf_mask = torch.ones(L).bool() * 0.9
-    input_t1d_seq_conf_mask = torch.ones(L).bool() * 0.9
     loss_seq_mask = torch.ones(L).bool()
     loss_str_mask = torch.ones(L).bool()
     loss_str_mask_2d = torch.ones(L,L).bool()
@@ -919,8 +912,6 @@ def generate_masks(indep, task, loader_params, chosen_dataset, full_chain=None, 
         #input_seq_mask = torch.clone(seq2str_mask) #this is not 1D
         input_str_mask = torch.ones(L).bool()
         input_floating_mask = torch.ones(L).bool()
-        input_t1d_str_conf_mask = torch.ones(L)*0.9 #scale seq2str t1d confidences by 0.9
-        input_t1d_seq_conf_mask = torch.ones(L) # Very confident about the true sequence
 
         #loss masks
         # Currently msa loss masking is performed in train_multi_EMA
@@ -957,8 +948,6 @@ def generate_masks(indep, task, loader_params, chosen_dataset, full_chain=None, 
         input_str_mask = diffusion_mask.clone()
         input_seq_mask = diffusion_mask.clone()
         # t1dconf scaling will be taken care of by diffuser, so just leave those at 1 here 
-        input_t1d_str_conf_mask = torch.ones(L)
-        input_t1d_seq_conf_mask = torch.ones(L)
 
         ## loss masks 
         loss_seq_mask[diffusion_mask] = False  # Dont score where diffusion mask is True (i.e., where things are not diffused)
@@ -979,7 +968,6 @@ def generate_masks(indep, task, loader_params, chosen_dataset, full_chain=None, 
         Scored on everything but the flank regions (may want to change this to only score central inpainted region
         '''
         splice, flank_width = get_masks(L, loader_params['HAL_MASK_LOW'], loader_params['HAL_MASK_HIGH'], loader_params['FLANK_LOW'], loader_params['FLANK_HIGH'])
-        hal_mask_len = splice[1]-splice[0]
 
         #input masks
         input_seq_mask = torch.ones(L).bool()
@@ -991,8 +979,7 @@ def generate_masks(indep, task, loader_params, chosen_dataset, full_chain=None, 
         input_floating_mask = torch.ones(L).bool()
         input_floating_mask[splice[0]-1] = False #immediate two flanking residues are set to false/floating
         input_floating_mask[splice[1]] = False
-        input_t1d_str_conf_mask = torch.ones(L) #t1d confidences are unscaled in hal task
-        input_t1d_seq_conf_mask = torch.ones(L) #t1d confidences are unscaled in hal task
+
 
         #loss masks
         loss_seq_mask = torch.zeros(L).bool()
@@ -1010,7 +997,6 @@ def generate_masks(indep, task, loader_params, chosen_dataset, full_chain=None, 
         Scored on everything but the flank regions (may want to change this to only score central inpainted region
         '''
         splice, flank_width = get_masks(L, loader_params['HAL_MASK_LOW'], loader_params['HAL_MASK_HIGH'], loader_params['FLANK_LOW'], loader_params['FLANK_HIGH'])
-        hal_mask_len = splice[1]-splice[0]
 
         to_unmask = random.uniform(0,0.5) #up to 50% of sequence unmasked
         #input masks
@@ -1027,8 +1013,6 @@ def generate_masks(indep, task, loader_params, chosen_dataset, full_chain=None, 
         input_floating_mask = torch.ones(L).bool()
         input_floating_mask[splice[0]-1] = False #immediate two flanking residues are set to false/floating
         input_floating_mask[splice[1]] = False
-        input_t1d_str_conf_mask = torch.ones(L) #t1d confidences are unscaled in hal task
-        input_t1d_seq_conf_mask = torch.ones(L) #t1d confidences are unscaled in hal task
 
         #loss masks
         loss_seq_mask = torch.zeros(L).bool()
@@ -1055,8 +1039,6 @@ def generate_masks(indep, task, loader_params, chosen_dataset, full_chain=None, 
         input_seq_mask[start:start+len_to_mask] = False
         input_str_mask = torch.ones(L).bool()
         input_str_mask[start:start+len_to_mask] = False #not doing flanking masking now
-        input_t1d_str_conf_mask = torch.ones(L) #t1d confidences are unscaled in str2seq task
-        input_t1d_seq_conf_mask = torch.ones(L) #t1d confidences are unscaled in str2seq task
 
         #loss masks
         loss_seq_mask = torch.zeros(L).bool()
@@ -1084,8 +1066,6 @@ def generate_masks(indep, task, loader_params, chosen_dataset, full_chain=None, 
         input_seq_mask[start+len_to_mask:] = True
         input_str_mask = torch.ones(L).bool()
         input_str_mask[start:start+len_to_mask] = False #not doing flanking masking now. No AR unmasking of structure
-        input_t1d_str_conf_mask = torch.ones(L) #t1d confidences are unscaled in str2seq task
-        input_t1d_seq_conf_mask = torch.ones(L) #t1d confidences are unscaled in str2seq task
 
         #loss masks
         loss_seq_mask = torch.zeros(L).bool()
@@ -1101,7 +1081,6 @@ def generate_masks(indep, task, loader_params, chosen_dataset, full_chain=None, 
         This is only if the protein is monomeric
         '''
         splice, flank_width = get_masks(L, loader_params['HAL_MASK_LOW'], loader_params['HAL_MASK_HIGH'], loader_params['FLANK_LOW'], loader_params['FLANK_HIGH'])
-        hal_mask_len = splice[1]-splice[0]
         #input masks
         input_seq_mask = torch.ones(L).bool()
         input_seq_mask[splice[0]-flank_width:splice[1]+flank_width] = False #mask out flanks and central region
@@ -1109,8 +1088,6 @@ def generate_masks(indep, task, loader_params, chosen_dataset, full_chain=None, 
         input_str_mask[splice[0] - flank_width:splice[0]] = False #mask out flanks only (i.e. provide structure of the central region)
         input_str_mask[splice[1]:splice[1] + flank_width] = False
         input_floating_mask = torch.ones(L).bool()
-        input_t1d_str_conf_mask = torch.ones(L) #t1d confidences are unscaled in str2seq task
-        input_t1d_seq_conf_mask = torch.ones(L) #t1d confidences are unscaled in str2seq task
 
         #loss masks
         loss_seq_mask = torch.zeros(L).bool()
@@ -1135,8 +1112,6 @@ def generate_masks(indep, task, loader_params, chosen_dataset, full_chain=None, 
         input_seq_mask = torch.ones(L).bool()
         input_seq_mask[start:start+len_to_mask] = False
         input_str_mask = torch.ones(L).bool()
-        input_t1d_str_conf_mask = torch.ones(L) #t1d confidences are unscaled in str2seq task
-        input_t1d_seq_conf_mask = torch.ones(L) #t1d confidences are unscaled in str2seq task
  
         #loss masks
         loss_seq_mask = torch.zeros(L).bool()
@@ -1157,9 +1132,6 @@ def generate_masks(indep, task, loader_params, chosen_dataset, full_chain=None, 
         input_seq_mask = torch.rand(L).bool() < rand_prop
         input_str_mask = torch.ones(L).bool()
         input_floating_mask = torch.ones(L).bool()
-
-        input_t1d_str_conf_mask = torch.ones(L) #t1d confidences are not scaled in str2seq_full task
-        input_t1d_seq_conf_mask = torch.ones(L) #t1d confidences are not scaled in str2seq_full task
 
         #loss masks
         loss_seq_mask = torch.clone(input_seq_mask)
@@ -1195,9 +1167,7 @@ def choose_contiguous_atom_motif(res):
     chooses a contiguous 3 or 4 atom motif
     """
     bond_feats = get_residue_bond_feats(res)
-    natoms = bond_feats.shape[0]
     # choose atoms to be given as the motif 
-    is_atom_motif = torch.zeros((natoms),dtype=bool)
     bond_graph = nx.from_numpy_matrix(bond_feats.numpy())
     paths = rf2aa.util.find_all_paths_of_length_n(bond_graph, 2)
     paths.extend(rf2aa.util.find_all_paths_of_length_n(bond_graph, 3))

@@ -26,8 +26,6 @@ from rf_diffusion import atomize
 from rf_diffusion.dev import analyze
 from rf_diffusion.inference import utils
 import rf_diffusion.dev.analyze
-from rf_diffusion import aa_model
-from rf_diffusion import atomize
 from rf_diffusion.chemical import ChemicalData as ChemData
 from rf_diffusion import bond_geometry
 from rf_diffusion.dev import benchmark as bm
@@ -321,7 +319,6 @@ def default(pdb):
     record['n_res_clash'] = res_clash.sum().item()
     record['fraction_res_clash'] = res_clash.float().mean().item()
     record['res_clash'] = res_clash.tolist()
-    pair_clashes = (dgram < clash_dist)
 
     diffusion_pdb = analyze.get_diffusion_pdb(row)
     diffusion_info = utils.process_target(diffusion_pdb, center=False, parse_hetatom=True)
@@ -421,7 +418,6 @@ def junction_bond_len(xyz, is_motif, idx):
             idx: [L] pdb index
     '''
     sig_len=0.02
-    sig_ang=0.05
     ideal_NC=1.329
     blen_CN  = loss.length(xyz[:-1,2], xyz[1:,0])
     CN_loss = torch.clamp( torch.abs(blen_CN - ideal_NC) - sig_len, min=0.0 )

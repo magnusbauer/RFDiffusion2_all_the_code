@@ -5,7 +5,6 @@ from opt_einsum import contract as einsum
 from rf_diffusion.util import rigid_from_3_points, get_mu_xt_x0
 from rf2aa.kinematics import get_dih
 from rf2aa.scoring import HbHybType
-from icecream import ic
 from rf_diffusion.diff_util import th_min_angle 
 
 # Loss functions for the training
@@ -269,7 +268,7 @@ def calc_str_loss(pred, true, mask_2d, same_chain, negative=False, d_clamp=10.0,
     t_ij = get_t(pred[:,:,:,0], pred[:,:,:,1], pred[:,:,:,2])
     
     difference = torch.sqrt(torch.square(t_tilde_ij-t_ij).sum(dim=-1) + eps)
-    if d_clamp != None:
+    if d_clamp is not None:
         clamp = torch.where(same_chain.bool(), d_clamp, d_clamp_inter)
         clamp = clamp[None]
         difference = torch.clamp(difference, max=clamp)
@@ -508,7 +507,6 @@ def calc_lj(
             -12 * sd12[linpart]/deff[linpart] + 12 * sd6[linpart]/deff[linpart]
         ) * (dist[linpart]-deff[linpart])
         if (lj_maxrad>0):
-            sdmax = sigma / lj_maxrad
             sd2 = sd*sd
             sd6 = sd2 * sd2 * sd2
             sd12 = sd6 * sd6
@@ -599,7 +597,6 @@ def calc_hb(
 
     rh,ah = (hbts[...,0]>=0).nonzero(as_tuple=True)
     ra,aa = (hbts[...,1]>=0).nonzero(as_tuple=True)
-    D_xs = xs[rh,hbba[rh,ah,0]][:,None,:]
     H_xs = xs[rh,ah][:,None,:]
     A_xs = xs[ra,aa][None,:,:]
     B_xs = xs[ra,hbba[ra,aa,0]][None,:,:]
@@ -662,7 +659,6 @@ def calc_hb(
     mask2 *= ~mask1
     outer_rise = torch.cos(np.pi - (np.pi * 2 / 3 - BAH[mask2]) / l)
     F = m / 2 * outer_rise + m / 2 - 0.5
-    G = (m - d) / 2 * outer_rise + (m - d) / 2 + d - 0.5
     Echi[mask2] = H[mask2] * F + (1 - H[mask2]) * d - 0.5
 
     Es[:,hyb==HbHybType.SP2] += polys[:,hyb==HbHybType.SP2,2,0] * Echi
@@ -682,7 +678,6 @@ def calc_lddt_loss(pred_ca, true_ca, pred_lddt, idx, mask_crds, mask_2d, same_ch
     # pred_lddt: predicted lddt values (B, nbin, L)
 
     I, B, L = pred_ca.shape[:3]
-    seqsep = torch.abs(idx[:,None,:] - idx[:,:,None]).unsqueeze(0)
     
     pred_dist = torch.cdist(pred_ca, pred_ca) # (I, B, L, L)
     true_dist = torch.cdist(true_ca, true_ca).unsqueeze(0) # (1, B, L, L)

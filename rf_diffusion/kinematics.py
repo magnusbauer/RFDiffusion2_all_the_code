@@ -1,6 +1,5 @@
 import numpy as np
 import torch
-from icecream import ic
 from rf_diffusion.chemical import ChemicalData as ChemData
 
 PARAMS = {
@@ -108,7 +107,6 @@ def xyz_to_c6d(xyz, params=PARAMS):
     # three anchor atoms
     N  = xyz[:,:,0]
     Ca = xyz[:,:,1]
-    C  = xyz[:,:,2]
     Cb = get_Cb(xyz)
 
     # 6d coordinates order: (dist,omega,theta,phi)
@@ -185,9 +183,6 @@ def xyz_to_chi1(xyz_t):
     return chi1
 
 def xyz_to_bbtor(xyz, params=PARAMS):
-    batch = xyz.shape[0]
-    nres = xyz.shape[1]
-
     # three anchor atoms
     N  = xyz[:,:,0]
     Ca = xyz[:,:,1]
@@ -306,7 +301,6 @@ def get_init_xyz(xyz_t, is_sm):
     center_CA = ((~mask[:,:,:,None]) * torch.nan_to_num(xyz_t[:,:,:,1,:])).sum(dim=2) / ((~mask[:,:,:,None]).sum(dim=2)+1e-4) # (B, T, 3)
     xyz_t = xyz_t - center_CA.view(B,T,1,1,3)
     #
-    idx_s = list()
     for i_b in range(B):
         for i_T in range(T):
             if mask[i_b, i_T].all():

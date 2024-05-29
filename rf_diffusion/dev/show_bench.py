@@ -11,14 +11,10 @@ from rf_diffusion.dev import show_tip_pa
 
 cmd = show_tip_pa.cmd
 
-from collections import defaultdict
-import rf_diffusion.inference.utils as iu
 import numpy as np
 import itertools
 
-import os
 from rf_diffusion.dev import show_tip_pa
-from rf_diffusion.dev import show_tip_row
 from rf_diffusion.dev import analyze
 from rf_diffusion.parsers import parse_pdb_lines_target
 
@@ -28,8 +24,6 @@ def model_generator(traj_path, seq=False):
     with open(traj_path) as f:
         s = f.read()
         models = s.strip().split('ENDMDL')
-        parsed = []
-        seqs = []
         for i, m in enumerate(models):
             if not m:
                 continue
@@ -100,7 +94,7 @@ def motif_backbone_dists_row(row):
     return dist
         
 
-from tqdm.notebook import trange, tqdm
+from tqdm.notebook import tqdm
 def apply_dict(df, f, safe=True):
     for i, row in tqdm(df.iterrows(), total=len(df)):
         try:
@@ -146,7 +140,6 @@ def is_self_consistent(row):
     return (row['rmsd_af2_des'] < 2) and (row['af2_pae_mean'] < 5)
 # df['self_consistent'] = df.apply(is_self_consistent, axis=1)
 
-import glob
 import pandas as pd
 
 import re
@@ -170,7 +163,6 @@ def get_sdata(path, pattern=None):
         print(e)
     return data
 
-import re
 
 def transform_file_path(file_path):
     # Extract date and epoch from the file path using regular expressions
@@ -207,7 +199,7 @@ def load_df(metrics_path):
     df['des_color'] = pd.NA
     try:
         df['model'] = df['inference.ckpt_path'].apply(transform_file_path)
-    except Exception as e:
+    except Exception:
         pass
     try:
         df['epoch'] = df.apply(get_epoch, axis=1)
@@ -300,7 +292,7 @@ def get_sweeps(data):
     for k in data.keys():
         try:
             uniques[k] = data[k].unique()
-        except Exception as e:
+        except Exception:
             continue
         
 

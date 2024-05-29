@@ -1,8 +1,6 @@
 import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-from opt_einsum import contract as einsum
 import copy
 import dgl
 from rf_diffusion.util import rigid_from_3_points
@@ -74,7 +72,7 @@ class Dropout(nn.Module):
         if not self.training: # no drophead during evaluation mode
             return x
         shape = list(x.shape)
-        if not self.broadcast_dim == None:
+        if self.broadcast_dim is not None:
             shape[self.broadcast_dim] = 1
         mask = self.sampler.sample(shape).to(x.device).view(shape)
 

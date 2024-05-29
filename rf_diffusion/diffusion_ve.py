@@ -3,24 +3,12 @@ import torch
 import pickle
 import numpy as np
 import os
-import logging
-from typing import List
 
-from scipy.spatial.transform import Rotation as scipy_R
-from scipy.spatial.transform import Slerp 
-import rotation_conversions
 
-from util import rigid_from_3_points, get_torsions
 
-from util_module import ComputeAllAtomCoords
 
-from diff_util import th_min_angle, th_interpolate_angles, get_aa_schedule 
 
-from chemical import INIT_CRDS 
-import igso3
-import time 
 
-from icecream import ic  
 
 torch.set_printoptions(sci_mode=False)
 
@@ -208,7 +196,7 @@ class EuclideanDiffuser():
         sampled_crds = torch.normal(mean, torch.sqrt(var)) 
         delta = sampled_crds - ca_xyz  
 
-        if not diffusion_mask is None:
+        if diffusion_mask is not None:
             delta[diffusion_mask,...] = 0
 
         out_crds = x + delta[:,None,:]

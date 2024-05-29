@@ -1,4 +1,3 @@
-from icecream import ic
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt

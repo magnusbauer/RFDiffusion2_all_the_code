@@ -1,39 +1,27 @@
 import copy
-from datetime import datetime
 import torch
-from assertpy import assert_that
 import numpy as np
-from omegaconf import DictConfig, OmegaConf, open_dict
-import data_loader
+from omegaconf import DictConfig, OmegaConf
 from icecream import ic
 
 from rf_diffusion.chemical import ChemicalData as ChemData
 import rf2aa.util
 import rf2aa.data.data_loader
 from rf2aa.util_module import XYZConverter
-from rf2aa.model.RoseTTAFoldModel import LegacyRoseTTAFoldModule
-from rf2aa.kinematics import xyz_to_c6d, c6d_to_bins, xyz_to_t2d, get_chirals
 import rf2aa.data.parsers
 import rf2aa.tensor_util
 import rf_diffusion.aa_model as aa_model
-import dataclasses
 
-from rf_diffusion.kinematics import get_init_xyz
 from rf_diffusion.contigs import ContigMap
 from rf_diffusion.inference import utils as iu
 from rf_diffusion.potentials.manager import PotentialManager
 from rf_diffusion.inference import symmetry
 import logging
-import torch.nn.functional as nn
-import rf_diffusion.util as util
-import hydra
 from hydra.core.hydra_config import HydraConfig
 from rf_diffusion.frame_diffusion.data import all_atom
 import rf_diffusion.frame_diffusion.data.utils as du
-from openfold.utils.rigid_utils import Rigid
 from rf_diffusion.frame_diffusion.rf_score.model import RFScore
 from rf_diffusion import features
-import os
 from rf_diffusion import noisers
 from rf_diffusion.config import config_format
 
@@ -42,7 +30,6 @@ import sys
 # When you import this it causes a circular import due to the changes made in apply masks for self conditioning
 # This import is only used for SeqToStr Sampling though so can be fixed later - NRB
 # import data_loader 
-import rf_diffusion.model_input_logger as model_input_logger
 from rf_diffusion.model_input_logger import pickle_function_call
 
 def idealize_peptide_frames(indep, generator=None):
@@ -80,7 +67,7 @@ def sample_init(
     L = len(target_feats['pdb_idx'])
 
     indep_orig, metadata = aa_model.make_indep(conf.inference.input_pdb, conf.inference.ligand, return_metadata=True)
-    for_partial_diffusion = conf.diffuser.partial_T != None
+    for_partial_diffusion = conf.diffuser.partial_T is not None
     indep, is_diffused, is_seq_masked = insert_contig(
             indep_orig, 
             contig_map,
@@ -98,7 +85,7 @@ def sample_init(
             print("You better know what you're doing when doing partial diffusion with sidechains")
         else:
             assert indep.xyz.shape[0] ==  L + torch.sum(indep.is_sm), f"there must be a coordinate in the input PDB for each residue implied by the contig string for partial diffusion.  length of input PDB != length of contig string: {indep.xyz.shape[0]} != {L+torch.sum(indep.is_sm)}"
-            assert torch.all(is_diffused[indep.is_sm] == 0), f"all ligand atoms must be in the motif"
+            assert torch.all(is_diffused[indep.is_sm] == 0), "all ligand atoms must be in the motif"
         assert (mappings['con_hal_idx0'] == mappings['con_ref_idx0']).all(), f"all positions in the input PDB must correspond to the same index in the output pdb: {list(zip(mappings['con_hal_idx0'], mappings['con_ref_idx0']))=}"
     indep.seq[is_seq_masked] = ChemData().MASKINDEX
     # Diffuse the contig-mapped coordinates 
@@ -133,7 +120,6 @@ class Sampler:
             self.device = torch.device('cuda')
         else:
             self.device = torch.device('cpu')
-        needs_model_reload = not self.initialized or conf.inference.ckpt_path != self._conf.inference.ckpt_path
 
         # Assign config to Sampler
         self._conf = conf
@@ -334,7 +320,7 @@ class Sampler:
             pickle_dir = pickle_function_call(model, 'forward', 'inference', minifier=aa_model.minifier)
             print(f'pickle_dir: {pickle_dir}')
         model = model.eval()
-        self._log.info(f'Loading checkpoint.')
+        self._log.info('Loading checkpoint.')
         if not self._conf.inference.zero_weights:
             model.load_state_dict(self.ckpt[self._conf.inference.state_dict_to_load], strict=True)
         return model
@@ -427,11 +413,6 @@ class NRBStyleSelfCond(Sampler):
         rfi = self.model_adaptor.prepro(indep, t, self.is_diffused)
 
         rf2aa.tensor_util.to_device(rfi, self.device)
-        seq_init = torch.nn.functional.one_hot(
-                indep.seq, num_classes=ChemData().NAATOKENS).to(self.device).float()
-        seq_t = torch.clone(seq_init)
-        seq_in = torch.clone(seq_init)
-        # B,N,L = xyz_t.shape[:3]
 
         ##################################
         ######## Str Self Cond ###########
@@ -453,8 +434,6 @@ class NRBStyleSelfCond(Sampler):
                 assert not rfi.xyz[0,:,:3,:].isnan().any(), f'{t}: {rfi.xyz[0,:,:3,:]}'
                 model_out = self.model.forward_from_rfi(rfi, torch.tensor([t/self._conf.diffuser.T]).to(rfi.xyz.device), use_checkpoint=False)
 
-        now = datetime.now()
-        current_time = now.strftime("%H:%M:%S")
         # self._log.info(
         #         f'{current_time}: Timestep {t}')
 
@@ -538,7 +517,7 @@ class FlowMatching(Sampler):
             rigid_t=rigids_t,
             rot_score=du.move_to_np(model_out['rot_score'][:,-1]),
             trans_score=du.move_to_np(model_out['trans_score'][:,-1]),
-            diffuse_mask=np.ones(rigids_pred.shape, dtype=np.bool),
+            diffuse_mask=np.ones(rigids_pred.shape, dtype=bool),
             t=t/self._conf.diffuser.T,
             dt=1/self._conf.diffuser.T,
             center=self._conf.denoiser.center,
@@ -642,7 +621,7 @@ def assemble_config_from_chk(conf, ckpt) -> None:
                 try:
                     print(f"USING MODEL CONFIG: self._conf[{cat}][{key}] = {ckpt['config_dict'][cat][key]}")
                     conf[cat][key] = ckpt['config_dict'][cat][key]
-                except:
+                except KeyError:
                     print(f'WARNING: config {cat}.{key} is not saved in the checkpoint. Check that conf.{cat}.{key} = {conf[cat][key]} is correct')
         # add back in overrides again
         for override in overrides:

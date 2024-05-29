@@ -1,26 +1,14 @@
 import os
-import sys
-import dataclasses
 import hydra
 from hydra import compose, initialize
-from rf_diffusion.chemical import ChemicalData as ChemData
-from rf2aa.model.RoseTTAFoldModel import LegacyRoseTTAFoldModule as RoseTTAFoldModuleReal
 from rf2aa.model.RoseTTAFoldModel import LegacyRoseTTAFoldModule
 import torch
-from torch import tensor
-import shlex
 import unittest
-import ast
-import subprocess
-from pathlib import Path
 from unittest import mock
 from icecream import ic
 import run_inference
-from deepdiff import DeepDiff
 from rf2aa import tensor_util
 import torch.distributed
-from inspect import signature
-from unittest.mock import MagicMock
 
 import test_utils
 import train_multi_deep
@@ -94,9 +82,7 @@ def run_regression(self, overrides, golden_name, call_number=1, assert_loss=Fals
     conf = construct_conf(overrides)
     train = train_multi_deep.make_trainer(conf)
     fake_forward = mock.patch.object(LegacyRoseTTAFoldModule, "__call__", autospec=True)
-    a = mock.patch.object(torch.cuda.amp.GradScaler, "scale", autospec=True)
     with fake_forward as mock_forward:
-        with a as b:
             def side_effect(*args, **kwargs):
                 ic(side_effect.call_count)
                 side_effect.call_count += 1
@@ -148,6 +134,7 @@ def run_regression(self, overrides, golden_name, call_number=1, assert_loss=Fals
 
 def construct_conf(overrides):
     # overrides = overrides + ['inference.cautious=False', 'inference.design_startnum=0']
+    hydra.core.global_hydra.GlobalHydra().clear()
     initialize(version_base=None, config_path="config/training", job_name="test_app")
     conf = compose(config_name='debug.yaml', overrides=overrides, return_hydra_config=True)
     # This is necessary so that when the model_runner is picking up the overrides, it finds them set on HydraConfig.

@@ -1,6 +1,5 @@
 """R^3 diffusion methods."""
 import numpy as np
-from scipy.special import gamma
 import torch
 
 

@@ -1,30 +1,20 @@
-import itertools
-import os
-import sys
 from functools import partial
 import unittest
 
 import assertpy
 from icecream import ic
-import copy
 import hydra
-from hydra import compose, initialize
-from omegaconf import DictConfig
-from torch.utils import data
-from tqdm import tqdm
 import numpy as np
 import torch
 
-from dev import analyze, show_tip_pa
+from dev import analyze
 from rf_diffusion.data_loader import get_fallback_dataset_and_dataloader
 from rf_diffusion import test_utils
 from rf2aa import tensor_util
 from rf_diffusion.frame_diffusion.data import se3_diffuser
-from rf_diffusion import aa_model
 import show
 
 from rf_diffusion.chemical import ChemicalData as ChemData
-import pytest
 
 cmd = analyze.cmd
 
@@ -267,7 +257,7 @@ class Dataloader(unittest.TestCase):
         mask = 'get_unconditional_diffusion_mask'
         
         loader_out = self.indep_for_dataset(dataset, mask, overrides=['dataloader.CROP=60'])
-        indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context = loader_outindep = loader_out
+        indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context = loader_out
         indep.metadata = None
 
         golden_name = f'indep_{dataset}-{mask}'
@@ -278,7 +268,7 @@ class Dataloader(unittest.TestCase):
         mask = 'get_closest_tip_atoms'
         
         loader_out = self.indep_for_dataset(dataset, mask, overrides=['dataloader.CROP=60'])
-        indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context = loader_outindep = loader_out
+        indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context = loader_out
 
         golden_name = f'indep_{dataset}-{mask}'
         test_utils.assert_matches_golden(self, golden_name, indep, rewrite=REWRITE, custom_comparator=self.cmp)
@@ -292,7 +282,6 @@ class Dataloader(unittest.TestCase):
         indep.metadata = None
         
         golden_name = f'indep_{dataset}-{mask}'
-        cmp_ = partial(tensor_util.cmp, atol=1e-3, rtol=1e-5)
         def cmp(got, want):
             got.idx[-13:] = -1
             want.idx[-13:] = -1
@@ -309,7 +298,7 @@ class Dataloader(unittest.TestCase):
         mask = 'get_diffusion_mask_simple'
         
         loader_out = self.indep_for_dataset(dataset, mask, overrides=['dataloader.CROP=60'])
-        indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context = loader_outindep = loader_out
+        indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context = loader_out
         indep.metadata = None
         
         golden_name = f'indep_{dataset}-{mask}'
@@ -388,7 +377,6 @@ class Dataloader(unittest.TestCase):
         indep.metadata = None
         
         golden_name = f'indep_{dataset}-{mask}'
-        cmp_ = partial(tensor_util.cmp, atol=1e-3, rtol=1e-5)
         def cmp(got, want):
             got.idx[-13:] = -1
             want.idx[-13:] = -1

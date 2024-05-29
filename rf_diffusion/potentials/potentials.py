@@ -2,7 +2,6 @@ import torch
 from icecream import ic 
 import numpy as np 
 from rf_diffusion.util import generate_Cbeta
-from icecream import ic
 import rf2aa
 
 class Potential:
@@ -323,9 +322,7 @@ def make_contact_matrix(nchain, contact_string=None):
     alphabet   = [a for a in 'ABCDEFGHIJKLMNOPQRSTUVWXYZ']
     letter2num = {a:i for i,a in enumerate(alphabet)}
     
-    contacts   = np.zeros((nchain,nchain))
-    written    = np.zeros((nchain,nchain))
-    
+    contacts   = np.zeros((nchain,nchain))    
     contact_list = contact_string.split(',') 
     for c in contact_list:
         if not len(c) == 3:
@@ -417,7 +414,6 @@ class olig_contacts(Potential):
         L = len(seq.squeeze())
 
         all_contacts = 0
-        start = 0
         for i in range(self.nchain):
             for j in range(self.nchain):
                 # only compute for upper triangle, disregard zeros in contact matrix 
@@ -549,7 +545,6 @@ class substrate_contacts(Potential):
         self.motif_frame = None # [4,3] xyz coordinates from 4 atoms of input motif
         self.motif_mapping = None # list of tuples giving positions of above atoms in design [(resi, atom_idx)]
         self.motif_substrate_atoms = None # xyz coordinates of substrate from input motif
-        r_min = 2
         self.energies = []
         self.energies.append(lambda dgram: s * contact_energy(torch.min(dgram, dim=-1)[0], d_0, r_0))
         if rep_r_min:

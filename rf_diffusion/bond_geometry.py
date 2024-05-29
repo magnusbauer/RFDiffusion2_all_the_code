@@ -1,10 +1,9 @@
 import itertools
-from collections import OrderedDict, defaultdict
+from collections import defaultdict
 
 import tree
 import networkx as nx
 import torch
-from icecream import ic
 import numpy as np
 
 from rf_diffusion import aa_model

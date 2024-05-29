@@ -9,7 +9,11 @@ ligand in the diffusion design model and all atoms from the input ligand,
 including hydrogens, are copied into the output.  
 """
 
-import sys, os, argparse, glob, tqdm, pickle
+import os
+import argparse
+import glob
+import tqdm
+import pickle
 import numpy as np
 import torch
 from icecream import ic
@@ -17,7 +21,7 @@ from icecream import ic
 from rf_diffusion.inference.utils import parse_pdb
 import rf2aa.data.parsers
 from rf_diffusion.chemical import ChemicalData as ChemData
-from rf_diffusion.parsers import load_ligand_from_pdb, load_ligands_from_pdb
+from rf_diffusion.parsers import load_ligands_from_pdb
 from rf2aa.util import kabsch
 from rf_diffusion import write_file
 import assertpy
@@ -82,8 +86,6 @@ def main():
             # superimpose reference ligand onto design ligand
             to_align_des = np.isin(np.array(lig_atom_des), np.array(lig_atom))
             to_align_ref = np.isin(np.array(lig_atom), np.array(lig_atom_des))
-            sm_des = xyz_sm_des[0, to_align_des]
-            sm_ref = xyz_sm[0, to_align_ref]
             rmsd, U = kabsch(xyz_sm_des[0, to_align_des], xyz_sm[0, to_align_ref]) 
             cent_des = xyz_sm_des[0, to_align_des].mean(dim=0)
             cent_ref = xyz_sm[0, to_align_ref].mean(dim=0)
@@ -100,7 +102,6 @@ def main():
             msa_sm = torch.tensor([])
             idx_sm = torch.tensor([])
             atom_names = None
-            lig_name = None
             bond_feats_sm = torch.tensor([])
             
         # combine protein & ligand features
@@ -129,7 +130,7 @@ def main():
                 print('writing file', outdir+name+f"_{i}.pdb")
                 seq = lines[2*i + 3].strip() # 2nd seq is 1st design
                 seq_num = torch.tensor([rf2aa.util.aa2num[aa_123[a]] for a in seq])
-                pdbstr = write_file.writepdb(
+                write_file.writepdb(
                     os.path.join(outdir, name+f"_{i}.pdb"),
                     atoms = xyz,
                     atom_mask = mask,

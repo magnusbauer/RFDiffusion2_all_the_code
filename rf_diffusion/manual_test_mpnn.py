@@ -1,23 +1,14 @@
-import copy
 import shutil
 import os
-import sys
 import unittest
-import json
 
-import addict
 import torch
 from icecream import ic
 import numpy as np
 
-from rf_diffusion.aa_model import Model, make_indep
 from rf_diffusion.inference import utils as iu
-from rf_diffusion import contigs
-from rf_diffusion import atomize
-from rf2aa import tensor_util
 from rf_diffusion.benchmark.util import hydra_utils
 from rf_diffusion.benchmark import mpnn_designs_v2
-from rf_diffusion import aa_model
 from rf2aa import loss
 
 class TestMPNN(unittest.TestCase):

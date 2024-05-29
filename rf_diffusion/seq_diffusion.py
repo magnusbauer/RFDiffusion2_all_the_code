@@ -1,18 +1,11 @@
 # script for sequence diffusion protocols 
 import torch 
 import numpy as np
-import os
-from scipy.spatial.transform import Rotation as scipy_R
-from scipy.spatial.transform import Slerp 
 
-from rf_diffusion.util import rigid_from_3_points, get_torsions
 
-from rf_diffusion.util_module import ComputeAllAtomCoords
 
-from rf_diffusion.diff_util import th_min_angle, th_interpolate_angles, get_aa_schedule 
 from rf_diffusion.diffusion import get_beta_schedule, cosine_interp
 from icecream import ic  
-import rf_diffusion.igso3 as igso3
 
 
 torch.set_printoptions(sci_mode=False)
@@ -39,7 +32,7 @@ class DiscreteSeqDiffuser():
                  lamda=1,
                  K=20):
 
-        assert (not s_a0 is None and not s_aT is None) ^ (not s_b0 is None and not s_bT is None), \
+        assert (s_a0 is not None and s_aT is not None) ^ (s_b0 is not None and s_bT is not None), \
                 f"SequenceDiffuser cannot use alpha and beta schedules at the same time, a_0: {s_a0} a_T: {s_aT} " + \
                 f"b_0: {s_b0} b_T: {s_bT}"
 
@@ -49,7 +42,7 @@ class DiscreteSeqDiffuser():
         self.rate_matrix_type = rate_matrix
 
         if rate_matrix in ['blosum']:
-            assert not s_a0 is None and not s_aT is None
+            assert s_a0 is not None and s_aT is not None
 
             self.seq_alpha_schedule, self.seq_alpha_bar_schedule = self.get_seq_alpha_schedule(
                     s_a0=s_a0,
@@ -61,7 +54,7 @@ class DiscreteSeqDiffuser():
 
 
         elif rate_matrix in ['uniform']:
-            assert not s_b0 is None and not s_bT is None
+            assert s_b0 is not None and s_bT is not None
 
             self.seq_beta_schedule, self.seq_alpha_schedule, self.seq_alpha_bar_schedule = self.get_seq_beta_schedule(
                     s_b0=s_b0,
@@ -232,7 +225,7 @@ class DiscreteSeqDiffuser():
         out_seq = torch.multinomial(seq_probs_t, num_samples=1).squeeze() # [L]
 
         # Denoise all positions that are not being noised
-        if not diffusion_mask is None:
+        if diffusion_mask is not None:
             out_seq[diffusion_mask] = seq[diffusion_mask]
 
         return out_seq
@@ -345,7 +338,8 @@ class DiscreteSeqDiffuser():
         Qt = self.get_Qt(t_idx).to(x_t.device)
         bar_Qt1 = self.get_bar_Qt(t_idx-1).to(x_t.device)
 
-        q_xt1_xt_given_x0 = lambda x_t1_, x_t_, x_0_: bar_Qt1[x_0_, x_t1_] * Qt[x_t1_, x_t_]
+        def q_xt1_xt_given_x0(x_t1_, x_t_, x_0_):
+            return bar_Qt1[x_0_, x_t1_] * Qt[x_t1_, x_t_]
 
         # assemble all conditional probabilities.
         # all_terms[i,j] = q(x_{t-1}=j, x_t | x_0=i)*px_0[i]
@@ -596,7 +590,7 @@ class ContinuousSeqDiffuser():
         diffused_seq = self.apply_kernel_recursive(seq, diffusion_mask, t_list)
 
         # Assert non-diffused regions match - NRB
-        if not diffusion_mask is None:
+        if diffusion_mask is not None:
             assert(torch.all( diffused_seq[:,diffusion_mask] == true_seq[None,diffusion_mask] ))
 
         return diffused_seq, true_seq
@@ -652,7 +646,7 @@ class ContinuousSeqDiffuser():
         sampled_seq = torch.normal(mean, torch.sqrt(var))
         delta = sampled_seq - seq
 
-        if not diffusion_mask is None:
+        if diffusion_mask is not None:
             delta[diffusion_mask, ...] = 0
 
         out_seq = seq + delta # [L,K]
@@ -816,7 +810,7 @@ class ContinuousSeqDiffuser():
         sampled_seq = torch.normal(mu, sigma) # [L,K]
         delta = sampled_seq - seq_t
     
-        if not seq_diffusion_mask is None:
+        if seq_diffusion_mask is not None:
             delta[seq_diffusion_mask,:] = 0
     
         seq_t_1 = seq_t + delta # [L,K]

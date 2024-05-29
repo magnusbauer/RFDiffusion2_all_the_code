@@ -1,62 +1,23 @@
-import copy
-from collections import defaultdict
-import shutil
 import os
 from functools import partial
 import sys
-import torch
 import assertpy
 import unittest
-import numpy as np
 from icecream import ic
 
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'RF2-allatom'))
-import rf2aa
 import aa_model
-from aa_model import AtomizeResidues, Indep, Model, make_indep
-import atomize
 import test_utils
-from aa_model import Model, make_indep
 import inference.utils
 import rf_diffusion.contigs as contigs
-import pytest
 from rf2aa import tensor_util
 import run_inference
 ic.configureOutput(includeContext=True)
 
 class TestContigs(unittest.TestCase):
 
-    def test_two_chains_swapped(self):
-        input_pdb = './benchmark/input/2j0l.pdb'
-
-        conf = test_utils.construct_conf(inference=True) 
-        adaptor = aa_model.Model(conf)
-
-        run_inference.seed_all()
-        target_feats = inference.utils.process_target(input_pdb)
-        contig_map =  contigs.ContigMap(target_feats,
-                                    contigs=['10_A441-450'],
-                                    has_termini=[True, True]
-                                    )
-
-        contig_map_attributes = {
-            "hal": contig_map.hal,
-            "chain_order": contig_map.chain_order,
-            "hal_idx0": contig_map.hal_idx0,
-            "ref_idx0": contig_map.ref_idx0,
-            "atomize_indices2atomname": contig_map.atomize_indices2atomname,
-            "inpaint_str": contig_map.inpaint_str
-        }
-        cmp = partial(tensor_util.cmp, atol=1e-20, rtol=1e-5)
-        test_utils.assert_matches_golden(self, 'contigs_two_chains_swapped', contig_map_attributes, rewrite=REWRITE, custom_comparator=cmp)
-
-                
     def test_one_chain_covale(self):
         input_pdb = 'benchmark/input/3l0f_covale.pdb'
-        ligand_name = 'CYC'
-
-        conf = test_utils.construct_conf(inference=True) 
-        adaptor = aa_model.Model(conf)
 
         run_inference.seed_all()
         target_feats = inference.utils.process_target(input_pdb)
@@ -80,9 +41,6 @@ class TestContigs(unittest.TestCase):
     def test_two_chains(self):
         input_pdb = './benchmark/input/2j0l.pdb'
 
-        conf = test_utils.construct_conf(inference=True) 
-        adaptor = aa_model.Model(conf)
-
         run_inference.seed_all()
         target_feats = inference.utils.process_target(input_pdb)
         contig_map =  contigs.ContigMap(target_feats,
@@ -103,9 +61,6 @@ class TestContigs(unittest.TestCase):
 
     def test_two_chains_swapped(self):
         input_pdb = './benchmark/input/2j0l.pdb'
-
-        conf = test_utils.construct_conf(inference=True) 
-        adaptor = aa_model.Model(conf)
 
         run_inference.seed_all()
         target_feats = inference.utils.process_target(input_pdb)
@@ -128,9 +83,6 @@ class TestContigs(unittest.TestCase):
     def test_3_chain_termini(self):
         input_pdb = './benchmark/input/2j0l.pdb'
 
-        conf = test_utils.construct_conf(inference=True)
-        adaptor = aa_model.Model(conf)
-
         run_inference.seed_all()
         target_feats = inference.utils.process_target(input_pdb)
         contig_map = contigs.ContigMap(target_feats,
@@ -150,9 +102,6 @@ class TestContigs(unittest.TestCase):
     def test_3_chain_termini_swapped(self):
         input_pdb = './benchmark/input/2j0l.pdb'
 
-        conf = test_utils.construct_conf(inference=True)
-        adaptor = aa_model.Model(conf)
-
         run_inference.seed_all()
         target_feats = inference.utils.process_target(input_pdb)
         contig_map = contigs.ContigMap(target_feats,
@@ -171,9 +120,6 @@ class TestContigs(unittest.TestCase):
 
     def test_3_contig_map_hal(self):
         input_pdb = './benchmark/input/2j0l.pdb'
-
-        conf = test_utils.construct_conf(inference=True)
-        adaptor = aa_model.Model(conf)
 
         run_inference.seed_all()
         target_feats = inference.utils.process_target(input_pdb)

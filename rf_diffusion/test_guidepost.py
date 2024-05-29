@@ -1,8 +1,5 @@
 import copy
-import os
-import sys
 import unittest
-import json
 
 import torch
 from icecream import ic
@@ -11,11 +8,9 @@ from aa_model import Model, make_indep
 import inference.utils
 import contigs
 import atomize
-from rf2aa import tensor_util
 import guide_posts as gp
 import aa_model
 import test_utils
-from argparse import Namespace
 
 class TestGuidepost(unittest.TestCase):
 

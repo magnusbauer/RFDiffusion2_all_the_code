@@ -3,7 +3,6 @@ import pprint
 from typing import OrderedDict
 import mask_generator
 import data_loader
-import os
 import metrics
 from icecream import ic
 

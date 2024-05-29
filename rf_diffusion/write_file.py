@@ -120,7 +120,7 @@ def writepdb_file(f, atoms, seq, modelnum=None, chain="A", idx_pdb=None, bfacts=
                     ctr += 1
             name = f'resi {idx_pdb[i_res]}'
         names.append(name)
-    if bond_feats != None:
+    if bond_feats is not None:
         atom_bonds = (bond_feats > 0) * (bond_feats <5)
         atom_bonds = atom_bonds.cpu()
         b, i, j = atom_bonds.nonzero(as_tuple=True)

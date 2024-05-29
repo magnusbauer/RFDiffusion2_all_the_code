@@ -1,9 +1,6 @@
 import torch
-import os, sys
-import numpy as np
+import os
 import argparse
-import glob
-import json
 from parsers import parse_pdb
 from diffusion import Diffuser
 from util import writepdb, writepdb_multi
@@ -35,7 +32,7 @@ def main():
     
     try:
         xyz,mask,idx,seq = parse_pdb(args.input_pdb, xyz27=True,seq=True)
-    except:
+    except: # noqa: E722
         xyz,mask,idx,seq = parse_pdb(args.input_pdb, xyz27=False,seq=True)
     
     diffusion_mask = torch.zeros(xyz.shape[0]).bool()

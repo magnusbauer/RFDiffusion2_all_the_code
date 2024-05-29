@@ -5,7 +5,13 @@
 # comparisons
 # 
 
-import sys, os, argparse, itertools, json, glob, re, subprocess
+import sys
+import os
+import argparse
+import json
+import glob
+import re
+import subprocess
 import numpy as np
 
 script_dir = os.path.dirname(os.path.realpath(__file__))+'/'

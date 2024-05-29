@@ -1,2 +1,12 @@
 **/__pycache__
 **/outputs
+/rf_diffusion/.cache
+/rf_diffusion/debug
+/rf_diffusion/tmp
+/sublime_build.log
+*.sublime-workspace
+/*.pdb
+/rf_diffusion/*.pdb
+/rf_diffusion/samples/
+/doc/build
+/doc/source/api

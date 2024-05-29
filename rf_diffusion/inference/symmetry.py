@@ -1,5 +1,4 @@
 """Helper class for handle symmetric assemblies."""
-from pyrsistent import v
 from scipy.spatial.transform import Rotation
 import functools as fn
 import torch
@@ -7,7 +6,8 @@ import string
 import logging
 import numpy as np
 
-format_rots = lambda r: torch.tensor(r).float()
+def format_rots(r):
+    return torch.tensor(r).float()
 
 T3_ROTATIONS = [
     torch.Tensor([
@@ -285,8 +285,8 @@ class SymGen:
         fn = "./inference/sym_rots.npz"
         obj = np.load(fn)
         symms = None
-        for k, v in obj.items():
-            if str(k) == name: symms = v
+        for k, val in obj.items():
+            if str(k) == name: symms = val
         assert symms is not None, "%s not found in %s"%(name, fn)
 
         
@@ -312,7 +312,8 @@ class SymGen:
             list of rotation matrices corresponding to the identity and close neighbors
         """
         # set of small rotation angle rotations
-        rel_rot = lambda M: np.linalg.norm(Rotation.from_matrix(M).as_rotvec())
+        def rel_rot(M):
+            return np.linalg.norm(Rotation.from_matrix(M).as_rotvec())
         rel_rots = [(i+1, rel_rot(M)) for i, M in enumerate(self.sym_rots[1:])]
         min_rot = min(rel_rot_val[1] for rel_rot_val in rel_rots)
         close_rots = [np.eye(3)] + [

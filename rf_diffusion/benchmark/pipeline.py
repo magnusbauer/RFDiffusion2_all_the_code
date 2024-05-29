@@ -3,7 +3,12 @@
 # Runs the benchmarking pipeline, given arguments for a hyperparameter sweep
 #
 
-import sys, os, re, subprocess, time, glob
+import sys
+import os
+import re
+import subprocess
+import time
+import glob
 import copy
 
 from icecream import ic
@@ -147,7 +152,6 @@ def get_mpnn_dirs(outdir, v2):
     for mpnn_flavor in ['mpnn', 'ligmpnn']:
         mpnn_dirs.append(f'{outdir}/{mpnn_flavor}')
     
-    jobid_score_mpnn = []
     out_mpnn_dirs = []
     for d in mpnn_dirs:
         if os.path.exists(d):

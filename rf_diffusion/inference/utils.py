@@ -1,25 +1,16 @@
 import numpy as np
 import os
-import sys
 from omegaconf import DictConfig
 from rf_diffusion.kinematics import xyz_to_t2d
 import torch
 import torch.nn.functional as nn
 from rf_diffusion.util import get_torsions
-from icecream import ic
 from scipy.spatial.transform import Rotation as scipy_R
 from rf_diffusion.util import rigid_from_3_points
-from rf_diffusion.util_module import ComputeAllAtomCoords
-from rf_diffusion.potentials.manager import PotentialManager
-import rf_diffusion.util as util
 import random
-import logging
 import string 
-import hydra
 import rf2aa.chemical
 import rf2aa.tensor_util
-import rf_diffusion.aa_model as aa_model
-import rf_diffusion.error as error
 import rf_diffusion.parsers
 
 ###########################################################
@@ -161,8 +152,6 @@ def get_next_ca(xt, px0, t, diffusion_mask, crd_scale, beta_schedule, alphabar_s
         noise_scale: scale factor for the noise being added
 
     """
-    get_allatom = ComputeAllAtomCoords().to(device=xt.device)
-    L = len(xt)
 
     # bring to origin after global alignment (when don't have a motif) or replace input motif and bring to origin, and then scale 
     px0 = px0 * crd_scale
@@ -174,7 +163,7 @@ def get_next_ca(xt, px0, t, diffusion_mask, crd_scale, beta_schedule, alphabar_s
     sampled_crds = torch.normal(mu, torch.sqrt(sigma*noise_scale))
     delta = sampled_crds - xt[:,1,:] #check sign of this is correct
 
-    if not diffusion_mask is None:
+    if diffusion_mask is not None:
         # calculate the mean displacement between the current motif and where 
         # RoseTTAFold thinks it should go 
         # print('Got motif delta')
@@ -324,7 +313,7 @@ def preprocess(seq, xyz_t, t, T, ppi_design, binderlen, target_res, device):
 
     # NRB: Adding in dimension for target hotspot residues
     target_residue_feat = torch.zeros_like(t1d[...,0])[...,None]
-    if ppi_design and not target_res is None:
+    if ppi_design and target_res is not None:
         absolute_idx = [resi+binderlen for resi in target_res]
         target_residue_feat[...,absolute_idx,:] = 1
 
@@ -535,7 +524,7 @@ class BlockAdjacency():
         """
 
         # either list or path to .txt file with list of scaffolds
-        if type(conf.scaffold_list) == list:
+        if isnstance(conf.scaffold_list, list):
             self.scaffold_list = scaffold_list
         elif conf.scaffold_list[-4:] == '.txt':
             #txt file with list of ids
@@ -694,7 +683,6 @@ class BlockAdjacency():
         print("Scaffold constrained based on file: ", item)
         # load files
         ss, adj = self.get_ss_adj(item)
-        adj_orig=torch.clone(adj)
         # separate into segments (loop or not)
         mask = torch.where(ss == 2, 1, 0).bool()
         segments = self.mask_to_segments(mask)

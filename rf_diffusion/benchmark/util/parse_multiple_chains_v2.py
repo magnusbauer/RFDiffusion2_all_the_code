@@ -4,14 +4,15 @@
 # input rather than a folder. Does both initial parsing and fixed positions.
  
 
-import sys, os, argparse, itertools, json, glob
+import sys
+import os
+import argparse
+import json
+import glob
 import numpy as np
-import slurm_tools
 import tqdm
 root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 sys.path.insert(0, root_dir)
-from benchmark import pdb_to_params
-from icecream import ic
 
 def get_args():
     parser = argparse.ArgumentParser()
@@ -35,13 +36,13 @@ aa_3_1 = {b:a for a,b in zip(alpha_1,alpha_3)}
 
 def AA_to_N(x):
   # ["ARND"] -> [[0,1,2,3]]
-  x = np.array(x);
+  x = np.array(x)
   if x.ndim == 0: x = x[None]
   return [[aa_1_N.get(a, states-1) for a in y] for y in x]
 
 def N_to_AA(x):
   # [[0,1,2,3]] -> ["ARND"]
-  x = np.array(x);
+  x = np.array(x)
   if x.ndim == 1: x = x[None]
   return ["".join([aa_N_1.get(a,"-") for a in y]) for y in x]
 
@@ -172,7 +173,6 @@ def parse_PDB(path_to_pdb,extra_res_param={}):
     c = 0
     dna_list = 'atcg'
     rna_list = 'dryu'
-    protein_list = 'ARNDCQEGHILKMFPSTWYVX'
     protein_list_check = 'ARNDCQEGHILKMFPSTWYV'
     k_DNA = 10
     ligand_dumm_list = 'J'
@@ -204,7 +204,6 @@ def parse_PDB(path_to_pdb,extra_res_param={}):
     
     all_atom_types = atoms + list(dna_rna_atom_types)
     init_alphabet = ['A', 'B', 'C', 'D', 'E', 'F', 'G','H', 'I', 'J','K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T','U', 'V','W','X', 'Y', 'Z', 'a', 'b', 'c', 'd', 'e', 'f', 'g','h', 'i', 'j','k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't','u', 'v','w','x', 'y', 'z']
-    extra_alphabet = [str(item) for item in list(np.arange(300))]
     chain_alphabet = init_alphabet# + extra_alphabet
 
     biounit_names = [path_to_pdb]
@@ -213,13 +212,6 @@ def parse_PDB(path_to_pdb,extra_res_param={}):
         s = 0
         concat_seq = ''
         concat_seq_DNA = ''
-        concat_N = []
-        concat_CA = []
-        concat_C = []
-        concat_O = []
-        concat_mask = []
-        coords_dict = {}        
-        visible_list = []
         chain_list = []
         Cb_list = []
         P_list = []
@@ -240,7 +232,7 @@ def parse_PDB(path_to_pdb,extra_res_param={}):
         for letter in chain_alphabet:
 #             print(f'started parsing {letter}')
             xyz, seq, atype = parse_PDB_biounits(biounit, atoms = all_atom_types, chain=letter, lig_params=lig_params)
-            if type(xyz) != str:
+            if not isinstance(xyz, str):
                 protein_seq_flag = any([(item in seq[0]) for item in protein_list_check])
                 dna_seq_flag = any([(item in seq[0]) for item in dna_list])
                 rna_seq_flag = any([(item in seq[0]) for item in rna_list])
@@ -342,7 +334,6 @@ def main():
     args = get_args()
 
     filenames = [fn.strip() for fn in open(args.input_files).readlines()]
-    pdb_dict_list = []
     fixed_position_dict = {}
     for i,fn in tqdm.tqdm(enumerate(filenames)):
         trb = np.load(fn.replace('.pdb','.trb'), allow_pickle=True)

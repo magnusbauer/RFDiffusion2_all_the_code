@@ -1,8 +1,9 @@
 #!/software/conda/envs/pyrosetta/bin/python
 
 import pandas as pd
-import numpy as np
-import sys, os, argparse, glob
+import os
+import argparse
+import glob
 from collections import OrderedDict
 
 import pyrosetta
@@ -32,11 +33,6 @@ def main():
     rog_scorefxn.set_weight( pyrosetta.rosetta.core.scoring.ScoreType.rg , 1 )
 
     DSSP = pyrosetta.rosetta.protocols.moves.DsspMover()
-
-    if args.template is not None:
-        pose_ref_clean = pyrosetta.pose_from_file(args.template)
-    else:
-        last_template = ''
 
     # files to process
     if os.path.isdir(args.input_data):

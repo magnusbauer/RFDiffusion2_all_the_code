@@ -1,30 +1,25 @@
 #!/usr/bin/env -S /bin/sh -c '"$(dirname "$0")/exec/rf_diffusion_aa_shebang.sh" "$0" "$@"'
 
-import sys, os
+import sys
+import os
 import traceback
-import tree
 import datetime
 from rf_diffusion import master_addr
 import wandb
 import hydra
 from hydra.core.global_hydra import GlobalHydra
 import shutil
-import collections
 import copy
-import dataclasses
 import time
 import pickle 
 import numpy as np
 from copy import deepcopy
 from collections import OrderedDict
-from datetime import date
 from contextlib import ExitStack
 import assertpy
-import time 
 import re
 import torch
 import torch.nn as nn
-from torch.utils import data
 from omegaconf import DictConfig, OmegaConf
 
 from rf_diffusion.chemical import ChemicalData as ChemData
@@ -32,10 +27,6 @@ import rf2aa.data.data_loader
 import rf2aa.util
 import rf2aa.loss.loss
 import rf2aa.tensor_util
-from rf2aa.tensor_util import assert_equal
-from rf2aa.util_module import XYZConverter
-from rf2aa.model.RoseTTAFoldModel import LegacyRoseTTAFoldModule
-from rf_diffusion import loss_aa
 from rf_diffusion.metrics import MetricManager
 from rf_diffusion import run_inference
 from rf_diffusion import aa_model
@@ -51,20 +42,16 @@ pytimer.timer.default_logger.propagate = False
 
 from rf_diffusion import loss as loss_module
 from rf_diffusion.loss import *
-import util
 from scheduler import get_stepwise_decay_schedule_with_warmup
 
-from rf_diffusion import rotation_conversions as rot_conv
 from rf_diffusion import test_utils
 from openfold.utils import rigid_utils as ru
 from rf_diffusion.frame_diffusion.data import all_atom
 from se3_flow_matching.data import all_atom as all_atom_fm
-from rf_diffusion.reshape_weights import changed_dimensions, get_t1d_updates
 
 #added for inpainting training
 from icecream import ic
 import random
-from rf_diffusion.model_input_logger import pickle_function_call
 
 # added for logging git diff
 import subprocess
@@ -550,7 +537,6 @@ class Trainer():
             ic(f'loading model onto {"cuda:%d"%rank}')
         ic(chk_fn)
         checkpoint = torch.load(chk_fn, map_location=map_location)
-        rename_model = False
         # Set to false for faster loading when debugging
         cautious = True
         for m, weight_state in [
@@ -565,7 +551,6 @@ class Trainer():
                     for param in model_state:
                         if param not in weight_state:
                             print ('missing',param)
-                            rename_model=True
                         elif (weight_state[param].shape == model_state[param].shape):
                             new_chk[param] = weight_state[param]
                         else:
@@ -883,7 +868,7 @@ class Trainer():
                 # Defensive assertions
                 assert little_t > 0
                 assert N_cycle == 1, 'cycling not implemented'
-                i_cycle = N_cycle-1
+                N_cycle-1
                 if self.conf.inference['str_self_cond']:
                     assert self.conf['prob_self_cond'] > 0, 'prob_self_cond must be > 0 for str_self_cond to be active'
 
@@ -894,10 +879,6 @@ class Trainer():
 
                 # Save trues for writing pdbs later.
                 xyz_prev_orig = rfi.xyz[0]
-                seq_unmasked = indep.seq[None]
-
-                # for saving pdbs
-                seq_original = torch.clone(indep.seq)
 
                 # transfer inputs to device
                 B, _, L, _ = rfi.msa_latent.shape
@@ -907,9 +888,7 @@ class Trainer():
 
 
                 # get diffusion_mask for the displacement loss
-                diffusion_mask     = ~is_diffused
 
-                unroll_performed = False
 
                 use_cb = self.conf.preprocess.use_cb_to_get_pair_dist
 
@@ -918,7 +897,6 @@ class Trainer():
                 self_cond = not (little_t == self.conf.diffuser.T) and (torch.tensor(self.conf['prob_self_cond']) > torch.rand(1))
                 timer.checkpoint('device loading')
                 if self_cond:
-                    unroll_performed = True
                     rf2aa.tensor_util.to_device(rfi, gpu)
 
                     # Take 1 step back in time to get the training example to feed to the model
@@ -980,13 +958,6 @@ class Trainer():
                         seq_t = torch.nn.functional.one_hot(indep.seq, 80)[None].float()
                         xyz_t = rfi.xyz[None]
                         unclamp = torch.tensor([False])
-
-                        # Useful logging
-                        if False:
-                            is_protein_motif = ~is_diffused * ~indep.is_sm
-                            idx_diffused = torch.nonzero(is_diffused)
-                            idx_protein_motif  = torch.nonzero(is_protein_motif)
-                            idx_sm = torch.nonzero(indep.is_sm)
 
                         seq_diffusion_mask[:] = True
                         mask_crds[:] = False
@@ -1129,7 +1100,7 @@ class Trainer():
                                 
                     loss_dict['metrics'] = metrics
                     loss_dict['meta'] = {
-                        f'n_atomized_residues': len(masks_1d['is_atom_motif'])
+                        'n_atomized_residues': len(masks_1d['is_atom_motif'])
                     }
                     # loss_dict['loss_weights'] = loss_weights
                     if WANDB:

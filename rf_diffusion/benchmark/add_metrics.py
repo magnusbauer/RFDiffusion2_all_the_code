@@ -5,7 +5,9 @@
 # outputs job ID
 # 
 
-import sys, os, argparse, itertools, json, glob
+import sys
+import os
+import glob
 import numpy as np
 from icecream import ic
 import hydra
@@ -76,7 +78,7 @@ def main(conf: HydraConfig) -> list[int]:
                     if num_lines(out_csv_path)-1 == n_chunk:
                         if not conf.invalidate_cache:
                             continue
-                print(f'/home/davidcj/containers/debug_rfdaa/rfdaa_041624_dgl200_w_cuda.sif {os.path.join(script_dir, f"per_sequence_metrics.py")} '\
+                print(f'/home/davidcj/containers/debug_rfdaa/rfdaa_041624_dgl200_w_cuda.sif {os.path.join(script_dir, "per_sequence_metrics.py")} '\
                         f'--metric {metric} '\
                         f'--outcsv {conf.datadir}/metrics/per_{cohort}/{metric}/csv.{i} '\
                         f'{tmp_fn}', file=job_list_file)

@@ -1,4 +1,3 @@
-import functools
 import torch
 import contextlib
 from functools import wraps
@@ -10,15 +9,12 @@ import dataclasses
 from icecream import ic
 from assertpy import assert_that
 from rf_diffusion.chemical import ChemicalData as ChemData
-from rf2aa.chemical import initialize_chemdata
 import rf2aa.util
 from rf2aa.data import parsers
 from dataclasses import dataclass
-from rf2aa.data.data_loader import MSAFeaturize, MSABlockDeletion, merge_a3m_homo, merge_a3m_hetero
-from rf2aa.kinematics import xyz_to_c6d, c6d_to_bins, xyz_to_t2d, get_chirals
+from rf2aa.kinematics import get_chirals
 from rf2aa.util_module import XYZConverter
 import rf2aa.tensor_util
-import torch
 import copy
 import numpy as np
 from rf_diffusion.kinematics import get_init_xyz
@@ -26,17 +22,13 @@ import rf_diffusion.util as util
 from rf_diffusion.parsers import parse_pdb_lines_target
 import networkx as nx
 nx.from_numpy_matrix = nx.from_numpy_array
-import itertools
 import random
-import rf_diffusion.guide_posts as gp
 import rf_diffusion.rotation_conversions as rotation_conversions
 import rf_diffusion.atomize as atomize
 from rf_diffusion import write_file
 
-import os, sys
 import rf_diffusion.frame_diffusion.data.utils as du
 from rf_diffusion.frame_diffusion.data import all_atom
-import rf_diffusion.features as features
 
 
 NINDEL=1
@@ -302,7 +294,7 @@ def assert_valid_seq_mask(indep, is_masked_seq):
     
 def get_atom_names(seq_token):
     atom_names = ChemData().aa2long[seq_token][:ChemData().NHEAVYPROT]
-    return [a.strip() for a in atom_names if a != None]
+    return [a.strip() for a in atom_names if a is not None]
 
 def make_is_motif14(seq, atom_name_by_res_idx):
     '''
@@ -542,7 +534,6 @@ def get_hetatm_ids(pdb_lines, ligands):
     return hetatm_ids
 
 def get_bonds(pdb_lines):
-    ligand_atom_pdb_atom = []
     from_to = []
     for l in pdb_lines:
         if 'CONECT' not in l:
@@ -795,10 +786,6 @@ def conf_supports_guideposts(conf):
 
 def validate_guideposting_strategy(conf):
     supports_guideposts, supports_no_guideposts = conf_supports_guideposts(conf)
-    if conf.inference.contig_as_guidepost:
-        guidepost_mismatch = not supports_guideposts
-    else:
-        guidepost_mismatch = supports_no_guideposts
 
     is_valid = (conf.inference.contig_as_guidepost and supports_guideposts or 
                 not conf.inference.contig_as_guidepost and supports_no_guideposts)
@@ -1321,8 +1308,6 @@ def adaptor_fix_bb_indep(out):
     if torch.all(chirals == 0):
         chirals = torch.zeros((0,5))
 
-    is_sm = rf2aa.util.is_atom(seq)
-
     MSAFULL_N_TERM = ChemData().NAATOKENS+NINDEL
     MSAFULL_C_TERM = MSAFULL_N_TERM+1
     is_n_terminus = msa_full[0, 0, :, MSAFULL_N_TERM].bool()
@@ -1462,7 +1447,7 @@ def missing_atom_names(indep, atom_mask, res_i):
     return [a for a in all_atom_names if a not in have_atom_names]
 
 def fetch_connected_nodes(G, node, seen = None):
-    if seen == None:
+    if seen is None:
         seen = set([node])
     for neighbor in G.neighbors(node):
         if neighbor not in seen:
@@ -1517,7 +1502,6 @@ def pop_mask(indep, pop, break_chirals=False):
     n_atoms = indep.is_sm.sum()
     assertpy.assert_that(len(indep.atom_frames)).is_equal_to(n_atoms)
 
-    pop_sm = pop[indep.is_sm]
     # ASSERT REFERENCES CHECK OUT
 
     N     = pop.sum()
@@ -1595,15 +1579,11 @@ def rearrange_indep(indep, from_i):
     indep.chirals[:,:-1] = indep.chirals[:,:-1].type(torch.LongTensor).apply_(lambda i: to_i[i])
     is_sm_new = indep.is_sm[from_i]
     is_sm_old = indep.is_sm
-    sm_i_old = is_sm_old.nonzero()[:, 0]
-    absolute_from_relative_old = sm_i_old
-    sm_i_new = is_sm_new.nonzero()[:, 0]
     n_sm = is_sm_old.sum()
     sm_i_relative = torch.arange(n_sm)
     a = torch.zeros(indep.length()).type(torch.LongTensor)
     a[:] = 9999
     a[is_sm_old] = sm_i_relative
-    from_i_sm_relative = a[from_i[is_sm_new]]
     relative_from_absolute_new = torch.zeros(indep.length()).type(torch.LongTensor)
     a[:] = 9999
     relative_from_absolute_new[is_sm_new] = torch.arange(n_sm)
@@ -2006,7 +1986,6 @@ class AtomizeResidues:
         xyz = torch.full((L, ChemData().NTOTAL, 3), np.nan).float()
         xyz[:, :14] = indep_deatomized.xyz[:, :14]
 
-        aa2long_ = [[x.strip() if x is not None else None for x in y] for y in ChemData().aa2long]
         # iterate through residue indices in the structure to atomize
         seq_atomize_all = []
         xyz_atomize_all = []
@@ -2018,7 +1997,6 @@ class AtomizeResidues:
         # track the res_idx and absolute index of the previous C to draw peptide bonds between contiguous residues
         prev_res_idx = -2
         prev_C_index = -2
-        new_atomization_states = []
         for res_idx in is_protein_motif.nonzero():
             residue = indep_deatomized.seq[res_idx] # number representing the residue in the token list, can be used to index aa2long
             # check if all the atoms in the residue are resolved, if not dont atomize
@@ -2519,7 +2497,7 @@ def residue_atoms(res):
     return [n.strip() for n in ChemData().aa2long[res][:14] if n is not None]
 
 def make_conditional_indep(indep, indep_original, is_diffused):
-    assert indep.is_sm[~is_diffused].all(), f'sequence unmasking not yet implemented, only coordinate conditioning, so only atomized/small molecule motifs are allowed'
+    assert indep.is_sm[~is_diffused].all(), 'sequence unmasking not yet implemented, only coordinate conditioning, so only atomized/small molecule motifs are allowed'
     indep = copy.deepcopy(indep)
     indep.xyz[~is_diffused] = indep_original.xyz[~is_diffused, :14]
     return indep

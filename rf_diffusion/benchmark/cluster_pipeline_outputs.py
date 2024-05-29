@@ -1,11 +1,9 @@
 #!/usr/bin/env -S /bin/sh -c '"$(dirname "$0")/../exec/rf_diffusion_aa_shebang.sh" "$0" "$@"'
 
-import argparse
 import os
 import sys
 import re
 import glob
-from icecream import ic
 
 # from rf_diffusion.benchmark import util
 from rf_diffusion.benchmark.util.slurm_tools import array_submit

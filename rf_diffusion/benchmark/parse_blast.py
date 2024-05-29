@@ -3,7 +3,9 @@
 # Parses blast results and saves pairwise blast identity matrices and sequence clusters
 # 
 
-import sys, os, argparse, glob
+import os
+import argparse
+import glob
 import numpy as np
 import pandas as pd
 

@@ -1,7 +1,5 @@
 """SO(3) diffusion methods."""
 import numpy as np
-import os
-from functools import cached_property
 import torch
 
 L_default = 2000

@@ -1,10 +1,7 @@
-import sys
 
-import numpy as np
 import copy
 import torch
 
-import scipy.sparse
 
 from rf_diffusion.chemical import ChemicalData as ChemData
 from rf_diffusion.scoring import *
@@ -100,7 +97,7 @@ def get_tor_mask(seq, torsion_indices, mask_in=None):
     tors_mask[:,:,9] = torch.logical_and( tors_mask[:,:,9], seq!=ChemData().aa2num['UNK'] )
     tors_mask[:,:,9] = torch.logical_and( tors_mask[:,:,9], seq!=ChemData().aa2num['MAS'] )
 
-    if mask_in != None:
+    if mask_in is not None:
         # mask for missing atoms
         # chis
         ti0 = torch.gather(mask_in,2,torsion_indices[seq,:,0])

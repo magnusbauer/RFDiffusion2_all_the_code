@@ -1,6 +1,5 @@
 from rf_diffusion.benchmark import pipeline
 
-import prody
 import os
 import shutil
 from datetime import date

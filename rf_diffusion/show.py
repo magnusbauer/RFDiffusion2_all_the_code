@@ -1,10 +1,8 @@
 import os
 import copy
 
-from icecream import ic
 
-from rf_diffusion.dev import analyze, show_tip_pa, show_tip_row
-import rf_diffusion.atomize as atomize
+from rf_diffusion.dev import show_tip_row
 import rf_diffusion.aa_model as aa_model
 from rf_diffusion.dev import pymol
 

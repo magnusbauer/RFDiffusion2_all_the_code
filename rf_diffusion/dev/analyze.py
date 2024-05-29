@@ -1,14 +1,9 @@
 from functools import partial
-import sys
 import os
 import re
-import xmlrpc.client as xmlrpclib
 
-import glob
 import itertools
 from dataclasses import dataclass
-import os
-import sys
 from itertools import *
 import torch
 import pandas as pd
@@ -20,18 +15,15 @@ import numpy as np
 from rf_diffusion.chemical import ChemicalData as ChemData
 from rf_diffusion import aa_model
 import rf_diffusion.parsers as parsers
-import rf_diffusion.util as util
 import rf_diffusion
 PKG_DIR = rf_diffusion.__path__[0]
 REPO_DIR = os.path.dirname(PKG_DIR)
 
-import sys
 from rf_diffusion.dev.pymol import cmd
 
 import rf_diffusion.estimate_likelihood as el
 from rf_diffusion.inference import utils
 from itertools import takewhile
-import math
 
 
 
@@ -72,7 +64,6 @@ def read_metrics(df_path, add_contig_rmsd=True):
     df['rundir'] = os.path.split(df_path)[0]
     df['run'] = df['name'].apply(lambda x: x.split('_')[0])
     # df = df[df['run'] =='run2'].reset_index()
-    import re
     try:
         df['benchmark'] = [n[n.index('_')+1:n.index('_cond')] for n in df.name]
     except Exception as e:
@@ -184,7 +175,6 @@ def parse_pdb_lines(lines, parse_hetatom=False, ignore_het_h=True):
             continue
         chain, resNo, atom, aa = l[21:22], int(l[22:26]), ' '+l[12:16].strip().ljust(3), l[17:20]
         idx = pdb_idx.index((chain,resNo))
-        num = aa2num[aa]
         for i_atm, tgtatm in enumerate(aa2long[aa2num[aa]]):
             if tgtatm is not None and tgtatm.strip() == atom.strip(): # ignore whitespace
                 xyz[idx,i_atm,:] = [float(l[30:38]), float(l[38:46]), float(l[46:54])]
@@ -257,7 +247,6 @@ def get_idx_motif(row, mpnn=True):
         pdb_des = parse_pdb(os.path.join(rundir, row['name']+'.pdb'))
     #pdb_des = parse_pdb(os.path.join(rundir, 'mpnn', row['name']+'.pdb'))
     # pdb_ref = parse_pdb(template_dir+trb['settings']['pdb'].split('/')[-1])
-    xyz_ref = pdb_ref['xyz'][:,:3]
 
     # calculate 0-indexed motif residue positions (ignore the ones from the trb)
     # if os.path.exists(trbname):
@@ -274,11 +263,9 @@ def get_idx_motif(row, mpnn=True):
     idx_motif = [i for i,idx in zip(trb['con_hal_idx0'],trb['con_ref_pdb_idx']) 
                  if idx[0]!='R']
 
-    L_motif = len(idx_motif)
 
     idx_motif_ref = [i for i,idx in zip(trb['con_ref_idx0'],trb['con_ref_pdb_idx']) 
                      if idx[0]!='R']
-    xyz_ref_motif = xyz_ref[idx_motif_ref]
     # row['contig_rmsd_af2_des'] = calc_rmsd(xyz_pred[idx_motif].reshape(L_motif*3,3), 
     #                                        xyz_des[idx_motif].reshape(L_motif*3,3))
     # row['contig_rmsd_af2'] = calc_rmsd(xyz_pred[idx_motif].reshape(L_motif*3,3), xyz_ref_motif.reshape(L_motif*3,3))
@@ -412,7 +399,6 @@ def get_name(row, strat=None):
     return strat_name
 
 def to_selector(motif_resi):
-    chains = set(ch for ch,_ in motif_resi)
     #if len(chains) == 1:
     #    return f'{name} and chain {to_chain(self.motif_resi)} and ({to_resi(self.motif_resi)})'
     chain_sels = []
@@ -501,7 +487,6 @@ def load_motif(row, strat=None, show=True):
 
 def show_motif(row, strat, traj_types='X0', show_af2=True, show_true=False):
     structures = {}
-    rundir = row['rundir']
     strat_name = strat.replace(' ', '_')
     trb = get_trb(row)
     native = load_motif(row, strat_name)
@@ -618,8 +603,6 @@ def get_examples(df, benchmark, model, mpnn=False, key='rmsd_af2_des'):
 def get_traj_xyz(row, traj_type='X0', n=None):
     #p = parse_pdb(os.path.join(row['rundir'], 'mpnn', row['name']+'.pdb'))
 
-    motif_idx = get_motif_idx(row)
-
     traj_path = get_traj_path(row, traj_type)
     return read_traj_xyz(traj_path)
 
@@ -730,9 +713,7 @@ def calc_rmsd(xyz1, xyz2, eps=1e-6):
 
 
 import os
-import shutil
 from itertools import permutations
-from collections import defaultdict
 
 def get_benchmark(spec, interc=10-100, length=150):
 	'''
@@ -745,8 +726,6 @@ def get_benchmark(spec, interc=10-100, length=150):
 		}
 
 	'''
-	input_dir = '/home/ahern/projects/clean_rf_diffusion/benchmark/input'
-	theo_dir = 'enzyme'
 	benchmarks_json = '''
 	{
 	'''
@@ -768,7 +747,6 @@ def make_script(args, run, debug=False, n_sample=1, num_per_condition=1):
     seq_per_target = 8
     lengths = '150-150|200-200'
     if debug:
-        n_sample = 1
         T_arg = 'diffuser.T=5 '
         seq_per_target = 1
         lengths = '150-150'
@@ -801,7 +779,6 @@ def add_filters_multi(df, threshold_columns = ['contig_rmsd_af2', 'rmsd_af2_des'
     filter_names = []
     filter_unions = []
     for i, threshold in enumerate(thresholds):
-        filters = []
         filter_names = []
         for metric, sign, value in zip(threshold_columns, threshold_signs, threshold):
             if sign == '+':
@@ -1000,7 +977,6 @@ null_structure = Structure('null', [])
 
 def show_motif_simple(row, strat, traj_types='X0', show_af2=True, show_true=False):
     structures = {}
-    rundir = row['rundir']
     strat_name = strat.replace(' ', '_')
     trb = get_trb(row)
     has_motif = bool(trb['con_hal_pdb_idx'])
@@ -1272,7 +1248,7 @@ def plot_success(df, threshold_columns=['contig_rmsd_af2', 'rmsd_af2_des', 'af2_
     plt.xticks(rotation=90)
     return g, melted
 
-from tqdm.notebook import trange, tqdm
+from tqdm.notebook import tqdm
 def apply(df, name, f):
     df = df.copy()
     for i, row in tqdm(df.iterrows(), total=len(df)):
@@ -1312,7 +1288,6 @@ def show_df(data, cols=['af2_pae_mean', 'rmsd_af2_des'], traj_types=None, n=999)
     for _, row in itertools.islice(data.iterrows(), n):
         rmsd_too_high = row['rmsd_af2_des'] > 2
         pae_too_high =  row['af2_pae_mean'] > 5
-        sc = not rmsd_too_high and not pae_too_high
         key_val = [f'i_{i}']
         for k in cols:
             v = row[k]
@@ -1374,8 +1349,6 @@ def register_full_atom(pred, true, log=False, gamma=0.95):
     def centroid(X):
         return X.mean(dim=-2, keepdim=True)
 
-    orig_pred = pred.clone()
-    orig_true = true.clone()
     pred = pred[:, :, :, :3, :].contiguous()
     true = true[:, :, :3, :].contiguous()
     I, B, L, n_atom = pred.shape[:4]

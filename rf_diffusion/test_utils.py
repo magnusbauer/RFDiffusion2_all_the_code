@@ -5,8 +5,6 @@ from icecream import ic
 import os
 import subprocess
 from pathlib import Path
-import yaml
-import unittest
 import dataclasses
 import pickle
 import hydra
@@ -15,11 +13,10 @@ from omegaconf import DictConfig, OmegaConf
 
 from rf2aa import tensor_util
 from rf_diffusion.data_loader import (
-    get_train_valid_set, loader_pdb, loader_fb, loader_complex, loader_pdb_fixbb, loader_fb_fixbb, loader_complex_fixbb, loader_cn_fixbb, default_dataset_configs,
+    default_dataset_configs,
     DistilledDataset, DistributedWeightedSampler
 )
 from torch.utils import data
-from omegaconf import DictConfig
 from rf_diffusion.frame_diffusion.data import se3_diffuser
 
 import urllib
@@ -305,8 +302,8 @@ def loader_out_for_dataset(dataset, mask, overrides=[], epoch=0, config_name='de
         'dataloader.DATAPKL_AA=aa_dataset_256_subsampled_10.pkl',
         'dataloader.CROP=256',
         f'dataloader.DATASETS={dataset}',
-        f'dataloader.DATASET_PROB=[1.0]',
-        f'dataloader.DIFF_MASK_PROBS=null',
+        'dataloader.DATASET_PROB=[1.0]',
+        'dataloader.DIFF_MASK_PROBS=null',
         f'dataloader.DIFF_MASK_PROBS={{{mask}:1.0}}',
         'debug=True',
         'spoof_item=null',
@@ -376,7 +373,7 @@ def compare_aa_atom_order(xyz_cmp, xyz_ref, aa_int):
     is_resolved_cmp = is_atom_resolved(xyz_cmp)
     is_resolved_ref = is_atom_resolved(xyz_ref)
     if not (is_resolved_cmp.sum() == is_resolved_ref.sum()):
-        msg = f'xyz_cmp and xyz_ref do not have the same number of resolved atoms. They cannot be compared.'
+        msg = 'xyz_cmp and xyz_ref do not have the same number of resolved atoms. They cannot be compared.'
         return None, msg
 
     xyz_cmp = xyz_cmp[is_resolved_cmp]

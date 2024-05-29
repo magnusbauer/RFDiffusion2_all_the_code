@@ -4,10 +4,10 @@
 # input rather than a folder. Does both initial parsing and fixed positions.
  
 
-import sys, os, argparse, itertools, json, glob
+import argparse
+import json
+import glob
 import numpy as np
-import slurm_tools
-from icecream import ic
 
 def get_args():
     parser = argparse.ArgumentParser()
@@ -31,13 +31,13 @@ aa_3_1 = {b:a for a,b in zip(alpha_1,alpha_3)}
 
 def AA_to_N(x):
   # ["ARND"] -> [[0,1,2,3]]
-  x = np.array(x);
+  x = np.array(x)
   if x.ndim == 0: x = x[None]
   return [[aa_1_N.get(a, states-1) for a in y] for y in x]
 
 def N_to_AA(x):
   # [[0,1,2,3]] -> ["ARND"]
-  x = np.array(x);
+  x = np.array(x)
   if x.ndim == 1: x = x[None]
   return ["".join([aa_N_1.get(a,"-") for a in y]) for y in x]
 
@@ -117,15 +117,9 @@ def parse_multiple_chains(file_list):
         my_dict = {}
         s = 0
         concat_seq = ''
-        concat_N = []
-        concat_CA = []
-        concat_C = []
-        concat_O = []
-        concat_mask = []
-        coords_dict = {}
         for letter in chain_alphabet:
             xyz, seq = parse_PDB_biounits(biounit, atoms=['N','CA','C','O'], chain=letter)
-            if type(xyz) != str:
+            if not isinstance(xyz, str):
                 concat_seq += seq[0]
                 my_dict['seq_chain_'+letter]=seq[0]
                 coords_dict_chain = {}

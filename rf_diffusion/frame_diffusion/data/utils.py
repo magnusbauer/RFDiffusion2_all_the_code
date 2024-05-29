@@ -1,23 +1,12 @@
 import pickle
-import os
-from typing import Any
 import numpy as np
-from typing import List, Dict, Any
-import collections
-from omegaconf import OmegaConf
-import dataclasses
 # from data import chemical
 # from data import residue_constants
 # from data import protein
 # from data import so3_utils
 from openfold.utils import rigid_utils
 from scipy.spatial.transform import Rotation
-from Bio import PDB
-from Bio.PDB.Chain import Chain
-import string
 import io
-import gzip
-from torch.utils import data
 import torch
 
 # Protein = protein.Protein
@@ -45,7 +34,8 @@ import torch
 # ]
 
 
-move_to_np = lambda x: x.cpu().detach().numpy()
+def move_to_np(x):
+    return x.cpu().detach().numpy()
 # aatype_to_seq = lambda aatype: ''.join([
 #         residue_constants.restypes_with_x[x] for x in aatype])
 
