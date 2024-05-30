@@ -231,6 +231,7 @@ def show(row, structs = {'X0'}, af2=False, des=True, des_color=None, hetatm_colo
         gp_selector = f'{pymol_name}_residue_gp_motif'
         if gp_selector in sels:
             cmd.unbond(sels[gp_selector], show_tip_row.NOT(sels[gp_selector]))
+        show_tip_row.color_selectors(sels, verbose=False, des_color=des_color, hetatm_color=hetatm_color)
     
     if unbond_motif:
         cmd.unbond('chain A', 'chain B')
