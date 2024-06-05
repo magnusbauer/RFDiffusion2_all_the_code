@@ -38,6 +38,9 @@ from rf_diffusion import features
 from rf_diffusion import distributions
 from rf_diffusion import conditioning
 
+from typing import Tuple
+from omegaconf import OmegaConf
+
 logger = logging.getLogger(__name__)
 
 USE_DEFAULT = '__USE_DEFAULT__'
@@ -1755,6 +1758,30 @@ def feature_tuple_from_feature_dict(**kwargs):
             kwargs['item_context']
     )
 
+
+def get_t_training(conf: OmegaConf)-> Tuple[int, float]:
+    """
+    Get the diffusion time t for the diffuser for training
+
+    Args:
+        conf (OmegaConf): training config with diffuser info
+
+    Returns:
+        t (int, float): discrete time step
+        t_cont (float): continuous time step
+    """
+    if conf.diffuser.time_type == 'discrete':
+        t = random.randint(1, conf.diffuser.T)
+        t_cont = t / conf.diffuser.T
+    elif conf.diffuser.time_type == 'continuous':
+        distribution = getattr(distributions, conf.diffuser.t_distribution)
+        t_cont = distribution.rvs(1)[0]
+        t = t_cont * conf.diffuser.T
+    else:
+        raise ValueError(f"Invalid option: {conf.diffuser.time_type}. Please choose from <'discrete', 'continuous'>.")
+    return t, t_cont
+
+
 class DistilledDataset(data.Dataset):
     def __init__(self, dataset_configs, params, diffuser, preprocess_param, conf, homo=None, p_homo_cut=0.5, **kwargs):
         self.diffuser = diffuser
@@ -1772,15 +1799,7 @@ class DistilledDataset(data.Dataset):
         self.model_adaptor = dataset.model_adaptor
 
         def diffuse(indep, is_gp, metadata, chosen_dataset, sel_item, task, masks_1d, item_context, mask_gen_seed, is_masked_seq, is_diffused, atomizer, **kwargs):
-            if self.conf.diffuser.time_type == 'discrete':
-                t = random.randint(1, self.conf.diffuser.T)
-                t_cont = t / self.conf.diffuser.T
-            elif self.conf.diffuser.time_type == 'continuous':
-                distribution = getattr(distributions, self.conf.diffuser.t_distribution)
-                t_cont = distribution.rvs(1)[0]
-                t =  t_cont * self.conf.diffuser.T
-            else:
-                raise ValueError(f"Invalid option: {self.conf.diffuser.time_type}. Please choose from <'discrete', 'continuous'>.")
+            t, t_cont = get_t_training(self.conf)
 
             indep.extra_t1d = features.get_extra_t1d(indep, self.conf.extra_t1d, is_gp=is_gp, t_cont=t_cont, **self.conf.extra_t1d_params)
 

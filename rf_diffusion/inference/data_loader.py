@@ -1,0 +1,209 @@
+from rf_diffusion import aa_model
+from rf_diffusion import data_loader
+from rf_diffusion import conditioning
+from rf_diffusion import guide_posts
+from rf_diffusion.contigs import ContigMap
+import rf_diffusion.inference.centering as centering
+
+import copy
+from omegaconf import OmegaConf
+import torch
+import numpy as np
+import torch.utils.data
+from rf_diffusion.inference import utils as iu
+
+from typing import Tuple
+
+class PDBLoaderDataset(torch.utils.data.Dataset):
+    """
+    Makes indeps from PDBs for inference. Subsequent transforms are applied to complete the indep
+    featurization process.
+    """
+    def __init__(self, conf: OmegaConf):
+        """
+        Args:
+            confs (OmegaConf): Omegaconf for inference time
+        """                
+        self.conf = conf
+
+    def __getitem__(self, idx):
+        conf = self.conf
+        pdb_fp = conf.inference.input_pdb
+
+        # Create contig map from the conf
+        target_feats = iu.process_target(pdb_fp, parse_hetatom=False, center=False)
+        L = len(target_feats['pdb_idx'])
+        contig_map = ContigMap(target_feats, **conf.contigmap)                 
+
+        # Create the indep from the pdb file along with ligand metadata   
+        indep_orig, metadata = aa_model.make_indep(pdb_fp, 
+                                                   conf.inference.ligand, 
+                                                   return_metadata=True)
+        
+        # Calculate centering context and validate
+        origin = centering.extract_centering_origin(indep_orig, pdb_fp, for_partial_diffusion(conf))        
+
+        # Prepare non atomization contig insertion (pre tranform-indep)
+        model_adaptor = aa_model.Model(conf)
+        indep, masks_1d = model_adaptor.insert_contig_pre_atomization(indep_orig, contig_map, metadata, for_partial_diffusion(conf))
+
+        # Validate strategies
+        centering.validate_centering_strategy(origin, for_partial_diffusion(conf), conf)    
+        guide_posts.validate_guideposting_strategy(conf)
+
+        feats = {'contig_map': contig_map, 'indep': indep, 'metadata': metadata, 
+                 'masks_1d': masks_1d, 'L': L, 'conf': conf,
+                 'origin': origin}
+        return feats
+
+    def __len__(self):
+        return 1
+
+
+def for_partial_diffusion(conf: OmegaConf):
+    return conf.diffuser.partial_T is not None
+
+
+def validate_partial_diffusion(conf: OmegaConf, 
+                    contig_map: ContigMap, 
+                    indep: aa_model.Indep, 
+                    is_diffused: torch.tensor, 
+                    L: int):
+    """
+    Validate the partial diffusion settings for the current inference
+
+    Raises:
+        AssertionError: If the partial diffusion settings are invalid
+    """
+    if for_partial_diffusion(conf)  :
+        mappings = contig_map.get_mappings()
+        # This is due to the fact that when inserting a contig, the non-motif coordinates are reset.
+        if conf.inference.safety.sidechain_partial_diffusion:
+            print("You better know what you're doing when doing partial diffusion with sidechains")
+        else:
+            # Validate coordinates and strategy
+            assert indep.xyz.shape[0] ==  L + torch.sum(indep.is_sm), f"there must be a coordinate in the input PDB for each residue implied by the contig string for partial diffusion.  length of input PDB != length of contig string: {indep.xyz.shape[0]} != {L+torch.sum(indep.is_sm)}"
+            assert torch.all(is_diffused[indep.is_sm] == 0), "all ligand atoms must be in the motif"
+        assert (mappings['con_hal_idx0'] == mappings['con_ref_idx0']).all(), f"all positions in the input PDB must correspond to the same index in the output pdb: {list(zip(mappings['con_hal_idx0'], mappings['con_ref_idx0']))=}"
+
+
+def get_t_inference(conf: OmegaConf) -> Tuple[int, float]:
+    """
+    Determine the diffusion time step to use during inference
+
+    Returns:
+        t_step_input (int, float): the time step to use for diffusion
+        t_cont (float): the time step to use for diffusion as a fraction of the total diffusion time
+    """
+    t_step_input = conf.diffuser.T
+    # Diffuse the contig-mapped coordinates 
+    if for_partial_diffusion(conf):
+        t_step_input = conf.diffuser.partial_T
+        assert conf.diffuser.partial_T <= conf.diffuser.T   
+
+    t_cont = t_step_input/conf.diffuser.T
+
+    return t_step_input, t_cont
+
+
+class InferenceDataset:
+    """
+    Dataset for inference time. Applies the transformations used to modify and featurize indep
+    """
+    def __init__(self, conf: OmegaConf, diffuser=None):
+        """
+        Args:
+            conf (OmegaConf): The configuration for the inference
+            diffuser (Diffuser): The diffuser for the inference, can be set to None explicitly to avoid diffusion on the data            
+        """
+
+        def update_inference_state(indep, metadata, contig_map, **kwargs):
+            """
+            Update stateful attributes for inference
+            """            
+            # Update contig_map with ligand information
+            contig_map.ligand_names = np.full(indep.length(), '', dtype='<U3')
+            contig_map.ligand_names[contig_map.hal_idx0.astype(int)] = metadata['ligand_names'][contig_map.ref_idx0] 
+
+            return kwargs | dict(contig_map=contig_map, indep=indep, metadata=metadata)
+
+        def diffuse(conf: OmegaConf,
+                    indep: aa_model.Indep, 
+                    metadata: dict,
+                    is_diffused: torch.tensor, 
+                    is_masked_seq: torch.tensor,
+                    contig_map: ContigMap, 
+                    L: int,
+                    **kwargs):
+            """
+            Perform inference time diffusion on the incoming indep using the is_diffused mask
+            Mirrors the logic performed during training, but deviates because diffusion is performed
+            to completion (or partially during partial diffusion) during inference, whereas time t values 
+            are randomly selected during training.
+
+            Args:
+                conf (OmegaConf): the config for the inference
+                indep (Indep): the holy Indep
+                metadata (dict): the metadata for the ligand
+                is_diffused (torch.tensor): the diffused residues as a boolean mask
+                is_masked_seq (torch.tensor): the masked sequence residues as a boolean mask
+                contig_map (ContigMap): the contig map post contig insertion
+                L (int): the length of the target sequence
+            """
+            # As in training, determine the diffusion time step to use   
+            validate_partial_diffusion(conf, contig_map, indep, is_diffused, L)       
+            t_step_input, t_cont = get_t_inference(conf)
+
+            # At some point, it may be possible to place extra t1d features here, but currently it produces bugged outputs 
+
+            indep_uncond, indep_cond = aa_model.diffuse_then_add_conditional(conf, diffuser, copy.deepcopy(indep.clone()), is_diffused, t_step_input)
+            
+            aa_model.mask_indep(indep_uncond, is_masked_seq)  # mask as in training (after diffuse)
+            aa_model.mask_indep(indep_cond, is_masked_seq)                
+
+            return kwargs | dict(
+                indep_uncond=indep_uncond,
+                indep_cond=indep_cond,
+                is_diffused=is_diffused,
+                indep_orig=indep,  # overwrite indep_orig with the pre diffused indep
+                contig_map=contig_map,
+                metadata=metadata,
+                t_step_input=t_step_input,
+            )
+
+        def feature_tuple_from_feature_dict(**kwargs):
+            return (
+                    kwargs['indep_uncond'],
+                    kwargs['indep_orig'],
+                    kwargs['indep_cond'],
+                    kwargs['metadata'],
+                    kwargs['is_diffused'],
+                    kwargs['atomizer'],
+                    kwargs['contig_map'],
+                    kwargs['t_step_input'],                    
+            )
+
+        # Create dataset from the pdb input and config
+        dataset = PDBLoaderDataset(conf)
+        
+        # Curate transforms as in training 
+        transforms = []
+        for transform_name in conf.transforms.names:
+            transforms.append(
+                getattr(conditioning, transform_name)(**conf.transforms.configs[transform_name]),
+            )
+        # Add related transforms used to those in training, but for inference            
+        transforms.extend([
+            update_inference_state,
+            diffuse,
+            feature_tuple_from_feature_dict
+        ])
+
+        # Create the transformed dataloader
+        self.dataset = data_loader.TransformedDataset(dataset, transforms)
+
+    def __getitem__(self, i):
+        return self.dataset[i]
+
+    def __len__(self):
+        return len(self.dataset)

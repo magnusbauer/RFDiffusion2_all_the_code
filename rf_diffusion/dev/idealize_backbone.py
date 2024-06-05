@@ -41,7 +41,7 @@ def rewrite(path, outpath):
         stream = [l for l in fh if "HETATM" in l or "CONECT" in l]
 
     ligands = aa_model.get_ligands(stream)
-    indep, metadata = aa_model.make_indep(path, ','.join(ligands), center=False, return_metadata=True)
+    indep, metadata = aa_model.make_indep(path, ','.join(ligands), return_metadata=True)
     is_protein = rf2aa.util.is_protein(indep.seq)
     xyz = indep.xyz[is_protein]
     idx = indep.idx[is_protein]

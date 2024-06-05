@@ -17,7 +17,7 @@ from rf2aa.util_module import XYZConverter
 import rf2aa.tensor_util
 import copy
 import numpy as np
-from rf_diffusion.kinematics import get_init_xyz
+import rf_diffusion.kinematics
 import rf_diffusion.util as util
 from rf_diffusion.parsers import parse_pdb_lines_target
 import networkx as nx
@@ -26,10 +26,12 @@ import random
 import rf_diffusion.rotation_conversions as rotation_conversions
 import rf_diffusion.atomize as atomize
 from rf_diffusion import write_file
+from rf_diffusion.contigs import ContigMap
 
 import rf_diffusion.frame_diffusion.data.utils as du
 from rf_diffusion.frame_diffusion.data import all_atom
 
+from typing import List
 
 NINDEL=1
 NTERMINUS=2
@@ -105,7 +107,7 @@ class Indep:
         copy.deepcopy can only copy leaf tensors and the 
         fields are not always leaves.
         '''
-        return self.__class__(
+        indep_copy = self.__class__(
             copy.deepcopy(self.seq.detach()),
             copy.deepcopy(self.xyz.detach()),
             copy.deepcopy(self.idx.detach()),
@@ -115,6 +117,15 @@ class Indep:
             copy.deepcopy(self.terminus_type.detach()),
             copy.deepcopy(self.extra_t1d),
         )
+        # Add is_gp if needed @Altaeth, added for compatibility with the gp, but is temporary workaround. This fixes bugs due to cloning
+        if hasattr(self, 'is_gp'):
+            indep_copy.is_gp = copy.deepcopy(self.is_gp.detach())
+        if hasattr(self, 'origin'):
+            if self.origin is None:
+                indep_copy.origin = None
+            else:
+                indep_copy.origin = copy.deepcopy(self.origin.detach())
+        return indep_copy
 
     @property
     def device(self):
@@ -468,7 +479,17 @@ def filter_connect(l, invalid_ids):
     
     return ''.join(new_l), invalid_bonds
 
-def remove_non_target_ligands(pdb_lines, ligands):
+def remove_non_target_ligands(pdb_lines: List[str], ligands: List[str]) -> List[str]:
+    """
+    Removes non-target ligands from the PDB lines
+
+    Args:
+        pdb_lines (list): List of PDB lines from a PDB parser
+        ligands (list): List of ligands to be removed.
+
+    Returns:
+        list[str]: List of PDB lines 
+    """
     non_target_hetatm_ids = get_non_target_hetatm_ids(pdb_lines, ligands)
     lines = []
     all_invalid_bonds = []
@@ -493,7 +514,11 @@ def remove_non_target_ligands(pdb_lines, ligands):
 
     return lines
 
-def filter_het(pdb_lines, ligands, covale_allowed=False):
+def filter_het(pdb_lines, ligands, covale_allowed=False, keep_conect=True):
+    """
+    Args:
+        keep_conect (bool): If True, keep CONECT lines that reference atoms in the target ligands
+    """
     lines = []
     hetatm_ids = []
     for l in pdb_lines:
@@ -511,7 +536,8 @@ def filter_het(pdb_lines, ligands, covale_allowed=False):
             continue
         ids = [int(e.strip()) for e in l[6:].split()]
         if all(i in hetatm_ids for i in ids):
-            lines.append(l)
+            if keep_conect:
+                lines.append(l)
             continue
         if any(i in hetatm_ids for i in ids):
             ligand_atms_bonded_to_protein = [i for i in ids if i in hetatm_ids]
@@ -615,7 +641,16 @@ def get_atom_mask(pdb):
     mask_prot[:,14:] = False
     return mask_prot
 
-def make_indep(pdb, ligand='', center=True, return_metadata=False):
+def make_indep(pdb, ligand='', return_metadata=False):
+    """
+    Creates an Indep from a pdb file for use in inference, or file rewriting.
+    NOTE: this function does not center anything, which means coordiantes can be large
+
+    Args:
+        pdb (str): Path to pdb file
+        ligand (str): Ligand names to include in Indep separated by commas (',')
+        return_metadata (bool): whether or not to return metadata
+    """
     # self.target_feats = iu.process_target(self.inf_conf.input_pdb, parse_hetatom=True, center=False)
     # init_protein_tmpl=False, init_ligand_tmpl=False, init_protein_xyz=False, init_ligand_xyz=False,
     #     parse_hetatm=False, n_cycle=10, random_noise=5.0)
@@ -735,8 +770,6 @@ def make_indep(pdb, ligand='', center=True, return_metadata=False):
     terminus_type[0] = N_TERMINUS
     terminus_type[Ls[0]-1] = C_TERMINUS
 
-    if center:
-        xyz = get_init_xyz(xyz[None, None], is_sm).squeeze()
     ###TODO: currently network needs values at 0,2 indices of tensor, need to remove this reliance
     xyz[is_sm, 0] = 0
     xyz[is_sm, 2] = 0
@@ -771,31 +804,6 @@ def add_fake_frame_legs(xyz, is_atom, generator=None):
     xyz[is_atom, 2] += torch.normal(torch.zeros_like(xyz[is_atom, 2]), std=1.0, generator=generator)
     return xyz
 
-def conf_supports_guideposts(conf):
-    supports_guideposts = False
-    supports_no_guideposts = True
-    if 'P_IS_GUIDEPOST_EXAMPLE' in conf.dataloader:
-        if conf.dataloader.P_IS_GUIDEPOST_EXAMPLE > 0:
-            supports_guideposts = True
-        if conf.dataloader.P_IS_GUIDEPOST_EXAMPLE < 1:
-            supports_guideposts = True
-    elif 'USE_GUIDE_POSTS' in conf.dataloader:
-        supports_guideposts = conf.dataloader.USE_GUIDE_POSTS
-        supports_no_guideposts = not conf.dataloader.USE_GUIDE_POSTS
-    return supports_guideposts, supports_no_guideposts
-
-def validate_guideposting_strategy(conf):
-    supports_guideposts, supports_no_guideposts = conf_supports_guideposts(conf)
-
-    is_valid = (conf.inference.contig_as_guidepost and supports_guideposts or 
-                not conf.inference.contig_as_guidepost and supports_no_guideposts)
-
-    if not is_valid:
-        raise ValueError(
-            f'The model was only trained {"with" if not conf.inference.contig_as_guidepost else "without"} guideposts '
-            f'but it is trying to be run {"with" if conf.inference.contig_as_guidepost else "without"} guideposts. '
-            f'Please use a different checkpoint or set `inference.contig_as_guidepost={not conf.inference.contig_as_guidepost}`'
-        )
 
 class Model:
 
@@ -811,7 +819,16 @@ class Model:
         # assert set(rfi_dict.keys()) - set()
         return RFO(*self.model(**{**rfi_dict, **kwargs}))
 
-    def insert_contig_pre_atomization(self, indep, contig_map, partial_T=False, metadata=None, for_partial_diffusion=False):
+    def insert_contig_pre_atomization(self, indep: Indep, contig_map: ContigMap, metadata: dict = None, for_partial_diffusion: bool = False):
+        """
+        Performs all inference time contig insertion tasks for Indep that are upstream to transform_indep
+
+        Args:
+            indep (Indep): the holy Indep
+            contig_map (ContigMap): the contig map prior to any indep insertion
+            metadata (dict): ligand metadata
+            for_partial_diffusion (bool): whether or not partial diffusion is to be used
+        """
         if metadata is None:
             print("warning, insert contig with no metadata is not handled gracefully")
             metadata = defaultdict(dict)
@@ -854,7 +871,8 @@ class Model:
         o.seq[contig_map.hal_idx0] = indep.seq[contig_map.ref_idx0]
         o.same_chain = torch.tensor(chain_id[None, :] == chain_id[:, None])
         if not for_partial_diffusion:
-            o.xyz = get_init_xyz(o.xyz[None, None], o.is_sm).squeeze()
+            # Required for se3 optimal transport aligner to work
+            o.xyz = rf_diffusion.kinematics.get_init_xyz(o.xyz[None, None], o.is_sm, center=False).squeeze()
 
         o.bond_feats = torch.full((L_mapped, L_mapped), 0).long()
         o.bond_feats[:n_prot, :n_prot] = rf2aa.util.get_protein_bond_feats(n_prot)
@@ -903,44 +921,12 @@ class Model:
 
         o.same_chain = same_chain_with_covale(o.same_chain, metadata['covale_bonds'])
 
-        # Check if self.conf.inference.contig_as_guidepost is compatible with how the model was trained
-        validate_guideposting_strategy(self.conf)
         masks_1d = {
             'input_str_mask': is_res_str_shown,
             'is_atom_motif': is_atom_str_shown,
             'is_diffused': is_diffused,
         }
         return o, masks_1d
-
-    def insert_contig(self, indep, contig_map, partial_T=False, metadata=None, for_partial_diffusion=False):
-        o, masks_1d = self.insert_contig_pre_atomization(indep, contig_map, partial_T, metadata, for_partial_diffusion)
-
-        is_res_str_shown = masks_1d['input_str_mask']
-        is_atom_str_shown = masks_1d['is_atom_motif']
-        is_diffused = masks_1d['is_diffused']
-        
-        pre_transform_length = o.length()
-        o, is_diffused, is_seq_masked, self.atomizer, contig_map.gp_to_ptn_idx0 = transform_indep(o, is_diffused, is_res_str_shown, is_atom_str_shown, self.conf.inference.contig_as_guidepost, 'anywhere', self.conf.guidepost_bonds, metadata=metadata)
-        # HACK: gp indices may be lost during atomization, so we assume they are at the end of the protein.
-        is_gp = torch.full((o.length(),), True)
-        is_gp[:pre_transform_length] = False
-        o.is_gp = is_gp
-        # for i, e in enumerate(o.extra_t1d.T):
-        #     ic(i, e)
-        # ic(self.conf.inference.conditions, extra_t1d, o.extra_t1d.shape)
-
-        # HACK.  ComputeAllAtom in the network requires N and C coords even for atomized residues,
-	    # However, these have no semantic value.  TODO: Remove the network's reliance on these coordinates.
-        sm_ca = o.xyz[o.is_sm, 1]
-        o.xyz[o.is_sm,:3] = sm_ca[...,None,:]
-        o.xyz[o.is_sm] += ChemData().INIT_CRDS
-        
-        contig_map.ligand_names = np.full(o.length(), '', dtype='<U3')
-        contig_map.ligand_names[contig_map.hal_idx0.astype(int)] = metadata['ligand_names'][contig_map.ref_idx0]
-
-        # To see the shapes of the indep struct with contig inserted
-        # print(rf2aa.tensor_util.info(rf2aa.tensor_util.to_ordered_dict(o)))
-        return o, is_diffused, is_seq_masked
 
 
     def prepro(self, indep, t, is_diffused):
@@ -1587,22 +1573,7 @@ def rearrange_indep(indep, from_i):
     relative_from_absolute_new = torch.zeros(indep.length()).type(torch.LongTensor)
     a[:] = 9999
     relative_from_absolute_new[is_sm_new] = torch.arange(n_sm)
-
-def motif_c_alpha_com(xyz, is_diffused):
-    if torch.sum(~is_diffused) == 0:
-        return xyz[:,1,:].mean(dim=0)
-    return xyz[~is_diffused,1,:].mean(dim=0)
     
-def centre(indep, is_diffused):
-    xyz = indep.xyz
-    #Centre unmasked structure at origin, as in training (to prevent information leak)
-    if torch.sum(~is_diffused) != 0:
-        motif_com=xyz[~is_diffused,1,:].mean(dim=0) # This is needed for one of the potentials
-        xyz = xyz - motif_com
-    elif torch.sum(~is_diffused) == 0:
-        xyz = xyz - xyz[:,1,:].mean(dim=0)
-    indep.xyz = xyz
-
 
 def diffuse(conf, diffuser, indep, is_diffused, t):
     indep = copy.deepcopy(indep)
@@ -1634,21 +1605,25 @@ def idealize_peptide_frames(indep, generator=None):
     indep.xyz = atom37[:,:14]
     return indep
 
-def diffuse_then_add_conditional(conf, diffuser, indep, is_diffused, t, generator=None):
-    # Make the unconditional indep
+def diffuse_then_add_conditional(conf, diffuser, indep, is_diffused, t):
+    """
+    Args:
+        diffuser (Diffuser): Diffuser model, can be None, in which case diffusion is not performed
+    """
+    if diffuser is None:
+        return indep, indep
+
+    # Make the unconditional indep    
     indep_uncond, diffuser_out = diffuse(conf, diffuser, indep, torch.ones_like(is_diffused).bool(), t)
 
     # Make the conditional portion
     indep = copy.deepcopy(indep)
-    centre(indep, is_diffused)
     indep = add_fake_peptide_frame(indep)
     indep_cond = copy.deepcopy(indep_uncond)
     indep_cond.xyz[~is_diffused] = indep.xyz[~is_diffused]
 
     return indep_uncond, indep_cond
-    # indep.xyz = add_fake_frame_legs(indep.xyz, indep.is_sm, generator=generator)
-    # indep_cond = add_fake_peptide_frame(indep, generator=copy_rng(frame_legs_rng))
-    # indep
+
 
 def forward(model, rfi, **kwargs):
     rfi_dict = dataclasses.asdict(rfi)

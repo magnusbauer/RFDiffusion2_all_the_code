@@ -3,33 +3,29 @@ import unittest
 from icecream import ic
 import torch
 
-import inference.utils
 import aa_model
-import contigs
 import bond_geometry
 import perturbations
 import atomize
 import metrics
 import test_utils
+import rf_diffusion.inference.data_loader
 
 # def is_se3_invariant(loss, true, pred):
 
 class TestLoss(unittest.TestCase):
 
     def test_atom_bond_loss(self):
-        test_pdb = 'benchmark/input/gaa.pdb'
-        
-        target_feats = inference.utils.process_target(test_pdb)
-        contig_map =  contigs.ContigMap(target_feats,
-                                       contigs=['2,A518-518'],
-                                       contig_atoms="{'A518':'CA,C,N,O,CB,CG,OD1,OD2'}",
-                                       length='3-3',
-                                       )
-        indep, metadata = aa_model.make_indep(test_pdb, return_metadata=True)
-        conf = test_utils.construct_conf(inference=True)
-        adaptor = aa_model.Model(conf)
-        indep_contig, is_diffused, _ = adaptor.insert_contig(indep, contig_map, metadata=metadata)
-        point_types = aa_model.get_point_types(indep_contig, adaptor.atomizer)
+        conf = test_utils.construct_conf(inference=True, overrides=["contigmap.contigs=['2,A518-518']",
+                                                                    "contigmap.contig_atoms=\"{'A518':'CA,C,N,O,CB,CG,OD1,OD2'}\"",
+                                                                    "contigmap.length='3-3'",
+                                                                    "inference.input_pdb='benchmark/input/gaa.pdb'"])
+
+        # Load the input data during inference
+        dataset = rf_diffusion.inference.data_loader.InferenceDataset(conf)
+        _, _, indep_contig, _, is_diffused, atomizer, contig_map, t_step_input = next(iter(dataset))
+
+        point_types = aa_model.get_point_types(indep_contig, atomizer)
         true = indep_contig.xyz
 
         def simplify(bond_losses):
@@ -58,28 +54,22 @@ class TestLoss(unittest.TestCase):
         assert_all_zero(bond_losses)
 
     def test_rigid_loss(self):
-        test_pdb = 'benchmark/input/gaa.pdb'
-        
-        target_feats = inference.utils.process_target(test_pdb)
-        contig_map =  contigs.ContigMap(target_feats,
-                                       contigs=['2,A518-518'], # Asp518
-                                       contig_atoms="{'A518':'CG,OD1,OD2'}",
-                                       length='3-3',
-                                       )
-        indep, metadata = aa_model.make_indep(test_pdb, return_metadata=True)
-
-        conf = test_utils.construct_conf(inference=True) 
-        adaptor = aa_model.Model(conf)
-        indep_contig,is_diffused,_ = adaptor.insert_contig(indep, contig_map, metadata=metadata)
+        conf = test_utils.construct_conf(inference=True, overrides=["contigmap.contigs=['2,A518-518']",
+                                                                    "contigmap.contig_atoms=\"{'A518':'CG,OD1,OD2'}\"",
+                                                                    "contigmap.length='3-3'",
+                                                                    "inference.input_pdb='benchmark/input/gaa.pdb'"])
+        # Load the input data during inference
+        dataset = rf_diffusion.inference.data_loader.InferenceDataset(conf)
+        _, _, indep_contig, _, is_diffused, atomizer, contig_map, t_step_input = next(iter(dataset))
 
         true = indep_contig.xyz
         perturbed = perturbations.se3_perturb(true)
         T = torch.tensor([1,1,1])
-        cg_atomized_idx = atomize.atomized_indices_atoms(adaptor.atomizer, {2: ['CG']})
+        cg_atomized_idx = atomize.atomized_indices_atoms(atomizer, {2: ['CG']})
         perturbed[cg_atomized_idx,1,:] += T
 
-        point_ids = aa_model.get_point_ids(indep_contig, adaptor.atomizer)
-        point_types = aa_model.get_point_types(indep_contig, adaptor.atomizer)
+        point_ids = aa_model.get_point_ids(indep_contig, atomizer)
+        point_types = aa_model.get_point_types(indep_contig, atomizer)
         rigid_groups = bond_geometry.find_all_rigid_groups_human_readable(indep_contig.bond_feats, point_ids)
         ic(rigid_groups)
 

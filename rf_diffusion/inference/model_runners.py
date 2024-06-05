@@ -12,7 +12,6 @@ import rf2aa.data.parsers
 import rf2aa.tensor_util
 import rf_diffusion.aa_model as aa_model
 
-from rf_diffusion.contigs import ContigMap
 from rf_diffusion.inference import utils as iu
 from rf_diffusion.potentials.manager import PotentialManager
 from rf_diffusion.inference import symmetry
@@ -25,84 +24,15 @@ from rf_diffusion import features
 from rf_diffusion import noisers
 from rf_diffusion.config import config_format
 
+import rf_diffusion.inference.data_loader
+
 import sys
 
 # When you import this it causes a circular import due to the changes made in apply masks for self conditioning
 # This import is only used for SeqToStr Sampling though so can be fixed later - NRB
 # import data_loader 
-from rf_diffusion.model_input_logger import pickle_function_call
+# from rf_diffusion.model_input_logger import pickle_function_call
 
-def idealize_peptide_frames(indep, generator=None):
-    indep = copy.deepcopy(indep)
-    rigids = du.rigid_frames_from_atom_14(indep.xyz)
-    atom37 = all_atom.atom37_from_rigid(rigids, generator=generator)
-    # Not sure if this clone is necessary
-    atom37 = torch.clone(atom37)
-    indep.xyz = atom37[:,:14]
-    return indep
-
-def add_fake_peptide_frame(indep, generator=None):
-    indep = copy.deepcopy(indep)
-    indep.xyz = aa_model.add_fake_frame_legs(indep.xyz, indep.is_sm, generator=generator)
-    return idealize_peptide_frames(indep, generator=generator)
-
-def sample_init(
-        conf,
-        contig_map,
-        target_feats,
-        diffuser,
-        insert_contig,
-        diffuse_all,
-        frame_legs_rng=None):
-    """Initial features to start the sampling process.
-    
-    Modify signature and function body for different initialization
-    based on the config.
-    
-    Returns:
-        xt: Starting positions with a portion of them randomly sampled.
-        seq_t: Starting sequence with a portion of them set to unknown.
-    """
-
-    L = len(target_feats['pdb_idx'])
-
-    indep_orig, metadata = aa_model.make_indep(conf.inference.input_pdb, conf.inference.ligand, return_metadata=True)
-    for_partial_diffusion = conf.diffuser.partial_T is not None
-    indep, is_diffused, is_seq_masked = insert_contig(
-            indep_orig, 
-            contig_map,
-            metadata=metadata,
-            for_partial_diffusion=for_partial_diffusion)
-    
-    #ic(
-    #    aa_model.what_is_diffused(indep, self.is_diffused, self.model_adaptor.atomizer)
-    #)
-    t_step_input = conf.diffuser.T
-    if for_partial_diffusion:
-        mappings = contig_map.get_mappings()
-        # This is due to the fact that when inserting a contig, the non-motif coordinates are reset.
-        if conf.inference.safety.sidechain_partial_diffusion:
-            print("You better know what you're doing when doing partial diffusion with sidechains")
-        else:
-            assert indep.xyz.shape[0] ==  L + torch.sum(indep.is_sm), f"there must be a coordinate in the input PDB for each residue implied by the contig string for partial diffusion.  length of input PDB != length of contig string: {indep.xyz.shape[0]} != {L+torch.sum(indep.is_sm)}"
-            assert torch.all(is_diffused[indep.is_sm] == 0), "all ligand atoms must be in the motif"
-        assert (mappings['con_hal_idx0'] == mappings['con_ref_idx0']).all(), f"all positions in the input PDB must correspond to the same index in the output pdb: {list(zip(mappings['con_hal_idx0'], mappings['con_ref_idx0']))=}"
-    indep.seq[is_seq_masked] = ChemData().MASKINDEX
-    # Diffuse the contig-mapped coordinates 
-    if for_partial_diffusion:
-        t_step_input = conf.diffuser.partial_T
-        assert conf.diffuser.partial_T <= conf.diffuser.T
-
-    indep_orig = copy.deepcopy(indep)
-    aa_model.centre(indep_orig, is_diffused)
-    indep_uncond, indep_cond = aa_model.diffuse_then_add_conditional(conf, diffuser, indep, is_diffused, t_step_input)
-
-    # indep_orig is the starting structure with native C, N, O, CB, etc. positions.  This gets
-    # used for replacing implicit sidechains and O / CB positions.
-    # indep_cond is the starting structure, with fake frame legs added and wonky O, CB,
-    # and sidechain positions resulting from frame-idealization.  This is used to make
-    # an unconditional indep conditional in the ClassifierFreeGuidance sampler.
-    return indep_uncond, indep_orig, indep_cond, is_diffused
 
 class Sampler:
 
@@ -114,21 +44,16 @@ class Sampler:
         self.initialized = False
         self.initialize(conf)
     
-    def initialize(self, conf: DictConfig):
-        self._log = logging.getLogger(__name__)
-        if torch.cuda.is_available():
-            self.device = torch.device('cuda')
-        else:
-            self.device = torch.device('cpu')
+    def load_model(self):
+        """
+        Load the model from the checkpoint. Also sets the diffuser
 
-        # Assign config to Sampler
-        self._conf = conf
-
-        # self.initialize_sampler(conf)
-        self.initialized=True
-
+        Returns:
+            None
+        """
         # Assemble config from the checkpoint
         ic(self._conf.inference.ckpt_path)
+
         weights_pkl = du.read_pkl(
             self._conf.inference.ckpt_path, use_torch=True,
                 map_location=self.device)
@@ -165,11 +90,24 @@ class Sampler:
             model_weights = weights_pkl['model']
 
         self.model.load_state_dict(model_weights)
-        self.model.to(self.device)
+        self.model.to(self.device)        
+
+    def initialize(self, conf: DictConfig):
+        self._log = logging.getLogger(__name__)
+        if torch.cuda.is_available():
+            self.device = torch.device('cuda')
+        else:
+            self.device = torch.device('cpu')
+
+        # Assign config to Sampler
+        self._conf = conf
+
+        # self.initialize_sampler(conf)
+        self.initialized=True
+        self.load_model()
 
         # Initialize helper objects
         self.inf_conf = self._conf.inference
-        self.contig_conf = self._conf.contigmap
         self.denoiser_conf = self._conf.denoiser
         self.ppi_conf = self._conf.ppi
         self.potential_conf = self._conf.potentials
@@ -213,16 +151,7 @@ class Sampler:
 
 
         self.converter = XYZConverter()
-        self.target_feats = iu.process_target(self.inf_conf.input_pdb, parse_hetatom=False, center=False)
         self.chain_idx = None
-
-        if self.diffuser_conf.partial_T:
-            assert self.diffuser_conf.partial_T <= self.diffuser_conf.T
-            self.t_step_input = int(self.diffuser_conf.partial_T)
-        else:
-            self.t_step_input = int(self.diffuser_conf.T)
-        if self.inf_conf.ppi_design and self.inf_conf.autogenerate_contigs:
-            self.ppi_conf.binderlen = ''.join(chain_idx[0] for chain_idx in self.target_feats['pdb_idx']).index('B')
 
         self.potential_manager = PotentialManager(self.potential_conf, 
                                                   self.ppi_conf, 
@@ -231,129 +160,25 @@ class Sampler:
         
         # Get recycle schedule    
         recycle_schedule = str(self.inf_conf.recycle_schedule) if self.inf_conf.recycle_schedule is not None else None
-        self.recycle_schedule = iu.recycle_schedule(self.T, recycle_schedule, self.inf_conf.num_recycles)
-
-
-        
-
-    def process_target(self, pdb_path):
-        assert not (self.inf_conf.ppi_design and self.inf_conf.autogenerate_contigs), "target reprocessing not implemented yet for these configuration arguments"
-        self.target_feats = iu.process_target(self.inf_conf.input_pdb)
-        self.chain_idx = None
-
-    @property
-    def T(self):
-        '''
-            Return the maximum number of timesteps
-            that this design protocol will perform.
-
-            Output:
-                T (int): The maximum number of timesteps to perform
-        '''
-        return self.diffuser_conf.T
+        self.recycle_schedule = iu.recycle_schedule(self.diffuser_conf.T, recycle_schedule, self.inf_conf.num_recycles)
     
-    def load_checkpoint(self) -> None:
-        """Loads RF checkpoint, from which config can be generated."""
-        self._log.info(f'Reading checkpoint from {self.ckpt_path}')
-        print(f'loading {self.ckpt_path}')
-        self.ckpt  = torch.load(
-            self.ckpt_path, map_location=self.device)
-        print(f'loaded {self.ckpt_path}')
-
-
-    def load_model(self):
-        """Create RosettaFold model from preloaded checkpoint."""
-
-        # for all-atom str loss
-        self.ti_dev = rf2aa.util.torsion_indices
-        self.ti_flip = rf2aa.util.torsion_can_flip
-        self.ang_ref = rf2aa.util.reference_angles
-        self.fi_dev = rf2aa.util.frame_indices
-        self.l2a = rf2aa.util.long2alt
-        self.aamask = ChemData().allatom_mask
-        self.num_bonds = ChemData().num_bonds
-        self.atom_type_index = rf2aa.util.atom_type_index
-        self.ljlk_parameters = rf2aa.util.ljlk_parameters
-        self.lj_correction_parameters = rf2aa.util.lj_correction_parameters
-        self.hbtypes = rf2aa.util.hbtypes
-        self.hbbaseatoms = rf2aa.util.hbbaseatoms
-        self.hbpolys = rf2aa.util.hbpolys
-        self.cb_len = rf2aa.util.cb_length_t
-        self.cb_ang = rf2aa.util.cb_angle_t
-        self.cb_tor = rf2aa.util.cb_torsion_t
-
-        # model_param.
-        self.ti_dev = self.ti_dev.to(self.device)
-        self.ti_flip = self.ti_flip.to(self.device)
-        self.ang_ref = self.ang_ref.to(self.device)
-        self.fi_dev = self.fi_dev.to(self.device)
-        self.l2a = self.l2a.to(self.device)
-        self.aamask = self.aamask.to(self.device)
-        self.num_bonds = self.num_bonds.to(self.device)
-        self.atom_type_index = self.atom_type_index.to(self.device)
-        self.ljlk_parameters = self.ljlk_parameters.to(self.device)
-        self.lj_correction_parameters = self.lj_correction_parameters.to(self.device)
-        self.hbtypes = self.hbtypes.to(self.device)
-        self.hbbaseatoms = self.hbbaseatoms.to(self.device)
-        self.hbpolys = self.hbpolys.to(self.device)
-        self.cb_len = self.cb_len.to(self.device)
-        self.cb_ang = self.cb_ang.to(self.device)
-        self.cb_tor = self.cb_tor.to(self.device)
-
-        # HACK: TODO: save this in the model config
-        self.loss_param = {'lj_lin': 0.75}
-        model = RoseTTAFoldModule(
-            **self._conf.model,
-            aamask=self.aamask,
-            atom_type_index=self.atom_type_index,
-            ljlk_parameters=self.ljlk_parameters,
-            lj_correction_parameters=self.lj_correction_parameters,
-            num_bonds=self.num_bonds,
-            cb_len = self.cb_len,
-            cb_ang = self.cb_ang,
-            cb_tor = self.cb_tor,
-            lj_lin=self.loss_param['lj_lin'],
-            assert_single_sequence_input=True,
-            ).to(self.device)
-        
-        if self._conf.logging.inputs:
-            pickle_dir = pickle_function_call(model, 'forward', 'inference', minifier=aa_model.minifier)
-            print(f'pickle_dir: {pickle_dir}')
-        model = model.eval()
-        self._log.info('Loading checkpoint.')
-        if not self._conf.inference.zero_weights:
-            model.load_state_dict(self.ckpt[self._conf.inference.state_dict_to_load], strict=True)
-        return model
-
-    def construct_contig(self, target_feats):
-        """Create contig from target features."""
-        if self.inf_conf.ppi_design and self.inf_conf.autogenerate_contigs:
-            seq_len = target_feats['seq'].shape[0]
-            self.contig_conf.contigs = [f'{self.ppi_conf.binderlen}',f'B{self.ppi_conf.binderlen+1}-{seq_len}']
-        self._log.info(f'Using contig: {self.contig_conf.contigs}')
-        # self.contig_conf.contigs = ['']
-        if self.contig_conf.contigs == 'whole':
-            L = len(target_feats["pdb_idx"])
-            self.contig_conf.contigs = [f'{L}-{L}']
-        return ContigMap(target_feats, **self.contig_conf)
-
-    def sample_init(self, return_forward_trajectory=False):
+    def sample_init(self):
         """Initial features to start the sampling process.
         
         Modify signature and function body for different initialization
         based on the config.
         
         Returns:
-            xt: Starting positions with a portion of them randomly sampled.
-            seq_t: Starting sequence with a portion of them set to unknown.
+            indep (Indep): the holy Indep,
+            contig_map (ContigMap): the contig_map used to make this indep            
+            atomizer (Atomizer): the atomizer,
+            t_step_input (torch.tensor): the t_step_input
         """
-        self.contig_map = ContigMap(self.target_feats, **self.contig_conf)
-        self.frame_legs_rng = copy_rng(torch.default_generator)
-        indep, self.indep_orig, self.indep_cond, self.is_diffused = sample_init(self._conf, self.contig_map, self.target_feats, self.diffuser, self.model_adaptor.insert_contig, diffuse_all=False,
-                                                            frame_legs_rng=copy_rng(self.frame_legs_rng))
-
-        indep = copy.deepcopy(self.indep_cond)
-        return indep
+        # Create and consume dataset 
+        dataset = rf_diffusion.inference.data_loader.InferenceDataset(self._conf, self.diffuser)
+        indep_uncond, self.indep_orig, self.indep_cond, metadata, self.is_diffused, atomizer, contig_map, t_step_input = next(iter(dataset))
+        indep = self.indep_cond.clone()
+        return indep, contig_map, atomizer, t_step_input
 
     def symmetrise_prev_pred(self, px0, seq_in, alpha):
         """
@@ -363,19 +188,6 @@ class Sampler:
         px0_sym,_ = self.symmetry.apply_symmetry(px0_aa.to('cpu').squeeze()[:,:14], torch.argmax(seq_in, dim=-1).squeeze().to('cpu'))
         px0_sym = px0_sym[None].to(self.device)
         return px0_sym
-
-def copy_rng(rng: torch.Generator) -> torch.Generator:
-    current_state = torch.get_rng_state()
-    rng = torch.Generator()
-    rng.set_state(current_state)
-    return rng
-
-def peek_rng(rng):
-    current_state = rng.get_state()
-    # o = rng.random()
-    o = torch.rand(1, generator=rng)
-    rng.set_state(current_state)
-    return o
 
 
 class NRBStyleSelfCond(Sampler):
@@ -644,20 +456,16 @@ class FlowMatching_make_conditional(FlowMatching):
 class FlowMatching_make_conditional_diffuse_all(FlowMatching_make_conditional):
 
     def sample_init(self):
-        self.contig_map = ContigMap(self.target_feats, **self.contig_conf)
-        self.frame_legs_rng = copy_rng(torch.default_generator)
-        indep, self.indep_orig, self.indep_cond, self.is_diffused = sample_init(self._conf, self.contig_map, self.target_feats, self.diffuser, self.model_adaptor.insert_contig, diffuse_all=True,
-                                                            frame_legs_rng=copy_rng(self.frame_legs_rng))
-        return indep
+        dataset = rf_diffusion.inference.data_loader.InferenceDataset(self._conf, self.diffuser)
+        indep_uncond, self.indep_orig, self.indep_cond, metadata, self.is_diffused, atomizer, contig_map, t_step_input = next(iter(dataset))
+        return indep_uncond, contig_map, atomizer, t_step_input
 
 class FlowMatching_make_conditional_diffuse_all_xt_unfrozen(FlowMatching):
 
     def sample_init(self):
-        self.contig_map = ContigMap(self.target_feats, **self.contig_conf)
-        self.frame_legs_rng = copy_rng(torch.default_generator)
-        indep, self.indep_orig, self.indep_cond, self.is_diffused = sample_init(self._conf, self.contig_map, self.target_feats, self.diffuser, self.model_adaptor.insert_contig, diffuse_all=True,
-                                                            frame_legs_rng=copy_rng(self.frame_legs_rng))
-        return indep
+        dataset = rf_diffusion.inference.data_loader.InferenceDataset(self._conf, self.diffuser)
+        indep_uncond, self.indep_orig, self.indep_cond, metadata, self.is_diffused, atomizer, contig_map, t_step_input = next(iter(dataset))
+        return indep_uncond, contig_map, atomizer, t_step_input
     
     def sample_step(self, t, indep, rfo, extra):
         indep_cond = aa_model.make_conditional_indep(indep, self.indep_cond, self.is_diffused)
@@ -674,11 +482,9 @@ class FlowMatching_make_conditional_diffuse_all_xt_unfrozen(FlowMatching):
 class ClassifierFreeGuidance(FlowMatching):
     # WIP
     def sample_init(self):
-        self.contig_map = ContigMap(self.target_feats, **self.contig_conf)
-        self.frame_legs_rng = copy_rng(torch.default_generator)
-        indep, self.indep_orig, self.indep_cond, self.is_diffused = sample_init(self._conf, self.contig_map, self.target_feats, self.diffuser, self.model_adaptor.insert_contig, diffuse_all=True,
-                                                            frame_legs_rng=copy_rng(self.frame_legs_rng))
-        return indep
+        dataset = rf_diffusion.inference.data_loader.InferenceDataset(self._conf, self.diffuser)
+        indep_uncond, self.indep_orig, self.indep_cond, metadata, self.is_diffused, atomizer, contig_map, t_step_input = next(iter(dataset))
+        return indep_uncond, contig_map, atomizer, t_step_input
     
     def get_grads(self, t, indep_in, indep_t, rfo, is_diffused):
 

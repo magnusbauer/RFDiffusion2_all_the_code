@@ -1,0 +1,8 @@
+defaults:
+  - pipeline
+
+sweep:
+  benchmark_json: training_benchmarks_ORI.json
+  benchmarks: all
+  num_per_condition: 1
+  num_per_job: 1

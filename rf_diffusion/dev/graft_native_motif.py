@@ -34,7 +34,7 @@ def get_input_aligned_pdb(row, out_path=None):
 def center_ligands(row, des_pdb, out_path=None):
     # des_pdb = analyze.get_design_pdb(row)
     ligands = row['inference.ligand']
-    indep, metadata = aa_model.make_indep(des_pdb, ligands, center=False, return_metadata=True)
+    indep, metadata = aa_model.make_indep(des_pdb, ligands, return_metadata=True)
     trb = analyze.get_trb(row)
     potential_xyz = trb['motif_substrate_atoms']
     xyz_het_com = trb['xyz_het_com']

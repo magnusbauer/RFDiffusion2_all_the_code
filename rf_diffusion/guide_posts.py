@@ -28,6 +28,7 @@ import numpy as np
 from typing import Tuple, List
 from rf_diffusion import aa_model
 import copy
+from omegaconf import OmegaConf
 
 def make_guideposts(indep: Indep, is_gp: torch.Tensor, placement: str=None) -> Tuple[Indep, torch.Tensor]:
     '''
@@ -679,3 +680,31 @@ def update_contig_map(indep, contig_map):
     )
 
     return gp_contig_mappings
+
+
+def conf_supports_guideposts(conf: OmegaConf):
+    supports_guideposts = False
+    supports_no_guideposts = True
+    if 'P_IS_GUIDEPOST_EXAMPLE' in conf.dataloader:
+        if conf.dataloader.P_IS_GUIDEPOST_EXAMPLE > 0:
+            supports_guideposts = True
+        if conf.dataloader.P_IS_GUIDEPOST_EXAMPLE < 1:
+            supports_guideposts = True
+    elif 'USE_GUIDE_POSTS' in conf.dataloader:
+        supports_guideposts = conf.dataloader.USE_GUIDE_POSTS
+        supports_no_guideposts = not conf.dataloader.USE_GUIDE_POSTS
+    return supports_guideposts, supports_no_guideposts
+
+
+def validate_guideposting_strategy(conf: OmegaConf):
+    supports_guideposts, supports_no_guideposts = conf_supports_guideposts(conf)
+
+    is_valid = (conf.inference.contig_as_guidepost and supports_guideposts or 
+                not conf.inference.contig_as_guidepost and supports_no_guideposts)
+
+    if not is_valid:
+        raise ValueError(
+            f'The model was only trained {"with" if not conf.inference.contig_as_guidepost else "without"} guideposts '
+            f'but it is trying to be run {"with" if conf.inference.contig_as_guidepost else "without"} guideposts. '
+            f'Please use a different checkpoint or set `inference.contig_as_guidepost={not conf.inference.contig_as_guidepost}`'
+        )

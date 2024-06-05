@@ -555,23 +555,22 @@ class TestCenterDiffused(unittest.TestCase):
         return super().tearDown()
 
     def test_center_diffused(self):
-        overrides = ['transforms.names=["PopMask", "ReconstructContigMap", "AddConditionalInputs", "CenterPostTranform"]',
-                     '+transforms.configs.CenterPostTranform.jitter=0.0',
-                     ]
-        
+        overrides = ['transforms.names=["PopMask", "AddConditionalInputs", "CenterPostTransform"]',
+                     '+transforms.configs.CenterPostTransform.jitter=0.0',
+                    ]
+
         for mask in ['get_diffusion_mask_islands_partial_ligand', 'get_unconditional_diffusion_mask']:
             for dataset in ['pdb_aa', 'sm_complex']:
                 loader_out = test_utils.loader_out_for_dataset(dataset, mask, overrides=overrides, epoch=0)
                 indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context = loader_out
-
                 com = torch.mean(indep.xyz[is_diffused,1,:], dim=0)
                 zero = torch.tensor([0,0,0], dtype=indep.xyz.dtype)
                 assertpy.assert_that(torch.norm(com - zero).item()).is_less_than(1e-4)
 
     def test_not_diffused(self):
-        overrides = ['transforms.names=["PopMask", "ReconstructContigMap", "AddConditionalInputs", "CenterPostTranform"]',
-                     '+transforms.configs.CenterPostTranform.jitter=0.0',
-                     '+transforms.configs.CenterPostTranform.center_type="is_not_diffused"',
+        overrides = ['transforms.names=["PopMask", "AddConditionalInputs", "CenterPostTransform"]',
+                     '+transforms.configs.CenterPostTransform.jitter=0.0',
+                     '+transforms.configs.CenterPostTransform.center_type="is_not_diffused"',
                      ]
         
         for mask in ['get_diffusion_mask_islands_partial_ligand', 'get_unconditional_diffusion_mask']:

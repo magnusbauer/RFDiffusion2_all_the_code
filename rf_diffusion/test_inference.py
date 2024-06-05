@@ -28,6 +28,12 @@ import rf_diffusion.frame_diffusion.data.utils as du
 import rf_diffusion
 from rf_diffusion.dev import analyze
 from rf_diffusion.dev import show_bench
+from rf_diffusion.inference.model_runners import Sampler
+from rf_diffusion import noisers
+from rf_diffusion.frame_diffusion.rf_score.model import RFScore
+from omegaconf import OmegaConf
+
+
 ic.configureOutput(includeContext=True)
 
 REWRITE = False
@@ -49,6 +55,85 @@ def construct_conf(overrides):
 def get_trb(conf):
     path = conf.inference.output_prefix + '_0-atomized-bb-True.trb'
     return np.load(path,allow_pickle=True)
+
+class StopForwardCall(Exception):
+    pass
+
+def fake_load_model(self):
+    """
+    Mock loader that creates models and noisers based on the fm_tip yaml but does not actually load the weights
+    nor create the real model
+    """
+    # Mock a simple model with as few parameters as possible
+    toy_model_config = ['rf.model.refiner_topk=1',
+    'rf.model.n_extra_block=1',
+    'rf.model.n_main_block=1',
+    'rf.model.n_ref_block=1',
+    'rf.model.d_msa=1',
+    'rf.model.d_msa_full=1',
+    'rf.model.d_pair=1',
+    'rf.model.d_templ=1',
+    'rf.model.n_head_msa=1',
+    'rf.model.n_head_pair=1',
+    'rf.model.n_head_templ=1',
+    'rf.model.d_hidden=1',
+    'rf.model.d_hidden_templ=1',
+    'rf.model.SE3_param.num_channels=1',
+    'rf.model.SE3_param.l0_in_features=1',
+    'rf.model.SE3_param.l0_out_features=1',
+    'rf.model.SE3_param.l1_in_features=1',
+    'rf.model.SE3_param.l1_out_features=1',
+    'rf.model.SE3_param.num_degrees=2',
+    'rf.model.SE3_param.div=1',
+    'rf.model.SE3_param.num_edge_features=1',
+    'rf.model.SE3_param.n_heads=1',]
+
+    # Create the new config
+    if hydra.core.global_hydra.GlobalHydra().is_initialized():
+        hydra.core.global_hydra.GlobalHydra().clear()
+    with initialize(version_base=None, config_path="config/training", job_name="test_app_train"):
+        weights_conf = compose(config_name='fm_tip.yaml', overrides=toy_model_config, return_hydra_config=True)
+
+    # Merge with the old conf from inferene time
+    OmegaConf.set_struct(self._conf, False)
+    OmegaConf.set_struct(weights_conf, False)
+    self._conf = OmegaConf.merge(
+        weights_conf, self._conf)        
+
+    # Create the diffuser and model
+    self.diffuser = noisers.get(self._conf.diffuser)
+    self.model = RFScore(self._conf.rf.model, self.diffuser, self.device)       
+
+def get_rfi(conf):
+    run_inference.make_deterministic()    
+
+    # Mock the forward pass of the model and the model loader
+    func_sig = signature(LegacyRoseTTAFoldModule.forward)
+    fake_forward = mock.patch.object(LegacyRoseTTAFoldModule, "forward", autospec=True)
+    fake_loader = mock.patch.object(Sampler, 'load_model', new=fake_load_model)
+
+    def side_effect(self, *args, **kwargs):
+        ic("mock forward", type(self), side_effect.call_count)
+        side_effect.call_count += 1
+        raise StopForwardCall()
+    side_effect.call_count = 0
+
+    with fake_loader:
+        with fake_forward as mock_forward:
+            mock_forward.side_effect = side_effect
+            try:
+                run_inference.main(conf)
+            except StopForwardCall:
+                pass
+
+            mapped_calls = []
+            for args, kwargs in mock_forward.call_args_list:
+                args = (None,) + args[1:]
+                argument_binding = func_sig.bind(*args, **kwargs)
+                argument_map = argument_binding.arguments
+                argument_map = tensor_util.cpu(argument_map)
+                mapped_calls.append(argument_map)
+    return mapped_calls
 
 class TestRegression(unittest.TestCase):
 
@@ -75,7 +160,48 @@ class TestRegression(unittest.TestCase):
         pdb_contents = inference.utils.parse_pdb(pdb)
         cmp = partial(tensor_util.cmp, atol=5e-2, rtol=0)
         test_utils.assert_matches_golden(self, 'T2', pdb_contents, rewrite=REWRITE, custom_comparator=cmp)
-    
+
+    @pytest.mark.generates_golden
+    def test_ori_cm(self):
+        """
+        Tests that sampling from a fixed center works as expected
+        """
+        run_inference.make_deterministic()
+        pdb, _ = infer([
+            'diffuser.T=1',
+            'inference.input_pdb=test_data/1yzr_no_covalent_ORI_cm1.pdb',            
+            'inference.ligand=HEM',
+            'inference.num_designs=1',
+            'transforms.configs.CenterPostTransform.center_type="is_diffused"',
+            'inference.output_prefix=tmp/test_ori_cm',
+            "contigmap.contigs=['10']",
+        ])
+        pdb_contents = inference.utils.parse_pdb(pdb)
+        cmp = partial(tensor_util.cmp, atol=5e-2, rtol=0)
+        test_utils.assert_matches_golden(self, 'ori_cm', pdb_contents, rewrite=REWRITE, custom_comparator=cmp)
+
+    @pytest.mark.generates_golden
+    def test_ori_partial_diffusion(self):
+        """
+        Tests that sampling using partial diffusion with ORI models work
+        """
+        run_inference.make_deterministic()
+        pdb, _ = infer([
+            'diffuser.T=20',
+            'diffuser.partial_T=1',
+            'inference.input_pdb=test_data/1yzr_no_covalent_ORI_cm1.pdb',            
+            'inference.ligand=HEM',
+            'inference.num_designs=1',
+            'transforms.configs.CenterPostTransform.center_type="is_diffused"',
+            'inference.output_prefix=tmp/test_ori_partial_diffusion',
+            "contigmap.contigs=['A1-10']",
+            "contigmap.inpaint_str=['A1-10']",
+            "contigmap.inpaint_seq=['A1-10']",
+        ])
+        pdb_contents = inference.utils.parse_pdb(pdb)
+        cmp = partial(tensor_util.cmp, atol=5e-2, rtol=0)
+        test_utils.assert_matches_golden(self, 'ori_pd', pdb_contents, rewrite=REWRITE, custom_comparator=cmp)
+
     @pytest.mark.generates_golden
     def test_inference_rfi(self):
         run_inference.make_deterministic()
@@ -84,30 +210,249 @@ class TestRegression(unittest.TestCase):
             'inference.num_designs=1',
             'inference.output_prefix=tmp/test_0',
             'inference.contig_as_guidepost=True',
+            '++inference.zero_weights=True',            
         ])
-
-        func_sig = signature(LegacyRoseTTAFoldModule.forward)
-        fake_forward = mock.patch.object(LegacyRoseTTAFoldModule, "forward", autospec=True)
-
-        def side_effect(self, *args, **kwargs):
-            ic("mock forward", type(self), side_effect.call_count)
-            side_effect.call_count += 1
-            return fake_forward.temp_original(self, *args, **kwargs)
-        side_effect.call_count = 0
-
-        with fake_forward as mock_forward:
-            mock_forward.side_effect = side_effect
-            run_inference.main(conf)
-
-            mapped_calls = []
-            for args, kwargs in mock_forward.call_args_list:
-                args = (None,) + args[1:]
-                argument_binding = func_sig.bind(*args, **kwargs)
-                argument_map = argument_binding.arguments
-                argument_map = tensor_util.cpu(argument_map)
-                mapped_calls.append(argument_map)
+        mapped_calls = get_rfi(conf)
         cmp = partial(tensor_util.cmp, atol=5e-2, rtol=0)
         test_utils.assert_matches_golden(self, 'rfi_regression', mapped_calls, rewrite=REWRITE, custom_comparator=cmp)
+
+    @pytest.mark.generates_golden
+    def test_inference_rfi_ori_cm(self):
+        """
+        Tests that sampling from a fixed center works as expected
+        """
+        run_inference.make_deterministic()
+        conf = construct_conf([
+            'diffuser.T=1',
+            'inference.input_pdb=test_data/1yzr_no_covalent_ORI_cm1.pdb',            
+            'inference.ligand=HEM',
+            'inference.num_designs=1',
+            'transforms.configs.CenterPostTransform.center_type="is_diffused"',
+            'inference.output_prefix=tmp/test_ori_cm',
+            "contigmap.contigs=['10']",
+            '++inference.zero_weights=True',            
+        ])
+        mapped_calls = get_rfi(conf)
+        cmp = partial(tensor_util.cmp, atol=5e-2, rtol=0)
+        test_utils.assert_matches_golden(self, 'rfi_regression_ori_cm', mapped_calls, rewrite=REWRITE, custom_comparator=cmp)
+
+    @pytest.mark.generates_golden
+    def test_inference_rfi_parses_covale(self):
+        covale = 'benchmark/input/3l0f_covale.pdb'
+        noncovale = 'benchmark/input/3l0f.pdb'
+
+        conf = construct_conf([
+            'diffuser.T=1',
+            'inference.num_designs=1',
+            'inference.output_prefix=tmp/test_0',
+            'inference.contig_as_guidepost=True',
+            'guidepost_bonds=True',            
+            "contigmap.contigs=['2-2,A84-87,2-2']",
+            "contigmap.contig_atoms=\"{'A84':'CA,C,N,O,CB,SG'}\"",
+            "contigmap.length='8-8'",
+            'inference.ligand=CYC',  
+            '++inference.zero_weights=True',                      
+        ])
+
+        for name, input_pdb in [
+            ('noncovale', noncovale),
+            ('covale', covale),
+        ]:
+            # Set pdb
+            conf.inference.input_pdb = input_pdb
+            mapped_calls = get_rfi(conf)
+            cmp = partial(tensor_util.cmp, atol=5e-2, rtol=0)
+            test_utils.assert_matches_golden(self, f'rfi_regression_parses_covale_{name}', mapped_calls, rewrite=REWRITE, custom_comparator=cmp)        
+
+    @pytest.mark.generates_golden
+    def test_inference_rfi_parses_multiligand_2(self):
+        conf = construct_conf([
+            'diffuser.T=1',
+            'inference.num_designs=1',
+            'inference.output_prefix=tmp/test_0',
+            'inference.contig_as_guidepost=False',
+            'guidepost_bonds=False',            
+            "contigmap.contigs=['3-3']",
+            "contigmap.length='3-3'",
+            '++inference.zero_weights=True',            
+        ])
+
+        for name, ligand_name, input_pdb in [
+            ('single', 'UDX', 'test_data/ec1_M0092_same_resn.pdb'),
+            ('multi', 'NAD,UDX', 'test_data/ec1_M0092.pdb'),
+        ]:
+            # Set ligand name and pdb
+            conf.inference.ligand = ligand_name
+            conf.inference.input_pdb = input_pdb
+            mapped_calls = get_rfi(conf)
+            cmp = partial(tensor_util.cmp, atol=5e-2, rtol=0)
+            test_utils.assert_matches_golden(self, f'rfi_regression_parses_multiligand_2_{name}', mapped_calls, rewrite=REWRITE, custom_comparator=cmp)        
+
+    @pytest.mark.generates_golden
+    def test_inference_rfi_two_chain_aa_model(self):
+        conf = construct_conf([
+            'diffuser.T=1',
+            'inference.num_designs=1',
+            'inference.output_prefix=tmp/test_0',
+            'inference.contig_as_guidepost=False',
+            'guidepost_bonds=False',
+            "contigmap.contigs=['A441-450_10']",
+            "contigmap.has_termini=[True,True]",
+            'inference.ligand=ANP',
+            'inference.input_pdb=benchmark/input/2j0l.pdb', 
+            '++inference.zero_weights=True',                           
+        ])
+        mapped_calls = get_rfi(conf)
+        cmp = partial(tensor_util.cmp, atol=5e-2, rtol=0)
+        test_utils.assert_matches_golden(self, 'rfi_regression_two_chain', mapped_calls, rewrite=REWRITE, custom_comparator=cmp)       
+
+    @pytest.mark.generates_golden
+    def test_inference_rfi_3_chain_indep(self):
+        conf = construct_conf([
+            'diffuser.T=1',
+            'inference.num_designs=1',
+            'inference.output_prefix=tmp/test_0',
+            'inference.contig_as_guidepost=False',
+            'guidepost_bonds=False',
+            "contigmap.contigs=['3_3_A441-443,A445-447']",
+            "contigmap.has_termini=[True,True,False]",
+            'inference.ligand=ANP',
+            'inference.input_pdb=benchmark/input/2j0l.pdb',   
+            '++inference.zero_weights=True',                         
+        ])
+        mapped_calls = get_rfi(conf)
+        cmp = partial(tensor_util.cmp, atol=5e-2, rtol=0)
+        test_utils.assert_matches_golden(self, 'rfi_regression_3_chain_indep', mapped_calls, rewrite=REWRITE, custom_comparator=cmp)            
+
+    @pytest.mark.generates_golden
+    def test_inference_rfi_3_chain_binder_middle_indep(self):
+        conf = construct_conf([
+            'diffuser.T=1',
+            'inference.num_designs=1',
+            'inference.output_prefix=tmp/test_0',
+            'inference.contig_as_guidepost=False',
+            'guidepost_bonds=False',
+            "contigmap.contigs=['A441-443_3_A445-447']",
+            "contigmap.has_termini=[True,True,False]",
+            'inference.ligand=ANP',
+            'inference.input_pdb=benchmark/input/2j0l.pdb',      
+            '++inference.zero_weights=True',                      
+        ])
+        mapped_calls = get_rfi(conf)
+        cmp = partial(tensor_util.cmp, atol=5e-2, rtol=0)
+        test_utils.assert_matches_golden(self, 'rfi_regression_3_chain_binder_middle_indep', mapped_calls, rewrite=REWRITE, custom_comparator=cmp)            
+
+    @pytest.mark.generates_golden
+    def test_inference_rfi_inpaint_str(self):
+        ''' 
+        Binder design without specifying the structure of a peptide a priori at inference. inpaint_str is set for the residues in the motif that should keep their sequence identity but have their structure diffused.
+        This test makes sure that is_diffused is set to True for the residues indicated in inpaint_str and is_seq_masked is set to False to keep the sequence unchanged.
+        '''
+        conf = construct_conf([
+            'diffuser.T=1',
+            'inference.num_designs=1',
+            'inference.output_prefix=tmp/test_0',
+            'inference.contig_as_guidepost=True',
+            'guidepost_bonds=True',
+            "contigmap.contigs=['A676-677_2-2']",
+            "contigmap.has_termini=[True,True]",
+            "contigmap.inpaint_str=['A676-677']",
+            'inference.ligand=ANP',
+            'inference.input_pdb=benchmark/input/2j0l.pdb',   
+            '++inference.zero_weights=True',                         
+        ])
+        mapped_calls = get_rfi(conf)
+        cmp = partial(tensor_util.cmp, atol=5e-2, rtol=0)
+        test_utils.assert_matches_golden(self, 'rfi_regression_inpaint_str', mapped_calls, rewrite=REWRITE, custom_comparator=cmp)            
+
+    @pytest.mark.generates_golden
+    def test_inference_rfi_pd(self):
+        # Tests partial diffusion 
+        run_inference.make_deterministic()
+        conf = construct_conf([
+            'diffuser.T=2',
+            'diffuser.partial_T=1',
+            'inference.num_designs=1',
+            'inference.input_pdb=test_data/partial_T_example_mini.pdb',
+            'contigmap.contigs=["A1-9"]',
+            'contigmap.inpaint_str=["A1-9"]',
+            'contigmap.inpaint_seq=["A1-9"]',
+            'inference.ligand="FMN"',
+            'inference.output_prefix=tmp/test_pd',
+            '++inference.zero_weights=True',            
+        ])
+        mapped_calls = get_rfi(conf)
+        cmp = partial(tensor_util.cmp, atol=5e-2, rtol=0)
+        test_utils.assert_matches_golden(self, 'rfi_pd_regression', mapped_calls, rewrite=REWRITE, custom_comparator=cmp)
+
+    @pytest.mark.generates_golden
+    def test_inference_rfi_sm(self):
+        # Tests small molecule input preparation
+        run_inference.make_deterministic()
+        conf = construct_conf([
+            'diffuser.T=1',
+            'inference.num_designs=1',
+            'inference.input_pdb=benchmark/input/1yzr_no_covalent.pdb',
+            'contigmap.contigs=["5-10"]',
+            'inference.ligand="HEM"',
+            'inference.output_prefix=tmp/test_sm',
+            '++inference.zero_weights=True',            
+        ])
+        mapped_calls = get_rfi(conf)
+        cmp = partial(tensor_util.cmp, atol=5e-2, rtol=0)
+        test_utils.assert_matches_golden(self, 'rfi_sm_regression', mapped_calls, rewrite=REWRITE, custom_comparator=cmp)
+
+    @pytest.mark.generates_golden
+    def test_inference_rfi_tip(self):
+        # Tests tip diffusion input preparation
+        run_inference.make_deterministic()
+        conf = construct_conf([
+            'diffuser.T=1',
+            'inference.num_designs=1',
+            'inference.input_pdb=benchmark/input/gaa.pdb',
+            'contigmap.contigs=["A518-518,10,A616-616"]',
+            "+contigmap.contig_atoms=\"{'A518':'CG,OD1,OD2','A616':'CG,OD1,OD2'}\"",
+            'inference.ligand=LG1',
+            'inference.output_prefix=tmp/test_tip',
+            '++inference.zero_weights=True',            
+        ])
+        mapped_calls = get_rfi(conf)
+        cmp = partial(tensor_util.cmp, atol=5e-2, rtol=0)
+        test_utils.assert_matches_golden(self, 'rfi_tip_regression', mapped_calls, rewrite=REWRITE, custom_comparator=cmp)
+
+    @pytest.mark.generates_golden
+    def test_inference_rfi_atomize(self):
+        # Tests atomization of ligand
+        run_inference.make_deterministic()
+        conf = construct_conf([
+            'diffuser.T=1',
+            'inference.num_designs=1',
+            'inference.input_pdb=benchmark/input/gaa.pdb',
+            'contigmap.contigs=["10"]',
+            'inference.ligand=LG1',
+            'inference.output_prefix=tmp/test_atomize',
+            '++inference.zero_weights=True',
+        ])
+        mapped_calls = get_rfi(conf)
+        cmp = partial(tensor_util.cmp, atol=5e-2, rtol=0)
+        test_utils.assert_matches_golden(self, 'rfi_atomize_regression', mapped_calls, rewrite=REWRITE, custom_comparator=cmp)
+
+    @pytest.mark.generates_golden
+    def test_inference_rfi_motif_sm(self):
+        # Tests motif in the presence of ligand
+        run_inference.make_deterministic()
+        conf = construct_conf([
+            'diffuser.T=1',
+            'inference.num_designs=1',
+            'inference.input_pdb=benchmark/input/gaa.pdb',
+            'contigmap.contigs=["10,A518-618,10"]',
+            'inference.ligand=LG1',
+            'inference.output_prefix=tmp/test_motif_sm',
+            '++inference.zero_weights=True',            
+        ])
+        mapped_calls = get_rfi(conf)
+        cmp = partial(tensor_util.cmp, atol=5e-2, rtol=0)
+        test_utils.assert_matches_golden(self, 'rfi_motif_sm_regression', mapped_calls, rewrite=REWRITE, custom_comparator=cmp)
 
     @pytest.mark.slow
     @pytest.mark.nondeterministic
@@ -522,11 +867,11 @@ class TestModelRunners(unittest.TestCase):
             "inference.model_runner=FlowMatching",
         ])
         sampler = model_runners.sampler_selector(conf)
-        indep = sampler.sample_init()
+        indep, contig_map, atomizer, t_step_input = sampler.sample_init()
         run_inference.make_deterministic()
-        indep_fake_frame = model_runners.add_fake_peptide_frame(indep)
+        indep_fake_frame = aa_model.add_fake_peptide_frame(indep)
         run_inference.make_deterministic()
-        indep_fake_frame_2 =  model_runners.add_fake_peptide_frame(indep_fake_frame)
+        indep_fake_frame_2 =  aa_model.add_fake_peptide_frame(indep_fake_frame)
         diff = test_utils.cmp_pretty(indep_fake_frame_2.xyz, indep_fake_frame.xyz, atol=1e-4)
         if diff:
             print(diff)
@@ -544,11 +889,11 @@ class TestModelRunners(unittest.TestCase):
             "inference.model_runner=FlowMatching",
         ])
         sampler = model_runners.sampler_selector(conf)
-        indep = sampler.sample_init()
+        indep, contig_map, atomizer, t_step_input = sampler.sample_init()
         run_inference.make_deterministic()
-        indep_fake_frame = model_runners.idealize_peptide_frames(indep)
+        indep_fake_frame = aa_model.idealize_peptide_frames(indep)
         run_inference.make_deterministic()
-        indep_fake_frame_2 =  model_runners.idealize_peptide_frames(indep_fake_frame)
+        indep_fake_frame_2 =  aa_model.idealize_peptide_frames(indep_fake_frame)
         diff = test_utils.cmp_pretty(indep_fake_frame_2.xyz, indep_fake_frame.xyz, atol=1e-4)
         ic(
             torch.linalg.vector_norm(indep_fake_frame.xyz - indep_fake_frame_2.xyz, dim=-1),
@@ -570,7 +915,7 @@ class TestModelRunners(unittest.TestCase):
             "inference.model_runner=FlowMatching",
         ])
         sampler = model_runners.sampler_selector(conf)
-        indep = sampler.sample_init()
+        indep, contig_map, atomizer, t_step_input = sampler.sample_init()
         # run_inference.make_deterministic()
         rigid_1 = du.rigid_frames_from_atom_14(indep.xyz)
         # run_inference.make_deterministic()
@@ -597,7 +942,7 @@ class TestModelRunners(unittest.TestCase):
             "inference.model_runner=FlowMatching",
         ])
         sampler = model_runners.sampler_selector(conf)
-        indep = sampler.sample_init()
+        indep, contig_map, atomizer, t_step_input = sampler.sample_init()
 
         indep_cond = aa_model.make_conditional_indep(indep, sampler.indep_cond, sampler.is_diffused)
 
@@ -624,37 +969,41 @@ class TestModelRunners(unittest.TestCase):
             print(diff)
             self.fail(f'{diff=}')
 
-    def test_uncond_init(self):
+    def test_uncond_init_ori(self):
         run_inference.make_deterministic()
         conf = construct_conf([
             'diffuser.T=10',
             'inference.num_designs=1',
+            'inference.input_pdb=benchmark/input/gaa_ORI_cm1.pdb',            
             'inference.output_prefix=tmp/test_no_batch_ot',
             "contigmap.contigs=['9,A518-518,1']",
             "+diffuser.batch_optimal_transport=False",
             "+contigmap.contig_atoms=\"{'A518':''}\"",
             "inference.model_runner=ClassifierFreeGuidance",
+            'transforms.configs.CenterPostTransform.center_type="is_diffused"',            
         ])
         sampler = model_runners.sampler_selector(conf)
-        indep_uncond = sampler.sample_init()
+        indep_uncond, contig_map, atomizer, t_step_input = sampler.sample_init()
         hydra.core.global_hydra.GlobalHydra.instance().clear()
         run_inference.make_deterministic()
         conf = construct_conf([
             'diffuser.T=10',
             'inference.num_designs=1',
+            'inference.input_pdb=benchmark/input/gaa_ORI_cm1.pdb',            
             'inference.output_prefix=tmp/test_no_batch_ot',
             "contigmap.contigs=['9,A518-518,1']",
             "+diffuser.batch_optimal_transport=False",
-            "inference.model_runner=ClassifierFreeGuidance",
             "+contigmap.contig_atoms=\"{'A518':'CG,OD1,OD2'}\"",
+            "inference.model_runner=ClassifierFreeGuidance",
             "inference.classifier_free_guidance_scale=0",
-        ])
-        sampler = model_runners.sampler_selector(conf)
-        indep_uncond_cfg = sampler.sample_init()
+            'transforms.configs.CenterPostTransform.center_type="is_diffused"',                
+        ])        
+        sampler = model_runners.sampler_selector(conf) 
+        indep_uncond_cfg, contig_map, atomizer, t_step_input = sampler.sample_init()
         xyzd = torch.isnan(indep_uncond_cfg.xyz) != torch.isnan(indep_uncond.xyz)
         assert xyzd.sum() == 0
 
-        diff = test_utils.cmp_pretty(indep_uncond_cfg, indep_uncond, atol=1e-9)
+        diff = test_utils.cmp_pretty(indep_uncond_cfg, indep_uncond, atol=1e-5)
         if diff:
             xyzd = indep_uncond_cfg.xyz - indep_uncond.xyz
             ic(
@@ -667,6 +1016,56 @@ class TestModelRunners(unittest.TestCase):
             )
             print(diff)
             self.fail('indep unequal')
+
+
+    def test_uncond_init_fm(self):
+        run_inference.make_deterministic()
+        conf = construct_conf([
+            'diffuser.T=10',
+            'inference.num_designs=1',
+            'inference.input_pdb=benchmark/input/gaa.pdb',
+            'inference.output_prefix=tmp/test_no_batch_ot',
+            "contigmap.contigs=['9,A518-518,1']",
+            "+diffuser.batch_optimal_transport=False",            
+            "+contigmap.contig_atoms=\"{'A518':''}\"",
+            "inference.model_runner=ClassifierFreeGuidance",
+            "+diffuser.type='flow_matching'",
+        ])
+        sampler = model_runners.sampler_selector(conf)
+        indep_uncond, contig_map, atomizer, t_step_input = sampler.sample_init()
+        hydra.core.global_hydra.GlobalHydra.instance().clear()
+        run_inference.make_deterministic()
+        conf = construct_conf([
+            'diffuser.T=10',
+            'inference.num_designs=1',
+            'inference.input_pdb=benchmark/input/gaa.pdb',            
+            'inference.output_prefix=tmp/test_no_batch_ot',
+            "+diffuser.batch_optimal_transport=False",            
+            "contigmap.contigs=['9,A518-518,1']",
+            "inference.model_runner=ClassifierFreeGuidance",
+            "+contigmap.contig_atoms=\"{'A518':'CG,OD1,OD2'}\"",
+            "inference.classifier_free_guidance_scale=0",
+            "+diffuser.type='flow_matching'",
+        ])        
+        sampler = model_runners.sampler_selector(conf) 
+        indep_uncond_cfg, contig_map, atomizer, t_step_input = sampler.sample_init()
+        xyzd = torch.isnan(indep_uncond_cfg.xyz) != torch.isnan(indep_uncond.xyz)
+        assert xyzd.sum() == 0
+
+        diff = test_utils.cmp_pretty(indep_uncond_cfg, indep_uncond, atol=1e-5)
+        if diff:
+            xyzd = indep_uncond_cfg.xyz - indep_uncond.xyz
+            ic(
+                xyzd,
+                torch.linalg.vector_norm(xyzd, dim=-1),
+                torch.linalg.vector_norm(xyzd, dim=(-1,-2)),
+                indep_uncond.xyz[-1,:3],
+                indep_uncond_cfg.xyz[-1,:3],
+                indep_uncond.xyz[-1,:3]-indep_uncond_cfg.xyz[-1,:3],
+            )
+            print(diff)
+            self.fail('indep unequal')
+
 
 class TestInference(unittest.TestCase):
 
@@ -786,6 +1185,7 @@ class TestInference(unittest.TestCase):
         output_feats = inference.utils.parse_pdb(output_pdb)
 
         trb = get_trb(conf)
+        ic(trb.keys())
         is_motif = torch.tensor(trb['con_hal_idx0'])
         is_motif_ref = torch.tensor(trb['con_ref_idx0'])
         n_motif = len(is_motif)

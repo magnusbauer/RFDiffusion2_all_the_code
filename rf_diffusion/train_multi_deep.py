@@ -586,7 +586,10 @@ class Trainer():
                 #print (' ... loading scheduler params')
                 scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
             else:
-                scheduler.last_epoch = loaded_epoch + 1
+                if self.conf.get('override_scheduler_safe_loading', False):
+                    scheduler.last_epoch = (loaded_epoch)*self.conf.epoch_size / self.conf.pseudobatch
+                else:
+                    assert False, 'scheduler_state_dict not found in checkpoint, to override and recreate scheduler at the current epoch, set override_scheduler_safe_loading: True in config'
             #if 'best_loss' in checkpoint:
             #    best_valid_loss = checkpoint['best_loss']
         

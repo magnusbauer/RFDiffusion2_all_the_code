@@ -1,21 +1,15 @@
 import copy
-from collections import defaultdict
-from functools import partial
 import torch
 import assertpy
 import unittest
 import numpy as np
 from icecream import ic
 
-import rf2aa
+import rf2aa.tensor_util
 from rf_diffusion import aa_model
 from rf_diffusion.aa_model import Model, make_indep
 from rf_diffusion import test_utils
-import inference.utils
-from rf_diffusion import contigs
 from rf_diffusion.chemical import ChemicalData as ChemData
-from rf2aa import tensor_util
-from rf_diffusion import run_inference
 ic.configureOutput(includeContext=True)
 
 class TestRearrange(unittest.TestCase):
@@ -245,210 +239,7 @@ class AAModelTestCase(unittest.TestCase):
             ic(want_atoms)
             assertpy.assert_that(want_atoms).is_equal_to(got_atoms)
 
-
-    def test_parses_covale(self):
-        covale = 'benchmark/input/3l0f_covale.pdb'
-        noncovale = 'benchmark/input/3l0f.pdb'
-        ligand_name = 'CYC'
-
-        conf = test_utils.construct_conf(inference=True)
-        conf.inference.contig_as_guidepost=True
-        conf.dataloader.P_IS_GUIDEPOST_EXAMPLE=0.5
-        adaptor = aa_model.Model(conf)
-        d = defaultdict(dict)
-        for name, input_pdb in [
-            ('noncovale', noncovale),
-            ('covale', covale),
-        ]:
-            print(f'----------{name}-------------------')
-            run_inference.seed_all()
-            indep, metadata = aa_model.make_indep(input_pdb, ligand_name, return_metadata=True)
-            target_feats = inference.utils.process_target(input_pdb)
-            contig_map =  contigs.ContigMap(target_feats,
-                                        contigs=['10-60,A84-87,10-60'],
-                                        contig_atoms="{'A84':'CA,C,N,O,CB,SG'}",
-                                        length='100-100',
-                                        )
-            indep_contig,is_diffused,_ = adaptor.insert_contig(indep, contig_map, metadata=metadata)
-            d[name]['indep_contig'] = indep_contig
-            # d[name]['rfi'] = adaptor.prepro(indep_contig, 100, is_diffused)
-
-
-        cmp = partial(tensor_util.cmp, atol=1e-20, rtol=1e-5)        
-        indep_covale, indep_noncovale = d['covale']['indep_contig'], d['noncovale']['indep_contig']
-        test_utils.assert_matches_golden(self, 'inference_bilin_noncovale', indep_noncovale, rewrite=REWRITE, custom_comparator=cmp)
-        diff = test_utils.cmp_pretty(indep_covale, indep_noncovale)
-        if not diff:
-            self.fail('expected difference between covale and noncovale input')
-        ic(diff)
-        test_utils.assert_matches_golden(self, 'inference_bilin_covale', indep_covale, rewrite=REWRITE, custom_comparator=cmp)
-
-        new_bonds = indep_covale.bond_feats != indep_noncovale.bond_feats
-        new_bonds = indep_covale.human_readable_2d_symmetric_mask(new_bonds)
-        ic(new_bonds)
-        new_bonded_elements = tuple(set([element for _, element in b]) for b in new_bonds)
-        assertpy.assert_that(new_bonded_elements).is_equal_to((set(['C', 'S']),))
-
-    def test_parses_multiligand_2(self):
-        ligand_name = 'CYC'
-
-        conf = test_utils.construct_conf(inference=True) 
-        adaptor = aa_model.Model(conf)
-        d = defaultdict(dict)
-        for name, ligand_name, input_pdb in [
-            ('single', 'UDX', 'test_data/ec1_M0092_same_resn.pdb'),
-            ('multi', 'NAD,UDX', 'test_data/ec1_M0092.pdb'),
-        ]:
-            print(f'----------{name}-------------------')
-            run_inference.seed_all()
-            indep, metadata = aa_model.make_indep(input_pdb, ligand_name, return_metadata=True)
-            target_feats = inference.utils.process_target(input_pdb)
-            contig_map =  contigs.ContigMap(target_feats,
-                                        contigs=['3-3'],
-                                        # contig_atoms="{'A84':'CA,C,N,O,CB,SG'}",
-                                        length='3-3',
-                                        )
-            indep_contig,is_diffused,_ = adaptor.insert_contig(indep, contig_map, metadata=metadata)
-            d[name]['indep_contig'] = indep_contig
-            # d[name]['rfi'] = adaptor.prepro(indep_contig, 100, is_diffused)
-
-
-        cmp = partial(tensor_util.cmp, atol=1e-20, rtol=1e-5)        
-        indep_single = d['single']['indep_contig']
-        test_utils.assert_matches_golden(self, 'ligand_single_2', indep_single, rewrite=REWRITE, custom_comparator=cmp)
-        indep_multi= d['multi']['indep_contig']
-        diff = test_utils.cmp_pretty(indep_multi, indep_single)
-        if not diff:
-            self.fail('expected difference')
-        ic(diff)
-        test_utils.assert_matches_golden(self, 'ligand_multi_2', indep_multi, rewrite=REWRITE, custom_comparator=cmp)
-
-        # ic(
-        #     # list(zip(indep_single.idx,
-        #     # indep_multi.idx))
-        #     # indep_single.chains(),
-        #     # indep_multi.chains(),
-        # )
-
-        new_bonds = indep_multi.bond_feats != indep_single.bond_feats
-        new_bonds = indep_multi.human_readable_2d_symmetric_mask(new_bonds)
-        ic(new_bonds)
-        tuple(set([element for _, element in b]) for b in new_bonds)
-        # assertpy.assert_that(new_bonded_elements).is_equal_to((set(['C', 'S']),))
         
-class TestTwoChains(unittest.TestCase):
-
-    def test_two_chain_aa_model(self):
-        input_pdb = './benchmark/input/2j0l.pdb'
-        ligand_name = 'ANP'
-
-        conf = test_utils.construct_conf_single(config_name='two_chains_ligand', inference=True)
-        conf.inference.contig_as_guidepost=True
-        conf.guidepost_bonds = True
-        conf.dataloader.USE_GUIDE_POSTS = True
-        conf.contigmap.has_termini = [True, True]
-        adaptor = aa_model.Model(conf)
-
-        run_inference.seed_all()
-        indep, metadata = aa_model.make_indep(input_pdb, ligand_name, return_metadata=True)
-        target_feats = inference.utils.process_target(input_pdb)
-        contig_map =  contigs.ContigMap(target_feats,
-                                    contigs=['A441-450_10'])
-        
-        indep_contig,is_diffused,_ = adaptor.insert_contig(indep, contig_map, metadata=metadata)
-
-        aa_indep_attributes = {
-            "idx": indep_contig.idx,
-            "terminus_type": indep_contig.terminus_type,
-            "bond_feats": indep_contig.bond_feats,
-        }
-
-        cmp = partial(tensor_util.cmp, atol=1e-20, rtol=1e-5)
-        test_utils.assert_matches_golden(self, 'aa_model_two_chain', aa_indep_attributes, rewrite=REWRITE, custom_comparator=cmp)
-
-    def test_3_chain_indep(self):
-        input_pdb = './benchmark/input/2j0l.pdb'
-        ligand_name = 'ANP'
-
-        conf = test_utils.construct_conf_single(config_name='two_chains_ligand', inference=True)
-        conf.contigmap.has_termini = [True, True, False]
-        adaptor = aa_model.Model(conf)
-
-        run_inference.seed_all()
-        indep, metadata = aa_model.make_indep(input_pdb, ligand_name, return_metadata=True)
-        target_feats = inference.utils.process_target(input_pdb)
-        contig_map = contigs.ContigMap(target_feats,
-                                    contigs=['3_3_A441-443,A445-447'])
-
-        indep_contig, is_diffused, _ = adaptor.insert_contig(indep, contig_map, metadata=metadata)
-
-        expected_idx = torch.tensor([1, 2, 3, 36, 37, 38, 71, 72, 73, 74, 75, 76])
-        expected_terminus_type = torch.tensor([1., 0., 2., 1., 0., 2., 0., 0., 0., 0., 0., 0.])
-
-        assertpy.assert_that(indep_contig.idx.tolist()[:12]).is_equal_to(expected_idx.tolist())
-        assertpy.assert_that(indep_contig.terminus_type.tolist()[:12]).is_equal_to(expected_terminus_type.tolist())
-
-    def test_3_chain_binder_middle_indep(self):
-        input_pdb = './benchmark/input/2j0l.pdb'
-        ligand_name = 'ANP'
-
-        conf = test_utils.construct_conf_single(config_name='two_chains_ligand', inference=True)
-        conf.contigmap.has_termini = [True, True, True]
-        adaptor = aa_model.Model(conf)
-
-        run_inference.seed_all()
-        indep, metadata = aa_model.make_indep(input_pdb, ligand_name, return_metadata=True)
-        target_feats = inference.utils.process_target(input_pdb)
-        contig_map = contigs.ContigMap(target_feats,
-                                    contigs=['A441-443_3_A445-447'])
-
-        indep_contig, is_diffused, _ = adaptor.insert_contig(indep, contig_map, metadata=metadata)
-
-        expected_idx = torch.tensor([1,   2,   3,  36,  37,  38,  71,  72,  73])
-        expected_terminus_type = torch.tensor([1., 0., 2., 1., 0., 2., 1., 0., 2.])
-
-        assertpy.assert_that(indep_contig.idx.tolist()[:9]).is_equal_to(expected_idx.tolist())
-        assertpy.assert_that(indep_contig.terminus_type.tolist()[:9]).is_equal_to(expected_terminus_type.tolist())
-        assertpy.assert_that(indep_contig.bond_feats[2][3]).is_equal_to(0)
-        assertpy.assert_that(indep_contig.bond_feats[3][2]).is_equal_to(0)
-        assertpy.assert_that(indep_contig.bond_feats[5][6]).is_equal_to(0)
-        assertpy.assert_that(indep_contig.bond_feats[6][5]).is_equal_to(0)
-
-    def test_inpaint_str(self):
-        ''' 
-        Binder design without specifying the structure of a peptide a priori at inference. inpaint_str is set for the residues in the motif that should keep their sequence identity but have their structure diffused.
-        This test makes sure that is_diffused is set to True for the residues indicated in inpaint_str and is_seq_masked is set to False to keep the sequence unchanged.
-        '''
-        
-        input_pdb = './benchmark/input/2j0l.pdb'
-        ligand_name = 'ANP'
-
-        conf = test_utils.construct_conf_single(config_name='two_chains_ligand', inference=True)
-        conf.contigmap.has_termini = [True, True]
-        adaptor = aa_model.Model(conf)
-
-        run_inference.seed_all()
-        indep, metadata = aa_model.make_indep(input_pdb, ligand_name, return_metadata=True)
-        target_feats = inference.utils.process_target(input_pdb)
-        contig_map = contigs.ContigMap(target_feats,
-                                    contigs=['A676-677_2-2'],
-                                    inpaint_str=['A676-677'])
-
-        _, is_diffused, is_seq_masked = adaptor.insert_contig(indep, contig_map, metadata=metadata)
-
-        # The motif (first two residues) should be diffused since inpaint_str is set for those residues, so is_diffused should be True.
-        # is_diffused for the binder (third, fourth residue) is set to True.
-        # For the ligand (31 atoms) is_diffused is set to False since the ligand should keep its structure.
-        expected_is_diffused = torch.tensor([ True,  True,  True,  True] + [False]*31)
-
-        # The motif (first two residues) should keep their sequence identity so is_seq_masked should be False. Hence the sequence is not masked, so the model knows about the sequence.
-        # is_seq_masked for the binder (third, fourth residue) is set to True to mask the sequence identity from the model to get different binder sequences.
-        # For the ligand (31 atoms) is_seq_masked is set to False since the atom identities should not be changed.
-        expected_is_seq_masked = torch.tensor([False, False,  True,  True] + [False]*31)
-
-        assertpy.assert_that(is_diffused.tolist()).is_equal_to(expected_is_diffused.tolist())
-        assertpy.assert_that(is_seq_masked.tolist()).is_equal_to(expected_is_seq_masked.tolist())
-
 class TestConditionalIndep(unittest.TestCase):
     def test_all(self):
         indep = make_indep('benchmark/input/gaa.pdb', 'LG1')

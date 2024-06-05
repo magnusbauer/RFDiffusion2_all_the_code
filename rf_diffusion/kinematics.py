@@ -278,7 +278,10 @@ def c6d_to_bins2(c6d, same_chain, negative=False, params=PARAMS):
     
     return torch.stack([db,ob,tb,pb],axis=-1).long()
 
-def get_init_xyz(xyz_t, is_sm):
+def get_init_xyz(xyz_t, is_sm, center=True):
+    """
+    Fills in missing atoms in xyz_t and centers the protein if desired    
+    """
     # input: xyz_t (B, T, L, 14, 3)
     # is_sm: [L]
     # ouput: xyz (B, T, L, 14, 3)
@@ -298,8 +301,9 @@ def get_init_xyz(xyz_t, is_sm):
     mask[..., ~is_sm] = missing_prot_coord[...,~is_sm]
 
     #
-    center_CA = ((~mask[:,:,:,None]) * torch.nan_to_num(xyz_t[:,:,:,1,:])).sum(dim=2) / ((~mask[:,:,:,None]).sum(dim=2)+1e-4) # (B, T, 3)
-    xyz_t = xyz_t - center_CA.view(B,T,1,1,3)
+    if center:
+        center_CA = ((~mask[:,:,:,None]) * torch.nan_to_num(xyz_t[:,:,:,1,:])).sum(dim=2) / ((~mask[:,:,:,None]).sum(dim=2)+1e-4) # (B, T, 3)
+        xyz_t = xyz_t - center_CA.view(B,T,1,1,3)
     #
     for i_b in range(B):
         for i_T in range(T):

@@ -11,7 +11,11 @@ import atomize
 from rf2aa import tensor_util
 import aa_model
 import test_utils
+import numpy as np
+from rf_diffusion.chemical import ChemicalData as ChemData
+import rf_diffusion.kinematics
 ic.configureOutput(includeContext=True)
+from unittest import mock
 
 class TestTransform(unittest.TestCase):
     
@@ -32,7 +36,6 @@ class TestTransform(unittest.TestCase):
                 ['ASP', 'GLN', 'VAL', 'PRO', 'C', 'O', 'C', 'O', 'C', 'O', 'C', 'O', 'C', 'O', 'C', 'O', 'C', 'O', 'C', 'O', 'C', 'C', 'C', 'C', 'C', 'C', 'C', 'C', 'GLN', 'N', 'C', 'C', 'O', 'C', 'C', 'C']
             ),
         ]
-
         for contig_kwargs, ligand, is_atom_str_shown, res_str_shown_idx, want_seq in testcases:
             test_pdb = 'benchmark/input/gaa.pdb'
             target_feats = inference.utils.process_target(test_pdb)
@@ -40,9 +43,34 @@ class TestTransform(unittest.TestCase):
                                         **contig_kwargs
                                         )
             indep, metadata = aa_model.make_indep(test_pdb, ligand=ligand, return_metadata=True)
-            conf = test_utils.construct_conf(inference=True) 
-            adaptor = aa_model.Model(conf)
-            indep, is_diffused, _ = adaptor.insert_contig(indep, contig_map, metadata=metadata) # ['ASP', 'GLN', 'VAL', 'PRO']
+            conf = test_utils.construct_conf(inference=True)             
+
+            # Legacy insert_contig requires centering using a non-standard centering strategy, so we recreate for comptability, in the future, can be removed if goldens are overwritten
+            def get_init_xyz_id(xyz_t, *args, **kwargs):
+                return xyz_t
+            with mock.patch.object(rf_diffusion.kinematics, 'get_init_xyz', new=get_init_xyz_id):
+                adaptor = aa_model.Model(conf)
+                o, masks_1d = adaptor.insert_contig_pre_atomization(indep, contig_map, metadata, for_partial_diffusion=False)
+            # Create the init xyz values with the legacy centering
+            o.xyz = rf_diffusion.kinematics.get_init_xyz(o.xyz[None, None], o.is_sm, center=True).squeeze() 
+
+            pre_transform_length = o.length()
+            o, is_diffused, is_seq_masked, atomizer, contig_map.gp_to_ptn_idx0 = aa_model.transform_indep(o, masks_1d['is_diffused'], masks_1d['input_str_mask'], masks_1d['is_atom_motif'], conf.inference.contig_as_guidepost, 'anywhere', conf.guidepost_bonds, metadata=metadata)
+
+            # HACK: gp indices may be lost during atomization, so we assume they are at the end of the protein.
+            is_gp = torch.full((o.length(),), True)
+            is_gp[:pre_transform_length] = False
+            o.is_gp = is_gp
+
+            sm_ca = o.xyz[o.is_sm, 1]
+            o.xyz[o.is_sm,:3] = sm_ca[...,None,:]
+            o.xyz[o.is_sm] += ChemData().INIT_CRDS 
+
+            contig_map.ligand_names = np.full(o.length(), '', dtype='<U3')
+            contig_map.ligand_names[contig_map.hal_idx0.astype(int)] = metadata['ligand_names'][contig_map.ref_idx0] 
+            indep = o
+
+            # Now check atomization
 
             indep.xyz = atomize.set_nonexistant_atoms_to_nan(indep.xyz, indep.seq)
             indep_init = copy.deepcopy(indep)

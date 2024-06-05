@@ -141,7 +141,7 @@ def sample(sampler):
 
 def sample_one(sampler, simple_logging=False):
     # For intermediate output logging
-    indep = sampler.sample_init()
+    indep, contig_map, atomizer, t_step_input = sampler.sample_init()
     log = logging.getLogger(__name__)
 
     traj_stack = defaultdict(list)
@@ -156,7 +156,7 @@ def sample_one(sampler, simple_logging=False):
     }
 
     # Loop over number of reverse diffusion time steps.
-    for t in trange(int(sampler.t_step_input), sampler.inf_conf.final_step-1, -1):
+    for t in trange(int(t_step_input), sampler.inf_conf.final_step-1, -1):
         sampler._log.info(f'Denoising {t=}')
         if simple_logging:
             e = '.'
@@ -194,7 +194,7 @@ def sample_one(sampler, simple_logging=False):
                 v
             )
 
-    if sampler.t_step_input == 0:
+    if t_step_input == 0:
         # Null-case: no diffusion performed.
         px0_xyz_stack.append(sampler.indep_orig.xyz)
         denoised_xyz_stack.append(indep.xyz)
@@ -261,8 +261,6 @@ def sample_one(sampler, simple_logging=False):
 
     is_diffused = sampler.is_diffused.clone()
 
-    # deatomize features, if applicable
-    atomizer = sampler.model_adaptor.atomizer
     if atomizer is not None:
         indep_atomized = indep.clone()
 
@@ -271,7 +269,7 @@ def sample_one(sampler, simple_logging=False):
 
         init_seq_stack = copy.deepcopy(seq_stack)
         indep, px0_xyz_stack, denoised_xyz_stack, seq_stack = \
-            deatomize_sampler_outputs(sampler.model_adaptor.atomizer, indep, px0_xyz_stack, denoised_xyz_stack, seq_stack)
+            deatomize_sampler_outputs(atomizer, indep, px0_xyz_stack, denoised_xyz_stack, seq_stack)
         
         for k, v in traj_stack.items():
             xyz_stack_new = []
@@ -283,7 +281,7 @@ def sample_one(sampler, simple_logging=False):
                 xyz_stack_new.append(indep_deatomized.xyz)
             traj_stack[k] = torch.stack(xyz_stack_new)
 
-    return indep, denoised_xyz_stack, px0_xyz_stack, seq_stack, is_diffused, raw, traj_stack
+    return indep, contig_map, atomizer, t_step_input, denoised_xyz_stack, px0_xyz_stack, seq_stack, is_diffused, raw, traj_stack
 
 def add_implicit_side_chain_atoms(seq, act_on_residue, xyz, xyz_with_sc):
     '''
@@ -347,7 +345,7 @@ def deatomize_sampler_outputs(atomizer, indep, px0_xyz_stack, denoised_xyz_stack
     return indep_deatomized, px0_xyz_stack_new, denoised_xyz_stack_new, seq_stack_new
 
 
-def save_outputs(sampler, out_prefix, indep, denoised_xyz_stack, px0_xyz_stack, seq_stack, is_diffused, raw, traj_stack):
+def save_outputs(sampler, out_prefix, indep, contig_map, atomizer, t_step_input, denoised_xyz_stack, px0_xyz_stack, seq_stack, is_diffused, raw, traj_stack):
     log = logging.getLogger(__name__)
 
     final_seq = seq_stack[-1]
@@ -367,7 +365,7 @@ def save_outputs(sampler, out_prefix, indep, denoised_xyz_stack, px0_xyz_stack, 
     gp_contig_mappings = {}
     # If using guideposts, infer their placement from the final pX0 prediction.
     if sampler._conf.inference.contig_as_guidepost:
-        gp_to_contig_idx0 = sampler.contig_map.gp_to_ptn_idx0  # map from gp_idx0 to the ptn_idx0 in the contig string.
+        gp_to_contig_idx0 = contig_map.gp_to_ptn_idx0  # map from gp_idx0 to the ptn_idx0 in the contig string.
         is_gp = torch.zeros_like(indep.seq, dtype=bool)
         is_gp[list(gp_to_contig_idx0.keys())] = True
 
@@ -386,7 +384,7 @@ def save_outputs(sampler, out_prefix, indep, denoised_xyz_stack, px0_xyz_stack, 
         gp_contig_mappings = gp.get_infered_mappings(
             gp_to_contig_idx0,
             match_idx_by_gp_idx,
-            sampler.contig_map.get_mappings()
+            contig_map.get_mappings()
         )
 
         if sampler._conf.inference.guidepost_xyz_as_design and len(match_idx_by_gp_idx):
@@ -412,7 +410,7 @@ def save_outputs(sampler, out_prefix, indep, denoised_xyz_stack, px0_xyz_stack, 
 
     # pX0 last step
     out_unidealized = os.path.join(unidealized_dir, f'{out_tail}.pdb')
-    aa_model.write_traj(out_unidealized, xyz_design[None,...], seq_design, indep.bond_feats, ligand_name_arr=sampler.contig_map.ligand_names, chain_Ls=chain_Ls, idx_pdb=indep.idx)
+    aa_model.write_traj(out_unidealized, xyz_design[None,...], seq_design, indep.bond_feats, ligand_name_arr=contig_map.ligand_names, chain_Ls=chain_Ls, idx_pdb=indep.idx)
 
     # Save idealized pX0 last step
     log.info('Idealizing sidechains for pX0 of the last step...')
@@ -426,7 +424,7 @@ def save_outputs(sampler, out_prefix, indep, denoised_xyz_stack, px0_xyz_stack, 
             seq_design[None, is_diffused]
         )[0]
 
-    aa_model.write_traj(out_idealized, xyz_design_idealized, seq_design, indep.bond_feats, ligand_name_arr=sampler.contig_map.ligand_names, chain_Ls=chain_Ls, idx_pdb=indep.idx)
+    aa_model.write_traj(out_idealized, xyz_design_idealized, seq_design, indep.bond_feats, ligand_name_arr=contig_map.ligand_names, chain_Ls=chain_Ls, idx_pdb=indep.idx)
     idealize_backbone.rewrite(out_idealized, out_idealized)
     des_path = os.path.abspath(out_idealized)
 
@@ -435,16 +433,16 @@ def save_outputs(sampler, out_prefix, indep, denoised_xyz_stack, px0_xyz_stack, 
     os.makedirs(os.path.dirname(traj_prefix), exist_ok=True)
 
     out = f'{traj_prefix}_Xt-1_traj.pdb'
-    aa_model.write_traj(out, denoised_xyz_stack, final_seq, indep.bond_feats, ligand_name_arr=sampler.contig_map.ligand_names, chain_Ls=chain_Ls, idx_pdb=indep.idx)
+    aa_model.write_traj(out, denoised_xyz_stack, final_seq, indep.bond_feats, ligand_name_arr=contig_map.ligand_names, chain_Ls=chain_Ls, idx_pdb=indep.idx)
     xt_traj_path = os.path.abspath(out)
 
     out=f'{traj_prefix}_pX0_traj.pdb'
-    aa_model.write_traj(out, px0_xyz_stack, final_seq, indep.bond_feats, chain_Ls=chain_Ls, ligand_name_arr=sampler.contig_map.ligand_names, idx_pdb=indep.idx)
+    aa_model.write_traj(out, px0_xyz_stack, final_seq, indep.bond_feats, chain_Ls=chain_Ls, ligand_name_arr=contig_map.ligand_names, idx_pdb=indep.idx)
     x0_traj_path = os.path.abspath(out)
 
     for k, v in traj_stack.items():
         out=f'{traj_prefix}_{k}_traj.pdb'
-        aa_model.write_traj(out, v, final_seq, indep.bond_feats, chain_Ls=chain_Ls, ligand_name_arr=sampler.contig_map.ligand_names, idx_pdb=indep.idx)
+        aa_model.write_traj(out, v, final_seq, indep.bond_feats, chain_Ls=chain_Ls, ligand_name_arr=contig_map.ligand_names, idx_pdb=indep.idx)
         traj_path = os.path.abspath(out)
         aa_model.rename_ligand_atoms(sampler._conf.inference.input_pdb, traj_path)
 
@@ -457,17 +455,17 @@ def save_outputs(sampler, out_prefix, indep, denoised_xyz_stack, px0_xyz_stack, 
         denoised_xyz_stack = raw[1].detach().cpu().numpy(),
         indep={k:v.detach().cpu().numpy() if hasattr(v, 'detach') else v for k,v in dataclasses.asdict(indep).items()},
         indep_true={k:v.detach().cpu().numpy() if hasattr(v, 'detach') else v for k,v in dataclasses.asdict(sampler.indep_orig).items()},
-        t_int=np.arange(int(sampler.t_step_input), sampler.inf_conf.final_step-1, -1)[::-1],
-        t=np.arange(int(sampler.t_step_input), sampler.inf_conf.final_step-1, -1)[::-1] / sampler._conf.diffuser.T,
+        t_int=np.arange(int(t_step_input), sampler.inf_conf.final_step-1, -1)[::-1],
+        t=np.arange(int(t_step_input), sampler.inf_conf.final_step-1, -1)[::-1] / sampler._conf.diffuser.T,
         is_diffused=sampler.is_diffused,
-        point_types=aa_model.get_point_types(sampler.indep_orig, sampler.model_adaptor.atomizer)
+        point_types=aa_model.get_point_types(sampler.indep_orig, atomizer)
     )
-    if hasattr(sampler, 'contig_map'):
-        for key, value in sampler.contig_map.get_mappings().items():
+    if contig_map:
+        for key, value in contig_map.get_mappings().items():
             trb[key] = value
 
-    if sampler.model_adaptor.atomizer:
-        motif_deatomized = atomize.convert_atomized_mask(sampler.model_adaptor.atomizer, ~sampler.is_diffused)
+    if atomizer:
+        motif_deatomized = atomize.convert_atomized_mask(atomizer, ~sampler.is_diffused)
         trb['motif'] = motif_deatomized
     if sampler._conf.inference.contig_as_guidepost:
         # Store the literal location of the guide post residues

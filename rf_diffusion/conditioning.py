@@ -8,6 +8,8 @@ from rf_diffusion import aa_model
 from rf_diffusion.aa_model import Indep
 from rf_diffusion.contigs import ContigMap
 
+from typing import Union
+
 logger = logging.getLogger(__name__)
 
 def get_center_of_mass(xyz14, mask):
@@ -63,65 +65,95 @@ class Center:
             **kwargs
         )
 
-class CenterPostTranform:
+
+class CenterPostTransform:
     """
     A class recentering around the diffused frames. Allows jittering of the center to prevent overfitting
     and memorization of exact placement of ligands / fixed motifs relative to center of mass.
     Must be used after AddConditionalInputs
-
     Attributes:
         jitter (float): The expected average distance between the center point and the origin
         jitter_clip (float): The maximum amount of distance between the center point and origin. Set this depending on
             the size of jitter, possibly 3 * jitter
-        center_type (str): The type of centering to apply. Options are 'is_diffused' and 'is_not_diffused'
-    """
-    def __init__(self, jitter: float = 0.0,
+        center_type (str): The type of centering to apply. Options are 'is_diffused' and 'is_not_diffused'    
+    """    
+    def __init__(self, 
+                 jitter: float = 0.0,
                  jitter_clip: float = 50.0,
                  center_type: str = 'is_diffused'):
+        """
+            Centering around diffused atoms for traning stability and design control during inference.
+        could solve the problem of the proteins drifting off and ligands being centered. Need to pair with
+        extra flags and new parser at inference to specify diffusion origin. This code reduces the requirement
+        for the model to learn large center of mass translations. However, it is more prone to memorization 
+        of the training data if there are not many examples since data leak occurs under this training 
+        regime. This is because the model can memorize the exact placement of the ligands and fixed motifs
+
+        Args:
+            jitter (float): The expected average distance between the center point and the origin
+            jitter_clip (float): The maximum amount of distance between the center point and origin. Set this depending on
+                the size of jitter, possibly 3 * jitter
+            center_type (str): The mode of centering. Can be 'is_diffused' or 'is_not_diffused'
+        """
+
         self.jitter = jitter
         self.jitter_clip = jitter_clip
         self.center_type = center_type
         assert center_type in ['is_diffused', 'is_not_diffused'], "must use 'is_diffused' or 'is_not_diffused' for center_type"
 
-    """
-    Centering around diffused atoms for traning stability and design control during inference.
-    could solve the problem of the proteins drifting off and ligands being centered. Need to pair with
-    extra flags and new parser at inference to specify diffusion origin. This code reduces the requirement
-    for the model to learn large center of mass translations. However, it is more prone to memorization 
-    of the training data if there are not many examples since data leak occurs under this training 
-    regime. This is because the model can memorize the exact placement of the ligands and fixed motifs
-    """
-    def __call__(self, indep: Indep, is_diffused: torch.Tensor, **kwargs):
-        center_of_mass_mask = torch.zeros(indep.xyz.shape[:2], dtype=torch.bool)
-        if self.center_type == 'is_diffused':
-            center_of_mass_mask[is_diffused,1] = True  # CA atoms (position 1) of each frame forms center of rigid translations
-        elif self.center_type == 'is_not_diffused':
-            center_of_mass_mask[~is_diffused,1] = True        
+    def __call__(self,
+                     indep: Indep, 
+                     is_diffused: torch.Tensor,
+                     origin: torch.Tensor = None,
+                     **kwargs) -> dict:
+        """
+        Computes centering for the indep. Must happen post transform_indep
 
-        if not center_of_mass_mask.any():
-            # Unconditional case just in case nothing is diffused
-            center_of_mass_mask[:, 1] = True
+        Args:
+            indep (Indep): the holy Indep
+            for_partial_diffusion (bool): whether the model is for partial diffusion
+            is_diffused (torch.Tensor): the diffused residues as a boolean mask
+            origin (torch.Tensor): the origin to center around. If None, the center of mass is calculated
+        """
+        if not ((origin is not None) and (self.center_type == 'is_diffused')):
+            # Default behavior: calculate center of mass for default case where ground truth of the protein and other targets are available
+            center_of_mass_mask = torch.zeros(indep.xyz.shape[:2], dtype=torch.bool)
+            if self.center_type == 'is_diffused':
+                # CA atoms (position 1) of each frame forms center of rigid translations
+                center_of_mass_mask[is_diffused,1] = True 
+            elif self.center_type == 'is_not_diffused':
+                # In this case center on not diffused if there are any not diffused atoms, otherwise center on diffused
+                if torch.sum(~is_diffused) != 0:
+                    center_of_mass_mask[~is_diffused,1] = True
+                elif torch.sum(~is_diffused) == 0:
+                    center_of_mass_mask[is_diffused,1] = True  
+                              
+            # Calculate center of mass
+            origin = get_center_of_mass(indep.xyz, center_of_mass_mask)
 
-        # Calculate center and jitter
-        gauss_norm_3d_mean = 1.5956947  # The mean norm of 3D gaussians
-        center = get_center_of_mass(indep.xyz, center_of_mass_mask)
-        jitter_amount = torch.randn_like(center) / gauss_norm_3d_mean * self.jitter
-        if torch.norm(jitter_amount).item() > self.jitter_clip:
-            jitter_amount = jitter_amount / torch.norm(jitter_amount) * self.jitter_clip 
-        center += jitter_amount
-
-        # Apply centering
-        indep.xyz = indep.xyz - center
+        # Calculate jitter amount and add to the origin
+        if self.jitter > 0:
+            gauss_norm_3d_mean = 1.5956947  # Expected L2 norm of a 3d unit gaussian
+            jitter_amount = torch.randn_like(origin) / gauss_norm_3d_mean * self.jitter
+            if torch.norm(jitter_amount).item() > self.jitter_clip:
+                jitter_amount = jitter_amount / torch.norm(jitter_amount) * self.jitter_clip 
+            origin += jitter_amount
+                
+        # Perform centering
+        indep.xyz = indep.xyz - origin[None, None, :]
         
-        return dict(
+        return kwargs | dict(
             indep=indep,
             is_diffused=is_diffused,
-            **kwargs
-        )        
+        )
 
 
 class AddConditionalInputs:
-    def __init__(self, p_is_guidepost_example, guidepost_bonds):
+    def __init__(self, p_is_guidepost_example: Union[float,bool], guidepost_bonds):
+        """
+        Args:
+            p_is_guidepost_example (Union[float,bool]): The probability of using guideposts. If a boolean is given, guideposts are always used or never used
+        """
         self.p_is_guidepost_example = p_is_guidepost_example
         self.guidepost_bonds = guidepost_bonds
 
@@ -132,11 +164,13 @@ class AddConditionalInputs:
         '''
         is_res_str_shown = masks_1d['input_str_mask']
         is_atom_str_shown = masks_1d['is_atom_motif']
+        is_diffused = masks_1d.get('is_diffused', ~is_res_str_shown)
 
         pre_transform_length = indep.length()
-        use_guideposts = (torch.rand(1) < self.p_is_guidepost_example).item()
+        # Sample guide posts with probability p_is_guidepost_example, or simply set true or false if p_is_guidepost_example is a boolean
+        use_guideposts = self.p_is_guidepost_example if isinstance(self.p_is_guidepost_example, bool) else (torch.rand(1) < self.p_is_guidepost_example).item()
         masks_1d['use_guideposts'] = use_guideposts
-        indep, is_diffused, is_masked_seq, atomizer, contig_map.gp_to_ptn_idx0 = aa_model.transform_indep(indep, ~is_res_str_shown, is_res_str_shown, is_atom_str_shown, use_guideposts, guidepost_bonds=self.guidepost_bonds, metadata=metadata)
+        indep, is_diffused, is_masked_seq, atomizer, contig_map.gp_to_ptn_idx0 = aa_model.transform_indep(indep, is_diffused, is_res_str_shown, is_atom_str_shown, use_guideposts, guidepost_bonds=self.guidepost_bonds, metadata=metadata)
 
         masks_1d['is_masked_seq']=is_masked_seq
         # HACK: gp indices may be lost during atomization, so we assume they are at the end of the protein.

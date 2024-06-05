@@ -4,13 +4,11 @@ import unittest
 import torch
 from icecream import ic
 
-from aa_model import Model, make_indep
-import inference.utils
-import contigs
 import atomize
 import guide_posts as gp
 import aa_model
 import test_utils
+import rf_diffusion.inference.data_loader
 
 class TestGuidepost(unittest.TestCase):
 
@@ -28,17 +26,13 @@ class TestGuidepost(unittest.TestCase):
 
         for contig_kwargs, ligand in testcases:
             test_pdb = 'benchmark/input/gaa.pdb'
-            target_feats = inference.utils.process_target(test_pdb)
-            contig_map =  contigs.ContigMap(target_feats,
-                                        **contig_kwargs
-                                        )
-            indep, metadata = make_indep(test_pdb, ligand, return_metadata=True)
             conf = test_utils.construct_conf_single(
                     inference=True,
                     config_name='base_training_base_inference',
-                    overrides=['inference.contig_as_guidepost=False'])
-            adaptor = Model(conf)
-            indep, _, _ = adaptor.insert_contig(indep, contig_map, metadata=metadata)
+                    overrides=['inference.contig_as_guidepost=False',
+                               f'inference.input_pdb={test_pdb}'])
+            dataset = rf_diffusion.inference.data_loader.InferenceDataset(conf)
+            _, _, indep, _, is_diffused, atomizer, contig_map, t_step_input = next(iter(dataset))
             ic(indep.chirals.shape)
             indep.xyz = atomize.set_nonexistant_atoms_to_nan(indep.xyz, indep.seq)
             indep_init = copy.deepcopy(indep)

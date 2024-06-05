@@ -199,3 +199,16 @@ logging:
   inputs: False
 
 extra_t1d_params: {}
+
+transforms:
+  names:
+    - AddConditionalInputs
+    - CenterPostTransform
+
+  configs:
+    CenterPostTransform:
+      jitter: 0.0
+      center_type: 'is_not_diffused'
+    AddConditionalInputs:
+      p_is_guidepost_example: ${inference.contig_as_guidepost}
+      guidepost_bonds: ${guidepost_bonds}

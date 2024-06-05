@@ -6,32 +6,32 @@ import json
 import torch
 from icecream import ic
 
-from rf_diffusion.aa_model import Model, make_indep, AtomizeResidues, get_atomization_state
+from rf_diffusion.aa_model import AtomizeResidues, get_atomization_state
 import rf_diffusion.inference.utils
-from rf_diffusion import contigs
 from rf_diffusion import atomize
 from rf2aa import tensor_util
 from rf_diffusion import test_utils
+import rf_diffusion.inference.data_loader
 
 class TestAtomization(unittest.TestCase):
     testcases = [
         (
-            {'contigs': ['A517-518']},
+            ["contigmap.contigs=['A517-518']",],
             [0],
             'LG1',
         ),
         (
-            {'contigs': ['A518-527']},
+            ["contigmap.contigs=['A518-527']"],
             [0,2,4],
             'LG1',
         ),
         (
-            {'contigs': ['A126-127']},
+            ["contigmap.contigs=['A126-127']"],
             [0],
             None,
         ),
         (
-            {'contigs': ['A126-127'], 'inpaint_str':['A126-126']},
+            ["contigmap.contigs=['A126-127']", "contigmap.inpaint_str=['A126-126']"],
             [0],
             None,
         ),
@@ -44,13 +44,13 @@ class TestAtomization(unittest.TestCase):
 
     def _make_input_indep(self, contig_kwargs, ligand):
         test_pdb = 'benchmark/input/gaa.pdb'
-        target_feats = rf_diffusion.inference.utils.process_target(test_pdb)
-        contig_map =  contigs.ContigMap(target_feats, **contig_kwargs)
 
-        indep, metadata = make_indep(test_pdb, ligand, return_metadata=True)
-        conf = test_utils.construct_conf(inference=True) 
-        adaptor = Model(conf)
-        indep, _, _ = adaptor.insert_contig(indep, contig_map, metadata=metadata)
+        conf = test_utils.construct_conf(inference=True, overrides=contig_kwargs)
+        conf.inference.input_pdb = test_pdb
+        dataset = rf_diffusion.inference.data_loader.InferenceDataset(conf)
+        _, _, indep_cond, _, is_diffused, atomizer, contig_map, t_step_input = next(iter(dataset))
+        indep = indep_cond
+
         indep.xyz = atomize.set_nonexistant_atoms_to_nan(indep.xyz, indep.seq)
 
         # Remove this ad-hoc indep "variable"
