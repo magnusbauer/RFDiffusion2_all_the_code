@@ -38,6 +38,11 @@ from alphafold.model import model
 
 from alphafold.model.tf import shape_placeholders                                                        
 import tensorflow.compat.v1 as tf
+
+class FakeHydra: # spoofing hydra for rf2aa.chemical
+    compose=None
+    initialize=None
+sys.modules["hydra"] = FakeHydra
 from rf_diffusion.chemical import ChemicalData as ChemData
 
 os.environ['TF_FORCE_UNIFIED_MEMORY'] = '1'
