@@ -78,7 +78,7 @@ def main(conf: HydraConfig) -> list[int]:
                     if num_lines(out_csv_path)-1 == n_chunk:
                         if not conf.invalidate_cache:
                             continue
-               print(f'/net/tukwila/ahern/sifs/rfdaa_041624_dgl200_w_cuda.sif {os.path.join(script_dir, "per_sequence_metrics.py")} '\
+                print(f'/net/tukwila/ahern/sifs/rfdaa_041624_dgl200_w_cuda.sif {os.path.join(script_dir, "per_sequence_metrics.py")} '\
                         f'--metric {metric} '\
                         f'--outcsv {conf.datadir}/metrics/per_{cohort}/{metric}/csv.{i} '\
                         f'{tmp_fn}', file=job_list_file)
