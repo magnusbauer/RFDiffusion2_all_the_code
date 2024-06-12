@@ -27,6 +27,7 @@ import rf_diffusion.rotation_conversions as rotation_conversions
 import rf_diffusion.atomize as atomize
 from rf_diffusion import write_file
 from rf_diffusion.contigs import ContigMap
+from rf_diffusion.atomization_primitives import AtomizerSpec, AtomizedLabel
 
 import rf_diffusion.frame_diffusion.data.utils as du
 from rf_diffusion.frame_diffusion.data import all_atom
@@ -1685,17 +1686,6 @@ def diagnose_xyz(xyz):
     # has_heavy = torch.isnan(xyz[..., :3, :]).any()
     return f'diagnosis: nan-CA: {has_ca}    nan-BB: {has_backbone}'
 
-AtomizedLabel = namedtuple('AtomizedLabel', ['coarse_idx0', 'aa', 'atom_name', 'pdb_idx', 'terminus_type'])
-'''
-Human readable definition of where an atomized atom came from.
-    coarse_idx0: The residue index before atomization
-    aa: Integer represenation of the residues/element.
-    atom_name: The PDB name of the atomized atom. "None" means the residue
-        is "coarse grained" and not atomized.
-    pdb_idx: The index of the residue in the original pdb file before atomization.
-    terminus_type: Stores the terminus type of the residue before atomization.
-'''
-
 def get_atomization_state(indep):
     atomized_labels = []
     for i in range(indep.length()):
@@ -1753,13 +1743,6 @@ def insert_tensor(body: torch.tensor, fill, index: int, dim: int=0) -> torch.ten
     # Concatenate the three parts
     return torch.cat([body1, fill, body2], dim=dim)
 
-@dataclass
-class AtomizerSpec:
-    '''
-    Hold all the data needed to instantiate the AtomizeResidues class.
-    '''
-    deatomized_state: list[AtomizedLabel]
-    residue_to_atomize: torch.Tensor
 
 class AtomizeResidues:
     def __init__(self, deatomized_state: list[AtomizedLabel], residue_to_atomize: torch.Tensor):

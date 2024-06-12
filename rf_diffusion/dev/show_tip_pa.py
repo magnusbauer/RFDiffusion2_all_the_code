@@ -1,8 +1,10 @@
 import os
+import copy
 from rf_diffusion.dev import show_tip_row
 from rf_diffusion.dev.show_tip_row import OR
 from rf_diffusion.dev import analyze
 import math
+from icecream import ic
 cmd = analyze.cmd
 
 import logging
@@ -119,13 +121,20 @@ def show(row, structs = {'X0'}, af2=False, des=True, des_color=None, hetatm_colo
     if des:
         pdbs['des'] =  analyze.get_diffusion_pdb(row)
         # pdbs['des_raw'] = '/net/scratch/ahern/tip_atoms/rfd_retro_3_pilot/out/run_tip_3_lig_retroaldolase_cond0_0.pdb'
+    
+    name = row['name']
+
+    structs = copy.deepcopy(structs)
+    if 'unidealized' in structs:
+        structs.remove('unidealized')
+        pdbs['unidealized'] = os.path.join(row['rundir'], f'unidealized/{name}.pdb')
+
     for s in structs:
         suffix = s
         if s == 'X0':
             suffix = 'pX0'
         if s == 'Xt':
             suffix = 'Xt-1'
-        name = row['name']
         # if 'pymol' in row:
         #     name = row['pymol']
         # s = f'{name}_{s}_{random.randint(0, 1000)}'

@@ -46,6 +46,7 @@ from rf_diffusion import atomize
 from rf_diffusion.dev import idealize_backbone
 from rf_diffusion.idealize import idealize_pose
 from tqdm import trange
+import rf_diffusion.atomization_primitives
 ic.configureOutput(includeContext=True)
 
 logger = logging.getLogger(__name__)
@@ -363,6 +364,9 @@ def save_outputs(sampler, out_prefix, indep, contig_map, atomizer, t_step_input,
     seq_design = final_seq.clone()
     xyz_design = px0_xyz_stack[0].clone()
     gp_contig_mappings = {}
+    is_atomized = torch.zeros(indep.length()).bool()
+    if atomizer is not None:
+        is_atomized = copy.deepcopy(atomizer.residue_to_atomize)
     # If using guideposts, infer their placement from the final pX0 prediction.
     if sampler._conf.inference.contig_as_guidepost:
         gp_to_contig_idx0 = contig_map.gp_to_ptn_idx0  # map from gp_idx0 to the ptn_idx0 in the contig string.
@@ -398,6 +402,8 @@ def save_outputs(sampler, out_prefix, indep, contig_map, atomizer, t_step_input,
         seq_design = seq_design[~is_gp]
         is_diffused[match_idx] = is_diffused[gp_idx]
         is_diffused = is_diffused[~is_gp]
+        is_atomized[match_idx] = is_atomized[gp_idx]
+        is_atomized = is_atomized[~is_gp]
 
     # Save outputs
     out_head, out_tail = os.path.split(out_prefix)
@@ -413,16 +419,17 @@ def save_outputs(sampler, out_prefix, indep, contig_map, atomizer, t_step_input,
     aa_model.write_traj(out_unidealized, xyz_design[None,...], seq_design, indep.bond_feats, ligand_name_arr=contig_map.ligand_names, chain_Ls=chain_Ls, idx_pdb=indep.idx)
 
     # Save idealized pX0 last step
-    log.info('Idealizing sidechains for pX0 of the last step...')
     out_idealized = f'{out_prefix}.pdb'
     xyz_design_idealized = xyz_design.clone()[None]
 
+    idealization_rmsd = float('nan')
     if sampler._conf.inference.idealize_sidechain_outputs:
-        # Only idealize residues that diffused (ie - were not a backbone motif)
-        xyz_design_idealized[0, is_diffused] = idealize_pose(
-            xyz_design[None, is_diffused],
-            seq_design[None, is_diffused]
-        )[0]
+        log.info('Idealizing atomized sidechains for pX0 of the last step...')
+        # Only idealize residues that are atomized.
+        xyz_design_idealized[0, is_atomized], idealization_rmsd, _, _ = idealize_pose(
+            xyz_design[None, is_atomized],
+            seq_design[None, is_atomized]
+        )
 
     aa_model.write_traj(out_idealized, xyz_design_idealized, seq_design, indep.bond_feats, ligand_name_arr=contig_map.ligand_names, chain_Ls=chain_Ls, idx_pdb=indep.idx)
     idealize_backbone.rewrite(out_idealized, out_idealized)
@@ -458,7 +465,8 @@ def save_outputs(sampler, out_prefix, indep, contig_map, atomizer, t_step_input,
         t_int=np.arange(int(t_step_input), sampler.inf_conf.final_step-1, -1)[::-1],
         t=np.arange(int(t_step_input), sampler.inf_conf.final_step-1, -1)[::-1] / sampler._conf.diffuser.T,
         is_diffused=sampler.is_diffused,
-        point_types=aa_model.get_point_types(sampler.indep_orig, atomizer)
+        point_types=aa_model.get_point_types(sampler.indep_orig, atomizer),
+        atomizer_spec=None if atomizer is None else rf_diffusion.atomization_primitives.AtomizerSpec(atomizer.deatomized_state, atomizer.residue_to_atomize),
     )
     if contig_map:
         for key, value in contig_map.get_mappings().items():
@@ -467,6 +475,7 @@ def save_outputs(sampler, out_prefix, indep, contig_map, atomizer, t_step_input,
     if atomizer:
         motif_deatomized = atomize.convert_atomized_mask(atomizer, ~sampler.is_diffused)
         trb['motif'] = motif_deatomized
+    trb['idealization_rmsd'] = idealization_rmsd
     if sampler._conf.inference.contig_as_guidepost:
         # Store the literal location of the guide post residues
         for k in ['con_hal_pdb_idx', 'con_hal_idx0', 'sampled_mask']:

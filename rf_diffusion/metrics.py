@@ -20,6 +20,8 @@ from rf_diffusion import atomize
 from rf_diffusion import aa_model
 from rf_diffusion import guide_posts as gp
 from rf2aa.util_module import XYZConverter
+import rf2aa.util
+from rf_diffusion.dev import idealize_backbone
 
 import logging
 logger = logging.getLogger(__name__)
@@ -228,25 +230,33 @@ class IdealizedResidueRMSD(Metric):
         atomizer = aa_model.AtomizeResidues(**asdict(atomizer_spec))
 
         # Deatomize
+        is_protein = rf2aa.util.is_protein(indep.seq)
+        indep.xyz[is_protein] = idealize_backbone.idealize_bb_atoms(
+            xyz=indep.xyz[None, is_protein],
+            idx=indep.idx[is_protein]
+        )
+        
         indep_deatomized = atomizer.deatomize(indep)
 
         to_idealize = atomizer_spec.residue_to_atomize.detach().cpu()
         if contig_as_guidepost:
             match_idx_by_gp_idx = gp.match_guideposts(indep_deatomized, atomizer_spec.residue_to_atomize)
             logger.debug(f'{match_idx_by_gp_idx=}')
-            indep_deatomized = gp.place_guideposts(indep_deatomized, atomizer_spec.residue_to_atomize, use_guidepost_coordinates_for='all_but_frame')
+            match_idx = list(match_idx_by_gp_idx.values())
+            indep_deatomized = gp.place_guideposts(indep_deatomized, atomizer_spec.residue_to_atomize, use_guidepost_coordinates_for='sidechain')
             to_idealize = torch.zeros((indep_deatomized.length(),), dtype=bool)
             match_idx = list(match_idx_by_gp_idx.values())
             to_idealize[match_idx] = True
 
         # Idealize only atomized residues
-        rmsd, per_residue_rmsd = idealize.idealize_pose(
+        _, rmsd, per_residue_rmsd, _ = idealize.idealize_pose(
             xyz=indep_deatomized.xyz[None, to_idealize].detach(),
             seq=indep_deatomized.seq[None, to_idealize].detach(),
             steps=self.n_steps,
-        )[1:3]
+        )
         any_residues_to_idealize = to_idealize.any()
         return {
+            'rmsd_constellation': rmsd.detach(),
             'rmsd_mean': per_residue_rmsd[0].detach().mean() if any_residues_to_idealize else float('nan'),
             'rmsd_max': per_residue_rmsd[0].detach().max() if any_residues_to_idealize else float('nan'),
             'rmsd_min': per_residue_rmsd[0].detach().min() if any_residues_to_idealize else float('nan'),

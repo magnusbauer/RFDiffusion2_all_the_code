@@ -1,6 +1,6 @@
 datadir: ${hydra:runtime.cwd}
 filenames: null
-chunk: 300
+chunk: 200
 tmp_pre: add_metrics.list
 invalidate_cache: False
 

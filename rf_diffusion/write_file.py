@@ -16,6 +16,11 @@ def writepdb_file(f, atoms, seq, modelnum=None, chain="A", idx_pdb=None, bfacts=
              bond_feats=None, file_mode="w",atom_mask=None, atom_idx_offset=0, chain_Ls=None,
              remap_atomtype=True, lig_name=None, atom_names=None, chain_letters=None,
              ligand_name_arr=None):
+    
+    # PDBs coordinate range is (-999.99, 9999.99)
+    atoms = torch.where(atoms >= 10000, 9999.99, atoms)
+    atoms = torch.where(atoms <= -1000, -999.99, atoms)
+
     atom_count_by_res = defaultdict(lambda: defaultdict(int))
     ligand_count = 0
 

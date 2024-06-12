@@ -129,7 +129,7 @@ def get_conf(trb_path):
     trb = np.load(trb_path,allow_pickle=True)
     return trb['config']
 
-def get_inference_metrics_inputs(trb_path):
+def get_inference_metrics_inputs(trb_path, only_x0=True):
     trb = np.load(trb_path,allow_pickle=True)
     n_t = trb['denoised_xyz_stack'].shape[0]
     all_metrics_inputs = []
@@ -146,19 +146,24 @@ def get_inference_metrics_inputs(trb_path):
             true_crds=indep_true.xyz[:,:3],
             t=trb['t'][i],
             point_types=trb['point_types'],
-            is_diffused=trb['is_diffused']
+            is_diffused=trb['is_diffused'],
+            atomizer_spec=trb['atomizer_spec'],
+            contig_as_guidepost=trb['config']['inference']['contig_as_guidepost'],
         )
         all_metrics_inputs.append(metrics_inputs)
+        if only_x0:
+            break
     return (trb['config'], all_metrics_inputs)
 
 def get_inference_metrics(trb_path,
                             metric_names=[
-                            'atom_bonds_permutations',
-                            'rigid_loss',
-                            # 'rigid_loss_input',
-                            'VarianceNormalizedPredTransMSE',
-                            'VarianceNormalizedInputTransMSE',
-                            'displacement_permutations'],
+                                # 'atom_bonds_permutations',
+                                # 'rigid_loss',
+                                # 'rigid_loss_input',
+                                # 'VarianceNormalizedPredTransMSE',
+                                # 'VarianceNormalizedInputTransMSE',
+                                # 'displacement_permutations'
+                            ],
                            **kwargs):
     dfi = get_inference_metrics_base(trb_path, metric_names=metric_names, **kwargs)
     conf = get_conf(trb_path)
@@ -460,13 +465,15 @@ def get_trb_path(row):
 
 def get_inference_metrics_base(trb_path:str,
                               metric_names=[
-                                'atom_bonds_permutations',
-                                'rigid_loss',
-                                # 'rigid_loss_input',
-                                'VarianceNormalizedPredTransMSE',
-                                'VarianceNormalizedInputTransMSE',
-                                'displacement_permutations'],
-                                regenerate_cache=False):
+                                    # 'atom_bonds_permutations',
+                                    # 'rigid_loss',
+                                    # 'rigid_loss_input',
+                                    # 'VarianceNormalizedPredTransMSE',
+                                    # 'VarianceNormalizedInputTransMSE',
+                                    'IdealizedResidueRMSD',
+                                    # 'displacement_permutations'
+                                ],
+                                regenerate_cache=True):
     trb_dir, trb_name = os.path.split(trb_path)
     trb_name, _ = os.path.splitext(trb_name)
     cache_dir = os.path.join(trb_dir, 'metrics_cache')

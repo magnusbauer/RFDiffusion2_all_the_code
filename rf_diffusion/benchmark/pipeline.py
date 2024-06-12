@@ -54,7 +54,7 @@ def main(conf: HydraConfig) -> None:
         print('Waiting for design jobs to finish...', jobid_sweep)
         wait_for_jobs(jobid_sweep)
 
-    if step_in_scope(conf.start_step, conf.stop_step, 'foldseek') and 'fold_seek' not in conf.skip_steps:
+    if step_in_scope(conf.start_step, conf.stop_step, 'foldseek') and 'foldseek' not in conf.skip_steps:
         # Move "orphan" pdbs that somehow lack a trb file
         orphan_dir = f'{conf.outdir}/orphan_pdbs'
         os.makedirs(orphan_dir, exist_ok=True)
@@ -78,7 +78,7 @@ def main(conf: HydraConfig) -> None:
             run_pipeline_step(f'{os.path.join(script_dir, "../dev/graft_native_motif.py")} {conf.outdir} {conf.outdir}')
             run_pipeline_step(f'{os.path.join(script_dir, "../dev/renumber_chains.py")} {conf.outdir} {conf.outdir} --cautious=False')
 
-    if step_in_scope(conf.start_step, conf.stop_step, 'mpnn'):
+    if step_in_scope(conf.start_step, conf.stop_step, 'mpnn') and 'mpnn' not in conf.skip_steps:
 
         if conf.mpnn.v2:
             main_mpnn = mpnn_designs_v2.main
@@ -92,7 +92,7 @@ def main(conf: HydraConfig) -> None:
         print('Waiting for MPNN jobs to finish...', jobid_mpnn)
         wait_for_jobs(jobid_mpnn)
 
-    if step_in_scope(conf.start_step, conf.stop_step, 'thread_mpnn'):
+    if step_in_scope(conf.start_step, conf.stop_step, 'thread_mpnn') and 'thread_mpnn' not in conf.skip_steps:
         ic(conf.mpnn.v2)
         if conf.mpnn.v2:
             # raise Exception('do we thread here?')
@@ -104,7 +104,7 @@ def main(conf: HydraConfig) -> None:
             else:
                 run_pipeline_step(f'{script_dir}thread_mpnn.py {conf.outdir}')
 
-    if step_in_scope(conf.start_step, conf.stop_step, 'score'):
+    if step_in_scope(conf.start_step, conf.stop_step, 'score') and 'score' not in conf.skip_steps:
         print('Initiating scoring')
         if conf.af2_unmpnned:
             conf_score = copy.deepcopy(conf.score)

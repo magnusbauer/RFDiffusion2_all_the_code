@@ -10,9 +10,12 @@ def slurm_submit(cmd, p='cpu', c=1, mem=2, gres=None, J=None, wait_for=[], hold_
     '''
     job_name = J if J else os.environ["USER"]+'_auto_submit'
     log_file = f'%A_%a_{J}.log' if log else '/dev/null'
+    # The RAM on this gpu is busted, raises ECC errors on torch.load
+    exclude_gpu = "--exclude=gpu135" if gres and gres.startswith('gpu') else ""
     cmd_sbatch = f'sbatch --wrap "{cmd}" -p {p} -c {c} --mem {mem}g '\
         f'-J {job_name} '\
         f'{f"--gres {gres}" if gres else ""} '\
+        f'{exclude_gpu} '\
         f'{"-W" if hold_until_finished else ""} '\
         f'{"--dependency afterok:" + ":".join(map(str, wait_for)) if wait_for else ""} '\
         f'-o {log_file} ' \

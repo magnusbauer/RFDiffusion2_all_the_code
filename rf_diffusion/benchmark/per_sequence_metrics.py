@@ -30,6 +30,7 @@ from rf_diffusion.chemical import ChemicalData as ChemData
 from rf_diffusion import bond_geometry
 from rf_diffusion.dev import benchmark as bm
 from rf_diffusion import loss
+import rf_diffusion.atomization_primitives
 
 def main(pdb_names_file, outcsv=None, metric='default'):
     ic(__name__)
@@ -384,7 +385,15 @@ def get_last_px0(row):
     # get_pdb_lines_traj(px0_traj_path)
     parsed = parse_traj(px0_traj_path, n=1)[0]
     print(f"{parsed.keys()=}")
-    return parsed['xyz']
+    n_prot, n_heavy, _ = parsed['xyz'].shape
+    n_het, _ = parsed['xyz_het'].shape
+
+    xyz = np.full((n_prot + n_het, n_heavy, 3), float('nan'))
+    xyz[:n_prot] = parsed['xyz']
+    xyz[n_prot:, 1] = parsed['xyz_het']
+    is_het = np.zeros((n_prot + n_het)).astype(bool)
+    is_het[n_prot:] = True
+    return xyz, is_het
 
 def guidepost(pdb):
     row = analyze.make_row_from_traj(pdb[:-4])
@@ -397,7 +406,9 @@ def guidepost(pdb):
         bb_i = np.array(trb['con_hal_idx0'])
         gp_i = np.array(list(trb['motif'].keys()))
 
-        deatomized_xyz = get_last_px0(row)
+        deatomized_xyz, is_het = get_last_px0(row)
+        het_idx = is_het.nonzero()[0]
+        gp_i = gp_i[~np.isin(gp_i, het_idx)]
         gp_motif = deatomized_xyz[gp_i]
         bb_motif = deatomized_xyz[bb_i]
         ca_dist = np.linalg.norm(gp_motif[:, 1] - bb_motif[:, 1], axis=-1)
@@ -456,7 +467,7 @@ def backbone(pdb):
     row = rf_diffusion.dev.analyze.make_row_from_traj(pdb[:-4])
     record['name'] = row['name']
 
-    traj_metrics = bm.get_inference_metrics_base(bm.get_trb_path(row), regenerate_cache=False)
+    traj_metrics = bm.get_inference_metrics_base(bm.get_trb_path(row), regenerate_cache=True)
     traj_t0_metrics = traj_metrics[traj_metrics.t==traj_metrics.t.min()]
     assert len(traj_t0_metrics) == 1
     traj_t0_metrics = traj_t0_metrics.iloc[0].to_dict()

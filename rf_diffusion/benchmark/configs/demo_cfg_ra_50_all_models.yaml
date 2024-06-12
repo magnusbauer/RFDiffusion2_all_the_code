@@ -1,0 +1,37 @@
+defaults:
+  - pipeline
+
+sweep:
+  command_args: >
+    --config-name=aa
+    (
+      inference.ckpt_path=/home/ahern/treasure/RFD_44.pt|/net/tukwila/altaeth/rf_diffusion/rf_diffusion_centering_v2/runs/training/fm_tip_motif_centering/fm_tip_motif_centering2024-05-13_11:41:54.985382/rank_0/models/RFD_28.50.pt
+      +inference.classifier_free_guidance_ignore_trans=True|False
+      +inference.classifier_free_guidance_ignore_rots=True|False
+      +inference.classifier_free_guidance_recenter_xt=True|False
+    )|(
+      inference.ckpt_path=/net/tukwila/altaeth/rf_diffusion/rf_diffusion_centering_v2/runs/training/fm_tip_0_centering/fm_tip_0_centering2024-05-11_14:09:52.856159/rank_0/models/RFD_28.50.pt|/net/tukwila/altaeth/rf_diffusion/rf_diffusion_centering_v2/runs/training/fm_tip_5_centering/fm_tip_5_centering2024-05-31_21:51:03.389959/rank_0/models/RFD_28.50.pt
+      transforms.configs.CenterPostTransform.center_type='is_diffused'
+    )
+    inference.contig_as_guidepost=True 
+    diffuser.T=100
+    inference.state_dict_to_load=model_state_dict
+    inference.str_self_cond=False
+    inference.model_runner=ClassifierFreeGuidance
+    inference.classifier_free_guidance_scale=0|1|2|4|8
+    +idealization_metric_n_steps=50
+    inference.idealize_sidechain_outputs=True
+  benchmark_json: ec_ra.json
+  benchmarks: retroaldolase
+  num_per_condition: 50
+  num_per_job: 10
+  stop_step: sweep
+
+in_proc: False
+
+outdir: /net/scratch/${oc.env:USER}/se3_diffusion/benchmarks/${now:%Y-%m-%d}_${now:%H-%M-%S}_demo_cfg_ra_50_all_models
+
+metrics:
+  design_metrics:
+    - backbone
+    - guidepost
