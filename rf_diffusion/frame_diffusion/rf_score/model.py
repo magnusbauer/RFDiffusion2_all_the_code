@@ -6,7 +6,6 @@ import torch.nn as nn
 from typing import List
 from openfold.utils.rigid_utils import Rigid
 from rf_diffusion.frame_diffusion.data import all_atom
-from rf2aa.model.RoseTTAFoldModel import LegacyRoseTTAFoldModule
 import rf2aa.util
 from dataclasses import dataclass
 import dataclasses

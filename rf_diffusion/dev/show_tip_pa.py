@@ -4,7 +4,6 @@ from rf_diffusion.dev import show_tip_row
 from rf_diffusion.dev.show_tip_row import OR
 from rf_diffusion.dev import analyze
 import math
-from icecream import ic
 cmd = analyze.cmd
 
 import logging

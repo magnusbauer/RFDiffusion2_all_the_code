@@ -8,12 +8,12 @@ from rf_diffusion import sasa
 
 def get_extra_t1d(indep, featurizer_names, **kwargs):
     if not featurizer_names:
-        return torch.zeros((indep.length(),0))
+        return torch.zeros((indep.length(),0)).float()
     t1d = []
     for name in featurizer_names:
         feats_1d = featurizers[name](indep, kwargs[name], **kwargs)
         t1d.append(feats_1d)
-    return torch.cat(t1d, dim=-1)
+    return torch.cat(t1d, dim=-1).float()
 
 def one_hot_bucket(x: torch.Tensor, boundaries: torch.Tensor):
     '''
@@ -157,11 +157,11 @@ inference_featurizers = {
 
 def get_extra_t1d_inference(indep, featurizer_names, params_train, params_inference, **kwargs):
     if not featurizer_names:
-        return torch.zeros((indep.length(),0))
+        return torch.zeros((indep.length(),0)).float()
     t1d = []
     for name in featurizer_names:
         assert name in params_train
         assert name in params_inference
         feats_1d = inference_featurizers[name](indep, params_train[name], params_inference[name], **kwargs)
         t1d.append(feats_1d)
-    return torch.cat(t1d, dim=-1)
+    return torch.cat(t1d, dim=-1).float()

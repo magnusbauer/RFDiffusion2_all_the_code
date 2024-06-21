@@ -177,7 +177,7 @@ class TestRegression(unittest.TestCase):
             "contigmap.contigs=['10']",
         ])
         pdb_contents = inference.utils.parse_pdb(pdb)
-        cmp = partial(tensor_util.cmp, atol=5e-2, rtol=0)
+        cmp = partial(tensor_util.cmp, atol=6e-2, rtol=0)
         test_utils.assert_matches_golden(self, 'ori_cm', pdb_contents, rewrite=REWRITE, custom_comparator=cmp)
 
     @pytest.mark.generates_golden

@@ -2,7 +2,7 @@ import torch
 import contextlib
 from functools import wraps
 import assertpy
-from collections import defaultdict, OrderedDict, namedtuple
+from collections import defaultdict, OrderedDict
 from typing import Iterable
 import torch.nn.functional as F
 import dataclasses
@@ -27,12 +27,14 @@ import rf_diffusion.rotation_conversions as rotation_conversions
 import rf_diffusion.atomize as atomize
 from rf_diffusion import write_file
 from rf_diffusion.contigs import ContigMap
-from rf_diffusion.atomization_primitives import AtomizerSpec, AtomizedLabel
+from rf_diffusion.atomization_primitives import AtomizedLabel, AtomizerSpec
 
 import rf_diffusion.frame_diffusion.data.utils as du
 from rf_diffusion.frame_diffusion.data import all_atom
 
 from typing import List
+
+AtomizerSpec.__sizeof__(None) # To avoid Ruff unused import error. aa_model.AtomizerSpec used elsewhere
 
 NINDEL=1
 NTERMINUS=2
