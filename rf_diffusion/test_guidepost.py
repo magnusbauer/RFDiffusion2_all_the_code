@@ -30,7 +30,12 @@ class TestGuidepost(unittest.TestCase):
                     inference=True,
                     config_name='base_training_base_inference',
                     overrides=['inference.contig_as_guidepost=False',
-                               f'inference.input_pdb={test_pdb}'])
+                               f'inference.input_pdb={test_pdb}',
+                               '++transforms.names=["Center","AddConditionalInputs"]',
+                               '++transforms.configs.Center={}',
+                               '++transforms.configs.AddConditionalInputs.p_is_guidepost_example=${inference.contig_as_guidepost}',
+                               '++transforms.configs.AddConditionalInputs.guidepost_bonds=${guidepost_bonds}',                               
+                               ])
             dataset = rf_diffusion.inference.data_loader.InferenceDataset(conf)
             _, _, indep, _, is_diffused, atomizer, contig_map, t_step_input = next(iter(dataset))
             ic(indep.chirals.shape)

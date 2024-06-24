@@ -172,7 +172,8 @@ class TestRegression(unittest.TestCase):
             'inference.input_pdb=test_data/1yzr_no_covalent_ORI_cm1.pdb',            
             'inference.ligand=HEM',
             'inference.num_designs=1',
-            'transforms.configs.CenterPostTransform.center_type="is_diffused"',
+            '++transforms.names=["AddConditionalInputs","CenterPostTransform"]',  # Simulate behavior on different model
+            '++transforms.configs.CenterPostTransform.center_type="is_diffused"',
             'inference.output_prefix=tmp/test_ori_cm',
             "contigmap.contigs=['10']",
         ])
@@ -192,7 +193,8 @@ class TestRegression(unittest.TestCase):
             'inference.input_pdb=test_data/1yzr_no_covalent_ORI_cm1.pdb',            
             'inference.ligand=HEM',
             'inference.num_designs=1',
-            'transforms.configs.CenterPostTransform.center_type="is_diffused"',
+            '++transforms.names=["AddConditionalInputs","CenterPostTransform"]',  # Simulate behavior on different model
+            '++transforms.configs.CenterPostTransform.center_type="is_diffused"',
             'inference.output_prefix=tmp/test_ori_partial_diffusion',
             "contigmap.contigs=['A1-10']",
             "contigmap.inpaint_str=['A1-10']",
@@ -227,7 +229,8 @@ class TestRegression(unittest.TestCase):
             'inference.input_pdb=test_data/1yzr_no_covalent_ORI_cm1.pdb',            
             'inference.ligand=HEM',
             'inference.num_designs=1',
-            'transforms.configs.CenterPostTransform.center_type="is_diffused"',
+            '++transforms.names=["AddConditionalInputs","CenterPostTransform"]',  # Simulate behavior on different model
+            '++transforms.configs.CenterPostTransform.center_type="is_diffused"',
             'inference.output_prefix=tmp/test_ori_cm',
             "contigmap.contigs=['10']",
             '++inference.zero_weights=True',            
@@ -980,7 +983,8 @@ class TestModelRunners(unittest.TestCase):
             "+diffuser.batch_optimal_transport=False",
             "+contigmap.contig_atoms=\"{'A518':''}\"",
             "inference.model_runner=ClassifierFreeGuidance",
-            'transforms.configs.CenterPostTransform.center_type="is_diffused"',            
+            '++transforms.names=["AddConditionalInputs","CenterPostTransform"]',  # Simulate behavior on different model
+            '++transforms.configs.CenterPostTransform.center_type="is_diffused"',          
         ])
         sampler = model_runners.sampler_selector(conf)
         indep_uncond, contig_map, atomizer, t_step_input = sampler.sample_init()
@@ -996,7 +1000,8 @@ class TestModelRunners(unittest.TestCase):
             "+contigmap.contig_atoms=\"{'A518':'CG,OD1,OD2'}\"",
             "inference.model_runner=ClassifierFreeGuidance",
             "inference.classifier_free_guidance_scale=0",
-            'transforms.configs.CenterPostTransform.center_type="is_diffused"',                
+            '++transforms.names=["AddConditionalInputs","CenterPostTransform"]',  # Simulate behavior on different model
+            '++transforms.configs.CenterPostTransform.center_type="is_diffused"',             
         ])        
         sampler = model_runners.sampler_selector(conf) 
         indep_uncond_cfg, contig_map, atomizer, t_step_input = sampler.sample_init()

@@ -1,16 +1,21 @@
 defaults:
   - fm_tip
 
-transforms:
-  names:  
+upstream_training_transforms:
+  names:
     - PopMask
+
+  configs:  
+    PopMask: {}
+
+transforms:
+  names:
     - AddConditionalInputs
-    - CenterPostTranform
+    - CenterPostTransform
 
   configs:
-    PopMask: {}
-    CenterPostTranform:
-      jitter: 5.0
+    CenterPostTransform:
+      jitter: 0.0
       jitter_clip: 20.0
     AddConditionalInputs:
       p_is_guidepost_example: ${....dataloader.P_IS_GUIDEPOST_EXAMPLE}

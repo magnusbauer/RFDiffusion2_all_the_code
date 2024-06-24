@@ -1833,10 +1833,18 @@ class DistilledDataset(data.Dataset):
                 item_context=item_context)
         
         transforms = []
+        # Add training only transforms
+        upstream_names = self.conf.upstream_training_transforms.names if hasattr(self.conf, 'upstream_training_transforms') else []
+        for transform_name in upstream_names:
+            transforms.append(
+                getattr(conditioning, transform_name)(**self.conf.upstream_training_transforms.configs[transform_name]),
+            )
+        # Add shared training/inference transforms
         for transform_name in self.conf.transforms.names:
             transforms.append(
                 getattr(conditioning, transform_name)(**self.conf.transforms.configs[transform_name]),
             )
+        # Add training only downstream transforms
         transforms.extend([
             diffuse,
             feature_tuple_from_feature_dict

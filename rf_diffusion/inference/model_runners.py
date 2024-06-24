@@ -23,6 +23,8 @@ from rf_diffusion.frame_diffusion.rf_score.model import RFScore
 from rf_diffusion import features
 from rf_diffusion import noisers
 from rf_diffusion.config import config_format
+from pathlib import Path
+import os
 
 import rf_diffusion.inference.data_loader
 
@@ -67,11 +69,17 @@ class Sampler:
         else:
             weights_conf = weights_pkl['conf']
 
+        # Load the base training conf based on config path relative to the location of model_runners.py
+        file_dir = Path(__file__).resolve().parent
+        training_config_fp = os.path.join(file_dir, '../', 'config/training/base.yaml')
+        base_training_conf = OmegaConf.load(training_config_fp)
+
         # Merge base experiment config with checkpoint config.
         OmegaConf.set_struct(self._conf, False)
         OmegaConf.set_struct(weights_conf, False)
+        OmegaConf.set_struct(base_training_conf, False)
         self._conf = OmegaConf.merge(
-            weights_conf, self._conf)
+            base_training_conf, weights_conf, self._conf)
         config_format.alert_obsolete_options(self._conf)
 
         self.diffuser = noisers.get(self._conf.diffuser)

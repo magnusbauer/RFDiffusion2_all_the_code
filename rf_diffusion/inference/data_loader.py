@@ -189,6 +189,8 @@ class InferenceDataset:
         # Curate transforms as in training 
         transforms = []
         for transform_name in conf.transforms.names:
+            # Ignore legacy blacklist transforms during inference (this is for backward compatibility)
+            if transform_name in conditioning.LEGACY_TRANSFORMS_TO_IGNORE: continue
             transforms.append(
                 getattr(conditioning, transform_name)(**conf.transforms.configs[transform_name]),
             )

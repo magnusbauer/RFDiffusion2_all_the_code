@@ -8,6 +8,8 @@ from rf_diffusion import aa_model
 from rf_diffusion.aa_model import Indep
 from rf_diffusion.contigs import ContigMap
 
+from rf2aa.chemical import ChemicalData as ChemData
+
 from typing import Union
 
 logger = logging.getLogger(__name__)
@@ -16,6 +18,8 @@ def get_center_of_mass(xyz14, mask):
     assert mask.any(), f'{mask=}'
     points = xyz14[mask]
     return points.mean(dim=0)
+
+LEGACY_TRANSFORMS_TO_IGNORE = ['PopMask']
 
 class PopMask:
     def __call__(self, indep, metadata, masks_1d, **kwargs):
@@ -33,6 +37,7 @@ class PopMask:
             masks_1d=masks_1d,
             **kwargs
         )
+
 
 class Center:
     def __call__(self, indep, masks_1d, **kwargs):
@@ -58,7 +63,7 @@ class Center:
             # Unconditional case
             center_of_mass_mask[:, 1] = True
 
-        indep.xyz -= get_center_of_mass(indep.xyz, center_of_mass_mask)
+        indep.xyz -= get_center_of_mass(indep.xyz[:,:ChemData().NHEAVYPROT], center_of_mass_mask)
         return dict(
             indep=indep,
             masks_1d=masks_1d,

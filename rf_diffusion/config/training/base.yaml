@@ -1,11 +1,16 @@
-transforms:
+upstream_training_transforms:
   names:
     - PopMask
+
+  configs:  
+    PopMask: {}
+
+transforms:
+  names:    
     - Center
     - AddConditionalInputs
 
   configs:
-    PopMask: {}
     ReconstructContigMap: {}
     Center: {}
     AddConditionalInputs:

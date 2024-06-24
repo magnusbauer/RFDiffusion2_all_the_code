@@ -2,6 +2,7 @@ import torch
 from icecream import ic
 from rf_diffusion import aa_model
 from omegaconf import OmegaConf
+from rf_diffusion import conditioning
 
 
 def extract_ori(indep: aa_model.Indep, pdb_fp: str):
@@ -54,11 +55,15 @@ def validate_centering_strategy(origin: torch.Tensor, for_partial_diffusion: boo
     Raises:
         AssertionError: If the ORI is not set correctly
     """
-    if conf.transforms.configs.CenterPostTransform.center_type == 'is_not_diffused':
-        pass
-    elif conf.transforms.configs.CenterPostTransform.center_type == 'is_diffused':
-        if not for_partial_diffusion:
-            assert origin is not None, "ORI HETATM token is required for centering input correctly but was not provided"
+    # Validate CenterPostTransform if it is used in the transform stack
+    if 'CenterPostTransform' in conf.transforms.names:
+        # Get the center type, or use default if not found
+        center_type = getattr(conf.transforms.configs.CenterPostTransform, 'center_type', conditioning.CenterPostTransform().center_type)        
+        if center_type == 'is_not_diffused':
+            pass
+        elif center_type == 'is_diffused':
+            if not for_partial_diffusion:
+                assert origin is not None, "ORI HETATM token is required for centering input correctly but was not provided"
 
 
 def extract_centering_origin(indep: aa_model.Indep, pdb_fp: str, for_partial_diffusion: bool) -> torch.tensor:
