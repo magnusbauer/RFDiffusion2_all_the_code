@@ -318,3 +318,67 @@ def get_init_xyz(xyz_t, is_sm, center=True):
     #
     xyz = torch.where(mask.view(B, T, L, 1, 1), init, xyz_t)
     return xyz
+
+
+def generate_H(N, CA, C):
+    '''
+    Returns the H atom of proteins for hbonds and similar
+        The H on unbonded Ns are oriented somewhat randomly (but still at 120 degrees from N-CA)
+        Otherwise they are perfectly opposite the C-N-CA angle
+
+    Args:
+        N (torch.Tensor): The N atoms [L,3]
+        CA (torch.Tensor): The CA atoms [L,3]
+        C (torch.Tensor): The C atoms [L,3]
+
+    Returns:
+        H (torch.Tensor): The location of the H atom
+    '''
+
+    first_C = torch.zeros((1, 3), dtype=C.dtype)
+    C_w_extra = torch.cat((first_C, C))
+
+    C_from_N = C_w_extra[:-1] - N
+    CN_dist = torch.linalg.norm( C_from_N, axis=-1 )
+    C_from_N_unit = C_from_N / CN_dist[:,None]
+
+    CA_from_N = CA - N
+    CA_from_N_unit = CA_from_N / torch.linalg.norm(CA_from_N, axis=-1)[:,None]
+
+    C_N_CA_plane_norm = torch.cross( C_from_N_unit, CA_from_N_unit, dim=-1 )
+    C_N_CA_plane_norm /= torch.linalg.norm( C_N_CA_plane_norm, axis=-1)[:,None]
+
+    # bad_mask == C_N_CA are co-linear
+    bad_mask = torch.isnan(C_N_CA_plane_norm[:,0])
+    if bad_mask.sum() > 0:
+        C_N_CA_plane_norm[bad_mask] = torch.cross( torch.tensor([[1, 0, 0]]) , CA_from_N_unit[bad_mask], dim=-1 )
+        C_N_CA_plane_norm[bad_mask] /= torch.linalg.norm(C_N_CA_plane_norm[bad_mask], axis=-1)[:,None]
+
+        # super rare, but bad_mask == C_N_CA are co-linear with x-axis
+        bad_mask = torch.isnan(C_N_CA_plane_norm[:,0])
+        if bad_mask.sum() > 0:
+            C_N_CA_plane_norm[bad_mask] = torch.cross( torch.tensor([[0, 1, 0]]) , CA_from_N_unit[bad_mask], dim=-1 )
+            C_N_CA_plane_norm[bad_mask] /= torch.linalg.norm(C_N_CA_plane_norm[bad_mask], axis=-1)[:,None]
+
+    in_plane_towards_H = torch.cross( C_N_CA_plane_norm, CA_from_N_unit, dim=-1 )
+
+    H_bond_length = 1.01
+
+    # H based on 120 degree angle from CA-N bond directly opposite C
+    one_twenty_H = N + in_plane_towards_H * torch.sin(torch.deg2rad(torch.tensor(120))) + CA_from_N_unit * torch.cos(torch.deg2rad(torch.tensor(120)))
+
+    anti_unit = C_from_N_unit + CA_from_N_unit
+    anti_unit_size = torch.linalg.norm(anti_unit, axis=-1)
+    anti_unit /= anti_unit_size[:,None]
+
+    # H based on being precisely precisely opposite the angle between C-N-CA
+    middle_H = N -anti_unit * H_bond_length
+
+    # Middle is always better unless something is weird. Weird is when CN distance is wrong or C-N-CA are basically colinear
+    middle_is_better = (CN_dist > 1.3) & (CN_dist < 1.6) & (anti_unit_size > 0.1)
+    middle_is_better[0] = False
+
+    H = torch.where( middle_is_better[:,None], middle_H, one_twenty_H )
+    return H
+
+

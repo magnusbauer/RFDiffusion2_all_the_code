@@ -216,7 +216,13 @@ dataloader:
   P_IS_GUIDEPOST_EXAMPLE: 1.0
   use_fallback: true
   use_validation_config: False
-  mask: {}
+  mask:
+    ppi_radial_crop_low: 10       # PPI radial crop distance from hotspots lowerbound
+    ppi_radial_crop_high: 25      # PPI radial crop distance from hotspots upperbound
+    ppi_planar_crop_low: 10       # PPI planar crop distance from hotspots lowerbound
+    ppi_planar_crop_high: 25      # PPI planar crop distance from hotspots upperbound
+    max_frac_ppi_motifs: 0.8      # PPI maximum fraction of motifs kept in motif masks
+    max_ppi_motif_trim_frac: 0.4  # PPI maximum fraction of a single motif that is removed when trimming motifs
   p_msa_mask: 0.0
 data:
   samples_per_eval_length: 1

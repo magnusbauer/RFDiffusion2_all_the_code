@@ -409,6 +409,74 @@ class Dataloader(unittest.TestCase):
         
         test_utils.assert_matches_golden(self, golden_name, indep, rewrite=REWRITE, custom_comparator=self.cmp)
 
+
+    def test_PPI_random_motif_no_crop(self):
+        dataset = 'compl'
+        mask = 'get_PPI_random_motif_no_crop'
+        # The PPI crops work with guideposting, it's just that it makes the pymol/golden very hard to inspect
+        loader_out = self.indep_for_dataset(dataset, mask, overrides=['transforms.configs.AddConditionalInputs.p_is_guidepost_example=0'])
+        indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context = loader_out
+        indep.metadata = None
+        
+        golden_name = f'indep_{dataset}-{mask}'
+        ic((~is_diffused).nonzero()[:,0])
+        ic(indep.chains())
+        unique_chains = np.unique(indep.chains())
+        assertpy.assert_that(len(unique_chains)).is_equal_to(2)
+
+        if self.show_in_pymol:
+            name, names = show.one(indep, None)
+            show.cmd.do('util.cbc')
+            show.diffused(indep, is_diffused, 'true')
+        
+        test_utils.assert_matches_golden(self, golden_name, indep, rewrite=REWRITE, custom_comparator=self.cmp)
+
+
+    def test_PPI_interface_motif_radial_crop(self):
+        dataset = 'compl'
+        mask = 'get_PPI_interface_motif_radial_crop'
+        loader_out = self.indep_for_dataset(dataset, mask, overrides=['transforms.configs.AddConditionalInputs.p_is_guidepost_example=0',
+                                                                      'dataloader.mask.ppi_radial_crop_low=6',
+                                                                      'dataloader.mask.ppi_radial_crop_high=6'])
+        indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context = loader_out
+        indep.metadata = None
+        
+        golden_name = f'indep_{dataset}-{mask}'
+        ic((~is_diffused).nonzero()[:,0])
+        ic(indep.chains())
+        unique_chains = np.unique(indep.chains())
+        assertpy.assert_that(len(unique_chains)).is_equal_to(2)
+
+        if self.show_in_pymol:
+            name, names = show.one(indep, None)
+            show.cmd.do('util.cbc')
+            show.diffused(indep, is_diffused, 'true')
+        
+        test_utils.assert_matches_golden(self, golden_name, indep, rewrite=REWRITE, custom_comparator=self.cmp)
+
+
+    def test_PPI_no_motif_planar_crop(self):
+        dataset = 'compl'
+        mask = 'get_PPI_fully_diffused_planar_crop'
+        loader_out = self.indep_for_dataset(dataset, mask, overrides=['transforms.configs.AddConditionalInputs.p_is_guidepost_example=0',
+                                                                      'dataloader.mask.ppi_planar_crop_low=6',
+                                                                      'dataloader.mask.ppi_planar_crop_high=6'])
+        indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context = loader_out
+        indep.metadata = None
+        
+        golden_name = f'indep_{dataset}-{mask}'
+        ic((~is_diffused).nonzero()[:,0])
+        ic(indep.chains())
+        unique_chains = np.unique(indep.chains())
+        assertpy.assert_that(len(unique_chains)).is_equal_to(2)
+
+        if self.show_in_pymol:
+            name, names = show.one(indep, None)
+            show.cmd.do('util.cbc')
+            show.diffused(indep, is_diffused, 'true')
+        
+        test_utils.assert_matches_golden(self, golden_name, indep, rewrite=REWRITE, custom_comparator=self.cmp)
+
     def test_multi_covale(self):
         dataset = 'sm_compl_multi'
         mask = 'get_unconditional_diffusion_mask'
@@ -544,6 +612,23 @@ class Dataloader(unittest.TestCase):
             if all(map(lambda aa_count: test_utils.full_count(aa_count, MIN_AA_COUNT), aa_count_by_dataset.values())):
                 # Enough aa in each dataset have been checked
                 break
+
+
+    def test_invalid_mask_exception(self):
+        '''
+        Ensures that the framework that catches InvalidMaskException actually works.
+        If this doesn't throw an exception, it worked.
+        '''
+        conf = test_utils.construct_conf([
+        'dataloader.DATAPKL_AA=aa_dataset_256_subsampled_10.pkl',
+        'dataloader.CROP=256',
+        'dataloader.DATASETS=compl',
+        'dataloader.DATASET_PROB=[1.0]',
+        'dataloader.DIFF_MASK_PROBS=null',
+        'dataloader.DIFF_MASK_PROBS={get_diffusion_mask_simple:1,get_invalid_mask:1e100}',
+        'debug=True',
+        'spoof_item=null',])
+        test_utils.loader_out_from_conf(conf)
 
 
 REWRITE=False

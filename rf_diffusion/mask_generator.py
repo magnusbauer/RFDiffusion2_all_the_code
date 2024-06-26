@@ -19,8 +19,19 @@ from functools import partial
 from rf_diffusion.chemical import ChemicalData as ChemData
 from rf_diffusion import error
 from rf_diffusion import tip_atoms
+import rf_diffusion.ppi as ppi
+
 
 logger = logging.getLogger(__name__)
+
+class InvalidMaskException(Exception):
+    pass
+
+def get_invalid_mask(*args, **kwargs):
+    '''
+    This is for a unit test
+    '''
+    raise InvalidMaskException('This mask always throws InvalidMaskException')
 
 def make_covale_compatible(get_mask):
     @wraps(get_mask)
@@ -599,6 +610,68 @@ def no_pop(get_mask):
         return is_motif, is_atom_motif, pop
     return out_get_mask
 
+
+def _PPI_fully_diffused(indep, *args, **kwargs):
+
+    is_target = ppi.decide_target(indep)
+    if is_target is None:
+        raise InvalidMaskException('_PPI_fully_diffused requires a binder/target pair.')
+
+    is_motif = is_target.clone()
+
+    return is_motif, is_target
+
+def _PPI_interface_motif_scaffolding(indep, *args, max_frac_ppi_motifs=0.8, max_ppi_motif_trim_frac=0.4, **kwargs):
+
+    is_target = ppi.decide_target(indep)
+    if is_target is None:
+        raise InvalidMaskException('_PPI_interface_motif_scaffolding requires a binder/target pair.')
+    is_ppi_motif = ppi.training_extract_ppi_motifs(indep, is_target, max_frac_ppi_motifs, max_ppi_motif_trim_frac)
+
+    is_motif = is_target | is_ppi_motif
+
+    return is_motif, is_target
+
+def _PPI_random_motif_scaffolding(indep, *args, max_frac_ppi_motifs=0.8, max_ppi_motif_trim_frac=0.4, **kwargs):
+
+    is_target = ppi.decide_target(indep)
+    if is_target is None:
+        raise InvalidMaskException('_PPI_random_motif_scaffolding requires a binder/target pair.')
+    is_ppi_motif = ppi.training_extract_ppi_motifs(indep, is_target, max_frac_ppi_motifs, max_ppi_motif_trim_frac, dist=10000)
+
+    is_motif = is_target | is_ppi_motif
+
+    return is_motif, is_target
+
+def _PPI_no_crop(get_mask):
+
+    @wraps(get_mask)
+    def out_get_mask(indep, *args, **kwargs):
+        is_motif, is_target = get_mask(indep, *args, **kwargs)
+        pop = torch.ones(indep.length()).bool()
+        return is_motif, None, pop
+    return out_get_mask
+
+def _PPI_radial_crop(get_mask):
+
+    @wraps(get_mask)
+    def out_get_mask(indep, *args, ppi_radial_crop_low=10, ppi_radial_crop_high=25, **kwargs):
+        is_motif, is_target = get_mask(indep, *args, **kwargs)
+        is_hotspot, is_antihotspot = ppi.find_hotspots_antihotspots(indep, 1, 1, return_all=True)
+        pop = ppi.radial_crop(indep, ~is_motif, is_hotspot, is_target, distance=random.uniform(ppi_radial_crop_low,ppi_radial_crop_high))
+        return is_motif, None, pop
+    return out_get_mask
+
+def _PPI_planar_crop(get_mask):
+
+    @wraps(get_mask)
+    def out_get_mask(indep, *args, ppi_planar_crop_low=10, ppi_planar_crop_high=25, **kwargs):
+        is_motif, is_target = get_mask(indep, *args, **kwargs)
+        is_hotspot, is_antihotspot = ppi.find_hotspots_antihotspots(indep, 1, 1, return_all=True)
+        pop = ppi.planar_crop(indep, ~is_motif, is_hotspot, is_target, distance=random.uniform(ppi_planar_crop_low,ppi_planar_crop_high))
+        return is_motif, None, pop
+    return out_get_mask
+
 get_sm_contacts = no_pop(_get_sm_contacts)
 get_diffusion_mask_simple = no_pop(make_covale_compatible(make_sm_compatible(_get_diffusion_mask_simple)))
 get_diffusion_mask_islands = no_pop(make_covale_compatible(make_sm_compatible(_get_diffusion_mask_islands)))
@@ -627,6 +700,16 @@ get_entirely_atomized = make_covale_compatible(_get_entirely_atomized)
 get_tip_gaussian_mask.name = 'get_tip_gaussian_mask'
 get_tip_gaussian_mask_partial_ligand.name = 'get_tip_gaussian_mask_partial_ligand'
 
+get_PPI_fully_diffused_no_crop = make_covale_compatible(_PPI_no_crop(_PPI_fully_diffused))
+get_PPI_fully_diffused_radial_crop = make_covale_compatible(_PPI_radial_crop(_PPI_fully_diffused))
+get_PPI_fully_diffused_planar_crop = make_covale_compatible(_PPI_planar_crop(_PPI_fully_diffused))
+get_PPI_interface_motif_no_crop = make_covale_compatible(_PPI_no_crop(_PPI_interface_motif_scaffolding))
+get_PPI_interface_motif_radial_crop = make_covale_compatible(_PPI_radial_crop(_PPI_interface_motif_scaffolding))
+get_PPI_interface_motif_planar_crop = make_covale_compatible(_PPI_planar_crop(_PPI_interface_motif_scaffolding))
+get_PPI_random_motif_no_crop = make_covale_compatible(_PPI_no_crop(_PPI_random_motif_scaffolding))
+get_PPI_random_motif_radial_crop = make_covale_compatible(_PPI_radial_crop(_PPI_random_motif_scaffolding))
+get_PPI_random_motif_planar_crop = make_covale_compatible(_PPI_planar_crop(_PPI_random_motif_scaffolding))
+
 sm_mask_fallback = {
     get_closest_tip_atoms: get_tip_gaussian_mask,
     get_closest_tip_atoms_partial_ligand: get_tip_gaussian_mask_partial_ligand,
@@ -635,21 +718,35 @@ sm_mask_fallback = {
 def get_diffusion_mask(
         indep, atom_mask, low_prop, high_prop, broken_prop,
         diff_mask_probs, **kwargs):
-    
+
     mask_probs = list(diff_mask_probs.items())
     logger.debug(f'{mask_probs=}')
     logger.debug(f'{[(m.name, p) for m,p in mask_probs]=}')
-    masks = [m for m, _ in mask_probs]
-    props = [p for _, p in mask_probs]
-    get_mask = np.random.choice(masks, p=props)
 
-    # Use fallback mask if no small molecule present.
-    if not indep.is_sm.any():
-        get_mask = sm_mask_fallback.get(get_mask, get_mask)
+    # Masks can declare that they are incompatible with the example given by throwing InvalidMaskException
+    #   Incompatible masks are removed for the next iteration
+    for attempt in range(len(mask_probs)):
 
-    logger.debug(f'{get_mask.name=}')
-    with error.context(f'mask - {get_mask.name}'):
-        return get_mask(indep, atom_mask, low_prop=low_prop, high_prop=high_prop, broken_prop=broken_prop, **kwargs), get_mask.name
+        props = np.array([p for _, p in mask_probs])
+        if props.sum() == 0:
+            raise Exception('No valid mask found. Remaining probabilities sum to 0.')
+        props /= props.sum()
+
+        i_mask = np.random.choice(np.arange(len(props)), p=props)
+        get_mask, _ = mask_probs.pop(i_mask)
+
+        # Use fallback mask if no small molecule present.
+        if not indep.is_sm.any():
+            get_mask = sm_mask_fallback.get(get_mask, get_mask)
+
+        logger.debug(f'{get_mask.name=}')
+        with error.context(f'mask - {get_mask.name}'):
+            try:
+                return get_mask(indep, atom_mask, low_prop=low_prop, high_prop=high_prop, broken_prop=broken_prop, **kwargs), get_mask.name
+            except InvalidMaskException as e:
+                logger.debug(f'Mask {get_mask.name} incompatible with example: {e}')
+
+    raise Exception('No valid mask found. Tried all of them.')
 
 
 def generate_sm_mask(prot_masks, is_sm):
@@ -1147,6 +1244,8 @@ def generate_masks(indep, task, loader_params, chosen_dataset, full_chain=None, 
     # Make dictionary keys integers, not torch scalars.
     if is_atom_motif:
         is_atom_motif = {maybe_item(res_i):v for res_i, v in is_atom_motif.items()}
+
+    logger.info(f'Mask selection: Task = {task}, dataset = {chosen_dataset}, mask = {mask_name}')
 
     mask_dict = {
                 'input_str_mask':input_str_mask,

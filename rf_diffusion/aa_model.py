@@ -284,6 +284,7 @@ class Indep:
         '''
         return list(zip(self.chains(), self.idx))
 
+
 def what_is_diffused(indep, is_diffused, atomizer):
     point_ids = get_point_ids(indep, atomizer)
     return list(zip(point_ids, is_diffused.tolist()))
