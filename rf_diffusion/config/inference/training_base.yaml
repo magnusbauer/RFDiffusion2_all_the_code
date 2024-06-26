@@ -203,8 +203,8 @@ show_dataset:
 reshape:
   output_path: null
 
-extra_t1d: []
-extra_t1d_params: {}
+extra_tXd: []
+extra_tXd_params: {}
 use_nonechucks: False
 restart_timer: False
 pin_memory: True

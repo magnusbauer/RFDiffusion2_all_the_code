@@ -157,7 +157,7 @@ class Loss(unittest.TestCase):
         # This test must be run on a CPU.
         assert torch.cuda.device_count() == 0
         run_inference.make_deterministic()
-        conf = construct_conf(['experiment.gamma=0.999'])
+        conf = construct_conf(overrides + ['experiment.gamma=0.999'])
         train = train_multi_deep.make_trainer(conf)
         fake_forward = mock.patch.object(LegacyRoseTTAFoldModule, "__call__", autospec=True)
         a = mock.patch.object(torch.cuda.amp.GradScaler, "scale", autospec=True)

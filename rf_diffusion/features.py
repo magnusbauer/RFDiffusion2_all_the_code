@@ -1,19 +1,11 @@
 import math
 import torch
+import collections
 import rf_diffusion.conditions.v2 as v2
 
 from rf_diffusion import aa_model
 
 from rf_diffusion import sasa
-
-def get_extra_t1d(indep, featurizer_names, **kwargs):
-    if not featurizer_names:
-        return torch.zeros((indep.length(),0)).float()
-    t1d = []
-    for name in featurizer_names:
-        feats_1d = featurizers[name](indep, kwargs[name], **kwargs)
-        t1d.append(feats_1d)
-    return torch.cat(t1d, dim=-1).float()
 
 def one_hot_bucket(x: torch.Tensor, boundaries: torch.Tensor):
     '''
@@ -61,7 +53,7 @@ def get_little_t_embedding(indep, feature_conf, t_cont: float=None, **kwargs):
     '''
     boundary_values = get_boundary_values(feature_conf.boundary_style, feature_conf.T)
     oh = one_hot_bucket(t_cont, boundary_values)[None]
-    return oh.tile(indep.length(), 1)
+    return {'t1d':oh.tile(indep.length(), 1)}
 
 def get_radius_of_gyration(indep, is_gp=None, radius_of_gyration=None, **kwargs):
     assert is_gp is not None
@@ -79,7 +71,7 @@ def get_radius_of_gyration(indep, is_gp=None, radius_of_gyration=None, **kwargs)
         rog_std_prot[is_chain] = std
     rog[is_prot] = rog_prot
     rog_std[is_prot] = rog_std_prot
-    return (rog, rog_std)
+    return {'t1d':(rog, rog_std)}
 
 def radius_of_gyration_xyz(xyz):
     L, _ = xyz.shape
@@ -89,14 +81,14 @@ def radius_of_gyration_xyz(xyz):
     return torch.sqrt( torch.sum(torch.square(dist)) / L)
 
 def get_relative_sasa(indep, relative_sasa=None, **kwargs):
-    return sasa.noised_relative_sasa(indep, relative_sasa.std_std)
+    return {'t1d':sasa.noised_relative_sasa(indep, relative_sasa.std_std)}
 
 def get_sinusoidal_timestep_embedding_inference(indep, feature_conf, feature_inference_conf, t_cont, **kwargs):
     return get_sinusoidal_timestep_embedding_training(indep, feature_conf, t_cont)
 
 def get_sinusoidal_timestep_embedding_training(indep, feature_conf, t_cont: float=None, **kwargs):
     emb = get_sinusoidal_timestep_embedding(torch.tensor([t_cont]), feature_conf.embedding_dim, feature_conf.max_positions)
-    return emb.tile((indep.length(),1))
+    return {'t1d':emb.tile((indep.length(),1))}
 
 def get_sinusoidal_timestep_embedding(timesteps, embedding_dim, max_positions):
     # Adapted from https://github.com/hojonathanho/diffusion/blob/master/diffusion_tf/nn.py
@@ -111,15 +103,6 @@ def get_sinusoidal_timestep_embedding(timesteps, embedding_dim, max_positions):
     emb = torch.cat([torch.sin(emb), torch.cos(emb)], dim=1)
     assert emb.shape == (timesteps.shape[0], embedding_dim)
     return emb
-
-featurizers = {
-    'radius_of_gyration': get_radius_of_gyration,
-    'relative_sasa': get_relative_sasa,
-    'radius_of_gyration_v2': v2.get_radius_of_gyration,
-    'relative_sasa_v2': v2.get_relative_sasa,
-    'little_t_embedding': get_little_t_embedding,
-    'sinusoidal_timestep_embedding': get_sinusoidal_timestep_embedding_training,
-}
 
 def get_radius_of_gyration_inference(indep, feature_conf, is_gp=None):
 
@@ -138,13 +121,123 @@ def get_radius_of_gyration_inference(indep, feature_conf, is_gp=None):
     
     rog[is_prot] = rog_prot
     rog_std[is_prot] = rog_std_prot
-    return (rog, rog_std)
+    return {'t1d':(rog, rog_std)}
 
 def get_relative_sasa_inference(indep, feature_conf, **kwargs):
     sasa = torch.full((indep.length(),), -10.0)
     sasa[indep.is_sm] = feature_conf.mean
     std = torch.full((indep.length(),), feature_conf.std)
-    return (sasa, std)
+    return {'t1d':(sasa, std)}
+
+
+def get_extra_tXd(indep, featurizer_names, **kwargs):
+    '''
+    Get the extra_t1d and extra_t2d features for training
+
+    Args:
+        indep (indep): the indep
+        featurizer_names (list[str]): The list of featurizers that you wish to use
+        kwargs (dict): Additional keyword arguments
+
+    Returns:
+        extra_t1d (torch.Tensor[float]): The extra_t1d values [L,x] (where x is variable based on features)
+        extra_t2d (torch.Tensor[float]): The extra_t2d values [L,L,x] (where x is variable based on features)
+    '''
+    if not featurizer_names:
+        return (torch.zeros((indep.length(),0)), torch.zeros((indep.length(),indep.length(),0)))
+    t1d = [torch.zeros((indep.length(),0))]
+    t2d = [torch.zeros((indep.length(),indep.length(),0))]
+    for name in featurizer_names:
+        feats = featurizers[name](indep, kwargs[name], **kwargs)
+        assert isinstance(feats, collections.Mapping), 'The get extra_tXd functions now return a dictionary.'
+        if 't1d' in feats:
+            t1d.append(feats['t1d'])
+        if 't2d' in feats:
+            t2d.append(feats['t2d'])
+    return (torch.cat(t1d, dim=-1), torch.cat(t2d, dim=-1))
+
+
+
+def get_extra_tXd_inference(indep, featurizer_names, params_train, params_inference, **kwargs):
+    '''
+    Get the extra_t1d and extra_t2d features for inference
+
+    Args:
+        indep (indep): the indep
+        featurizer_names (list[str]): The list of featurizers that you wish to use
+        params_train (omegaconf.dictconfig.DictConfig): The value of conf.extra_tXd_params
+        params_train (omegaconf.dictconfig.DictConfig): The value of conf.inference.conditions
+        kwargs (dict): Additional keyword arguments
+
+    Returns:
+        extra_t1d (torch.Tensor[float]): The extra_t1d values [L,x] (where x is variable based on features)
+        extra_t2d (torch.Tensor[float]): The extra_t2d values [L,L,x] (where x is variable based on features)
+    '''
+    if not featurizer_names:
+        return (torch.zeros((indep.length(),0)), torch.zeros((indep.length(),indep.length(),0)))
+    t1d = [torch.zeros((indep.length(),0))]
+    t2d = [torch.zeros((indep.length(),indep.length(),0))]
+    for name in featurizer_names:
+        assert name in params_train
+        assert name in params_inference
+        feats = inference_featurizers[name](indep, params_train[name], params_inference[name], **kwargs)
+        assert isinstance(feats, collections.Mapping), 'The get extra_tXd functions now return a dictionary.'
+        if 't1d' in feats:
+            t1d.append(feats['t1d'])
+        if 't2d' in feats:
+            t2d.append(feats['t2d'])
+    return (torch.cat(t1d, dim=-1), torch.cat(t2d, dim=-1))
+
+def get_nucleic_ss(indep, feature_conf, **kwargs):
+    """
+    This placeholder function is an example of how we add additional t2d features.
+    Additional t2d dimensions added: 3
+
+    Args:
+        indep (indep): the indep
+        feature_conf (omegaconf.dictconfig.DictConfig): Configuration for this feature
+        kwargs (dict): Additional keyword arguments
+
+    Returns:
+        dict:
+            t2d (torch.Tensor[float]): The t2d params [L,L,3]
+    """
+    L = indep.seq.shape[0] # get that seq length
+    ss_matrix = (2*torch.ones((L,L))).long() # Make a matrix 
+    ss_templ_onehot = F.one_hot(ss_matrix, num_classes=3)
+    return {'t2d':ss_templ_onehot}
+
+
+def get_nucleic_ss_inference(indep, feature_conf, feature_inference_conf, **kwargs):
+    """
+    This placeholder function is an example of how we add additional t2d features for inference.
+    Additional t2d dimensions added: 3
+
+    Args:
+        indep (indep): the indep
+        feature_conf (omegaconf.dictconfig.DictConfig): Configuration for this feature from training
+        feature_conf (omegaconf.dictconfig.DictConfig): Configuration for this feature from inference
+        kwargs (dict): Additional keyword arguments
+
+    Returns:
+        dict:
+            t2d (torch.Tensor[float]): The t2d params [L,L,3]
+    """
+    L = indep.seq.shape[0] # get that seq length
+    ss_matrix = (2*torch.ones((L,L))).long() # Make a matrix 
+    ss_templ_onehot = F.one_hot(ss_matrix, num_classes=3)
+    return {'t2d':ss_templ_onehot}
+
+
+featurizers = {
+    'radius_of_gyration': get_radius_of_gyration,
+    'relative_sasa': get_relative_sasa,
+    'radius_of_gyration_v2': v2.get_radius_of_gyration,
+    'relative_sasa_v2': v2.get_relative_sasa,
+    'little_t_embedding': get_little_t_embedding,
+    'sinusoidal_timestep_embedding': get_sinusoidal_timestep_embedding_training,
+    'nucleic_ss' : get_nucleic_ss,
+}
 
 inference_featurizers = {
     'radius_of_gyration': get_radius_of_gyration_inference,
@@ -153,15 +246,6 @@ inference_featurizers = {
     'relative_sasa_v2': v2.get_relative_sasa_inference,
     'little_t_embedding': get_little_t_embedding_inference,
     'sinusoidal_timestep_embedding': get_sinusoidal_timestep_embedding_inference,
+    'nucleic_ss' : get_nucleic_ss_inference,
 }
 
-def get_extra_t1d_inference(indep, featurizer_names, params_train, params_inference, **kwargs):
-    if not featurizer_names:
-        return torch.zeros((indep.length(),0)).float()
-    t1d = []
-    for name in featurizer_names:
-        assert name in params_train
-        assert name in params_inference
-        feats_1d = inference_featurizers[name](indep, params_train[name], params_inference[name], **kwargs)
-        t1d.append(feats_1d)
-    return torch.cat(t1d, dim=-1).float()

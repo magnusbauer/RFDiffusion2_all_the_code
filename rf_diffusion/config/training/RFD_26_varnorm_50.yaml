@@ -48,12 +48,12 @@ experiment:
   fm_bb_atom: 0
   fm_dist_mat: 0
 
-extra_t1d:
+extra_tXd:
   - radius_of_gyration_v2
   - relative_sasa_v2
   - sinusoidal_timestep_embedding
 
-extra_t1d_params:
+extra_tXd_params:
   sinusoidal_timestep_embedding:
     embedding_dim: 20
     max_positions: 10000

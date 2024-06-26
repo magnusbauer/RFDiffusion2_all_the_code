@@ -7,8 +7,8 @@ rf:
   model:
     d_t1d: 94 #80 + 10 + 4
 
-extra_t1d: [little_t_embedding]
-extra_t1d_params:
+extra_tXd: [little_t_embedding]
+extra_tXd_params:
   little_t_embedding: 
     boundary_style: low_t_heavy
     T: ${diffuser.T}

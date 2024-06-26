@@ -9,12 +9,12 @@ rf:
     d_t1d: 614
   ckpt_path: null
 
-extra_t1d:
+extra_tXd:
   - radius_of_gyration_v2
   - relative_sasa_v2
   - little_t_embedding
 
-extra_t1d_params:
+extra_tXd_params:
   radius_of_gyration_v2:
     low: 10
     high: 100

@@ -198,7 +198,7 @@ preprocess:
 logging:
   inputs: False
 
-extra_t1d_params: {}
+extra_tXd_params: {}
 
 transforms:
   configs:

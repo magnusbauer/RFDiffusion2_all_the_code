@@ -69,6 +69,8 @@ class Sampler:
         else:
             weights_conf = weights_pkl['conf']
 
+        weights_conf = config_format.translate_obsolete_weight_options(weights_conf)
+
         # Load the base training conf based on config path relative to the location of model_runners.py
         file_dir = Path(__file__).resolve().parent
         training_config_fp = os.path.join(file_dir, '../', 'config/training/base.yaml')
@@ -227,9 +229,9 @@ class NRBStyleSelfCond(Sampler):
             indep.xyz = indep.xyz - indep_uncond_com
             indep = aa_model.make_conditional_indep(indep, indep_cond, self.is_diffused)
 
-        extra_t1d_names = getattr(self._conf, 'extra_t1d', [])
+        extra_tXd_names = getattr(self._conf, 'extra_tXd', [])
         t_cont = t/self._conf.diffuser.T
-        indep.extra_t1d = features.get_extra_t1d_inference(indep, extra_t1d_names, self._conf.extra_t1d_params, self._conf.inference.conditions, is_gp=indep.is_gp, t_cont=t_cont)
+        indep.extra_t1d, indep.extra_t2d = features.get_extra_tXd_inference(indep, extra_tXd_names, self._conf.extra_tXd_params, self._conf.inference.conditions, is_gp=indep.is_gp, t_cont=t_cont)
         rfi = self.model_adaptor.prepro(indep, t, self.is_diffused)
 
         rf2aa.tensor_util.to_device(rfi, self.device)
@@ -311,9 +313,9 @@ class FlowMatching(Sampler):
     """
 
     def run_model(self, t, indep, rfo, is_diffused):
-        extra_t1d_names = getattr(self._conf, 'extra_t1d', [])
+        extra_tXd_names = getattr(self._conf, 'extra_tXd', [])
         t_cont = t/self._conf.diffuser.T
-        indep.extra_t1d = features.get_extra_t1d_inference(indep, extra_t1d_names, self._conf.extra_t1d_params, self._conf.inference.conditions, is_gp=indep.is_gp, t_cont=t_cont)
+        indep.extra_t1d, indep.extra_t2d = features.get_extra_tXd_inference(indep, extra_tXd_names, self._conf.extra_tXd_params, self._conf.inference.conditions, is_gp=indep.is_gp, t_cont=t_cont)
         rfi = self.model_adaptor.prepro(indep, t, is_diffused)
         rf2aa.tensor_util.to_device(rfi, self.device)
 

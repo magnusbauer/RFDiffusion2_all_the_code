@@ -128,6 +128,8 @@ class Indep:
                 indep_copy.origin = None
             else:
                 indep_copy.origin = copy.deepcopy(self.origin.detach())
+        if hasattr(self, 'extra_t2d'):
+            indep_copy.extra_t2d = copy.deepcopy(self.extra_t2d.detach())
         return indep_copy
 
     @property
@@ -1161,6 +1163,8 @@ class Model:
         t1d[0,1,:,ChemData().NAATOKENS-1] = -1 # This distiniguishes the templates to the model.
         # ic(t1d[0,:,:4,NAATOKENS-1]) # Will look like [[conf, -1], [conf, -1], ...], 0 < conf < 1
 
+        t2d = torch.cat((t2d, torch.tile(indep.extra_t2d[None, None, ...], (1,2,1,1,1))), dim=-1)
+
         # Note: should be batched
         rfi = RFI(
             msa_masked,
@@ -1663,9 +1667,10 @@ def self_cond_new(indep, rfi, rfo, use_cb=False):
     xyz_t = torch.cat((rfo.xyz[-1:], zeros), dim=-2) # [B,T,L,27,3]
     t2d, mask_t_2d_remade = util.get_t2d(
         xyz_t[0], indep.is_sm, rfi.atom_frames[0], use_cb=use_cb)
+    base_d_t2d = t2d.shape[-1]
     t2d = t2d[None] # Add batch dimension # [B,T,L,L,44]
     rfi_sc.xyz_t[0,1] = xyz_t[0, 0, :, 1]
-    rfi_sc.t2d[0, 1] = t2d[0, 0]
+    rfi_sc.t2d[0, 1,:,:,:base_d_t2d] = t2d[0, 0]
     return rfi_sc
 
 def self_cond(indep, rfi, rfo, use_cb=False):
@@ -1677,9 +1682,10 @@ def self_cond(indep, rfi, rfo, use_cb=False):
     xyz_t = torch.cat((rfo.xyz[-1:], zeros), dim=-2) # [B,T,L,27,3]
     t2d, mask_t_2d_remade = util.get_t2d(
         xyz_t[0], indep.is_sm, rfi.atom_frames[0], use_cb=use_cb)
+    base_d_t2d = t2d.shape[-1]
     t2d = t2d[None] # Add batch dimension # [B,T,L,L,44]
     rfi_sc.xyz_t[0,1] = xyz_t[0, 0, :, 1]
-    rfi_sc.t2d[0, 1] = t2d[0, 0]
+    rfi_sc.t2d[0, 1,:,:,:base_d_t2d] = t2d[0, 0]
     return rfi_sc
 
 def diagnose_xyz(xyz):

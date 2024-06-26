@@ -203,10 +203,10 @@ show_dataset:
   'n': 10
 reshape:
   output_path: null
-extra_t1d:
+extra_tXd:
 - radius_of_gyration_v2
 - relative_sasa_v2
-extra_t1d_params:
+extra_tXd_params:
   radius_of_gyration_v2:
     low: 10
     high: 100

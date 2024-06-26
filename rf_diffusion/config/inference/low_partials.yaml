@@ -8,7 +8,7 @@ diffuser:
   T: 2000
   partial_T: 50
 
-extra_t1d_params:
+extra_tXd_params:
   little_t_embedding:
     T: 200
 

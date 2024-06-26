@@ -7,8 +7,8 @@ rf:
   model:
     d_t1d: 84
 
-extra_t1d: ['radius_of_gyration', 'relative_sasa']
-extra_t1d_params:
+extra_tXd: ['radius_of_gyration', 'relative_sasa']
+extra_tXd_params:
   radius_of_gyration:
     std_std: 5
   relative_sasa:
