@@ -38,12 +38,19 @@ jobs:
         bash ci/run_ruff.sh
         cat ruff.log
 
-    - name: build docs
-      run: |
-        cd doc
-        pip install --user sphinx sphinx-rtd-theme sphinx-mdinclude
-        export PYTHONPATH=..:../rf_diffusion:../rf2aa:../lib/rf2aa/rf2aa/SE3Transformer
-        sphinx-apidoc -o source/api ../rf_diffusion/ ../rf2aa/ &&  make html
+    # - name: build docs
+    #   run: |
+    #     export LC_ALL=C
+    #     cd doc
+    #     rm -rf source/api
+    #     export PYTHON=../rf_diffusion/exec/bakerlab_rf_diffusion_aa.sif
+    #     export PYTHONPATH=..:../rf_diffusion:../rf2aa:../lib/rf2aa/rf2aa/SE3Transformer
+    #     $PYTHON -m sphinx.ext.apidoc -o source/api ../rf_diffusion
+    #     $PYTHON -m sphinx.ext.apidoc -o source/api ../rf2aa
+    #     $PYTHON -m sphinx.cmd.build -M html source build
+    #     prnum=$(git branch | cut -b 26-28)
+    #     mkdir -p $HOME/public/rf_diffusion/$prnum/
+    #     rsync -a build/html/ $HOME/public/rf_diffusion/$prnum/
 
     - name: run pytest digs
       run: |

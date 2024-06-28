@@ -1,8 +1,7 @@
 import math
 import torch
-import collections
+from collections.abc import Mapping
 import rf_diffusion.conditions.v2 as v2
-
 from rf_diffusion import aa_model
 
 from rf_diffusion import sasa
@@ -149,7 +148,7 @@ def get_extra_tXd(indep, featurizer_names, **kwargs):
     t2d = [torch.zeros((indep.length(),indep.length(),0))]
     for name in featurizer_names:
         feats = featurizers[name](indep, kwargs[name], **kwargs)
-        assert isinstance(feats, collections.Mapping), 'The get extra_tXd functions now return a dictionary.'
+        assert isinstance(feats, Mapping), 'The get extra_tXd functions now return a dictionary.'
         if 't1d' in feats:
             t1d.append(feats['t1d'])
         if 't2d' in feats:
@@ -181,7 +180,7 @@ def get_extra_tXd_inference(indep, featurizer_names, params_train, params_infere
         assert name in params_train
         assert name in params_inference
         feats = inference_featurizers[name](indep, params_train[name], params_inference[name], **kwargs)
-        assert isinstance(feats, collections.Mapping), 'The get extra_tXd functions now return a dictionary.'
+        assert isinstance(feats, Mapping), 'The get extra_tXd functions now return a dictionary.'
         if 't1d' in feats:
             t1d.append(feats['t1d'])
         if 't2d' in feats:

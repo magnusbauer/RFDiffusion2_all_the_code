@@ -1,13 +1,24 @@
+import os
 import pytest
+
+@pytest.fixture(autouse=True)
+def change_test_dir(monkeypatch):
+    '''force all tests to run in directory that contains this conftest.py file'''
+    monkeypatch.chdir(os.path.dirname(__file__))
+
+@pytest.fixture(autouse=True)
+def no_cuda_devices():
+    '''turn off CUDA for all tests, as currently required'''
+    os.environ['CUDA_VISIBLE_DEVICES'] = ''
 
 def pytest_addoption(parser):
     '''
     Add custom command line arguments to pytest.
     '''
     parser.addoption(
-        "--show_in_pymol", 
-        action="store_true", 
-        default=False, 
+        "--show_in_pymol",
+        action="store_true",
+        default=False,
         help="Show proteins from the dataloader in pymol?"
     )
 
