@@ -1882,7 +1882,6 @@ class AtomizeResidues:
         )
         assert len(indep_deatomized.is_gp) == indep_deatomized.length()
 
-
         # Connect new residue to neighbors it is bonded to
         ## Get chain numbers
         chain_signatures = indep_deatomized.same_chain.unique(dim=0).flip(0)
