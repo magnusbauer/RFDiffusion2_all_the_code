@@ -53,9 +53,6 @@ class TestAtomization(unittest.TestCase):
 
         indep.xyz = atomize.set_nonexistant_atoms_to_nan(indep.xyz, indep.seq)
 
-        # Remove this ad-hoc indep "variable"
-        del indep.is_gp
-
         return indep
 
     def test_atomization_table(self):

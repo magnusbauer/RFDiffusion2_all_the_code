@@ -4,10 +4,10 @@ import unittest
 import torch
 from icecream import ic
 
-import atomize
-import guide_posts as gp
-import aa_model
-import test_utils
+from rf_diffusion import atomize
+import rf_diffusion.guide_posts as gp
+from rf_diffusion import aa_model
+from rf_diffusion import test_utils
 import rf_diffusion.inference.data_loader
 
 class TestGuidepost(unittest.TestCase):
@@ -45,14 +45,11 @@ class TestGuidepost(unittest.TestCase):
             is_ptn = torch.zeros(indep.length()).bool()
             is_ptn[[1,3]] = True
             indep_gp, _, gp_to_ptn_idx0 = gp.make_guideposts(indep, is_ptn, placement='anywhere')
-            is_gp = torch.zeros(indep_gp.length()).bool()
-            for k in gp_to_ptn_idx0:
-                is_gp[k] = True
             
             indep_ungp = copy.deepcopy(indep_gp)
-            aa_model.pop_mask(indep_ungp, ~is_gp)
+            aa_model.pop_mask(indep_ungp, ~indep_ungp.is_gp)
             ic(indep_ungp.length())
-            
+
 
             diff = test_utils.cmp_pretty(indep_ungp, indep_init)
             if diff:

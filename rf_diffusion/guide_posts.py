@@ -30,15 +30,15 @@ from rf_diffusion import aa_model
 import copy
 from omegaconf import OmegaConf
 
-def make_guideposts(indep: Indep, is_gp: torch.Tensor, placement: str=None) -> Tuple[Indep, torch.Tensor]:
+def make_guideposts(indep: Indep, new_gp: torch.Tensor, placement: str=None) -> Tuple[Indep, torch.Tensor]:
     '''
-    Takes the geometry of residues masked by `is_gp` and adds them as guide post features
+    Takes the geometry of residues masked by `new_gp` and adds them as guide post features
     to indep.
 
     Args
     ------------
     indep: Indep instance (of length L).
-    is_gp (L,): Boolean tensor. True = Residue should be added as a guide post feature.
+    new_gp (L,): Boolean tensor. True = Residue should be added as a guide post feature.
     placement: See `convert_motif_to_guide_posts` for a description.
 
     Returns
@@ -50,7 +50,7 @@ def make_guideposts(indep: Indep, is_gp: torch.Tensor, placement: str=None) -> T
 
     # Add *new* frames that will act as the guide posts
     indep, gp_to_ptn_idx0 = copy_and_append_indep_features(
-        mask=is_gp,
+        new_gp=new_gp,
         indep=indep,
         shuffle=False,  # Unsure if necessary
     )
@@ -64,12 +64,12 @@ def make_guideposts(indep: Indep, is_gp: torch.Tensor, placement: str=None) -> T
 
     return indep, is_diffused, gp_to_ptn_idx0
 
-def copy_and_append_indep_features(mask: torch.tensor,
+def copy_and_append_indep_features(new_gp: torch.tensor,
                                    indep: Indep,
                                    shuffle: bool=False) -> Tuple[Indep, dict]:
     '''
     Args
-        mask (L): True = copy and append these residue's features to the end of their respective tensor.
+        new_gp (L): True = copy and append these residue's features to the end of their respective tensor.
         indep: Indep,
         shuffle: Should the features be randomly shuffled before being appended?
 
@@ -79,7 +79,7 @@ def copy_and_append_indep_features(mask: torch.tensor,
     '''
 
     # What is the mapping from the feature's new idx0 to their original idx0 (ptn_idx0)?
-    ptn_idx0 = torch.where(mask)[0]
+    ptn_idx0 = torch.where(new_gp)[0]
     n_features = len(ptn_idx0)
 
     if shuffle:
@@ -87,7 +87,7 @@ def copy_and_append_indep_features(mask: torch.tensor,
         shuffle = torch.randperm(n_features)
         ptn_idx0 = ptn_idx0[shuffle]
 
-    L_exist = mask.shape[0]
+    L_exist = new_gp.shape[0]
     new_idx0 = torch.arange(L_exist, L_exist + n_features)
     new_to_ptn_idx0 = dict(zip(new_idx0.tolist(), ptn_idx0.tolist()))
 
@@ -101,6 +101,7 @@ def copy_and_append_indep_features(mask: torch.tensor,
     indep.same_chain = append_indices(indep.same_chain, ptn_idx0, dim=0)
     indep.same_chain = append_indices(indep.same_chain, ptn_idx0, dim=1)
     indep.terminus_type = append_indices(indep.terminus_type, ptn_idx0, to_fill_value=0)
+    indep.is_gp = torch.cat((indep.is_gp, torch.ones(n_features, dtype=bool)))
 
     return indep, new_to_ptn_idx0
 

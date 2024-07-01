@@ -256,21 +256,18 @@ def read_pdbtext_no_checking(pdbstring: str):
     return coords
 
 
-def get_bb_pydssp(indep: Indep, is_gp: Union[bool, torch.Tensor] = False) -> Tuple[torch.Tensor, torch.Tensor]:
+def get_bb_pydssp(indep: Indep) -> Tuple[torch.Tensor, torch.Tensor]:
     """
     Rearranges indep.xyz into a format for PyDSSP.
 
     Args:
         indep (Indep): The input object containing the data.
-        is_gp (bool, Tensor[bool]): tensor describing if each residue is guide post or not
         **kwargs: Additional keyword arguments.
 
     Returns:
         torch.Tensor: The rearranged data in the format required by PyDSSP. [L, 4, 3]
     """
-    if isinstance(is_gp, bool):
-        is_gp = torch.ones(indep.length(), dtype=bool) * is_gp
-    is_prot = (indep.seq <= 20) * ~is_gp * ~indep.is_sm
+    is_prot = (indep.seq <= 20) * ~indep.is_gp * ~indep.is_sm
     # is_prot = nucl_utils.get_resi_type_mask(indep.seq, 'prot') * ~is_gp * ~indep.is_sm
     N_idx = ChemData().aa2long[0].index(" N  ")
     CA_idx = ChemData().aa2long[0].index(" CA ")
@@ -300,7 +297,7 @@ def get_dssp_string(dssp_output: torch.Tensor) -> str:
     return ''.join(C3_ALPHABET[dssp_output])
 
 
-def get_dssp(indep: Indep, is_gp: Union[bool, torch.Tensor] = False) -> torch.Tensor:
+def get_dssp(indep: Indep) -> torch.Tensor:
     '''
     Get the DSSP assignemt of indep using PyDSSP.
 
@@ -313,14 +310,13 @@ def get_dssp(indep: Indep, is_gp: Union[bool, torch.Tensor] = False) -> torch.Te
 
     Args:
         indep (Indep): The input object containing the data.
-        is_gp (bool, Tensor[bool]): tensor describing if each residue is guide post or not
 
     Returns:
         torch.Tensor: The DSSP assignment [L]
 
     '''
 
-    bb_pydssp, is_prot = get_bb_pydssp( indep, is_gp )
+    bb_pydssp, is_prot = get_bb_pydssp( indep )
     dssp = torch.full((indep.length(),), ELSE, dtype=int)
     dssp[is_prot] = assign(bb_pydssp, out_type='index')
 

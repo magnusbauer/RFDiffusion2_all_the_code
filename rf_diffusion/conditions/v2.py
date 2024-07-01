@@ -21,12 +21,11 @@ def radius_of_gyration_xyz(xyz):
     dist = torch.cdist(xyz[None,...], com[None,...])[0]
     return torch.sqrt( torch.sum(torch.square(dist)) / L)
 
-def get_radius_of_gyration(indep, conf=None, is_gp=None, **kwargs):
+def get_radius_of_gyration(indep, conf=None, **kwargs):
     if torch.rand(1) < 0.5:
         return {'t1d':torch.zeros((indep.length(), conf.n_bins + 1))}
-    assert is_gp is not None
     rog = torch.zeros((indep.length(),))
-    is_prot = ~indep.is_sm * ~is_gp
+    is_prot = ~indep.is_sm * ~indep.is_gp
     indep_prot, _ = aa_model.slice_indep(indep, is_prot)
     rog_prot = torch.full((indep_prot.length(),), 0.0)
     for is_chain in indep_prot.chain_masks():
@@ -50,11 +49,11 @@ def one_hot_buckets(a, low, high, n, eps=1e-6):
     return F.one_hot(cat, num_classes=n)
 
 
-def get_radius_of_gyration_inference(indep, feature_conf, feature_inference_conf, is_gp=None, **kwargs):
+def get_radius_of_gyration_inference(indep, feature_conf, feature_inference_conf, **kwargs):
     if not feature_inference_conf.active:
         return {'t1d':torch.zeros((indep.length(), feature_conf.n_bins + 1))}
     rog = torch.zeros((indep.length(),))
-    is_prot = ~indep.is_sm * ~is_gp
+    is_prot = ~indep.is_sm * ~indep.is_gp
     indep_prot, _ = aa_model.slice_indep(indep, is_prot)
     rog_prot = torch.full((indep_prot.length(),), 0.0)
     for is_chain in indep_prot.chain_masks():

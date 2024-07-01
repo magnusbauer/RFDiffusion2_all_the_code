@@ -1798,12 +1798,12 @@ class DistilledDataset(data.Dataset):
         self.preprocess_param = dataset.preprocess_param
         self.model_adaptor = dataset.model_adaptor
 
-        def diffuse(indep, is_gp, metadata, chosen_dataset, sel_item, task, masks_1d, item_context, mask_gen_seed, is_masked_seq, is_diffused, atomizer, **kwargs):
+        def diffuse(indep, metadata, chosen_dataset, sel_item, task, masks_1d, item_context, mask_gen_seed, is_masked_seq, is_diffused, atomizer, **kwargs):
             t, t_cont = get_t_training(self.conf)
 
             assert not hasattr(self.conf, 'extra_t1d'), 'extra_t1d has been replaced by extra_tXd'
             assert not hasattr(self.conf, 'extra_t1d_params'), 'extra_t1d has been replaced by extra_tXd'
-            indep.extra_t1d, indep.extra_t2d = features.get_extra_tXd(indep, self.conf.extra_tXd, is_gp=is_gp, t_cont=t_cont, **self.conf.extra_tXd_params)
+            indep.extra_t1d, indep.extra_t2d = features.get_extra_tXd(indep, self.conf.extra_tXd, t_cont=t_cont, **self.conf.extra_tXd_params)
 
             run_inference.seed_all(mask_gen_seed) # Reseed the RNGs for test stability.
             indep_t, diffuser_out = aa_model.diffuse(self.conf, self.diffuser, indep, is_diffused, t)

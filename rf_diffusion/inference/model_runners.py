@@ -231,7 +231,7 @@ class NRBStyleSelfCond(Sampler):
 
         extra_tXd_names = getattr(self._conf, 'extra_tXd', [])
         t_cont = t/self._conf.diffuser.T
-        indep.extra_t1d, indep.extra_t2d = features.get_extra_tXd_inference(indep, extra_tXd_names, self._conf.extra_tXd_params, self._conf.inference.conditions, is_gp=indep.is_gp, t_cont=t_cont)
+        indep.extra_t1d, indep.extra_t2d = features.get_extra_tXd_inference(indep, extra_tXd_names, self._conf.extra_tXd_params, self._conf.inference.conditions, t_cont=t_cont)
         rfi = self.model_adaptor.prepro(indep, t, self.is_diffused)
 
         rf2aa.tensor_util.to_device(rfi, self.device)
@@ -315,7 +315,7 @@ class FlowMatching(Sampler):
     def run_model(self, t, indep, rfo, is_diffused):
         extra_tXd_names = getattr(self._conf, 'extra_tXd', [])
         t_cont = t/self._conf.diffuser.T
-        indep.extra_t1d, indep.extra_t2d = features.get_extra_tXd_inference(indep, extra_tXd_names, self._conf.extra_tXd_params, self._conf.inference.conditions, is_gp=indep.is_gp, t_cont=t_cont)
+        indep.extra_t1d, indep.extra_t2d = features.get_extra_tXd_inference(indep, extra_tXd_names, self._conf.extra_tXd_params, self._conf.inference.conditions, t_cont=t_cont)
         rfi = self.model_adaptor.prepro(indep, t, is_diffused)
         rf2aa.tensor_util.to_device(rfi, self.device)
 

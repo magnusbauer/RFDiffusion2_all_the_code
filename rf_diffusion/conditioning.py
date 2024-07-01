@@ -178,17 +178,14 @@ class AddConditionalInputs:
         indep, is_diffused, is_masked_seq, atomizer, contig_map.gp_to_ptn_idx0 = aa_model.transform_indep(indep, is_diffused, is_res_str_shown, is_atom_str_shown, use_guideposts, guidepost_bonds=self.guidepost_bonds, metadata=metadata)
 
         masks_1d['is_masked_seq']=is_masked_seq
-        # HACK: gp indices may be lost during atomization, so we assume they are at the end of the protein.
-        is_gp = torch.full((indep.length(),), True)
-        is_gp[:pre_transform_length] = False
+        # The previous code here was wrong. All is_gp are not necessarily contiguously at the end.
+        #  Atomized residues come after gp residues (and aren't necessarily gp themselves)
         aa_model.assert_valid_seq_mask(indep, is_masked_seq)
-        indep.is_gp = is_gp
         
         return kwargs | dict(
             indep=indep,
             is_diffused=is_diffused,
             is_masked_seq=is_masked_seq,
-            is_gp=is_gp,
             atomizer=atomizer,
             metadata=metadata,
             masks_1d=masks_1d,

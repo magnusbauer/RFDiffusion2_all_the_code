@@ -103,6 +103,15 @@ class Indep:
     same_chain: torch.Tensor
     terminus_type: torch.Tensor
     extra_t1d: torch.Tensor = dataclasses.field(default_factory=lambda: None)
+    is_gp: torch.Tensor = None
+
+    def __post_init__(self):
+        '''
+        Runs after the implicit __init__ from @dataclass
+        '''
+        # is_gp needs to be the correct size if it was not specified
+        if self.is_gp is None and self.seq is not None:
+            self.is_gp = torch.zeros(self.length(), dtype=bool)
 
     def clone(self):
         '''
@@ -119,10 +128,8 @@ class Indep:
             copy.deepcopy(self.same_chain.detach()),
             copy.deepcopy(self.terminus_type.detach()),
             copy.deepcopy(self.extra_t1d),
+            None if self.is_gp is None else self.is_gp.detach(), # None only occurs in unit tests
         )
-        # Add is_gp if needed @Altaeth, added for compatibility with the gp, but is temporary workaround. This fixes bugs due to cloning
-        if hasattr(self, 'is_gp'):
-            indep_copy.is_gp = copy.deepcopy(self.is_gp.detach())
         if hasattr(self, 'origin'):
             if self.origin is None:
                 indep_copy.origin = None
@@ -927,6 +934,10 @@ class Model:
 
         o.same_chain = same_chain_with_covale(o.same_chain, metadata['covale_bonds'])
 
+        # Handle is_gp the same way that sequence was handled
+        o.is_gp = torch.zeros(L_mapped, dtype=bool)
+        o.is_gp[contig_map.hal_idx0] = indep.is_gp[contig_map.ref_idx0]
+
         masks_1d = {
             'input_str_mask': is_res_str_shown,
             'is_atom_motif': is_atom_str_shown,
@@ -1507,6 +1518,7 @@ def pop_mask(indep, pop, break_chirals=False):
     indep.bond_feats    = indep.bond_feats[pop2d].reshape(N,N)
     indep.same_chain    = indep.same_chain[pop2d].reshape(N,N)
     indep.terminus_type = indep.terminus_type[pop]
+    indep.is_gp         = indep.is_gp[pop]
 
     pop_i = pop.nonzero()
     is_chiral_popped = torch.isin(indep.chirals[:,:-1].type(torch.DoubleTensor), pop_i)
@@ -1540,6 +1552,9 @@ def cat_indeps(indeps, same_chain):
     indep.bond_feats = torch.block_diag(*(i.bond_feats for i in indeps))
     indep.same_chain = same_chain
     indep.terminus_type = torch.cat([i.terminus_type for i in indeps])
+    indep.is_gp = torch.cat([i.is_gp for i in indeps])
+    assert len(indep.is_gp) == indep.length()
+
     L = 0
     all_chirals = []
     for i in indeps:
@@ -1771,7 +1786,7 @@ class AtomizeResidues:
         
         indep_deatomized = indep_deatomized.clone()
         
-        seq_atomize_all,  xyz_atomize_all, chirals_atomize_all, res_idx_atomize_all = \
+        seq_atomize_all,  xyz_atomize_all, chirals_atomize_all, res_idx_atomize_all, gp_atomize_all = \
             self._generate_atomize_protein_features(indep_deatomized, self.residue_to_atomize)
         
         if not res_idx_atomize_all: # no residues atomized, just return the inputs
@@ -1784,6 +1799,7 @@ class AtomizeResidues:
             seq_atomize_all,
             xyz_atomize_all,
             chirals_atomize_all,
+            gp_atomize_all
         ) 
 
         indep_atomized = self._pop_protein_feats(indep_atomized, res_idx_atomize_all)
@@ -1858,6 +1874,14 @@ class AtomizeResidues:
             index = coarse_idx0,
             dim = 1
         )
+        indep_deatomized.is_gp = insert_tensor(
+            body = indep_deatomized.is_gp,
+            fill = indep_deatomized.is_gp[deatomized_idx0].any(), # if any atoms were gp, the full residue is gp. Right?
+            index = coarse_idx0,
+            dim = 0
+        )
+        assert len(indep_deatomized.is_gp) == indep_deatomized.length()
+
 
         # Connect new residue to neighbors it is bonded to
         ## Get chain numbers
@@ -1960,6 +1984,7 @@ class AtomizeResidues:
         res_idx_atomize_all = [] # indices of residues that end up getting atomized (0-indexed, contiguous)
         res_atomize_all = [] # residues (integer-coded) that end up getting atomized 
         idx_atomize_all = [] # PDB indices of residues that end up getting atomized
+        gp_atomize_all = [] # is_gp for each new atom
         
         # track the res_idx and absolute index of the previous C to draw peptide bonds between contiguous residues
         prev_res_idx = -2
@@ -1992,6 +2017,7 @@ class AtomizeResidues:
             res_idx_atomize_all.append(res_idx)
             res_atomize_all.append(residue)
             idx_atomize_all.append(indep_deatomized.idx[res_idx])
+            gp_atomize_all.append(torch.full((natoms,), bool(indep_deatomized.is_gp[res_idx]), dtype=bool))
             
             # update bond_feats every iteration, update all other features at the end 
             bond_feats_new = torch.zeros((L+natoms, L+natoms))
@@ -2024,7 +2050,7 @@ class AtomizeResidues:
             indep_deatomized.same_chain = same_chain_new
             L = indep_deatomized.bond_feats.shape[0]
         
-        return seq_atomize_all, xyz_atomize_all, chirals_atomize_all, res_idx_atomize_all        
+        return seq_atomize_all, xyz_atomize_all, chirals_atomize_all, res_idx_atomize_all, gp_atomize_all
 
     def _get_atomized_residue_info(self):
         '''
@@ -2044,7 +2070,8 @@ class AtomizeResidues:
                                         indep_deatomized,
                                         seq_atomize_all, \
                                         xyz_atomize_all, \
-                                        chirals_atomize_all, 
+                                        chirals_atomize_all,
+                                        gp_atomize_all
                                         ):
         """
         adds the msa, xyz, frame and chiral features from the atomized regions to the rosettafold input tensors
@@ -2077,6 +2104,9 @@ class AtomizeResidues:
         # handle sm specific features- atom_frames, chirals
         indep_atomized.chirals = torch.cat(chirals_atomize_all)
         indep_atomized.terminus_type = torch.cat((indep_deatomized.terminus_type, torch.zeros(atomize_L).long()))
+        indep_atomized.is_gp = torch.cat([indep_deatomized.is_gp, torch.cat(gp_atomize_all)])
+        assert len(indep_atomized.is_gp) == indep_atomized.length()
+
         return indep_atomized
 
     def _pop_protein_feats(self, indep_atomized, res_idx_atomize_all):
@@ -2097,6 +2127,8 @@ class AtomizeResidues:
         chiral_shift = n_shift[chiral_indices.long()]
         indep_atomized.chirals[:,:-1] = chiral_indices - chiral_shift
         indep_atomized.terminus_type = indep_atomized.terminus_type[pop]
+        indep_atomized.is_gp = indep_atomized.is_gp[pop]
+        assert len(indep_atomized.is_gp) == indep_atomized.length()
         
         return indep_atomized
     
@@ -2192,6 +2224,32 @@ class AtomizeResidues:
             
         return dict(atom_idx_by_res)
 
+    def get_idx0_post_atomization_from_pre_atomization(self, consistency_check=True):
+        '''
+        Returns a list of lists that maps where a pre-atomized residue resides within the post-atomized state
+
+        For non-atomized residues, the result is a 1-element list. But the residue may have changed index!
+        For atomized residues, the result is a list of idx0 atom indices (the atoms that belong to the residue)
+
+        Args:
+            consistency_check (bool): Assert that all pre-atomized residues are present post-atomization
+
+        Returns:
+            post_from_pre_list (list[list[int]]): Maps location pre-atomized residue to location after atomization
+        '''
+
+        post_from_pre = defaultdict(list)
+        for post_idx0, atomized_label in enumerate(self.atomized_state):
+            post_from_pre[atomized_label.coarse_idx0].append(post_idx0)
+
+        post_from_pre_list = []
+        for pre_idx0 in range(len(self.deatomized_state)):
+            assert not consistency_check or pre_idx0 in post_from_pre, 'Pre-atomized residue idx0 {pre_idx0} was dropped during atomization!'
+            post_from_pre_list.append(post_from_pre[pre_idx0])
+
+        return post_from_pre_list
+
+
 def choose_random_atom_motif(natoms, p=0.5):
     """
     selects each atom to be in the motif with a probability p 
@@ -2238,14 +2296,13 @@ def make_guideposts(indep, is_motif):
     gp_i = range(pre_gp_len, pre_gp_len + n_motif)
     CHAIN_GAP = 33
     indep_motif.idx = torch.arange(n_motif) * CHAIN_GAP + CHAIN_GAP + indep.idx.max()
+    indep_motif.is_gp[:] = True
     indep_cat = cat_indeps_separate_chains((indep, indep_motif))
     chains_cat =  np.concatenate((chains, motif_chains))
     indep_cat.same_chain = same_chain_from_chain_letters(chains_cat)
     gp_to_ptn_idx0 = {i:j for i,j in zip(gp_i, is_motif.nonzero()[:,0].tolist())}
 
-    is_gp = torch.zeros(indep_cat.length()).bool()
-    is_gp[-n_motif:] = True
-    is_inter_gp = is_gp[None, :] != is_gp[:, None]
+    is_inter_gp = indep_cat.is_gp[None, :] != indep_cat.is_gp[:, None]
     has_sm = indep_cat.is_sm[None, :] + indep_cat.is_sm[:, None]
     indep_cat.bond_feats[is_inter_gp * ~has_sm] = GP_BOND
     return indep_cat, gp_to_ptn_idx0
@@ -2304,9 +2361,7 @@ def transform_indep(indep, is_diffused, is_res_str_shown, is_atom_str_shown, use
         ligand_idx = atomize.atomized_indices_res(atomizer, is_ligand)
         covale_ligand_idx = atomize.atomized_indices_res(atomizer, is_covale_ligand)
         if use_guideposts:
-            # HACK: use is_masked_seq as gp_idx0.
-            is_gp = ~is_masked_seq
-            is_inter_gp = is_gp[None, :] != is_gp[:, None]
+            is_inter_gp = indep.is_gp[None, :] != indep.is_gp[:, None]
             is_inter_gp[ligand_idx] = False
             is_inter_gp[:,ligand_idx] = False
             indep.bond_feats[is_inter_gp] = GP_BOND
