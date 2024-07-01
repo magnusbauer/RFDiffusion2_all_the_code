@@ -54,7 +54,6 @@ class TestTransform(unittest.TestCase):
             # Create the init xyz values with the legacy centering
             o.xyz = rf_diffusion.kinematics.get_init_xyz(o.xyz[None, None], o.is_sm, center=True).squeeze() 
 
-            pre_transform_length = o.length()
             o, is_diffused, is_seq_masked, atomizer, contig_map.gp_to_ptn_idx0 = aa_model.transform_indep(o, masks_1d['is_diffused'], masks_1d['input_str_mask'], masks_1d['is_atom_motif'], conf.inference.contig_as_guidepost, 'anywhere', conf.guidepost_bonds, metadata=metadata)
 
             sm_ca = o.xyz[o.is_sm, 1]
@@ -86,7 +85,6 @@ class TestTransform(unittest.TestCase):
             check_is_gp = torch.zeros(indep.length()).bool()
             check_is_gp[-n_gp_atomized:] = True
             assert (check_is_gp == indep.is_gp).all()
-            self_bonds = indep.bond_feats[indep.is_gp][:, indep.is_gp]
             is_gp_receptor = ~indep.is_gp * ~indep.is_sm
             other_bonds = indep.bond_feats[indep.is_gp][:, is_gp_receptor]
             assert torch.all(other_bonds == 7), other_bonds

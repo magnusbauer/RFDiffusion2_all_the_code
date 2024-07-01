@@ -171,7 +171,6 @@ class AddConditionalInputs:
         is_atom_str_shown = masks_1d['is_atom_motif']
         is_diffused = masks_1d.get('is_diffused', ~is_res_str_shown)
 
-        pre_transform_length = indep.length()
         # Sample guide posts with probability p_is_guidepost_example, or simply set true or false if p_is_guidepost_example is a boolean
         use_guideposts = self.p_is_guidepost_example if isinstance(self.p_is_guidepost_example, bool) else (torch.rand(1) < self.p_is_guidepost_example).item()
         masks_1d['use_guideposts'] = use_guideposts
