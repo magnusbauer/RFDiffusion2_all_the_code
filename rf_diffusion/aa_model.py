@@ -2224,7 +2224,6 @@ class AtomizeResidues:
             
         return dict(atom_idx_by_res)
 
-
 def choose_random_atom_motif(natoms, p=0.5):
     """
     selects each atom to be in the motif with a probability p 
