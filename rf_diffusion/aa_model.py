@@ -2224,31 +2224,6 @@ class AtomizeResidues:
             
         return dict(atom_idx_by_res)
 
-    def get_idx0_post_atomization_from_pre_atomization(self, consistency_check=True):
-        '''
-        Returns a list of lists that maps where a pre-atomized residue resides within the post-atomized state
-
-        For non-atomized residues, the result is a 1-element list. But the residue may have changed index!
-        For atomized residues, the result is a list of idx0 atom indices (the atoms that belong to the residue)
-
-        Args:
-            consistency_check (bool): Assert that all pre-atomized residues are present post-atomization
-
-        Returns:
-            post_from_pre_list (list[list[int]]): Maps location pre-atomized residue to location after atomization
-        '''
-
-        post_from_pre = defaultdict(list)
-        for post_idx0, atomized_label in enumerate(self.atomized_state):
-            post_from_pre[atomized_label.coarse_idx0].append(post_idx0)
-
-        post_from_pre_list = []
-        for pre_idx0 in range(len(self.deatomized_state)):
-            assert not consistency_check or pre_idx0 in post_from_pre, 'Pre-atomized residue idx0 {pre_idx0} was dropped during atomization!'
-            post_from_pre_list.append(post_from_pre[pre_idx0])
-
-        return post_from_pre_list
-
 
 def choose_random_atom_motif(natoms, p=0.5):
     """
