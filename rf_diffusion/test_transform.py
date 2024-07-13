@@ -176,7 +176,20 @@ class TestTransform(unittest.TestCase):
         diff = test_utils.cmp_pretty(indep, new_indep)
         if diff:
             print(diff)
-            self.fail(f'{contig_kwargs=} {diff=}')
+            self.fail(f'{diff=}')
+
+
+        # Also test open_indep()
+        open_indep = indep.clone()
+        with aa_model.open_indep(open_indep, checker_slice, break_chirals=True) as _:
+            pass
+        open_indep.bond_feats = indep.bond_feats
+        open_indep.chirals = indep.chirals
+
+        diff = test_utils.cmp_pretty(indep, open_indep)
+        if diff:
+            print(diff)
+            self.fail(f'{diff=}')
 
 
 

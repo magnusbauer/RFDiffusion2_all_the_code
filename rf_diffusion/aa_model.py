@@ -1586,6 +1586,7 @@ def rearrange_indep(indep, from_i):
     indep.same_chain = indep.same_chain[from_i, :][:, from_i]
     indep.terminus_type = indep.terminus_type[from_i]
     indep.chirals[:,:-1] = indep.chirals[:,:-1].type(torch.LongTensor).apply_(lambda i: to_i[i])
+    indep.is_gp = indep.is_gp[from_i]
     is_sm_new = indep.is_sm[from_i]
     is_sm_old = indep.is_sm
     n_sm = is_sm_old.sum()
@@ -2472,10 +2473,10 @@ def make_mask(i, L):
     return mask
 
 @contextlib.contextmanager
-def open_indep(indep, is_open):
+def open_indep(indep, is_open, break_chirals=False):
     assertpy.assert_that(indep.length()).is_equal_to(len(is_open))
-    indep_closed, _ = slice_indep(indep, ~is_open)
-    indep_open, _ = slice_indep(indep, is_open)
+    indep_closed, _ = slice_indep(indep, ~is_open, break_chirals=break_chirals)
+    indep_open, _ = slice_indep(indep, is_open, break_chirals=break_chirals)
     yield indep_open
     i = torch.arange(len(is_open))
     i_r = torch.cat([i[~is_open], i[is_open]])
