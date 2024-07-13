@@ -1536,12 +1536,12 @@ def pop_mask(indep, pop, break_chirals=False):
         chiral_shift = n_shift[chiral_indices.long()]
         indep.chirals[:,:-1] = chiral_indices - chiral_shift
 
-def slice_indep(indep, pop):
+def slice_indep(indep, pop, break_chirals=False):
     indep = copy.deepcopy(indep)
     cross_bonds = indep.bond_feats[pop][:, ~pop]
     # ic(cross_bonds)
     # assert_that(cross_bonds.sum()).is_equal_to(0)
-    pop_mask(indep, pop)
+    pop_mask(indep, pop, break_chirals=break_chirals)
     return indep, cross_bonds
  
 def cat_indeps(indeps, same_chain):

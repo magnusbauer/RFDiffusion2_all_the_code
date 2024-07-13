@@ -79,7 +79,7 @@ class TestTransform(unittest.TestCase):
             assertpy.assert_that(indep.length()).is_equal_to(n_valine + indep_init.length() + n_res_shown)
             assertpy.assert_that((~is_diffused).sum()).is_equal_to(n_motif)
             assertpy.assert_that((~is_masked_seq).sum()).is_equal_to(n_valine + n_res_shown + n_ligand)
-            assertpy.assert_that(indep.is_sm.sum()).is_equal_to(n_valine + n_ligand)
+            assertpy.assert_that(indep.is_sm.sum()).is_equal_to(n_valine + n_ligand).described_as('Number of atom tokens in indep not equal to number of atoms in atomized residue + ligand')
             tensor_util.assert_equal(indep.bond_feats, indep.bond_feats.T)
             n_gp_atomized = n_valine + n_res_shown
             check_is_gp = torch.zeros(indep.length()).bool()
@@ -93,6 +93,8 @@ class TestTransform(unittest.TestCase):
             assertpy.assert_that(indep.human_readable_seq()).is_equal_to(want_seq)
             atomized_res_bonds = indep.bond_feats[indep.is_sm * indep.is_gp][:, indep.is_sm * indep.is_gp]
             assertpy.assert_that(atomized_res_bonds[CB, CG1].item()).is_equal_to(1)
+
+            self.check_slicing(indep)
             
             # Deatomize
             indep_deatomized = atomizer.deatomize(indep)
@@ -106,6 +108,76 @@ class TestTransform(unittest.TestCase):
             if diff:
                 print(diff)
                 self.fail(f'{contig_kwargs=} {diff=}')
+
+
+
+    def check_slicing(self, indep):
+        '''
+        This would be best as a separate test but generating indeps that are both atomized and have gp residues is non-trivial
+        Called from test_atomized_placement_agnostic
+
+        Args:
+            indep (indep): Any indep to check for slicing and catting compatibility
+        '''
+        indep = indep.clone()
+
+        # checker slice is literally every other residue goes left/right
+        checker_slice = torch.zeros(indep.length(), dtype=bool)
+        checker_slice[::2] = True
+
+        left, _ = aa_model.slice_indep(indep, checker_slice, break_chirals=True)
+        right, _ = aa_model.slice_indep(indep, ~checker_slice, break_chirals=True)
+
+        seq = copy.deepcopy(indep.seq)
+        seq[checker_slice] = left.seq
+        seq[~checker_slice] = right.seq
+        assert torch.allclose(seq, indep.seq), 'failed checker slice'
+
+        xyz = copy.deepcopy(indep.xyz)
+        xyz[checker_slice] = left.xyz
+        xyz[~checker_slice] = right.xyz
+        assert torch.allclose(xyz, indep.xyz, equal_nan=True), 'failed checker slice'
+
+        idx = copy.deepcopy(indep.idx)
+        idx[checker_slice] = left.idx
+        idx[~checker_slice] = right.idx
+        assert torch.allclose(idx, indep.idx), 'failed checker slice'
+
+        assert torch.allclose(indep.bond_feats[checker_slice][:,checker_slice], left.bond_feats), 'failed checker slice'
+        assert torch.allclose(indep.bond_feats[~checker_slice][:,~checker_slice], right.bond_feats), 'failed checker slice'
+
+        # chirals are messed up when you slice like this
+
+        terminus_type = copy.deepcopy(indep.terminus_type)
+        terminus_type[checker_slice] = left.terminus_type
+        terminus_type[~checker_slice] = right.terminus_type
+        assert torch.allclose(terminus_type, indep.terminus_type), 'failed checker slice'
+
+        # extra_t1d isn't sliced
+        
+        is_gp = copy.deepcopy(indep.is_gp)
+        is_gp[checker_slice] = left.is_gp
+        is_gp[~checker_slice] = right.is_gp
+        assert torch.allclose(is_gp, indep.is_gp), 'failed checker slice'
+
+
+        # The half slice cuts it in half so we can use cat_indep
+        half_slice = torch.zeros(indep.length(), dtype=bool)
+        half_slice[:indep.length()//2] = True
+
+        left, _ = aa_model.slice_indep(indep, half_slice, break_chirals=True)
+        right, _ = aa_model.slice_indep(indep, ~half_slice, break_chirals=True)
+
+        new_indep = aa_model.cat_indeps([left, right], indep.same_chain)
+        new_indep.bond_feats = indep.bond_feats
+        new_indep.chirals = indep.chirals
+
+
+        diff = test_utils.cmp_pretty(indep, new_indep)
+        if diff:
+            print(diff)
+            self.fail(f'{contig_kwargs=} {diff=}')
+
 
 
 if __name__ == '__main__':

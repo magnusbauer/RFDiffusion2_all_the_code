@@ -30,15 +30,15 @@ from rf_diffusion import aa_model
 import copy
 from omegaconf import OmegaConf
 
-def make_guideposts(indep: Indep, new_gp: torch.Tensor, placement: str=None) -> Tuple[Indep, torch.Tensor]:
+def make_guideposts(indep: Indep, make_into_guidepost_mask: torch.Tensor, placement: str=None) -> Tuple[Indep, torch.Tensor]:
     '''
-    Takes the geometry of residues masked by `new_gp` and adds them as guide post features
+    Takes the geometry of residues masked by `make_into_guidepost_mask` and adds them as guide post features
     to indep.
 
     Args
     ------------
     indep: Indep instance (of length L).
-    new_gp (L,): Boolean tensor. True = Residue should be added as a guide post feature.
+    make_into_guidepost_mask (L,): Boolean tensor. True = Residue should be added as a guide post feature.
     placement: See `convert_motif_to_guide_posts` for a description.
 
     Returns
@@ -50,7 +50,7 @@ def make_guideposts(indep: Indep, new_gp: torch.Tensor, placement: str=None) -> 
 
     # Add *new* frames that will act as the guide posts
     indep, gp_to_ptn_idx0 = copy_and_append_indep_features(
-        new_gp=new_gp,
+        make_into_guidepost_mask=make_into_guidepost_mask,
         indep=indep,
         shuffle=False,  # Unsure if necessary
     )
@@ -64,12 +64,12 @@ def make_guideposts(indep: Indep, new_gp: torch.Tensor, placement: str=None) -> 
 
     return indep, is_diffused, gp_to_ptn_idx0
 
-def copy_and_append_indep_features(new_gp: torch.tensor,
+def copy_and_append_indep_features(make_into_guidepost_mask: torch.tensor,
                                    indep: Indep,
                                    shuffle: bool=False) -> Tuple[Indep, dict]:
     '''
     Args
-        new_gp (L): True = copy and append these residue's features to the end of their respective tensor.
+        make_into_guidepost_mask (L): True = copy and append these residue's features to the end of their respective tensor.
         indep: Indep,
         shuffle: Should the features be randomly shuffled before being appended?
 
@@ -79,7 +79,7 @@ def copy_and_append_indep_features(new_gp: torch.tensor,
     '''
 
     # What is the mapping from the feature's new idx0 to their original idx0 (ptn_idx0)?
-    ptn_idx0 = torch.where(new_gp)[0]
+    ptn_idx0 = torch.where(make_into_guidepost_mask)[0]
     n_features = len(ptn_idx0)
 
     if shuffle:
@@ -87,7 +87,7 @@ def copy_and_append_indep_features(new_gp: torch.tensor,
         shuffle = torch.randperm(n_features)
         ptn_idx0 = ptn_idx0[shuffle]
 
-    L_exist = new_gp.shape[0]
+    L_exist = make_into_guidepost_mask.shape[0]
     new_idx0 = torch.arange(L_exist, L_exist + n_features)
     new_to_ptn_idx0 = dict(zip(new_idx0.tolist(), ptn_idx0.tolist()))
 
