@@ -21,4 +21,4 @@ else
 fi
 
 echo RUNNING TESTS: $TESTS
-CUDA_VISIBLE_DEVICES="" OMP_NUM_THREADS=4 MKL_NUM_THREADS=4 PYTHONPATH=.. $NICE ./exec/bakerlab_rf_diffusion_aa.sif -mpytest --durations=10 --disable-warnings -m "not nondeterministic" --cov rf_diffusion -k "$TESTS" $N 2>&1
+CUDA_VISIBLE_DEVICES="" OMP_NUM_THREADS=2 MKL_NUM_THREADS=2 PYTHONPATH=.. $NICE ./exec/bakerlab_rf_diffusion_aa.sif -mpytest --durations=10 --disable-warnings -m "not nondeterministic" --cov tests_* -k "$TESTS" $N 2>&1

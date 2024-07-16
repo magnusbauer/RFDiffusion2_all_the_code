@@ -104,7 +104,7 @@ class CenterPostTransform:
         self.jitter = jitter
         self.jitter_clip = jitter_clip
         self.center_type = center_type
-        assert center_type in ['is_diffused', 'is_not_diffused'], "must use 'is_diffused' or 'is_not_diffused' for center_type"
+        assert center_type in ['is_diffused', 'is_not_diffused', 'all'], "must use 'is_diffused' or 'is_not_diffused' for center_type"
 
     def __call__(self,
                      indep: Indep, 
@@ -120,7 +120,8 @@ class CenterPostTransform:
             is_diffused (torch.Tensor): the diffused residues as a boolean mask
             origin (torch.Tensor): the origin to center around. If None, the center of mass is calculated
         """
-        if not ((origin is not None) and (self.center_type == 'is_diffused')):
+        # if not ((origin is not None) and (self.center_type == 'is_diffused')):
+        if origin is None:
             # Default behavior: calculate center of mass for default case where ground truth of the protein and other targets are available
             center_of_mass_mask = torch.zeros(indep.xyz.shape[:2], dtype=torch.bool)
             if self.center_type == 'is_diffused':
@@ -132,7 +133,9 @@ class CenterPostTransform:
                     center_of_mass_mask[~is_diffused,1] = True
                 elif torch.sum(~is_diffused) == 0:
                     center_of_mass_mask[is_diffused,1] = True  
-                              
+            elif self.center_type == 'all':
+                center_of_mass_mask[:, 1] = True
+
             # Calculate center of mass
             origin = get_center_of_mass(indep.xyz, center_of_mass_mask)
 
@@ -179,6 +182,10 @@ class AddConditionalInputs:
         masks_1d['is_masked_seq']=is_masked_seq
         # The previous code here was wrong. All is_gp are not necessarily contiguously at the end.
         #  Atomized residues come after gp residues (and aren't necessarily gp themselves)
+        #     is_gp = torch.full((indep.length(),), False)
+        #     if use_guideposts:
+        #         # HACK: gp indices may be lost during atomization, so we assume they are at the end of the protein.
+        #         is_gp[pre_transform_length:] = True
         aa_model.assert_valid_seq_mask(indep, is_masked_seq)
         
         return kwargs | dict(

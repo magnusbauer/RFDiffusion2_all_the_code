@@ -288,6 +288,9 @@ def get_mpnn_pdb(row):
             return pdb
     raise Exception(f'could not find mpnn_packed pdb at any of {possible_paths}')
 
+def get_unidealized_pdb(row):
+    return os.path.join(row['rundir'], 'unidealized', f'{row["name"]}.pdb')
+
 def get_af2(row):
 
     mpnn_pdb = get_mpnn_pdb(row)

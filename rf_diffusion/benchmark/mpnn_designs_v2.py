@@ -24,14 +24,24 @@ mpnn_script = os.path.join(REPO_DIR, 'fused_mpnn/run.py')
 
 def memoize_to_disk(file_name):
     file_name = file_name + '.memo'
+    cache_key_hash_path = file_name + '.hash'
     def decorator(func):
-        def new_func(*args, **kwargs):
-            if os.path.exists(file_name):
+        def new_func(*args, cache_key=None, **kwargs):
+            cache_valid = os.path.exists(file_name) and os.path.exists(cache_key_hash_path)
+            if cache_valid:
+                with open(cache_key_hash_path, 'rb') as fh:
+                    got_cache_key = pickle.load(fh)
+                cache_valid = got_cache_key == cache_key
+            hit_or_miss = 'hit' if cache_valid else 'miss'
+            print(f'mpnn_designs_v2.memoize_to_disk: cache {hit_or_miss}')
+            if cache_valid:
                 with open(file_name, 'rb') as fh:
                     return pickle.load(fh)
             o = func(*args, **kwargs)
             with open(file_name, 'wb') as fh:
                 pickle.dump(o, fh)
+            with open(cache_key_hash_path, 'wb') as fh:
+                pickle.dump(cache_key, fh)
             return o
         return new_func
     return decorator
@@ -55,6 +65,10 @@ def main(conf: HydraConfig) -> list[int]:
         keep_logs:  Keep the slurm logs? <True, False>
     '''
     filenames = glob.glob(conf.datadir+'/*.pdb')
+    # Filter out those missing TRBs
+    filenames = [fn for fn in filenames if os.path.exists(os.path.splitext(fn)[0] + '.trb')]
+
+    print(f'mpnn_designs_v2.main: {len(filenames)} backbones received for sequence fitting')
     
     if not conf.use_ligand:
         return run_mpnn(conf, filenames)
@@ -69,12 +83,12 @@ def main(conf: HydraConfig) -> list[int]:
         print(f'Categorizing {len(filenames)} PDBs by presence/absence of ligand')
         for fn in tqdm.tqdm(filenames):
             trb_path = os.path.splitext(fn)[0] + '.trb'
-            trb = np.load(trb_path,allow_pickle=True)
+            trb = np.load(trb_path, allow_pickle=True)
             has_ligand = bool(trb['config']['inference']['ligand'])
             filenames_by_ligand_presence[has_ligand].append(fn)
         return filenames_by_ligand_presence
         
-    filenames_by_ligand_presence = categorize_by_ligand_presence()
+    filenames_by_ligand_presence = categorize_by_ligand_presence(cache_key=filenames)
     job_ids = []
     for use_ligand, filenames in filenames_by_ligand_presence.items():
         conf_for_mpnn_flavor = copy.deepcopy(conf)
@@ -101,6 +115,8 @@ def run_mpnn(conf, filenames):
 
     mpnn_folder = conf.datadir+f'/{mpnn_flavor}/'
     os.makedirs(mpnn_folder, exist_ok=True)
+
+    print(f'mpnn_designs_v2.run_mpnn: {len(filenames)} backbones received for sequence fitting')
 
     # skip designs that have already been done
     ic(conf.cautious, conf.chunk)
@@ -132,6 +148,7 @@ def run_mpnn(conf, filenames):
                 f'--output_parsed {mpnn_folder}/pdbs_{i}.jsonl '\
                 f'--output_fixed_pos {mpnn_folder}/pdbs_position_fixed_{i}.jsonl', file=job_list_file)
         if conf.slurm.submit: job_list_file.close()
+        print(f'Creating {int(np.ceil(len(filenames)/conf.chunk))} jobs to preprocess {len(filenames)} designs for MPNN')
 
         # submit to slurm
         job_ids = []

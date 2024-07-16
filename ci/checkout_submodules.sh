@@ -44,17 +44,19 @@ fi
 echo fetch
 git fetch
 echo reset
-git reset --hard $RF2AA && cd ..
+git reset --hard $RF2AA
+cd ..
 
 echo CHECKOUT_MPNN
 echo clone
+mkdir fused_mpnn && cd fused_mpnn
 git clone $HOME/bare_repos/fused_mpnn.git fused_mpnn
 # git clone https://$BAKER_RF_DIFFUSION_SHEFFLER@github.com/baker-laboratory/fused_mpnn
 git remote set-url origin https://$GITLAB_SHEFFLER@github.com/baker-laboratory/fused_mpnn
 echo fetch
 cd fused_mpnn && git fetch
 echo reset
-git reset --hard $MPNN && cd ..
+git reset --hard && git checkout $MPNN && cd ../..
 
 echo CHECKOUT_SE3_FLOW
 echo clone
@@ -64,6 +66,6 @@ git remote set-url origin https://$BAKER_RF_DIFFUSION_SHEFFLER@github.com/baker-
 echo reset
 cd se3_flow_matching && git fetch
 echo reset
-git reset --hard $SE3 && cd ..
+git reset --hard && git checkout $SE3 && cd ..
 
 cd ..

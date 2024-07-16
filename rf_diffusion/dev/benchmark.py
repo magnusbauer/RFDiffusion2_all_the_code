@@ -651,3 +651,25 @@ def columns_with_substring(df, substring):
         if substring in c:
             o.append(c)
     return o
+
+def get_sweep_df(df, sweeps):
+    '''
+        Arguments:
+            sweeps: list of swept parameters
+        Returns:
+            A dataframe where column `sweep` details which sweep the row comes from.
+    '''
+    sweep_dfs = []
+    modes = df[sweeps].mode()
+    for sweep in sweeps:
+        non_swept_columns = [s for s in sweeps if s != sweep]
+        other_modes = modes[non_swept_columns]
+        tmp = df.merge(other_modes, on=non_swept_columns, how='inner')
+        tmp['sweep'] = sweep
+        sweep_dfs.append(tmp)
+
+    sweep_df = pd.concat(sweep_dfs)
+    print(f"{sweep_df.shape=}")
+    print(f"{sweep_df.value_counts('sweep')=}")
+    return sweep_df
+

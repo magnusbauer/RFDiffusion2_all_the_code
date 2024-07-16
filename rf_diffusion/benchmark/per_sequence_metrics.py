@@ -3,6 +3,8 @@
 import os
 import sys
 from collections import defaultdict
+import copy
+from icecream import ic
 
 from functools import partial
 import warnings
@@ -15,7 +17,6 @@ sys.path.append(SE3_DIR)
 
 import pandas as pd
 import fire
-from icecream import ic
 from tqdm import tqdm
 import torch
 import numpy as np
@@ -31,6 +32,7 @@ from rf_diffusion import bond_geometry
 from rf_diffusion.dev import benchmark as bm
 from rf_diffusion import loss
 import rf_diffusion.atomization_primitives
+from rf2aa.util import rigid_from_3_points
 
 def main(pdb_names_file, outcsv=None, metric='default'):
     ic(__name__)
@@ -516,12 +518,206 @@ def calc_mdtraj_metrics(pdb_path):
         'radius_of_gyration': pdb_rg,
     }
 
+def sidechain_symmetry_resolved(pdb):
+    o = sidechain(pdb, resolve_symmetry=True)
+    return {k if k in ['name', 'mpnn_index'] else f'{k}_sym_resolved': v for k,v in o.items()}
+
+def sidechain(pdb, resolve_symmetry=False):
+    out = {}
+    row = analyze.make_row_from_traj(pdb[:-4])
+    trb = analyze.get_trb(row)
+    out['name'] = row['name']
+    out['mpnn_index'] = row['mpnn_index']
+    ref_pdb = analyze.get_input_pdb(row)
+    unidealized_pdb = analyze.get_unidealized_pdb(row)
+    des_pdb = analyze.get_design_pdb(row)
+    packed_pdb = analyze.get_mpnn_pdb(row)
+    af2_pdb = analyze.get_af2(row)
+
+    indeps = {}
+    indeps_a = {}
+    atomizers = {}
+    point_ids = {}
+    ligand = row['inference.ligand']
+    for name, pdb in [
+        ('ref', ref_pdb),
+        ('unideal', unidealized_pdb),
+        ('des', des_pdb),
+        ('packed', packed_pdb),
+        ('af2', af2_pdb),
+    ]:
+        if not os.path.exists(pdb):
+            warnings.warn(f'{name} pdb: {pdb} for design {des_pdb} does not exist')
+            return {}
+        # f['name'] = utils.process_target(pdb, parse_hetatom=True, center=False)
+        indeps[name] = aa_model.make_indep(pdb, ligand=None if name == 'af2' else ligand)
+        if name == 'af2' and resolve_symmetry:
+            indep_target = indeps['packed']
+            indep_target, _ = aa_model.slice_indep(indep_target, ~indep_target.is_sm)
+            indeps['af2'].xyz = resolve_symmetry_indeps(indeps['af2'], indep_target, debug_motif=trb['con_hal_idx0'])
+        
+        is_atomized = ~indeps[name].is_sm
+        atomization_state = aa_model.get_atomization_state(indeps[name])
+        atomizers[name] = aa_model.AtomizeResidues(atomization_state, is_atomized)
+        indeps_a[name] = atomizers[name].atomize(indeps[name])
+        point_ids[name] = aa_model.get_point_ids(indeps_a[name], atomizers[name])
+        point_ids[name] = make_ligand_pids_unique(point_ids[name])
+
+            
+    
+    heavy_motif_atoms = {}
+    for ref_idx0, (ref_chain, ref_idx_pdb) in zip(trb['con_ref_idx0'], trb['con_ref_pdb_idx']):
+        aa = indeps['ref'].seq[ref_idx0]
+        heavy_atom_names = aa_model.get_atom_names(aa)
+        heavy_motif_atoms[f'{ref_chain}{ref_idx_pdb}'] = heavy_atom_names
+
+    contig_atoms = row['contigmap.contig_atoms']
+    if contig_atoms is not None:
+        contig_atoms = eval(contig_atoms)
+        contig_atoms = {k:v.split(',') for k,v in contig_atoms.items()}
+    else:
+        contig_atoms = heavy_motif_atoms
+    
+    def get_pids(name, *getters):
+        pids = []
+        for g in getters:
+            pids.extend(g(point_ids[name]))
+        return np.array(pids)
+    
+    def get_ii(name, *getters):
+        pids = get_pids(name, *getters)
+        i_by_pid = {pid: i for i, pid in enumerate(point_ids[name])}
+        i_by_pid_v = np.vectorize(i_by_pid.__getitem__, otypes=[int])
+        ii = i_by_pid_v(pids)
+        return ii
+    
+    def xyz_by_id(name, ii):
+        return indeps_a[name].xyz[ii, 1]
+    
+    def xyz(name, *getters):
+        ii = get_ii(name, *getters)
+        return xyz_by_id(name, ii)
+    
+    def zip_safe(*args):
+        assert len(set(map(len, args))) == 1
+        return zip(*args)
+
+    def get_motif(_, ref: bool, contig_atoms=contig_atoms):
+        pids = []
+        idx0 = trb[f'con_{"ref" if ref else "hal"}_idx0']
+        for (chain, ref_pdb_i), hal_i in zip_safe(
+            trb['con_ref_pdb_idx'],
+            idx0,
+        ):
+            atom_names = contig_atoms[f'{chain}{ref_pdb_i}']
+            for a in atom_names:
+                pids.append(f'A{hal_i}-{a}')
+        return pids
+
+    def get_backbone(pids):
+        return [pid for pid in pids if pid.startswith('A') and
+                (pid.endswith('-CA') or pid.endswith('-C') or pid.endswith('-N') or pid.endswith('-O'))]
+    
+    heavy_motif_atoms_by_subset = {'all': heavy_motif_atoms}
+    empty = {k: [] for k in heavy_motif_atoms.keys()}
+    for ref_residue_id, motif_atoms in heavy_motif_atoms.items():
+        residue_subset = copy.deepcopy(empty)
+        residue_subset[ref_residue_id] = motif_atoms
+        heavy_motif_atoms_by_subset[f'residue_{ref_residue_id}'] = residue_subset
+
+    for subset_name, subset_heavy_motif_atoms in heavy_motif_atoms_by_subset.items():
+        for source, target in (
+            ('des', 'unideal'),
+            ('packed', 'unideal'),
+            ('af2', 'unideal'),
+            ('af2', 'packed')
+        ):
+            get_motif_allatom = partial(get_motif, ref=False, contig_atoms=subset_heavy_motif_atoms)
+            get_motif_backbone = lambda x: get_backbone(get_motif_allatom(x))
+            motif_source_backbone = xyz(source, get_motif_backbone)
+            motif_target_backbone = xyz(target, get_motif_backbone)
+            motif_source_allatom = xyz(source, get_motif_allatom)
+            motif_target_allatom = xyz(target, get_motif_allatom)
+            T = get_aligner(motif_source_backbone, motif_target_backbone)
+            motif_source_allatom_backbone_aligned = T(motif_source_allatom)
+            out[f'backbone_aligned_allatom_rmsd_{source}_{target}_{subset_name}'] = rmsd(motif_source_allatom_backbone_aligned, motif_target_allatom).item()
+    
+    return out
+
+
+def make_alternate_xyz_indexes():
+    n_tokens = len(ChemData().aa2long)
+    n_atoms = len(ChemData().aa2long[0])
+    out = torch.zeros((n_tokens, n_atoms), dtype=int)
+    for i, atom_names in enumerate(ChemData().aa2long[:ChemData().NPROTAAS]):
+        for j, atom_name in enumerate(atom_names):
+            out[i, j] = ChemData().aa2longalt[i].index(atom_name)
+    return out
+
+alternate_xyz_indexes = make_alternate_xyz_indexes()
+
+def get_alternate_xyz(xyz, seq):
+    return xyz[torch.arange(xyz.size(0)).unsqueeze(1), alternate_xyz_indexes[seq]]
+
+def get_coords_in_backbone_frame(xyz):
+    Rs, Ts = rigid_from_3_points(xyz[...,0,:],xyz[...,1,:],xyz[...,2,:], is_na=False)
+    xyz = xyz - Ts[...,None,:]
+    xyz = torch.einsum('...ij,...kj->...ki', torch.inverse(Rs), xyz)
+    return xyz
+
+def resolve_symmetry_indeps(source_indep, target_indep, debug_motif=None):
+    atm_mask = ChemData().allatom_mask[target_indep.seq]
+    # Heavy atoms only
+    atm_mask[:, 14:] = False
+    source_indep.xyz[~atm_mask] = float('nan')
+    target_indep.xyz[~atm_mask] = float('nan')
+
+
+    coords_source = source_indep.xyz
+    coords_source_alt = get_alternate_xyz(source_indep.xyz, source_indep.seq)
+    coords_target = target_indep.xyz
+
+    rel_coords_source = get_coords_in_backbone_frame(coords_source)
+    rel_coords_source_alt = get_coords_in_backbone_frame(coords_source_alt)
+    rel_coords_target = get_coords_in_backbone_frame(coords_target)
+
+    # same_coords = rel_coords_source == rel_coords_source_alt
+    # test_seq_i = 1
+    sym_agrees = [[ChemData().aa2long[target_indep.seq[test_seq_i]][i] == ChemData().aa2longalt[target_indep.seq[test_seq_i]][i] for i in
+                  range(14)] for test_seq_i in range(target_indep.length())]
+    sym_agrees = torch.tensor(sym_agrees)
+    has_alt = ~sym_agrees.all(dim=-1)
+
+    distances_true_to_pred = (rel_coords_target - rel_coords_source)**2
+    distances_alt_to_pred = (rel_coords_target - rel_coords_source_alt)**2
+    distances_true_to_pred[~atm_mask] = 0.
+    distances_alt_to_pred[~atm_mask] = 0.
+
+    assert not distances_true_to_pred[0].isnan().any()
+    assert not distances_true_to_pred.isnan().any()
+
+    distance_scores_true_to_pred = torch.sum(distances_true_to_pred, dim=(1, 2))
+    distance_scores_alt_to_pred = torch.sum(distances_alt_to_pred, dim=(1, 2))
+
+    is_better_alt = distance_scores_alt_to_pred < distance_scores_true_to_pred
+    is_better_alt_crds = is_better_alt[:, None, None].repeat(1, ChemData().NTOTAL, 3)
+
+    symmetry_resolved_true_crds = torch.where(is_better_alt_crds, coords_source_alt, coords_source)
+    alt_matchs_ref = torch.isclose(coords_source_alt, coords_source, equal_nan=True).all(dim=-1).all(dim=-1)
+    assert (has_alt == ~alt_matchs_ref).all()
+    return symmetry_resolved_true_crds
+
 # For debugging, can be run like:
 # python -m fire /home/ahern/projects/aa/rf_diffusion_flow/rf_diffusion/benchmark/per_sequence_metrics.py single --metric guidepost --pdb=/net/scratch/ahern/se3_diffusion/benchmarks/2023-12-18_20-48-06_cc_sh_schedule_sweep/run_siteD_troh1_cond1_0-atomized-bb-False.pdb
 def single(metric, pdb, **kwargs):
     metric_f = globals()[metric]
     df = get_metrics([pdb], metric_f)
     ic(df)
+
+def multi(metric, pdbs, **kwargs):
+    metric_f = globals()[metric]
+    df = get_metrics(pdbs, metric_f)
+    return df
 
 if __name__ == '__main__':
     fire.Fire(main)

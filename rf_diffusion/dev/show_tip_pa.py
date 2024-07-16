@@ -210,7 +210,6 @@ def show(row, structs = {'X0'}, af2=False, des=True, des_color=None, hetatm_colo
         ]:
             if k not in pymol_objects:
                 continue
-            print('aligning af2 to', k)
             align(pymol_objects['af2'], pymol_objects[k])
             break
 

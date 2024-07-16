@@ -50,6 +50,9 @@ def main(conf: HydraConfig) -> list[int]:
 
     job_ids = []
 
+    # Filter out those missing TRBs
+    filenames = [fn for fn in filenames if os.path.exists(os.path.splitext(fn)[0] + '.trb')]
+
     backbone_filenames = filenames
     sequence_filenames = []
     for d in conf.mpnn_dirs:

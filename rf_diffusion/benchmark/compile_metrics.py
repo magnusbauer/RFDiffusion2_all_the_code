@@ -22,14 +22,22 @@ def flatten_dictionary(dictionary, parent_key='', separator='.'):
             flattened_dict[new_key] = value
     return flattened_dict
 
+def sorted_value_counts(df, cols):
+    return pd.DataFrame(df.value_counts(cols, dropna=False)).sort_values(cols).rename(columns={0: 'count'})
+
+def count_of_counts(df, cols):
+    return sorted_value_counts(
+        sorted_value_counts(df, cols).reset_index().rename(columns={0: 'count'}),
+        ['count']
+    )
+
 def main():
     ic.configureOutput(includeContext=True)
     parser = argparse.ArgumentParser()
     parser.add_argument('datadir',type=str,help='Folder of designs')
     parser.add_argument('--outcsv',type=str,default='compiled_metrics.csv',help='Output filename')
-    parser.add_argument('--cached_trb_df',type=bool,default=True,help='Output filename')
+    parser.add_argument('--cached_trb_df', action=argparse.BooleanOptionalAction)
     args = parser.parse_args()
-
     print('finding trbs')
     filenames = glob.glob(args.datadir+'/*.trb')
 
@@ -189,7 +197,9 @@ def main():
             tmp.shape,
             tmp['name'][:3],
         )
-        df = df.merge(tmp, on='name', how='outer')    
+        df = df.merge(tmp, on='name', how='outer')
+        design_id_counts = sorted_value_counts(tmp, ['name'])
+        assert (design_id_counts['count'] == 1).all(), f'{path} has duplicate metrics for some designs, re-run pipeline with metrics.invalidate_cache=1'
 
     # add seq/struc clusters (assumed to be the same for mpnn designs as non-mpnn)
     sequence_metric_dirs = [os.path.join(d, 'csv.*') for d in glob.glob(args.datadir+'/metrics/per_sequence/*/')]
@@ -212,7 +222,7 @@ def main():
         merge_keys = ['name']
         if 'mpnn_index' in tmp.columns:
             merge_keys.append('mpnn_index')
-        df = df.merge(tmp, on=merge_keys, how='left')
+        df = df.merge(tmp, on=merge_keys, how='left', suffixes=(False, False))
 
     df.to_csv(args.datadir+'/'+args.outcsv, index=None)
     print(f'Wrote metrics dataframe {df.shape} to "{args.datadir}/{args.outcsv}"')

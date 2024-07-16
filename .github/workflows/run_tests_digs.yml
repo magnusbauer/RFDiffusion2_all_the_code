@@ -1,4 +1,4 @@
-name: run pytest on digs
+name: run pytest on digs with slurm
 on:
   pull_request:
     branches: [ "aa" ]
@@ -6,7 +6,8 @@ permissions:
   contents: read
 jobs:
   test:
-    runs-on: [self-hosted, Linux, X64, digs]
+    # runs-on: [self-hosted, Linux, X64, digs]
+    runs-on: [digs]
     steps:
     - name: setup
       run: |
@@ -55,8 +56,15 @@ jobs:
     - name: run pytest digs
       run: |
         cd rf_diffusion
-        srun --cpus-per-task=12 --mem=64G ../ci/run_pytest.sh parallel 2>&1 | tee pytest_parallel.log
-        srun --cpus-per-task=1 --mem=32G ../ci/run_pytest.sh notparallel 2>&1 | tee pytest_single.log
+        if [[ $(hostname) == "jojo" ]]; then
+          echo running on jojo
+          ../ci/run_pytest.sh parallel 2>&1 | tee pytest_parallel.log
+          ../ci/run_pytest.sh notparallel 2>&1 | tee pytest_single.log
+        else
+          echo running on digs via slurm
+          srun --cpus-per-task=4 --mem=32G ../ci/run_pytest.sh parallel 2>&1 | tee pytest_parallel.log
+          srun --cpus-per-task=1 --mem=16G ../ci/run_pytest.sh notparallel 2>&1 | tee pytest_single.log
+        fi
 
     - name: check test results
       run: |

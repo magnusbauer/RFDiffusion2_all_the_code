@@ -6,3 +6,9 @@ sweep:
   benchmarks: all
   num_per_condition: 10
   num_per_job: 10
+
+metrics:
+  design_metrics:
+    - guidepost
+    - backbone
+    - sidechain

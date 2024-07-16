@@ -251,3 +251,7 @@ skip_backward: False
 benchmark: null
 
 fm: null
+
+wandb_project: "fancy-pants "
+allow_more_gpus_on_resume: False
+wandb_dir: "./wandb"

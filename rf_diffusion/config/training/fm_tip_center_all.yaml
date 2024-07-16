@@ -1,25 +1,25 @@
 defaults:
   - fm_tip
 
-upstream_training_transforms:
-  names:
-    - PopMask
-
-  configs:  
-    PopMask: {}
-
 transforms:
-  names:
+  names:  
+    - PopMask
     - AddConditionalInputs
     - CenterPostTransform
 
   configs:
+    PopMask: {}
     CenterPostTransform:
-      jitter: 0.0
+      jitter: 5.0
       jitter_clip: 20.0
+      center_type: 'all'
     AddConditionalInputs:
       p_is_guidepost_example: ${....dataloader.P_IS_GUIDEPOST_EXAMPLE}
       guidepost_bonds: ${....guidepost_bonds}    
 
 benchmark:
   pipeline_yaml: 'training_benchmarks_ORI.yaml'
+
+rundir: /net/scratch/ahern/se3_diffusion/training/center_all
+wandb_prefix: 'center_all'
+wandb_dir: "/scratch/${oc.env:USER}"

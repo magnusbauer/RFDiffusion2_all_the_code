@@ -3,6 +3,7 @@
 import sys
 import os
 import traceback
+import logging
 import datetime
 from rf_diffusion import master_addr
 import wandb
@@ -62,6 +63,9 @@ import torch.multiprocessing as mp
 from torch.nn.parallel import DistributedDataParallel as DDP
 from se3_flow_matching.data import so3_utils
 import noisers
+
+
+logger = logging.getLogger(__name__)
 
 global N_EXAMPLE_PER_EPOCH
 global DEBUG 
@@ -207,6 +211,7 @@ class Trainer():
         loss_dict = {}
         if self.conf.fm:
             loss_mask = is_diffused.clone()
+            loss_mask = loss_mask + (is_sm * self.conf.sm_loss_weight)
             # Invert the 0 -> ground truth to 0 -> pure noise convention for fm
             ti = 1 - t
             rigids_1 = diffuser_out['rigids_0_raw']
@@ -608,6 +613,8 @@ class Trainer():
     #   - if slurm, assume 1 job launched per GPU
     #   - if interactive, launch one job for each GPU on node
     def run_model_training(self, world_size):
+        if self.conf.resume:
+            assert self.conf.resume_scheduler
         is_ddp = (not self.conf.interactive and "SLURM_NTASKS" in os.environ and "SLURM_PROCID" in os.environ)
         if is_ddp:
             world_size = int(os.environ["SLURM_NTASKS"])
@@ -635,6 +642,18 @@ class Trainer():
                 self.train_model(0, 1)
             else:
                 mp.spawn(self.train_model, args=(world_size,), nprocs=world_size, join=True)
+    
+    def load_ckpt(self, rank):
+        chk_fn = self.conf.ckpt_load_path
+        if isinstance(rank, str):
+            # For CPU debugging
+            map_location = {"cuda:%d"%0: "cpu"}
+        else:
+            map_location = {"cuda:%d"%0: "cuda:%d"%rank}
+            ic(f'loading model onto {"cuda:%d"%rank}')
+        ic(chk_fn)
+        checkpoint = torch.load(chk_fn, map_location=map_location)
+        return checkpoint
 
     def train_model(self, rank, world_size, return_setup=False):
 
@@ -655,26 +674,48 @@ class Trainer():
         else:
             gpu = 'cpu'
         
-        date_string = get_datetime()
-        obj_list = [date_string]
-        dist.broadcast_object_list(obj_list, 0)
-        date_string = obj_list[0]
-        wandb_name = self.conf.wandb_prefix + date_string
-        self.rundir = self.make_rundir(wandb_name)
+        resume = 'never'
+        id = None
+        entity="bakerlab"
+        if not self.conf.resume:
+            date_string = get_datetime()
+            obj_list = [date_string]
+            dist.broadcast_object_list(obj_list, 0)
+            date_string = obj_list[0]
+            wandb_name = self.conf.wandb_prefix + date_string
+            self.rundir = self.make_rundir(wandb_name)
+        else:
+            checkpoint = self.load_ckpt(gpu)
+            self.rundir = checkpoint['rundir']
+            wandb_name = checkpoint['wandb_group']
+            resume = 'must'
+            api = wandb.Api()
+            name=f'{wandb_name}_rank_{rank}'
+            runs = list(api.runs(
+                    path=f'{entity}/{self.conf.wandb_project}',
+                    filters={"display_name": {"$eq": name}}
+                ))
+            if len(runs) == 1:
+                id = runs[0].id
+            elif len(runs) == 0:
+                assert self.conf.allow_more_gpus_on_resume
+                # Check that at least rank 0 exists
+                rank_0_name = f'{wandb_name}_rank_0'
+                runs = list(api.runs(
+                        path=f'{entity}/{self.conf.wandb_project}',
+                        filters={"display_name": {"$eq": rank_0_name}}
+                    ))
+                assert len(runs) == 1, f'resume=True and allow_more_gpus_on_resume=True, but {len(runs)} != 1 matching {rank_0_name} found: {[r.display_name for r in runs]}'
+                resume = 'allow'
+            else:
+                raise Exception(f'resume=True, but {len(runs)} matching {name} found: {[r.display_name for r in runs]}')
 
         if WANDB:
             print(f'initializing wandb on rank {rank}')
-            resume = None
-            resume = 'never'
-            id = None
-            if self.conf.resume:
-                wandb_name=resume
-                # id=self.conf.resume
-                resume='must'
-            
             wandb.init(
-                project="fancy-pants ",
-                entity="bakerlab",
+                dir=self.conf.wandb_dir,
+                project=self.conf.wandb_project,
+                entity=entity,
                 group=wandb_name,
                 name=f'{wandb_name}_rank_{rank}',
                 id=id,
@@ -1052,6 +1093,7 @@ class Trainer():
                         task_str = chosen_task
                     
                     outstr = f"Task: {task_str} | Dataset: {chosen_dataset : >12} | Epoch:[{epoch:02}/{self.conf.n_epoch}] | Batch: [{counter*self.conf.batch_size*world_size:05}/{self.n_train}] | Time: {train_time:.2f}"
+                    outstr += f' | t={little_t/self.diffuser.T}'
 
                     outstr += (f' | Loss: {round( float(loss * self.accum_step), 4)} = \u03A3 ')
                     str_stack = []

@@ -98,3 +98,39 @@ This will make 50 * 2 [+/- sequence position] * 6 [6 different active site descr
 All motifs are tip atom motifs for 150 timesteps with no self-conditioning
 
 
+
+# Benchmarking guide
+
+The ODE solver returns the guideposted, atomized protein.
+
+The backbone is idealized.
+
+The protein is deatomized.
+
+The guideposts are placed.  A greedy search matches each guidepost to its nearest remaining C-alpha.
+If `inference.guidepost_xyz_as_design_bb == True`, then the guidepost coordinates overwrite the matched backbone.  Otherwise only the sidechain (including C-beta) coordinates of the guidepost are used.
+
+If `inference.idealize_sidechain_outputs == True` then all atomized sidechains are idealized.  This amounts to finding the set of torsions angles that minimizes the RMSD between the unidealized residue and the residue reconstructed from those torsion angles.  Note: these torsions are the full rf2aa torsion set which includes not only torsions but also bends and twists e.g. C-Beta bend which can adopt values which would be of higher-strain than that seen in nature.
+
+The protein at this point has sequence and structure for the motif regions but only backbone (N,Ca,C,O,C-Beta) coordinates for diffused residues (as well as any non-protein components e.g. small molecules)
+
+Sequence is fit using LigandMPNN in a ligand-aware, motif-rotamer-aware mode.  LigandMPNN also performs packing.  LigandMPNN attempts to keep the motif rotamers unchanged, however the pack uses a more conservative set of torsions than rf2aa (i.e. fewer DoF) to pack the rotamers and thus there is often some deviation between the rf2aa-idealized and ligandmpnn-idealized motif rotamers.  The idealization gap between the diffusion-output rotamer set and the rf2aa-idealized rotamer set can be found with metrics key: `metrics.IdealizedResidueRMSD.rmsd_constellation`.  The corresponding gap between the rf2aa-idealized (or not idealized if `inference.idealize_sidechain_outputs == False`) rotamer set and the ligandmpnn-idealized rotamer set can be found with metrics key: `motif_ideality_diff`.
+
+Motif recapitulation metrics:
+
+The following metrics follow a formula:
+
+contig_rmsd_a_b_s
+
+a,b: the proteins being compared:
+	- des: The MPNN packed protein
+	- pred: The AF2 prediction
+	- ref: The input PDB
+With the caveat that 'ref' is always omitted from the name.
+
+s: the comparison type:
+	- '': backbone (N, Ca, C)
+	- 'c_alpha': Ca
+	- 'full_atom': All heavy atoms
+	- 'motif_atom': Only motif heavy atoms
+
