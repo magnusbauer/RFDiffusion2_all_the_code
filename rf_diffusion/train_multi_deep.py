@@ -904,7 +904,7 @@ class Trainer():
         print('About to enter train loader loop')
         for loader_out in train_loader:
             timer.checkpoint('data loading')
-            indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context = loader_out
+            indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context, conditions_dict = loader_out
             context_msg = f'rank: {rank}: {item_context}'
             with error.context(context_msg):
                 N_cycle = np.random.randint(1, self.conf.maxcycle+1) # number of recycling

@@ -2387,6 +2387,59 @@ def transform_indep(indep, is_diffused, is_res_str_shown, is_atom_str_shown, use
     return indep, is_diffused, is_masked_seq, atomizer, gp_to_ptn_idx0
 
 
+def generate_pre_to_post_transform_indep_mapping(indep, atomizer=None, gp_to_ptn_idx0=None):
+    '''
+    Generates a list of lists describing where each residue ended up post transform_indep
+
+    Args:
+        indep (indep): Indep
+        atomizer (AtomizeResidues): The atomizer used to make this indep
+        gp_to_ptn_idx0 (dict[int,int]): Maps the index of a guidepost residue (key) to the index that it came from (value), can be None
+
+    Returns:
+        pre_to_post_transform (list[list[int]]): A list mapping the original indep's numbering (key) to a list of where those residues are post (value) [L pre]
+        is_atomized_res (torch.Tensor[bool]): In the post-transform indep, was this now atom originally a residue that was atomized
+    '''
+
+
+    # in transform indep, the process looks like this:
+    # 1. Add gp generating gp_to_ptn_idx0
+    # 2. Atomize residues generating atomizer
+
+    # atomizer_mapping might be moving guideposts around
+    atomizer_mapping, is_atomized_res = atomize.get_idx0_post_atomization_from_pre_atomization(indep.length(), atomizer)
+
+    if is_atomized_res.sum() > 0:
+        assert indep.is_sm[is_atomized_res].all(), "Atoms were atomized but aren't is_sm"
+
+    # If guideposts weren't added, then atomizer_mapping would be what we want to return.
+    #  However, some residues from the pre-transform have been duplicated into guideposts
+    #    These residues are given by the keys of gp_to_ptn_idx0
+
+    # Figure out what the is_gp vector looked like before atomization
+    is_gp_before_atomization = torch.zeros(len(atomizer_mapping), dtype=bool)
+    for i_before, is_after in enumerate(atomizer_mapping):
+        gp_statuses = indep.is_gp[is_after]
+        assert gp_statuses.all() or (~gp_statuses).all(), 'A guide-posted residue was atomized and because partially un-guideposted'
+        is_gp_before_atomization[i_before] = gp_statuses[0]
+
+    n_non_guidepost = (~is_gp_before_atomization).sum()
+    if n_non_guidepost < len(is_gp_before_atomization):
+        assert is_gp_before_atomization[n_non_guidepost:].all(), 'Guide-posted residues were not contiguously at the end pre-atomization'
+
+
+    # Stack all of the guidepost residues into their original locations
+    gp_from_ptn_idx0 = {v:k for k,v in gp_to_ptn_idx0.items()} if gp_to_ptn_idx0 is not None else {}
+    pre_to_post_transform = []
+    for i in range(n_non_guidepost):
+        pre_to_post_transform.append(atomizer_mapping[i])
+        if i in gp_from_ptn_idx0:
+            pre_to_post_transform[i] += atomizer_mapping[gp_from_ptn_idx0[i]]
+
+
+    return pre_to_post_transform, is_atomized_res
+
+
 def hetatm_names(pdb):
     d = defaultdict(list)
     with open(pdb) as f:

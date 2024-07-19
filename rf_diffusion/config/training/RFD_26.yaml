@@ -229,6 +229,7 @@ transforms:
     - PopMask
     - Center
     - AddConditionalInputs
+    - ExpandConditionsDict
 
   configs:
     PopMask: {}
@@ -236,3 +237,4 @@ transforms:
     AddConditionalInputs:
       p_is_guidepost_example: ${....dataloader.P_IS_GUIDEPOST_EXAMPLE}
       guidepost_bonds: ${....guidepost_bonds}
+    ExpandConditionsDict: {}

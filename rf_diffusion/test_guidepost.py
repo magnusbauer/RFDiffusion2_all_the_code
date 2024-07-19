@@ -37,7 +37,7 @@ class TestGuidepost(unittest.TestCase):
                                '++transforms.configs.AddConditionalInputs.guidepost_bonds=${guidepost_bonds}',                               
                                ])
             dataset = rf_diffusion.inference.data_loader.InferenceDataset(conf)
-            _, _, indep, _, is_diffused, atomizer, contig_map, t_step_input = next(iter(dataset))
+            _, _, indep, _, is_diffused, atomizer, contig_map, t_step_input, _ = next(iter(dataset))
             ic(indep.chirals.shape)
             indep.xyz = atomize.set_nonexistant_atoms_to_nan(indep.xyz, indep.seq)
             indep_init = copy.deepcopy(indep)

@@ -71,7 +71,7 @@ class TestTransform(unittest.TestCase):
             is_res_str_shown = torch.zeros(indep.length()).bool()
             is_res_str_shown[res_str_shown_idx] = True
             n_res_shown = is_res_str_shown.sum()
-            indep, is_diffused, is_masked_seq, atomizer, _ = aa_model.transform_indep(indep, ~is_res_str_shown, is_res_str_shown, is_atom_str_shown, True, metadata=metadata)
+            indep, is_diffused, is_masked_seq, atomizer, gp_to_ptn_idx0 = aa_model.transform_indep(indep, ~is_res_str_shown, is_res_str_shown, is_atom_str_shown, True, metadata=metadata)
 
             n_ligand = indep_init.is_sm.sum()
             n_motif = sum(len(v) for v in is_atom_str_shown.values()) + n_res_shown
@@ -109,6 +109,16 @@ class TestTransform(unittest.TestCase):
                 print(diff)
                 self.fail(f'{contig_kwargs=} {diff=}')
 
+
+            # Check mapping
+            post_from_pre, is_atomized = aa_model.generate_pre_to_post_transform_indep_mapping(indep, atomizer, gp_to_ptn_idx0)
+            for i_pre, is_post in enumerate(post_from_pre):
+                for i_post in is_post:
+                    if is_atomized[i_post]:
+                        assert not indep_deatomized.is_sm[i_pre], 'A ligand atom got marked as atomized'
+                        assert indep.is_sm[i_post], 'A residue was marked as atomized but is not an atom now'
+                    else:
+                        assert indep.seq[i_post] == indep_deatomized.seq[i_pre], 'Mapping function error'
 
 
     def check_slicing(self, indep):

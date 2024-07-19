@@ -121,7 +121,7 @@ def run(conf: DictConfig) -> None:
         for i, loader_out in enumerate(train_loader):
             ic(epoch, i)
             counter += 1
-            indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context = loader_out
+            indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context, conditions_dict = loader_out
             # # For testing deatomization
             # if atomizer:
             #     _ = atomize.deatomize(atomizer, indep)

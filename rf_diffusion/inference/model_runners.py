@@ -186,7 +186,7 @@ class Sampler:
         """
         # Create and consume dataset 
         dataset = rf_diffusion.inference.data_loader.InferenceDataset(self._conf, self.diffuser)
-        indep_uncond, self.indep_orig, self.indep_cond, metadata, self.is_diffused, atomizer, contig_map, t_step_input = next(iter(dataset))
+        indep_uncond, self.indep_orig, self.indep_cond, metadata, self.is_diffused, atomizer, contig_map, t_step_input, self.conditions_dict = next(iter(dataset))
         indep = self.indep_cond.clone()
         return indep, contig_map, atomizer, t_step_input
 
@@ -231,7 +231,7 @@ class NRBStyleSelfCond(Sampler):
 
         extra_tXd_names = getattr(self._conf, 'extra_tXd', [])
         t_cont = t/self._conf.diffuser.T
-        indep.extra_t1d, indep.extra_t2d = features.get_extra_tXd_inference(indep, extra_tXd_names, self._conf.extra_tXd_params, self._conf.inference.conditions, t_cont=t_cont)
+        indep.extra_t1d, indep.extra_t2d = features.get_extra_tXd_inference(indep, extra_tXd_names, self._conf.extra_tXd_params, self._conf.inference.conditions, t_cont=t_cont, **self.conditions_dict)
         rfi = self.model_adaptor.prepro(indep, t, self.is_diffused)
 
         rf2aa.tensor_util.to_device(rfi, self.device)
@@ -315,7 +315,7 @@ class FlowMatching(Sampler):
     def run_model(self, t, indep, rfo, is_diffused):
         extra_tXd_names = getattr(self._conf, 'extra_tXd', [])
         t_cont = t/self._conf.diffuser.T
-        indep.extra_t1d, indep.extra_t2d = features.get_extra_tXd_inference(indep, extra_tXd_names, self._conf.extra_tXd_params, self._conf.inference.conditions, t_cont=t_cont)
+        indep.extra_t1d, indep.extra_t2d = features.get_extra_tXd_inference(indep, extra_tXd_names, self._conf.extra_tXd_params, self._conf.inference.conditions, t_cont=t_cont, **self.conditions_dict)
         rfi = self.model_adaptor.prepro(indep, t, is_diffused)
         rf2aa.tensor_util.to_device(rfi, self.device)
 
@@ -467,14 +467,14 @@ class FlowMatching_make_conditional_diffuse_all(FlowMatching_make_conditional):
 
     def sample_init(self):
         dataset = rf_diffusion.inference.data_loader.InferenceDataset(self._conf, self.diffuser)
-        indep_uncond, self.indep_orig, self.indep_cond, metadata, self.is_diffused, atomizer, contig_map, t_step_input = next(iter(dataset))
+        indep_uncond, self.indep_orig, self.indep_cond, metadata, self.is_diffused, atomizer, contig_map, t_step_input, self.conditions_dict = next(iter(dataset))
         return indep_uncond, contig_map, atomizer, t_step_input
 
 class FlowMatching_make_conditional_diffuse_all_xt_unfrozen(FlowMatching):
 
     def sample_init(self):
         dataset = rf_diffusion.inference.data_loader.InferenceDataset(self._conf, self.diffuser)
-        indep_uncond, self.indep_orig, self.indep_cond, metadata, self.is_diffused, atomizer, contig_map, t_step_input = next(iter(dataset))
+        indep_uncond, self.indep_orig, self.indep_cond, metadata, self.is_diffused, atomizer, contig_map, t_step_input, self.conditions_dict = next(iter(dataset))
         return indep_uncond, contig_map, atomizer, t_step_input
     
     def sample_step(self, t, indep, rfo, extra):
@@ -493,7 +493,7 @@ class ClassifierFreeGuidance(FlowMatching):
     # WIP
     def sample_init(self):
         dataset = rf_diffusion.inference.data_loader.InferenceDataset(self._conf, self.diffuser)
-        indep_uncond, self.indep_orig, self.indep_cond, metadata, self.is_diffused, atomizer, contig_map, t_step_input = next(iter(dataset))
+        indep_uncond, self.indep_orig, self.indep_cond, metadata, self.is_diffused, atomizer, contig_map, t_step_input, self.conditions_dict = next(iter(dataset))
         return indep_uncond, contig_map, atomizer, t_step_input
     
     def get_grads(self, t, indep_in, indep_t, rfo, is_diffused):

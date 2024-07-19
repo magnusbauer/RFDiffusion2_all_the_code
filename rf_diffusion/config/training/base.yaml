@@ -9,6 +9,7 @@ transforms:
   names:    
     - Center
     - AddConditionalInputs
+    - ExpandConditionsDict
 
   configs:
     ReconstructContigMap: {}
@@ -16,6 +17,7 @@ transforms:
     AddConditionalInputs:
       p_is_guidepost_example: ${dataloader.P_IS_GUIDEPOST_EXAMPLE}
       guidepost_bonds: ${guidepost_bonds}
+    ExpandConditionsDict: {}
 
 ddp_backend: 'gloo'
 inference:

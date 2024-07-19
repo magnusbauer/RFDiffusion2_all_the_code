@@ -53,7 +53,7 @@ class PDBLoaderDataset(torch.utils.data.Dataset):
 
         feats = {'contig_map': contig_map, 'indep': indep, 'metadata': metadata, 
                  'masks_1d': masks_1d, 'L': L, 'conf': conf,
-                 'origin': origin}
+                 'origin': origin, 'conditions_dict': {}}
         return feats
 
     def __len__(self):
@@ -180,7 +180,8 @@ class InferenceDataset:
                     kwargs['is_diffused'],
                     kwargs['atomizer'],
                     kwargs['contig_map'],
-                    kwargs['t_step_input'],                    
+                    kwargs['t_step_input'],
+                    kwargs['conditions_dict']
             )
 
         # Create dataset from the pdb input and config
@@ -188,6 +189,12 @@ class InferenceDataset:
         
         # Curate transforms as in training 
         transforms = []
+        # Add training only transforms
+        upstream_names = conf.upstream_inference_transforms.names if hasattr(conf, 'upstream_inference_transforms') else []
+        for transform_name in upstream_names:
+            transforms.append(
+                getattr(conditioning, transform_name)(**conf.upstream_inference_transforms.configs[transform_name]),
+            )
         for transform_name in conf.transforms.names:
             # Ignore legacy blacklist transforms during inference (this is for backward compatibility)
             if transform_name in conditioning.LEGACY_TRANSFORMS_TO_IGNORE: continue

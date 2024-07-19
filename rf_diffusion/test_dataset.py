@@ -257,7 +257,7 @@ class Dataloader(unittest.TestCase):
         mask = 'get_unconditional_diffusion_mask'
         
         loader_out = self.indep_for_dataset(dataset, mask, overrides=['dataloader.CROP=60'])
-        indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context = loader_out
+        indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context, conditions_dict = loader_out
         indep.metadata = None
 
         golden_name = f'indep_{dataset}-{mask}'
@@ -268,7 +268,7 @@ class Dataloader(unittest.TestCase):
         mask = 'get_closest_tip_atoms'
         
         loader_out = self.indep_for_dataset(dataset, mask, overrides=['dataloader.CROP=60'])
-        indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context = loader_out
+        indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context, conditions_dict = loader_out
 
         golden_name = f'indep_{dataset}-{mask}'
         test_utils.assert_matches_golden(self, golden_name, indep, rewrite=REWRITE, custom_comparator=self.cmp)
@@ -278,7 +278,7 @@ class Dataloader(unittest.TestCase):
         dataset = 'sm_compl_covale'
         mask = 'get_unconditional_diffusion_mask'
         loader_out = self.indep_for_dataset(dataset, mask, overrides=['guidepost_bonds=false'])
-        indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context = loader_out
+        indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context, conditions_dict = loader_out
         indep.metadata = None
         
         golden_name = f'indep_{dataset}-{mask}'
@@ -298,7 +298,7 @@ class Dataloader(unittest.TestCase):
         mask = 'get_diffusion_mask_simple'
         
         loader_out = self.indep_for_dataset(dataset, mask, overrides=['dataloader.CROP=60'])
-        indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context = loader_out
+        indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context, conditions_dict = loader_out
         indep.metadata = None
         
         golden_name = f'indep_{dataset}-{mask}'
@@ -316,7 +316,7 @@ class Dataloader(unittest.TestCase):
         dataset = 'sm_compl_covale'
         mask = 'get_unconditional_diffusion_mask'
         loader_out = self.indep_for_dataset(dataset, mask, overrides=['guidepost_bonds=false', f'spoof_item="{weird_item}"'])
-        indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context = loader_out
+        indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context, conditions_dict = loader_out
         bonds = indep.metadata['covale_bonds']
         assertpy.assert_that(len(bonds)).is_equal_to(1)
 
@@ -336,7 +336,7 @@ class Dataloader(unittest.TestCase):
         mask = 'get_unconditional_diffusion_mask'
         
         loader_out = self.indep_for_dataset(dataset, mask, overrides=['guidepost_bonds=false', f'spoof_item="{bridge_item}"'])
-        indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context = loader_out
+        indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context, conditions_dict = loader_out
         bonds = indep.metadata['covale_bonds']
         assertpy.assert_that(len(bonds)).is_equal_to(2)
 
@@ -356,7 +356,7 @@ class Dataloader(unittest.TestCase):
         mask = 'get_unconditional_diffusion_mask'
         
         loader_out = self.indep_for_dataset(dataset, mask, overrides=[f'spoof_item="{bridge_item}"'])
-        indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context = loader_out
+        indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context, conditions_dict = loader_out
         bonds = indep.metadata['covale_bonds']
         assertpy.assert_that(len(bonds)).is_equal_to(2)
         assertpy.assert_that(indep.same_chain.all()).is_true()
@@ -373,7 +373,7 @@ class Dataloader(unittest.TestCase):
         dataset = 'sm_compl_covale'
         mask = 'get_diffusion_mask_islands_partial_ligand'
         loader_out = self.indep_for_dataset(dataset, mask, overrides=['guidepost_bonds=false'])
-        indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context = loader_out
+        indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context, conditions_dict = loader_out
         indep.metadata = None
         
         golden_name = f'indep_{dataset}-{mask}'
@@ -393,7 +393,7 @@ class Dataloader(unittest.TestCase):
         dataset = 'compl'
         mask = 'get_diffusion_mask_islands'
         loader_out = self.indep_for_dataset(dataset, mask)
-        indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context = loader_out
+        indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context, conditions_dict = loader_out
         indep.metadata = None
         
         golden_name = f'indep_{dataset}-{mask}'
@@ -415,7 +415,7 @@ class Dataloader(unittest.TestCase):
         mask = 'get_PPI_random_motif_no_crop'
         # The PPI crops work with guideposting, it's just that it makes the pymol/golden very hard to inspect
         loader_out = self.indep_for_dataset(dataset, mask, overrides=['transforms.configs.AddConditionalInputs.p_is_guidepost_example=0'])
-        indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context = loader_out
+        indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context, conditions_dict = loader_out
         indep.metadata = None
         
         golden_name = f'indep_{dataset}-{mask}'
@@ -438,7 +438,7 @@ class Dataloader(unittest.TestCase):
         loader_out = self.indep_for_dataset(dataset, mask, overrides=['transforms.configs.AddConditionalInputs.p_is_guidepost_example=0',
                                                                       'dataloader.mask.ppi_radial_crop_low=6',
                                                                       'dataloader.mask.ppi_radial_crop_high=6'])
-        indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context = loader_out
+        indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context, conditions_dict = loader_out
         indep.metadata = None
         
         golden_name = f'indep_{dataset}-{mask}'
@@ -461,7 +461,7 @@ class Dataloader(unittest.TestCase):
         loader_out = self.indep_for_dataset(dataset, mask, overrides=['transforms.configs.AddConditionalInputs.p_is_guidepost_example=0',
                                                                       'dataloader.mask.ppi_planar_crop_low=6',
                                                                       'dataloader.mask.ppi_planar_crop_high=6'])
-        indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context = loader_out
+        indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context, conditions_dict = loader_out
         indep.metadata = None
         
         golden_name = f'indep_{dataset}-{mask}'
@@ -484,7 +484,7 @@ class Dataloader(unittest.TestCase):
             'dataloader.DATAPKL_AA=aa_dataset_256_subsampled_10_2.pkl',
             f'spoof_item="{multi_covale}"',
             ], config_name='extra_t1d_v2')
-        indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context = loader_out
+        indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context, conditions_dict = loader_out
         indep.metadata = None
         for r in indep.extra_t1d.T:
             print(r)
@@ -509,7 +509,7 @@ class Dataloader(unittest.TestCase):
             'dataloader.DATAPKL_AA=aa_dataset_256_subsampled_10.pkl',
             f'spoof_item="{nonatomized_covale}"',
             ], config_name='extra_t1d_v2')
-        indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context = loader_out
+        indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context, conditions_dict = loader_out
         indep.metadata = None
         golden_name = f'indep_{dataset}-{mask}-is-guideposted'
 
@@ -528,7 +528,7 @@ class Dataloader(unittest.TestCase):
             'dataloader.DATAPKL_AA=aa_dataset_256_subsampled_10.pkl',
             f'spoof_item="{multiligand_item}"',
             ], config_name='extra_t1d_v2')
-        indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context = loader_out
+        indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context, conditions_dict = loader_out
         indep.metadata = None
         ic(
             indep.chains()[indep.is_sm],
@@ -580,7 +580,7 @@ class Dataloader(unittest.TestCase):
                 aa_count_by_dataset[dataset_name] = aa_count_tmp
 
         # Sample training examples until minimum counts are statisfied
-        for indep_train, rfi_train, chosen_dataset, item, little_t, is_diffused_train, chosen_task, atomizer, masks_1d, diffuser_out, item_context in dataloader:
+        for indep_train, rfi_train, chosen_dataset, item, little_t, is_diffused_train, chosen_task, atomizer, masks_1d, diffuser_out, item_context, conditions_dict in dataloader:
             aa_count = aa_count_by_dataset[chosen_dataset]
             
             # Check if we've already seen enough of each aa in this dataset
@@ -649,7 +649,7 @@ class TestCenterDiffused(unittest.TestCase):
         for mask in ['get_diffusion_mask_islands_partial_ligand', 'get_unconditional_diffusion_mask']:
             for dataset in ['pdb_aa', 'sm_complex']:
                 loader_out = test_utils.loader_out_for_dataset(dataset, mask, overrides=overrides, epoch=0)
-                indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context = loader_out
+                indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context, conditions_dict = loader_out
                 com = torch.mean(indep.xyz[is_diffused,1,:], dim=0)
                 zero = torch.tensor([0,0,0], dtype=indep.xyz.dtype)
                 assertpy.assert_that(torch.norm(com - zero).item()).is_less_than(1e-4)
@@ -665,7 +665,7 @@ class TestCenterDiffused(unittest.TestCase):
         for mask in ['get_diffusion_mask_islands_partial_ligand', 'get_unconditional_diffusion_mask']:
             for dataset in ['pdb_aa', 'sm_complex']:
                 loader_out = test_utils.loader_out_for_dataset(dataset, mask, overrides=overrides, epoch=0)
-                indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context = loader_out
+                indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context, conditions_dict = loader_out
 
                 com = torch.mean(indep.xyz[~is_diffused,1,:], dim=0)
                 zero = torch.tensor([0,0,0], dtype=indep.xyz.dtype)

@@ -201,4 +201,45 @@ def deatomize_mask(atomizer: aa_model.AtomizeResidues, indep, mask: torch.Tensor
     mask_deatomized = indep_deatomized.xyz[..., 0].bool().any(-1)
 
     return mask_deatomized
+
+
+def get_idx0_post_atomization_from_pre_atomization(L, atomizer=None, consistency_check=True):
+    '''
+    Returns a list of lists that maps where a pre-atomized residue resides within the post-atomized state
+    For non-atomized residues, the result is a 1-element list. But the residue may have changed index!
+    For atomized residues, the result is a list of idx0 atom indices (the atoms that belong to the residue)
+    Args:
+        L (int): Length of indep in the atomized state (which is length of indep in deatomized state if atomizer is None)
+        atomizer (AtomizeResidues): The atomizer used, can be None
+        consistency_check (bool): Assert that all pre-atomized residues are present post-atomization
+    Returns:
+        post_from_pre_list (list[list[int]]): Maps location pre-atomized residue to location after atomization [L preatomized]
+        post_is_atomized (torch.Tensor[bool]): Is this residue in the atomized indep an atomized atom [L atomized]
+    '''
+
+    if atomizer:
+        if consistency_check:
+            assert L == len(atomizer.atomized_state)
+
+        # Assign post_idx0 to a dictionary of the original positions (coarse_idx0)
+        post_from_pre = defaultdict(list)
+        for post_idx0, atomized_label in enumerate(atomizer.atomized_state):
+            post_from_pre[atomized_label.coarse_idx0].append(post_idx0)
+
+        # Turn that dictionary into a list
+        post_from_pre_list = []
+        for pre_idx0 in range(len(atomizer.deatomized_state)):
+            assert not consistency_check or pre_idx0 in post_from_pre, 'Pre-atomized residue idx0 {pre_idx0} was dropped during atomization!'
+            post_from_pre_list.append(post_from_pre[pre_idx0])
+
+        # Mark all atomized residues as atomized
+        post_is_atomized = torch.zeros(len(atomizer.atomized_state), dtype=bool)
+        for pre_idx0 in torch.where(atomizer.residue_to_atomize)[0]:
+            post_is_atomized[post_from_pre_list[pre_idx0]] = True
+
+        return post_from_pre_list, post_is_atomized
+    else:
+        # Not atomization, the result is a simple list of lists
+        return [[x] for x in range(L)], torch.zeros(L, dtype=bool)
+
     

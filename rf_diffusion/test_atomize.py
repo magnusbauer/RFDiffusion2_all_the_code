@@ -48,7 +48,7 @@ class TestAtomization(unittest.TestCase):
         conf = test_utils.construct_conf(inference=True, overrides=contig_kwargs)
         conf.inference.input_pdb = test_pdb
         dataset = rf_diffusion.inference.data_loader.InferenceDataset(conf)
-        _, _, indep_cond, _, is_diffused, atomizer, contig_map, t_step_input = next(iter(dataset))
+        _, _, indep_cond, _, is_diffused, atomizer, contig_map, t_step_input, _ = next(iter(dataset))
         indep = indep_cond
 
         indep.xyz = atomize.set_nonexistant_atoms_to_nan(indep.xyz, indep.seq)

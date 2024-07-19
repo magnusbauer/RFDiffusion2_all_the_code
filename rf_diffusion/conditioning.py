@@ -199,6 +199,52 @@ class AddConditionalInputs:
             contig_map=contig_map,
         )
 
+class ExpandConditionsDict:
+    '''
+    This class exists because conditions_dict gets generated on the vanilla indep before aa_model.transform_indep is called.
+    Inside that function, some residues are atomized and others are duplicated as guidepost residues.
+    Many of the variables inside conditions_dict are tensors that were the same length as indep before that transformation.
+    This class allows those conditions to react to that change and adjust accordingly
+
+    Also asserts the contents of conditions_dict
+    '''
+    def __init__(self):
+        pass
+
+    def __call__(self, indep, atomizer, conditions_dict, contig_map, **kwargs):
+        '''
+        Translates conditions_dict from pre-transform_indep to post-transform_indep
+
+        Args:
+            indep (indep): indep
+            atomizer (AtomizeResidues or None): The atomizer used on the indep
+            conditions_dict (dict): The dictionary of conditions
+            contig_map (ContigMap): The contig map
+        '''
+
+        conditions_dict_contents = [
+            # 'is_hotspot', # torch.Tensor[bool]: Which residues are hotspots? (8A cross-chain contacts)
+            # 'is_antihotspot', # torch.Tensor[bool]: Which residues are antihotspots? (8A cross-chain no-contacts)
+            # 'ss_adj', # sec_struct_adj.SecStructAdjacency: The secondary structure and block adjacency conditioning
+        ]
+
+        post_idx_from_pre_idx, is_atomized = aa_model.generate_pre_to_post_transform_indep_mapping(indep, atomizer, contig_map.gp_to_ptn_idx0)
+
+        new_conditions_dict = {}
+        for key in conditions_dict:
+            assert key in conditions_dict_contents, f'Please add {key} to ExpandConditionsDict!'
+
+            # if key == 'X':
+            #   new_conditions_dict[key] = conditions_dict[key]
+
+        return kwargs | dict(
+            indep=indep,
+            atomizer=atomizer,
+            conditions_dict=new_conditions_dict,
+            contig_map=contig_map
+        )
+
+
 def get_contig_map(indep, input_str_mask, is_atom_motif):
 
     motif_resis = sorted(list(set(

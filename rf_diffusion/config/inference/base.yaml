@@ -200,6 +200,10 @@ logging:
 
 extra_tXd_params: {}
 
+upstream_inference_transforms: # Transforms that are only applied for inference. Likely have similar-but-different training copies
+  names: []
+  configs: {}
+
 transforms:
   configs:
     # Default inference overrides for transforms regardless if they are used or not in the original model
@@ -208,3 +212,4 @@ transforms:
     AddConditionalInputs:
       p_is_guidepost_example: ${inference.contig_as_guidepost}
       guidepost_bonds: ${guidepost_bonds}
+    ExpandConditionsDict: {}

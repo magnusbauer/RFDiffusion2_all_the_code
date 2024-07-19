@@ -1700,6 +1700,7 @@ class DistilledDatasetUnnoised(data.Dataset):
                     'masks_1d': masks_1d,
                     'item_context': item_context,
                     'mask_gen_seed': mask_gen_seed,
+                    'conditions_dict': {}
                 }
 
             processed = process_out(out)
@@ -1755,7 +1756,8 @@ def feature_tuple_from_feature_dict(**kwargs):
             kwargs['atomizer'],
             kwargs['masks_1d'],
             kwargs['diffuser_out'],
-            kwargs['item_context']
+            kwargs['item_context'],
+            kwargs['conditions_dict']
     )
 
 
@@ -1798,12 +1800,12 @@ class DistilledDataset(data.Dataset):
         self.preprocess_param = dataset.preprocess_param
         self.model_adaptor = dataset.model_adaptor
 
-        def diffuse(indep, metadata, chosen_dataset, sel_item, task, masks_1d, item_context, mask_gen_seed, is_masked_seq, is_diffused, atomizer, **kwargs):
+        def diffuse(indep, metadata, chosen_dataset, sel_item, task, masks_1d, item_context, mask_gen_seed, is_masked_seq, is_diffused, atomizer, conditions_dict, **kwargs):
             t, t_cont = get_t_training(self.conf)
 
             assert not hasattr(self.conf, 'extra_t1d'), 'extra_t1d has been replaced by extra_tXd'
             assert not hasattr(self.conf, 'extra_t1d_params'), 'extra_t1d has been replaced by extra_tXd'
-            indep.extra_t1d, indep.extra_t2d = features.get_extra_tXd(indep, self.conf.extra_tXd, t_cont=t_cont, **self.conf.extra_tXd_params)
+            indep.extra_t1d, indep.extra_t2d = features.get_extra_tXd(indep, self.conf.extra_tXd, t_cont=t_cont, **self.conf.extra_tXd_params, **conditions_dict)
 
             run_inference.seed_all(mask_gen_seed) # Reseed the RNGs for test stability.
             indep_t, diffuser_out = aa_model.diffuse(self.conf, self.diffuser, indep, is_diffused, t)
@@ -1832,7 +1834,8 @@ class DistilledDataset(data.Dataset):
                 atomizer=atomizer,
                 masks_1d=masks_1d,
                 diffuser_out=diffuser_out,
-                item_context=item_context)
+                item_context=item_context,
+                conditions_dict=conditions_dict)
         
         transforms = []
         # Add training only transforms
