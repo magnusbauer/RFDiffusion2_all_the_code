@@ -432,67 +432,89 @@ def save_outputs(sampler, out_prefix, indep, contig_map, atomizer, t_step_input,
         )
 
     aa_model.write_traj(out_idealized, xyz_design_idealized, seq_design, indep.bond_feats, ligand_name_arr=contig_map.ligand_names, chain_Ls=chain_Ls, idx_pdb=indep.idx)
+    # Rewrite the output to disc, twice... This needs to get cleaned up some day
     idealize_backbone.rewrite(out_idealized, out_idealized)
     des_path = os.path.abspath(out_idealized)
+    aa_model.rename_ligand_atoms(sampler._conf.inference.input_pdb, des_path)
+
+    # Setup stack_mask for writing smaller trajectories
+    t_int = np.arange(int(t_step_input), sampler.inf_conf.final_step-1, -1)[::-1]
+    stack_mask = torch.ones(len(denoised_xyz_stack), dtype=bool)
+    if len(sampler._conf.inference.write_trajectory_only_t) > 0:
+        assert sampler._conf.inference.write_trajectory or sampler._conf.inference.write_trb_trajectory, ('If inference.write_trajectory_only_t is enabled'
+                ' at least one of inference.write_trajectory or inference.write_trb_trajectory must be enabled')
+        stack_mask[:] = False
+        for write_t in sampler._conf.inference.write_trajectory_only_t:
+            stack_mask[write_t == t_int] = True
+        assert stack_mask.sum() > 0, ('Your inference.write_trajectory_only_t has led to no frames being selected for output. Something is specified wrong.'
+            f' inference.write_trajectory_only_t={inference.write_trajectory_only_t}')
 
     # trajectory pdbs
-    traj_prefix = os.path.dirname(out_prefix)+'/traj/'+os.path.basename(out_prefix)
-    os.makedirs(os.path.dirname(traj_prefix), exist_ok=True)
+    if sampler._conf.inference.write_trajectory:
+        traj_prefix = os.path.dirname(out_prefix)+'/traj/'+os.path.basename(out_prefix)
+        os.makedirs(os.path.dirname(traj_prefix), exist_ok=True)
 
-    out = f'{traj_prefix}_Xt-1_traj.pdb'
-    aa_model.write_traj(out, denoised_xyz_stack, final_seq, indep.bond_feats, ligand_name_arr=contig_map.ligand_names, chain_Ls=chain_Ls, idx_pdb=indep.idx)
-    xt_traj_path = os.path.abspath(out)
+        out = f'{traj_prefix}_Xt-1_traj.pdb'
+        aa_model.write_traj(out, denoised_xyz_stack[stack_mask], final_seq, indep.bond_feats, ligand_name_arr=contig_map.ligand_names, chain_Ls=chain_Ls, idx_pdb=indep.idx)
+        xt_traj_path = os.path.abspath(out)
+        aa_model.rename_ligand_atoms(sampler._conf.inference.input_pdb, xt_traj_path)
 
-    out=f'{traj_prefix}_pX0_traj.pdb'
-    aa_model.write_traj(out, px0_xyz_stack, final_seq, indep.bond_feats, chain_Ls=chain_Ls, ligand_name_arr=contig_map.ligand_names, idx_pdb=indep.idx)
-    x0_traj_path = os.path.abspath(out)
+        out=f'{traj_prefix}_pX0_traj.pdb'
+        aa_model.write_traj(out, px0_xyz_stack[stack_mask], final_seq, indep.bond_feats, chain_Ls=chain_Ls, ligand_name_arr=contig_map.ligand_names, idx_pdb=indep.idx)
+        x0_traj_path = os.path.abspath(out)
+        aa_model.rename_ligand_atoms(sampler._conf.inference.input_pdb, x0_traj_path)
 
-    for k, v in traj_stack.items():
-        out=f'{traj_prefix}_{k}_traj.pdb'
-        aa_model.write_traj(out, v, final_seq, indep.bond_feats, chain_Ls=chain_Ls, ligand_name_arr=contig_map.ligand_names, idx_pdb=indep.idx)
-        traj_path = os.path.abspath(out)
-        aa_model.rename_ligand_atoms(sampler._conf.inference.input_pdb, traj_path)
+        for k, v in traj_stack.items():
+            out=f'{traj_prefix}_{k}_traj.pdb'
+            aa_model.write_traj(out, v[stack_mask], final_seq, indep.bond_feats, chain_Ls=chain_Ls, ligand_name_arr=contig_map.ligand_names, idx_pdb=indep.idx)
+            traj_path = os.path.abspath(out)
+            aa_model.rename_ligand_atoms(sampler._conf.inference.input_pdb, traj_path)
 
     # run metadata
     sampler._conf.inference.input_pdb = os.path.abspath(sampler._conf.inference.input_pdb)
-    trb = dict(
-        config = OmegaConf.to_container(sampler._conf, resolve=True),
-        device = torch.cuda.get_device_name(torch.cuda.current_device()) if torch.cuda.is_available() else 'CPU',
-        px0_xyz_stack = raw[0].detach().cpu().numpy(),
-        denoised_xyz_stack = raw[1].detach().cpu().numpy(),
-        indep={k:v.detach().cpu().numpy() if hasattr(v, 'detach') else v for k,v in dataclasses.asdict(indep).items()},
-        indep_true={k:v.detach().cpu().numpy() if hasattr(v, 'detach') else v for k,v in dataclasses.asdict(sampler.indep_orig).items()},
-        t_int=np.arange(int(t_step_input), sampler.inf_conf.final_step-1, -1)[::-1],
-        t=np.arange(int(t_step_input), sampler.inf_conf.final_step-1, -1)[::-1] / sampler._conf.diffuser.T,
-        is_diffused=sampler.is_diffused,
-        point_types=aa_model.get_point_types(sampler.indep_orig, atomizer),
-        atomizer_spec=None if atomizer is None else rf_diffusion.atomization_primitives.AtomizerSpec(atomizer.deatomized_state, atomizer.residue_to_atomize),
-    )
-    if contig_map:
-        for key, value in contig_map.get_mappings().items():
-            trb[key] = value
+    if sampler._conf.inference.write_trb:
+        trb = dict(
+            config = OmegaConf.to_container(sampler._conf, resolve=True),
+            device = torch.cuda.get_device_name(torch.cuda.current_device()) if torch.cuda.is_available() else 'CPU',
+            t_int=t_int,
+            t=np.arange(int(t_step_input), sampler.inf_conf.final_step-1, -1)[::-1] / sampler._conf.diffuser.T,
+            is_diffused=sampler.is_diffused,
+            point_types=aa_model.get_point_types(sampler.indep_orig, atomizer),
+            atomizer_spec=None if atomizer is None else rf_diffusion.atomization_primitives.AtomizerSpec(atomizer.deatomized_state, atomizer.residue_to_atomize),
+        )
+        # The trajectory and the indep are big and contributed to the /net/scratch crisis of 2024
+        if sampler._conf.inference.write_trb_trajectory:
+            trb['px0_xyz_stack'] = raw[0].detach().cpu()[stack_mask].numpy()
+            trb['denoised_xyz_stack'] = raw[1].detach().cpu()[stack_mask].numpy()
+        if sampler._conf.inference.write_trb_indep:
+            trb['indep'] = {k:v.detach().cpu().numpy() if hasattr(v, 'detach') else v for k,v in dataclasses.asdict(indep).items()}
+            trb['indep_true'] = {k:v.detach().cpu().numpy() if hasattr(v, 'detach') else v for k,v in dataclasses.asdict(sampler.indep_orig).items()}
+        if contig_map:
+            for key, value in contig_map.get_mappings().items():
+                trb[key] = value
 
-    if atomizer:
-        motif_deatomized = atomize.convert_atomized_mask(atomizer, ~sampler.is_diffused)
-        trb['motif'] = motif_deatomized
-    trb['idealization_rmsd'] = idealization_rmsd
-    if sampler._conf.inference.contig_as_guidepost:
-        # Store the literal location of the guide post residues
-        for k in ['con_hal_pdb_idx', 'con_hal_idx0', 'sampled_mask']:
-            trb[k+'_literal'] = copy.deepcopy(trb[k])
+        if atomizer:
+            motif_deatomized = atomize.convert_atomized_mask(atomizer, ~sampler.is_diffused)
+            trb['motif'] = motif_deatomized
+        trb['idealization_rmsd'] = idealization_rmsd
+        if sampler._conf.inference.contig_as_guidepost:
+            # Store the literal location of the guide post residues
+            for k in ['con_hal_pdb_idx', 'con_hal_idx0', 'sampled_mask']:
+                trb[k+'_literal'] = copy.deepcopy(trb[k])
 
-        # Saved infered guidepost locations. This is probably what downstream applications want.
-        trb.update(gp_contig_mappings)        
-    
-    for out_path in des_path, xt_traj_path, x0_traj_path:
-        aa_model.rename_ligand_atoms(sampler._conf.inference.input_pdb, out_path)
+            # Saved infered guidepost locations. This is probably what downstream applications want.
+            trb.update(gp_contig_mappings)        
 
-    with open(f'{out_prefix}.trb','wb') as f_out:
-        pickle.dump(trb, f_out)
+        with open(f'{out_prefix}.trb','wb') as f_out:
+            pickle.dump(trb, f_out)
+    else:
+        assert not sampler._conf.inference.write_trb_trajectory, 'If you want to write the trajectory to the trb you must enable inference.write_trb'
+        assert not sampler._conf.inference.write_trb_indep, 'If you want to write the indep to the trb you must enable inference.write_trb'
 
     log.info(f'design : {des_path}')
-    log.info(f'Xt traj: {xt_traj_path}')
-    log.info(f'X0 traj: {x0_traj_path}')
+    if sampler._conf.inference.write_trajectory:
+        log.info(f'Xt traj: {xt_traj_path}')
+        log.info(f'X0 traj: {x0_traj_path}')
 
 
 if __name__ == '__main__':

@@ -15,6 +15,11 @@ inference:
   recycle_schedule: null
   softmax_T: 1e-5
   output_prefix: samples/design
+  write_trajectory: True # Boolean. Should the /traj/ video pdb file be generated? Takes up a lot of space in production
+  write_trajectory_only_t: [] # list(int). Only write trajectory for these given t steps. Example: [50,40,30,20]
+  write_trb: True # Boolean. Should the .trb file be written?
+  write_trb_indep: True # Boolean. Should the indep be written to the .trb? Adds about 200KB to trb
+  write_trb_trajectory: True # Boolean. Should the trajectory be written to the .trb? Adds about 10MB to trb
   scaffold_guided: False
   model_runner: NRBStyleSelfCond
   cautious: True
