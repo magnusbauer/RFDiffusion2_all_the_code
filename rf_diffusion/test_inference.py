@@ -558,6 +558,7 @@ class TestWriteTrajs(unittest.TestCase):
             "+contigmap.contig_atoms=\"{'A518':'CG,OD1,OD2'}\"",
             "inference.model_runner=FlowMatching",
             "+diffuser.batch_optimal_transport=False",
+            'inference.write_trajectory=True'
         ] + overrides)
         row = show_bench.get_sdata(str(pdb)).iloc[0]
         x0_path = analyze.get_traj_path(row, 'pX0')

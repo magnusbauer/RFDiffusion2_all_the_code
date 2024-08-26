@@ -237,6 +237,8 @@ def main(conf: HydraConfig) -> list[int]:
         return os.path.join(out_dir, '_'.join(output_path_components))
     df['inference.output_prefix'] = df.apply(get_output_path, axis=1)
 
+    write_trajectories_flags = 'inference.write_trajectory=True inference.write_trb_indep=True inference.write_trb_trajectory=True'
+
     # output commands with all combos of argument values
     job_fn = os.path.dirname(conf.out) + '/jobs.list'
     job_list_file = open(job_fn, 'w') if conf.slurm.submit else sys.stdout
@@ -249,7 +251,7 @@ def main(conf: HydraConfig) -> list[int]:
 
         for istart in np.arange(0, conf.num_per_condition, conf.num_per_job):
             log_fn = f'{arg_row["inference.output_prefix"]}_{istart}.log'
-            print(f'{conf.command} {extra_args} '\
+            print(f'{conf.command} {extra_args} {write_trajectories_flags} '\
                   f'inference.num_designs={conf.num_per_job} inference.design_startnum={istart} >> {log_fn}', file=job_list_file)
 
     if conf.slurm.submit or conf.slurm.in_proc:
