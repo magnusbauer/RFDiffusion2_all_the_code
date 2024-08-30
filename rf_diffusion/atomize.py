@@ -47,11 +47,13 @@ def atomized_indices_res_i(atomizer, idx):
     return atomized_res_idx
 
 
-def atomized_indices_res(atomizer, mask):
+def atomized_indices_res(atomizer, mask, allow_missing_residue=False):
     atomized_res_idx_from_res = atomizer.get_atomized_res_idx_from_res()
     atomized_res_idx = []
     mask_idx = torch.nonzero(mask)[:,0]
     for i in mask_idx:
+        if allow_missing_residue and i.item() not in atomized_res_idx_from_res:
+            continue
         atomized_res_idx.append(atomized_res_idx_from_res[i.item()])
     return atomized_res_idx
 
@@ -118,24 +120,22 @@ def atomized_indices_from_preatomized_res_indices(atomizer, res_indices):
 
     return torch.tensor(o)
 
-def atom_indices(atomizer, res_mask, atom_names_by_res):
-    res_i = atomized_indices_res(atomizer, res_mask)
+def atom_indices(atomizer, res_mask, atom_names_by_res, allow_missing_residue=False):
+    res_i = atomized_indices_res(atomizer, res_mask, allow_missing_residue=allow_missing_residue)
     atom_i = atomized_indices_atoms(atomizer, atom_names_by_res)
     assert set(res_i).isdisjoint(set(atom_i))
     return res_i + atom_i
 
-def create_masks(atomizer, is_diffused, is_res_str_shown, is_atom_str_shown):
+def create_masks(atomizer, is_res_str_shown, is_res_seq_shown, is_atom_str_shown):
 
     is_atom_seq_shown = {res_i: [e for e in ChemData().aa2long[atomizer.deatomized_state[res_i].aa][:ChemData().NHEAVYPROT] if e is not None]
                             for res_i in is_atom_str_shown.keys()}
-    is_res_seq_shown = is_res_str_shown
-    is_res_str_shown = is_diffused
     return create_masks_str_seq(atomizer, is_res_str_shown, is_res_seq_shown, is_atom_str_shown, is_atom_seq_shown)
 
 def create_masks_str_seq(atomizer, is_res_str_shown, is_res_seq_shown, is_atom_str_shown, is_atom_seq_shown):
     L = len(atomizer.atomized_state)
-    str_shown_indices = atom_indices(atomizer, is_res_str_shown, is_atom_str_shown)
-    seq_shown_indices = atom_indices(atomizer, is_res_seq_shown, is_atom_seq_shown)
+    str_shown_indices = atom_indices(atomizer, is_res_str_shown, is_atom_str_shown, allow_missing_residue=True)
+    seq_shown_indices = atom_indices(atomizer, is_res_seq_shown, is_atom_seq_shown, allow_missing_residue=True)
     is_diffused = torch.ones(L).bool()
     is_masked_seq = torch.ones(L).bool()
     is_diffused[str_shown_indices] = False
@@ -143,7 +143,7 @@ def create_masks_str_seq(atomizer, is_res_str_shown, is_res_seq_shown, is_atom_s
 
     return is_diffused, is_masked_seq
 
-def atomize_and_mask(indep, is_diffused, is_res_str_shown, is_atom_str_shown):
+def atomize_and_mask(indep, is_res_str_shown, is_res_seq_shown, is_atom_str_shown):
     '''
     Params:
         is_atom_str_shown: map from 0-indexed residues to motif atom names:
@@ -164,7 +164,7 @@ def atomize_and_mask(indep, is_diffused, is_res_str_shown, is_atom_str_shown):
     indep = atomizer.atomize(indep)
 
     indep.same_chain = indep.same_chain.bool()
-    is_diffused, is_masked_seq = create_masks(atomizer, is_diffused, is_res_str_shown, is_atom_str_shown)
+    is_diffused, is_masked_seq = create_masks(atomizer, is_res_str_shown, is_res_seq_shown, is_atom_str_shown)
     return indep, is_diffused, is_masked_seq, atomizer
 
 def deatomize_mask(atomizer: aa_model.AtomizeResidues, indep, mask: torch.Tensor) -> torch.Tensor:

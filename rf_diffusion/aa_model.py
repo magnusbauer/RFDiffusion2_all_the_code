@@ -914,18 +914,22 @@ class Model:
                 o.terminus_type[chain_start] = N_TERMINUS
                 o.terminus_type[chain_end-1] = C_TERMINUS
 
-        is_diffused_prot = ~torch.from_numpy(contig_map.inpaint_str)
-        is_diffused_sm = torch.zeros(n_sm).bool()
+        # this line looks wrong but it's because inpaint_str is defined backwards. inpaint_str[i] == False means diffuse this residue's structure
+        is_res_str_shown_prot = torch.from_numpy(contig_map.inpaint_str)
+        is_res_str_shown_sm = torch.ones(n_sm, dtype=bool)
         if self.conf.inference.flexible_ligand:
-            is_diffused_sm = torch.ones(n_sm).bool()
-        is_diffused = torch.cat((is_diffused_prot, is_diffused_sm))
+            is_res_str_shown_sm[:] = False
+        is_res_str_shown = torch.cat((is_res_str_shown_prot, is_res_str_shown_sm))
         is_atom_str_shown = contig_map.atomize_indices2atomname
         inpaint_seq = torch.from_numpy(contig_map.inpaint_seq)
-        # The motifs for atomization are double-counted.
+        # Although the "shown" state of atomized residues is not used for the generated atoms, transforms like Center use this information.
+        #   The following lines must remain here so that the regression tests continue to pass
         if is_atom_str_shown:
-            is_diffused[list(is_atom_str_shown.keys())] = True
-            inpaint_seq[list(is_atom_str_shown.keys())] = False
-        is_res_str_shown = torch.cat((inpaint_seq, ~is_diffused_sm))
+            is_res_str_shown[list(is_atom_str_shown.keys())] = False
+            inpaint_seq[list(is_atom_str_shown.keys())] = False # counter-intuitively, False here means mask this position
+
+        # this line looks wrong but it's because inpaint_seq is defined backwards. inpaint_seq[i] == False means mask this residue's sequence
+        is_res_seq_shown = torch.cat((inpaint_seq, is_res_str_shown_sm))
 
         for i, ((res_i, atom_name), sm_i, bond_type) in enumerate(metadata['covale_bonds']):
             res_i = hal_by_ref_d[res_i]
@@ -940,8 +944,8 @@ class Model:
 
         masks_1d = {
             'input_str_mask': is_res_str_shown,
+            'input_seq_mask': is_res_seq_shown,
             'is_atom_motif': is_atom_str_shown,
-            'is_diffused': is_diffused,
         }
         return o, masks_1d
 
@@ -2260,6 +2264,8 @@ def choose_contiguous_atom_motif(bond_feats_atomize):
 GP_BOND = 7
 BACKBONE_BOND = 5
 def make_guideposts(indep, is_motif):
+    if is_motif.sum() == 0:
+        return indep, {}
     pre_gp_len = indep.length()
     n_motif = is_motif.sum()
     chains = indep.chains()
@@ -2281,37 +2287,76 @@ def make_guideposts(indep, is_motif):
     indep_cat.bond_feats[is_inter_gp * ~has_sm] = GP_BOND
     return indep_cat, gp_to_ptn_idx0
 
-def transform_indep(indep, is_diffused, is_res_str_shown, is_atom_str_shown, use_guideposts, guidepost_placement='anywhere', guidepost_bonds=True, metadata=None):
+def transform_indep(indep, is_res_str_shown, is_res_seq_shown, is_atom_str_shown, use_guideposts, guidepost_bonds=True, metadata=None):
+    '''
+    Add guidepost residues (duplicates of residues set to be guideposted), atomize residues, and prepare is_diffused and is_seq_diffused
+
+    Some definitions:
+        - is_res_str_shown: Is the backbone of this residue/atom shown during diffusion? These residues will not be XYZ noised and de-noised
+            Aliases: is_motif
+            Anti-aliases: is_diffused
+        - is_res_seq_shown: Is the sequence of this residue/atom shown during diffusion? This is independent of XYZ noising
+            Anti-aliases: is_masked_seq
+        - is_atom_str_shown: Should this residue be atomized? If so only atoms present in this list will be used
+
+    Inputs:
+        indep (Indep): indep
+        is_res_str_shown (torch.Tensor[bool]): Is this residue/atom part of the motif that will not have XYZ noising? [L]
+        is_res_seq_shown (torch.Tensor[bool]): Is the sequence of this residue/atom known during calls to RF2 (True) or is it mask (False)? [L]
+        is_atom_str_shown (dict[int,list[str]]): Should this residue be atomized? dict(key=residue_idx, value=list(atom_name1, atom_name2, ...))
+        use_guideposts (bool): Should motif residues (any residue or atom with str_shown) be duplicated into a guidepost residue?
+        guidepost_bonds (bool): bcov honestly doesn't know
+        metadata (dict): Extra data about indep that realistically should be stored inside indep someday
+
+    Returns:
+        indep (Indep): The indep but with guidepost residues added and residues atomized [new_L]
+        is_diffused (torch.Tensor[bool]): Which residues will have their xyz noised and denoised [new_L]
+        is_masked_seq (torch.Tensor[bool]): Which residues will have their residue type set to mask [new_L]
+        atomizer (Atomizer or None): The atomizer used to atomize the indep
+        gp_to_ptn_idx0 (dict[int,int] or None): Lookup original motif residue from guidepost residue dict(key=guidepost_residue_idx, value=original_residue_idx)
+    '''
     indep = copy.deepcopy(indep)
+    is_res_str_shown = is_res_str_shown.clone()
+    is_res_seq_shown = is_res_seq_shown.clone()
     use_atomize = is_atom_str_shown is not None
-    # use_atomize = is_atom_str_shown is not None and len(is_atom_str_shown) > 0
-    is_masked_seq = ~is_res_str_shown
+
     atomizer = None
     gp_to_ptn_idx0 = None
 
+    if (~is_res_seq_shown[indep.is_sm]).any():
+        print('WARNING! Atoms may not have masked seq! See assert_valid_seq_mask()')
+        is_res_seq_shown[indep.is_sm] = True
+
     if use_guideposts:
+        # All motif residues are turned into guideposts (for now...)
         mask_gp = is_res_str_shown.clone()
         mask_gp[indep.is_sm] = False
         if use_atomize:
             atomized_residues = list(is_atom_str_shown.keys())
             mask_gp[atomized_residues] = True
-        if mask_gp.sum() == 0:
-            is_masked_seq[indep.is_sm] = False
-            return indep, is_diffused, is_masked_seq, atomizer, {}
 
-
+        # Actually add guideposts to indep
         indep, gp_to_ptn_idx0 = make_guideposts(indep, mask_gp)
-        is_diffused[list(gp_to_ptn_idx0.values())] = True
         n_gp = len(gp_to_ptn_idx0)
-        is_diffused = torch.cat((is_diffused, torch.zeros((n_gp,)).bool()))
+
+        # The original copies of guidepost residues are diffused and sequence masked
+        #  The duplicated residues (guideposts) are shown and have their sequences shown
         is_res_str_shown[list(gp_to_ptn_idx0.values())] = False
-        is_res_str_shown = torch.cat((is_res_str_shown, ~torch.zeros((n_gp,)).bool()))
+        is_res_str_shown = torch.cat((is_res_str_shown, torch.ones((n_gp,), dtype=bool)))
+        is_res_seq_shown[list(gp_to_ptn_idx0.values())] = False
+        is_res_seq_shown = torch.cat((is_res_seq_shown, torch.ones((n_gp,), dtype=bool)))
+
         if use_atomize:
+            # Create mapping from original motif residue -> guidepost residue dict(key=original_residue_idx, value=guidepost_residue_idx)
             gp_from_ptn_idx0 = {v:k for k,v in gp_to_ptn_idx0.items()}
+
+            # Translate is_atom_str_shown to be relative to the guideposts, not the original residues. (Note: Assumes can_be_gp.all())
             is_atom_str_shown = {gp_from_ptn_idx0[k]: v for k,v in is_atom_str_shown.items()}
-            # Remove redundancy
-            is_diffused[list(is_atom_str_shown.keys())] = True
-            is_res_str_shown[list(is_atom_str_shown.keys())] = False
+
+            # Mark to-be-atomized duplicated guidepost residues to be diffused? This was to overcome a shortcoming in atomization. Delete this someday
+            # is_res_str_shown[list(is_atom_str_shown.keys())] = False  # By all accounts this should be true. But these residues get dropped anyways
+            # is_res_seq_shown[list(is_atom_str_shown.keys())] = False  # Same
+
             cov_resis = [gp_from_ptn_idx0[res_i] for (res_i, _), _, _ in metadata['covale_bonds']]
             for i, (a, b, t) in enumerate(metadata['covale_bonds']):
                 res_i, atom_name = a
@@ -2320,17 +2365,21 @@ def transform_indep(indep, is_diffused, is_res_str_shown, is_atom_str_shown, use
                 assertpy.assert_that(is_atom_str_shown).described_as('residues participating in covalent bonds to small molecules must be atomized').contains(res_i)
                 metadata['covale_bonds'][i] = ((res_i, atom_name), b, t)
 
-        is_masked_seq = is_diffused.clone()
     if len(metadata['covale_bonds']):
         assert use_atomize
     if use_atomize:
         is_covale_ligand = indep.type() == TYPE_ATOMIZED_COV
         is_ligand = indep.is_sm
-        # is_diffused[indep.is_sm] = False
+
+        # convert is_atom_str_shown keys to strings if they are tensors
         is_atom_str_shown = {k.item() if hasattr(k, 'item') else k :v for k,v in is_atom_str_shown.items()}
-        indep, is_diffused, is_masked_seq, atomizer = atomize.atomize_and_mask(indep, ~is_diffused, is_res_str_shown, is_atom_str_shown)
+        # actually atomize
+        indep, tmp_is_diffused, tmp_is_masked_seq, atomizer = atomize.atomize_and_mask(indep, is_res_str_shown, is_res_seq_shown, is_atom_str_shown)
+        # convert back to "shown" notation
+        is_res_str_shown, is_res_seq_shown = ~tmp_is_diffused, ~tmp_is_masked_seq
+
         # TODO: Handle sequence masking more elegantly
-        is_masked_seq[indep.is_sm] = False
+        is_res_seq_shown[indep.is_sm] = True
         assertpy.assert_that(indep.is_sm.sum()).is_equal_to(indep.atom_frames.shape[0])
         ligand_idx = atomize.atomized_indices_res(atomizer, is_ligand)
         covale_ligand_idx = atomize.atomized_indices_res(atomizer, is_covale_ligand)
@@ -2383,6 +2432,9 @@ def transform_indep(indep, is_diffused, is_res_str_shown, is_atom_str_shown, use
         # Get obmol of combined atomized residues and covalent sm
         obmol, _ = get_obmol(covale.xyz[:,1], covale.seq, covale.bond_feats)
         covale.chirals = rf2aa.kinematics.get_chirals(obmol, covale.xyz[:, 1])
+
+    is_diffused = ~is_res_str_shown
+    is_masked_seq = ~is_res_seq_shown
     assertpy.assert_that(len(is_diffused)).is_equal_to(indep.length())
     return indep, is_diffused, is_masked_seq, atomizer, gp_to_ptn_idx0
 

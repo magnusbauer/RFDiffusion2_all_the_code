@@ -1249,6 +1249,7 @@ def generate_masks(indep, task, loader_params, chosen_dataset, full_chain=None, 
 
     mask_dict = {
                 'input_str_mask':input_str_mask,
+                'input_seq_mask':input_seq_mask,
                 'is_atom_motif': is_atom_motif or {},
                 'pop': pop,
                 'mask_name': mask_name
