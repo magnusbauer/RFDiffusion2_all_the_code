@@ -1,0 +1,79 @@
+# Base inference Configuration.
+defaults:
+  - aa
+
+inference:
+  ckpt_path: /projects/ml/afavor/RFD/models/all_na_ss_cond/train_session2024-03-19_1710887313_BFF_3.90.pt
+  str_self_cond: True
+  model_runner: NRBStyleSelfCond
+  two_template: True
+  three_template: True
+  cautious: True
+  input_pdb: /projects/ml/afavor/test_data/DBP035.pdb
+  ij_visible: null
+  motif_only_2d: True
+  chainbreak_chunks: True
+  supply_motif_seq: True
+  mask_seq_by_polymer: True
+  # scaffold_guided: False
+  # set_diffused_prot_to: null
+  # set_diffused_dna_to: null
+  # set_diffused_rna_to: null
+  # protein_protein_hotspot_res: null
+  # dna_dna_hotspot_res: null
+  # rna_rna_hotspot_res: null
+  # protein_dna_hotspot_res: null
+  # protein_rna_hotspot_res: null
+  # dna_rna_hotspot_res: null
+  use_poly_hotspots_t1d: True
+  compute_pSSA: False
+  set_sequence: null
+  assume_canonical_pair_seq: False
+  update_seq_t: False
+  show_seq_under_t: -1
+  seq_logit_penalty: 1e2
+
+preprocess:
+  eye_frames: True
+  num_atoms_na: 12
+  motif_sidechain_input: True
+  d_t2d: 72
+  show_poly: True
+  d_t1d: 84
+  motif_only_2d: True
+
+contigmap:
+  contigs: ['30']
+  mol_classes: null
+
+denoiser:
+  noise_scale_frame: 0.9
+  noise_scale_ca: 0.9
+
+diffuser:
+  T: 50
+
+scaffoldguided:
+  scaffoldguided: True
+  target_pdb: False
+  target_path: null
+  scaffold_list: null
+  scaffold_dir: null
+  sampled_insertion: 0
+  sampled_N: 0
+  sampled_C: 0
+  ss_mask: 0
+  systematic: False
+  contig_crop: null
+  radial_crop: null
+  target_ss: null
+  target_adj: null
+  mask_loops: True
+  target_ss_string: null
+  target_ss_pairs: null
+  target_ss_pair_ori: null
+  force_loops_list: null
+  force_multi_contacts: null
+  save_ss_matrix_png: False
+  # ss_cond_ckpt_path: /home/afavor/git/RFD_AF/3template_na/rf_diffusion/train_session2023-11-21_1700601321.4267492/models/BFF_3.pt
+  

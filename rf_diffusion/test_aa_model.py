@@ -176,13 +176,13 @@ class AAModelTestCase(unittest.TestCase):
         """
         checks the output values of indep and masks1d given an input indep and str_mask
         """
-        indep.xyz = indep.xyz[:, :14]
+        indep.xyz = indep.xyz[:, :ChemData().NHEAVY]
         L = indep.xyz.shape[0]
         input_indep = copy.deepcopy(indep)
         input_mask = copy.deepcopy(input_str_mask)
 
         atom_mask = ChemData().allatom_mask[indep.seq]
-        atom_mask[:, 14:] = False # no Hs
+        atom_mask[:, ChemData().NHEAVY:] = False # no Hs
 
         deatomized_state = aa_model.get_atomization_state(indep)
         atomizer = aa_model.AtomizeResidues(deatomized_state, input_str_mask)

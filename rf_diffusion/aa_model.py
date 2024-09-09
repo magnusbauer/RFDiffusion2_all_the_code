@@ -35,6 +35,7 @@ from rf_diffusion.frame_diffusion.data import all_atom
 from typing import List
 
 AtomizerSpec.__sizeof__(None) # To avoid Ruff unused import error. aa_model.AtomizerSpec used elsewhere
+import rf_diffusion.nucleic_compatibility_utils as nucl_utils
 
 NINDEL=1
 NTERMINUS=2
@@ -49,7 +50,7 @@ CA_ONLY = 'CA_ONLY'
 
 def chain_letters_from_same_chain(same_chain):
     L = same_chain.shape[0]
-    G = nx.from_numpy_array(same_chain.numpy())
+    G = nx.from_numpy_array(same_chain.cpu().numpy())
     cc = list(nx.connected_components(G))
     cc.sort(key=min)
     chain_letters = np.chararray((L,), unicode=True)
@@ -186,7 +187,7 @@ class Indep:
         seq = torch.where(seq == 21, 0, seq)
         chain_letters = self.chains()
         return write_file.writepdb_file(fh,
-            torch.nan_to_num(self.xyz[:,:14]), seq, idx_pdb=self.idx, chain_letters=chain_letters, bond_feats=self.bond_feats[None], **kwargs)
+            torch.nan_to_num(self.xyz[:,:ChemData().NHEAVY]), seq, idx_pdb=self.idx, chain_letters=chain_letters, bond_feats=self.bond_feats[None], **kwargs)
 
     def ca_dists(self):
         xyz_ca = self.xyz[:,1]
@@ -219,7 +220,7 @@ class Indep:
     def has_heavy_atoms_and_seq(self, atom_mask):
         want_atom_mask = ChemData().allatom_mask[self.seq]
         has_all_heavy_atoms = (want_atom_mask[:,:ChemData().NHEAVYPROT] == atom_mask[:,:ChemData().NHEAVYPROT]).all(dim=-1)
-        has_sequence = self.seq < 20
+        has_sequence = torch.logical_or(self.seq < ChemData().UNKINDEX, torch.logical_and(self.seq >= ChemData().NPROTAAS, self.seq <= ChemData().MASKINDEXRNA))
         return has_all_heavy_atoms * ~self.is_sm * has_sequence
     
     def is_valid_for_atomization(self, atom_mask):
@@ -238,43 +239,39 @@ class Indep:
             )
         return o
     
-    def type(indep):
-        chains = indep.chains()
-        chains_with_prot = np.unique(chains[~indep.is_sm])
+    def type(self):
+        chains = self.chains()
+        chains_with_prot = np.unique(chains[~self.is_sm])
         is_on_same_chain_as_prot = torch.tensor(np.isin(chains, chains_with_prot))
-        is_atomized_cov = indep.is_sm * is_on_same_chain_as_prot
-        is_ligand = indep.is_sm * ~is_on_same_chain_as_prot
-        metadata = {}
-        metadata['type'] = torch.zeros((indep.length()))
+        is_atomized_cov = self.is_sm * is_on_same_chain_as_prot
+        is_ligand = self.is_sm * ~is_on_same_chain_as_prot
+        metadata = {'type': torch.zeros(self.length())}
         metadata['type'][:] = -1
-        metadata['type'][~indep.is_sm] = TYPE_PROT
+        metadata['type'][~self.is_sm] = TYPE_PROT
         metadata['type'][is_ligand] = TYPE_LIGAND
         metadata['type'][is_atomized_cov] = TYPE_ATOMIZED_COV
         return metadata['type']
-    
+
 
     def get_connected(self, i):
         G = nx.from_numpy_matrix(self.bond_feats.detach().cpu().numpy())
         ic(G.nodes, i)
         connected_idx0 = fetch_connected_nodes(G, i)
         return torch.tensor(list(connected_idx0))
-    
-    def assert_types(indep):
-        assertpy.assert_that(indep.same_chain.dtype).is_equal_to(torch.bool)
+
+    def assert_types(self):
+        assertpy.assert_that(self.same_chain.dtype).is_equal_to(torch.bool)
 
     def atom_label(self, i):
         return (i, ChemData().num2aa[self.seq[i]])
-    
+
     def human_readable_2d_mask(self, mask):
-        o = []
-        for i, j in mask.nonzero():
-            o.append((self.atom_label(i), self.atom_label(j)))
-        return o
-    
+        return [(self.atom_label(i), self.atom_label(j)) for i, j in mask.nonzero()]
+
     def human_readable_2d_symmetric_mask(self, mask):
         assertpy.assert_that((mask.T == mask).all()).is_true()
         return self.human_readable_2d_mask(torch.triu(mask))
-    
+
     def is_contiguous_protein_monomer(self):
         idx_jump = self.idx[1:] - self.idx[:-1]
         contiguous = (idx_jump == 1).all().item()
@@ -283,10 +280,10 @@ class Indep:
                 not self.is_sm.any() and
                 contiguous
                 )
-    
+
     def set_device(self, device):
         rf2aa.tensor_util.to_device(self, device)
-    
+
     def chain_index(self):
         '''
         Returns a list of chain and pdb index like: [('A', 11), ('A', 12), ...]
@@ -315,29 +312,29 @@ def assert_valid_seq_mask(indep, is_masked_seq):
             ))
         )
         raise Exception('Sequence mask is invalid: atom indices are sequence masked.')
-    
+
 def get_atom_names(seq_token):
     atom_names = ChemData().aa2long[seq_token][:ChemData().NHEAVYPROT]
     return [a.strip() for a in atom_names if a is not None]
 
 def make_is_motif14(seq, atom_name_by_res_idx):
     '''
-    Converts a mapping of residue_index:atom_names to an Lx14 binary mask.
+    Converts a mapping of residue_index:atom_names to an LxN_HEAVY binary mask.
 
     Params:
         seq [L]: sequence tokens
         atom_name_by_res_idx: Dict[int]-> list<string> like {2:['CA', 'N']}
             The character CA_ONLY refers to index 1 in the final dimension of the output mask.
     '''
-    within_res_atom_idx = {}
-    for i, atom_names in enumerate(ChemData().aa2long):
-        within_res_atom_idx[i] = {}
-        for j, atom_name in enumerate(atom_names):
-            if atom_name is None:
-                continue
-            within_res_atom_idx[i][atom_name.strip()] = j
-
-    is_motif14 = torch.zeros((len(seq), 14)).bool()
+    within_res_atom_idx = {
+        i: {
+            atom_name.strip(): j
+            for j, atom_name in enumerate(atom_names)
+            if atom_name is not None
+        }
+        for i, atom_names in enumerate(ChemData().aa2long)
+    }
+    is_motif14 = torch.zeros((len(seq), ChemData().NHEAVY)).bool()
     for res_idx, atom_names in atom_name_by_res_idx.items():
         if atom_names == 'CA_ONLY':
             is_motif14[res_idx, 1] = True
@@ -421,14 +418,14 @@ class RFO:
     quat: torch.Tensor
 
     # dataclass.astuple returns a deepcopy of the dataclass in which
-    # gradients of member tensors are detached, so we define a 
+    # gradients of member tensors are detached, so we define a
     # custom unpacker here.
     def unsafe_astuple(self):
-        return tuple([self.__dict__[field.name] for field in dataclasses.fields(self)])
+        return tuple(self.__dict__[field.name] for field in dataclasses.fields(self))
 
     def get_seq_logits(self):
         return self.logits_aa.permute(0,2,1)
-    
+
     def get_xyz(self):
         return self.xyz_allatom[0]
 
@@ -446,14 +443,12 @@ def get_only_ligand_or_none(pdb_lines):
     assertpy.assert_that(len(ligands), description=ligands).is_less_than_or_equal_to(1)
     if len(ligands) == 0:
         return None
-    ligand = list(ligands)[0]
-    return ligand
+    return list(ligands)[0]
 
 def get_only_ligand(pdb_lines):
     ligands = get_ligands(pdb_lines)
     assertpy.assert_that(len(ligands), description=ligands).is_equal_to(1)
-    ligand = list(ligands)[0]
-    return ligand
+    return list(ligands)[0]
 
 def get_non_target_hetatm_ids(pdb_lines, ligands):
     non_target_hetatm_ids = []
@@ -480,7 +475,7 @@ def filter_connect(l, invalid_ids):
             invalid_bonds.append((d,r))
         else:
             valid_bonds.append((d,r))
-    
+
     if not valid_bonds:
         return '', invalid_bonds
 
@@ -489,7 +484,7 @@ def filter_connect(l, invalid_ids):
     new_l = ['CONECT']
     for atom_id in [d] + R:
         new_l.append(f'{atom_id:>4}')
-    
+
     return ''.join(new_l), invalid_bonds
 
 def remove_non_target_ligands(pdb_lines: List[str], ligands: List[str]) -> List[str]:
@@ -501,7 +496,7 @@ def remove_non_target_ligands(pdb_lines: List[str], ligands: List[str]) -> List[
         ligands (list): List of ligands to be removed.
 
     Returns:
-        list[str]: List of PDB lines 
+        list[str]: List of PDB lines
     """
     non_target_hetatm_ids = get_non_target_hetatm_ids(pdb_lines, ligands)
     lines = []
@@ -578,12 +573,8 @@ def get_bonds(pdb_lines):
         if 'CONECT' not in l:
             continue
         ids = [int(e.strip()) for e in l[6:].split()]
-        for r in ids[1:]:
-            from_to.append(tuple(sorted((ids[0], r))))
-    
-    # ic(from_to)
-    from_to = list(set(from_to))
-    return from_to
+        from_to.extend(tuple(sorted((ids[0], r))) for r in ids[1:])
+    return list(set(from_to))
 
 import io
 from Bio import PDB
@@ -612,14 +603,14 @@ def find_covale_bonds(pdb_lines, ligand):
     for d, r in bonds:
         if (d in hetatm_id_set) != (r in hetatm_id_set):
             protein_ligand_bonds.append(sorted((d,r), key=lambda x: x in hetatm_id_set))
-    
+
     atom_by_serial_number = get_atom_by_atom_serial_number(pdb_lines)
     for i, (d,r) in enumerate(protein_ligand_bonds):
         protein_ligand_bonds[i] = (
             atom_by_serial_number[d],
             atom_by_serial_number[r],
         )
-    
+
     return protein_ligand_bonds
 
 def get_atom_uid(a):
@@ -631,7 +622,7 @@ def parse_ligand(pdb, ligand):
     with open(pdb, 'r') as fh:
         stream = [l for l in fh if "HETATM" in l or "CONECT" in l]
     if ligand == UNIQUE_LIGAND:
-        raise Exception('not implemented')
+        raise NotImplementedError
 
     stream = filter_het(stream, [ligand], covale_allowed=True)
     if not len(stream):
@@ -651,7 +642,7 @@ def get_atom_mask(pdb):
         stream = fh.readlines()
     target_feats = parse_pdb_lines_target(stream, parse_hetatom=True)
     _, mask_prot, _, _ = target_feats['xyz'], target_feats['mask'], target_feats['idx'], target_feats['seq']
-    mask_prot[:,14:] = False
+    mask_prot[:,ChemData().NHEAVY:] = False
     return mask_prot
 
 def make_indep(pdb, ligand='', return_metadata=False):
@@ -678,24 +669,35 @@ def make_indep(pdb, ligand='', return_metadata=False):
     ligands = []
     if ligand:
         ligands = ligand.split(',')
+
     stream = remove_non_target_ligands(stream, ligands)
     target_feats = parse_pdb_lines_target(stream, parse_hetatom=True)
     het_atom_uids = [(e['res_idx'], e['atom_id'].strip()) for e in target_feats['info_het']]
     prot_atom_uids = [(idx, 'CA') for idx in target_feats['idx']]
     uids = prot_atom_uids + het_atom_uids
-    xyz_prot, mask_prot, idx_prot, seq_prot = target_feats['xyz'], target_feats['mask'], target_feats['idx'], target_feats['seq']
-    xyz_prot[:,14:] = 0 # remove hydrogens
-    mask_prot[:,14:] = False
-    xyz_prot = torch.tensor(xyz_prot)
-    mask_prot = torch.tensor(mask_prot)
-    protein_L, nprotatoms, _ = xyz_prot.shape
-    seq_prot = torch.tensor(seq_prot).long()
+    xyz_polymer, mask_polymer, idx_polymer, seq_polymer = target_feats['xyz'], target_feats['mask'], target_feats['idx'], target_feats['seq']
+    is_nuc = nucl_utils.get_resi_type_mask(seq_polymer, 'na')
+    is_pro = nucl_utils.get_resi_type_mask(seq_polymer, 'prot')
+
+    xyz_polymer[is_pro,ChemData().NHEAVYPROT:] = 0 # remove hydrogens
+    mask_polymer[is_pro,ChemData().NHEAVYPROT:] = False
+    xyz_polymer[is_nuc,ChemData().NHEAVY:] = 0 # remove hydrogens
+    mask_polymer[is_nuc,ChemData().NHEAVY:] = False
+    xyz_polymer = torch.tensor(xyz_polymer)
+    mask_polymer = torch.tensor(mask_polymer)
+    protein_L, nprotatoms, _ = xyz_polymer.shape
+    seq_polymer = torch.tensor(seq_polymer).long()
     covale_bonds = []
 
-    Ls = [seq_prot.shape[0]]
+    #Ls = [seq_polymer.shape[0]]
+    Ls, is_protein, is_protein_chain = nucl_utils.find_protein_dna_chains(target_feats['pdb_idx'], seq_polymer)
+    N_poly_resi = sum(Ls)
+    N_poly = len(Ls)
     seq_sm = torch.zeros((0,)).long()
     if len(ligands):
         protein_ligand_bonds_atoms = find_covale_bonds(stream, ligands)
+        # Hack, no way to detect bond types in PDB
+        bond_type = 1 # Single bond
         # Debugging
         # msg = []
         # for d,r in protein_ligand_bonds_atoms:
@@ -705,14 +707,12 @@ def make_indep(pdb, ligand='', return_metadata=False):
         #     print(f'Protein-ligand bonds:\n{msg}')
         # else:
         #     print(f'No protein-ligand bonds')
-        
+
         for protein_atom, ligand_atom in protein_ligand_bonds_atoms:
             prot_res_idx, prot_atom_name = get_atom_uid(protein_atom)
             res_i = uids.index((prot_res_idx, 'CA'))
             ligand_atom_uid = get_atom_uid(ligand_atom)
             atom_i = uids.index((ligand_atom_uid))
-            # Hack, no way to detect bond types in PDB
-            bond_type = 1 # Single bond
             covale_bonds.append(
                 ((res_i, prot_atom_name), atom_i, bond_type)
             )
@@ -746,29 +746,37 @@ def make_indep(pdb, ligand='', return_metadata=False):
         Ls.append(0)
 
     xyz = torch.full((sum(Ls), ChemData().NTOTAL, 3), np.nan).float()
-    xyz[:Ls[0], :nprotatoms, :] = xyz_prot
+    xyz[:N_poly_resi, :nprotatoms, :] = xyz_polymer
     if ligand:
-        xyz[Ls[0]:, 1, :] = xyz_sm
-    idx_sm = torch.arange(max(idx_prot),max(idx_prot)+Ls[1])+200
+        xyz[N_poly_resi:, 1, :] = xyz_sm
+    idx_sm = torch.arange(max(idx_polymer),max(idx_polymer)+Ls[N_poly])+200 # Access last element of Ls, which is ligand
     idx_sm_stack = []
-    last_idx = max(idx_prot)
-    for i, l in enumerate(Ls[1:]):
+    last_idx = max(idx_polymer)
+    for l in Ls[N_poly:]:
         new_idx = torch.arange(l) + 200 + last_idx
         idx_sm_stack.append(new_idx)
         if len(new_idx):
             last_idx = max(new_idx)
     idx_sm = torch.cat(idx_sm_stack)
 
-    idx_pdb = torch.concat([torch.tensor(idx_prot), idx_sm])
-    seq = torch.cat((seq_prot, seq_sm))
+    idx_pdb = torch.concat([torch.tensor(idx_polymer), idx_sm])
+    seq = torch.cat((seq_polymer, seq_sm))
     bond_feats = torch.zeros((sum(Ls), sum(Ls))).long()
-    bond_feats[:Ls[0], :Ls[0]] = rf2aa.util.get_protein_bond_feats(Ls[0])
+    # Assign protein bond feats
+    l_sum = 0
+    for i, l in enumerate(Ls[:N_poly]):
+        if is_protein_chain[i]:
+            bond_feats[l_sum:l_sum+l, l_sum:l_sum+l] = rf2aa.util.get_protein_bond_feats(Ls[i])
+        l_sum += l
+    # Assign ligand bond feats
     if ligand:
-        bond_feats[Ls[0]:, Ls[0]:] = bond_feats_sm
+        bond_feats[sum(Ls[:N_poly]):, sum(Ls[:N_poly]):] = bond_feats_sm
 
-    same_chain = torch.zeros((sum(Ls), sum(Ls))).bool()
-    same_chain[:Ls[0], :Ls[0]] = True
-    same_chain[Ls[0]:, Ls[0]:] = True
+    #same_chain = torch.zeros((sum(Ls), sum(Ls))).bool()
+    #same_chain[:Ls[0], :Ls[0]] = True
+    #for i in range(N_poly):
+    #    same_chain[Ls[i]:Ls[i+1], Ls[i]:Ls[i+1]] = True
+    #same_chain[Ls[N_poly-1]:, Ls[N_poly-1]:] = True
     chains = []
     for i, l in enumerate(Ls):
         chains.extend([alphabet[i]] * l)
@@ -777,11 +785,16 @@ def make_indep(pdb, ligand='', return_metadata=False):
     same_chain = same_chain_with_covale(same_chain, covale_bonds)
 
     is_sm = torch.zeros(sum(Ls)).bool()
-    is_sm[Ls[0]:] = True
+    is_sm[sum(Ls[:N_poly]):] = True
     # assert len(Ls) <= 2, 'multi chain inference not implemented yet'
     terminus_type = torch.zeros(sum(Ls))
-    terminus_type[0] = N_TERMINUS
-    terminus_type[Ls[0]-1] = C_TERMINUS
+    # Assign proteins to terminus type
+    l_sum = 0
+    for i, l in enumerate(Ls[:N_poly]):
+        if is_protein_chain[i]:
+            terminus_type[l_sum] = N_TERMINUS
+            terminus_type[l_sum+l-1] = C_TERMINUS
+        l_sum += l
 
     ###TODO: currently network needs values at 0,2 indices of tensor, need to remove this reliance
     xyz[is_sm, 0] = 0
@@ -797,7 +810,7 @@ def make_indep(pdb, ligand='', return_metadata=False):
         terminus_type)
     if return_metadata:
         ligand_name_arr = []
-        for l, name in zip(Ls, [''] + ligands):
+        for l, name in zip(Ls, N_poly * [''] + ligands):
             ligand_name_arr.extend(l * [name])
 
         metadata = {
@@ -849,7 +862,7 @@ class Model:
         o = copy.deepcopy(indep)
 
         # Insert small mol into contig_map
-        all_chains = set(ch for ch,_ in contig_map.hal)
+        all_chains = {ch for ch,_ in contig_map.hal}
         next_unused_chain = (e for e in contig_map.chain_order if e not in all_chains)
         n_sm = indep.is_sm.sum()
         is_sm_idx0 = torch.nonzero(indep.is_sm, as_tuple=True)[0].tolist()
@@ -860,7 +873,7 @@ class Model:
         new_chains = {}
         for ch in np.unique(indep.chains()[indep.is_sm]):
             new_chains[ch] = next(next_unused_chain)
-        
+
         new_chain_arr = np.array([new_chains[ch] for ch in indep.chains()[indep.is_sm]])
         new_idx_arr = np.full((n_sm), np.nan, dtype=np.int64)
         chs, n_chs = np.unique(new_chain_arr, return_counts=True)
@@ -868,7 +881,7 @@ class Model:
             new_idx_ch = np.arange(n_ch) + max_hal_idx+200
             new_idx_arr[new_chain_arr == ch] = new_idx_ch
             max_hal_idx = np.max(new_idx_ch)
-        
+
         chain_start_end = chain_start_end_from_hal(contig_map.hal)
 
         contig_map.hal.extend(zip(new_chain_arr, new_idx_arr))
@@ -895,6 +908,7 @@ class Model:
         hal_by_ref_d = dict(zip(contig_map.ref_idx0, contig_map.hal_idx0))
         def hal_by_ref(ref):
             return hal_by_ref_d[ref]
+
         hal_by_ref = np.vectorize(hal_by_ref, otypes=[float])
         o.chirals[...,:-1] = torch.tensor(hal_by_ref(o.chirals[...,:-1]))
 
@@ -905,8 +919,7 @@ class Model:
         assert len(self.conf.contigmap.has_termini) == contig_map.n_inpaint_chains, "Please specify in contigmap.has_termini for which chains you want to have the termini present."
 
         for use_termini, (chain_start, chain_end) in zip(self.conf.contigmap.has_termini,chain_start_end):
-            
-            if not chain_end>=L_mapped:
+            if chain_end < L_mapped:
                 o.bond_feats[chain_end][chain_end - 1] = 0
                 o.bond_feats[chain_end - 1][chain_end] = 0
 
@@ -953,14 +966,14 @@ class Model:
     def prepro(self, indep, t, is_diffused):
         """
         Function to prepare inputs to diffusion model
-        
-            seq (L,22) one-hot sequence 
+
+            seq (L,22) one-hot sequence
 
             msa_masked (1,1,L,48)
 
             msa_full (1,1,L,25)
-        
-            xyz_t (L,14,3) template crds (diffused) 
+
+            xyz_t (L,14,3) template crds (diffused)
 
             t1d (1,L,28) this is the t1d before tacking on the chi angles:
                 - seq + unknown/mask (21)
@@ -968,7 +981,7 @@ class Model:
                 - contacting residues: for ppi. Target residues in contact with biner (1)
                 - chi_angle timestep (1)
                 - ss (H, E, L, MASK) (4)
-            
+
             t2d (1, L, L, 45)
                 - last plane is block adjacency
         """
@@ -1001,13 +1014,13 @@ class Model:
         msa_full = torch.zeros((1,1,L,ChemData().NAATOKENS+NINDEL+NTERMINUS))
         msa_full[:,:,:,:ChemData().NAATOKENS] = seq_one_hot[None, None]
         MSAFULL_N_TERM = ChemData().NAATOKENS+NINDEL
-        MSAFULL_C_TERM = MSAFULL_N_TERM+1 
+        MSAFULL_C_TERM = MSAFULL_N_TERM+1
         if self.conf.preprocess.annotate_termini:
             msa_full[:,:,:,MSAFULL_N_TERM] = (indep.terminus_type == N_TERMINUS).float()
             msa_full[:,:,:,MSAFULL_C_TERM] = (indep.terminus_type == C_TERMINUS).float()
 
         ### t1d ###
-        ########### 
+        ###########
         # Here we need to go from one hot with 22 classes to one hot with 21 classes
         # If sequence is masked, it becomes unknown
         # t1d = torch.zeros((1,1,L,NAATOKENS-1))
@@ -1018,12 +1031,12 @@ class Model:
         t1d = torch.nn.functional.one_hot(seq_cat_shifted, num_classes=ChemData().NAATOKENS-1)
         t1d = t1d[None, None] # [L, NAATOKENS-1] --> [1,1,L, NAATOKENS-1]
         # for idx in range(L):
-            
+
         #     if seqt1d[idx,MASKINDEX] == 1:
         #         seqt1d[idx, MASKINDEX-1] = 1
         #         seqt1d[idx,MASKINDEX] = 0
         # t1d[:,:,:,:NPROTAAS+1] = seqt1d[None,None,:,:NPROTAAS+1]
-        
+
         ## Str Confidence
         # Set confidence to 1 where diffusion mask is True, else 1-t/T
         strconf = torch.zeros((L,)).float().to(is_diffused.device)
@@ -1037,15 +1050,23 @@ class Model:
         ### xyz_t ###
         #############
         if self.conf.preprocess.sidechain_input:
-            raise Exception('not implemented')
-            xyz_t[torch.where(seq_one_hot == 21, True, False),3:,:] = float('nan')
+            raise NotImplementedError
+            # xyz_t[torch.where(seq_one_hot == 21, True, False),3:,:] = float('nan')
         else:
             xyz_t[is_diffused,3:,:] = float('nan')
         #xyz_t[:,3:,:] = float('nan')
 
-        assert_that(xyz_t.shape).is_equal_to((L,ChemData().NHEAVYPROT,3))
+
+
+        # Can either have shortened form, or full form
+        assert_that(tuple(xyz_t.shape)).is_in(*[(L,ChemData().NHEAVY,3),
+                                                (L, ChemData().NTOTAL, 3)])
+        # Chop off hydrogens (without this, there is a bug due to torsions)
+        xyz_t = xyz_t[:,:ChemData().NHEAVY]
         xyz_t=xyz_t[None, None]
-        xyz_t = torch.cat((xyz_t, torch.full((1,1,L,ChemData().NTOTAL-ChemData().NHEAVYPROT,3), float('nan')).to(xyz_t.device)), dim=3)
+        # Pad dimension if necessary
+        xyz_t = torch.cat((xyz_t, torch.full((1,1,L,ChemData().NTOTAL-xyz_t.shape[3],3), float('nan')).to(xyz_t.device)), dim=3)
+
 
         ### t2d ###
         ###########
@@ -1057,7 +1078,7 @@ class Model:
         # t2d, mask_t_2d_remade = get_t2d(
         #     xyz_t[0], mask_t[0], seq_scalar[0], same_chain[0], atom_frames[0])
         # t2d = t2d[None] # Add batch dimension # [B,T,L,L,44]
-        
+
         ### idx ###
         ###########
         """
@@ -1104,14 +1125,14 @@ class Model:
         # t1d = t1d.to(self.device)
         # # t2d = t2d.to(self.device)
         # alpha_t = alpha_t.to(self.device)
-        
+
         ### added_features ###
         ######################
-        # NB the hotspot input has been removed in this branch. 
+        # NB the hotspot input has been removed in this branch.
         # JW added it back in, using pdb indexing
 
         if self.conf.preprocess.d_t1d == 24: # add hotpot residues
-            raise Exception('not implemented')
+            raise NotImplementedError
             if self.ppi_conf.hotspot_res is None:
                 print("WARNING: you're using a model trained on complexes and hotspot residues, without specifying hotspots. If you're doing monomer diffusion this is fine")
                 hotspot_idx=[]
@@ -1156,7 +1177,8 @@ class Model:
         #     xyz[0, ~is_diffused * ~indep.is_sm][0][:,0], # nan 14:
         # )
 
-        is_protein_motif = ~is_diffused * ~indep.is_sm
+        is_protein_motif = ~is_diffused * ~indep.is_sm * nucl_utils.get_resi_type_mask(indep.seq, 'prot_and_mask')
+        is_nucleic_motif = ~is_diffused * ~indep.is_sm * nucl_utils.get_resi_type_mask(indep.seq, 'na')
         # idx_diffused = torch.nonzero(is_diffused)
         # idx_protein_motif  = torch.nonzero(is_protein_motif)
         # idx_sm = torch.nonzero(indep.is_sm)
@@ -1169,8 +1191,9 @@ class Model:
 
         # xyz = torch.nan_to_num(xyz)
         xyz[0, is_diffused*~indep.is_sm,3:] = torch.nan
-        xyz[0, indep.is_sm,14:] = 0
-        xyz[0, is_protein_motif, 14:] = 0
+        xyz[0, indep.is_sm,ChemData().NHEAVYPROT:] = 0
+        xyz[0, is_protein_motif, ChemData().NHEAVYPROT:] = 0
+        xyz[0, is_nucleic_motif, ChemData().NHEAVY:] = 0
         dist_matrix = rf2aa.data.data_loader.get_bond_distances(indep.bond_feats)
         
         t1d = torch.tile(t1d, (1,2,1,1))
@@ -1281,13 +1304,11 @@ def get_obmol(xyz_sm, seq_sm, bond_feats_sm):
         atoms.append(Atom(atomnum))
         akeys.append(i)
 
-    for i, j in bond_feats_sm.nonzero():
-        if i > j:
-            continue
-        bonds.append(
-            Bond(i, j, bond_feats_sm[i,j].item(), False)
-        )
-
+    bonds.extend(
+        Bond(i, j, bond_feats_sm[i, j].item(), False)
+        for i, j in bond_feats_sm.nonzero()
+        if i <= j
+    )
     mol, bond_feats = rf2aa.util.cif_ligand_to_obmol(xyz_sm, akeys, atoms, bonds)
     return mol, bond_feats
 
@@ -1327,7 +1348,7 @@ def adaptor_fix_bb_indep(out):
 
     indep = Indep(
         rf2aa.tensor_util.assert_squeeze(seq), # [L]
-        true_crds[:,:14], # [L, 14, 3]
+        true_crds[:,:ChemData().NHEAVY], # [L, N_HEAVY, 3]
         idx_pdb,
 
         # SM specific
@@ -1357,9 +1378,8 @@ def deatomize_covales(indep, atom_mask):
     indep.assert_types()
     is_peptide_bond = indep.bond_feats == 6
     indep.bond_feats = indep.bond_feats * ~is_peptide_bond
-    
-    metadata = {}
-    metadata['type'] = indep.type()
+
+    metadata = {'type': indep.type()}
     assertpy.assert_that(metadata['type']).does_not_contain(-1)
 
     ca = indep.xyz[:,1]
@@ -1398,7 +1418,7 @@ def deatomize_covales(indep, atom_mask):
             'idx0': corresponding_idx0,
             'connected_idx0': np.array(list(connected_idx0))
         }
-    
+
     # Detect cross bonds
     # i.e. bond features between atomized and covalent ligand
     resi_atom_name_by_atomized_idx = {}
@@ -1412,7 +1432,7 @@ def deatomize_covales(indep, atom_mask):
             atom_identifiers.append(resi_atom_name_by_atomized_idx[i])
             continue
         atom_identifiers.append(i)
-    
+
     # HACK: assumes only one covalent ligand
     all_corresponding = [np.array([])]
     for v in metadata['covale_correspondence'].values():
@@ -1438,7 +1458,7 @@ def deatomize_covales(indep, atom_mask):
     for i, (a, b, bond_type) in enumerate(metadata['covale_bonds']):
         new_b = new_i_from_old_i[b].item()
         metadata['covale_bonds'][i] = (a, new_b, bond_type)
-    
+
     metadata = {
         'covale_bonds': metadata['covale_bonds'],
     }
@@ -1457,7 +1477,7 @@ def missing_atom_names(indep, atom_mask, res_i):
 
 def fetch_connected_nodes(G, node, seen = None):
     if seen is None:
-        seen = set([node])
+        seen = {node}
     for neighbor in G.neighbors(node):
         if neighbor not in seen:
             seen.add(neighbor)
@@ -1603,7 +1623,11 @@ def rearrange_indep(indep, from_i):
     relative_from_absolute_new[is_sm_new] = torch.arange(n_sm)
     
 
+
 def diffuse(conf, diffuser, indep, is_diffused, t):
+    """
+    conf.diffuser.preserve_motif_sidechains, when set to true, diffusion and frames addition are only performed on positions that are set to diffuse via the is_diffused boolean mask 
+    """
     indep = copy.deepcopy(indep)
     indep.xyz = add_fake_frame_legs(indep.xyz, indep.is_sm)
     rigids_0 = du.rigid_frames_from_atom_14(indep.xyz)
@@ -1616,8 +1640,40 @@ def diffuse(conf, diffuser, indep, is_diffused, t):
     diffuser_out['rigids_0'] = rigids_0.to_tensor_7()[None]
     diffuser_out['rigids_0_raw'] = rigids_0
     xT = all_atom.atom37_from_rigid(diffuser_out['rigids_t'])
-    indep.xyz = xT[:,:14]
+    # Only update heavy atoms from diffused positions
+    if conf.diffuser.preserve_motif_sidechains:
+        # Only is_diffused motifs get replaces, should be more correct in general
+        indep.xyz[is_diffused,:ChemData().NTOTAL] = xT[is_diffused,:ChemData().NTOTAL]
+        indep.xyz = indep.xyz[:, :ChemData().NTOTAL]
+    else:
+        # In this case, all motif atoms are replaced with idealized frames from rigids
+        indep.xyz = xT[:,:ChemData().NTOTAL] #[:,:ChemData().NHEAVY]
     return indep, diffuser_out
+
+
+def mask_seq(indep: Indep, is_seq_masked: torch.Tensor) -> torch.Tensor:
+    """
+    Diffuses the sequence by applying masks to each polymer type.
+
+    Args:
+        indep (torch.Tensor): The input sequence tensor.
+        is_seq_masked (torch.Tensor): The mask indicating which positions in the sequence are masked.
+
+    Returns:
+        indep with sequence diffused
+    """
+    indep = indep.clone()
+    # Give masks to each polymer type to do polymer specific diffusion
+    is_seq_masked_dna = is_seq_masked * nucl_utils.get_resi_type_mask(indep.seq, 'dna')    
+    is_seq_masked_rna = is_seq_masked * nucl_utils.get_resi_type_mask(indep.seq, 'rna')
+    is_seq_masked_prot_and_other = is_seq_masked * ~nucl_utils.get_resi_type_mask(indep.seq, 'rna') * ~nucl_utils.get_resi_type_mask(indep.seq, 'dna')
+
+    # Give corresponding mask types
+    indep.seq[is_seq_masked_dna] = ChemData().MASKINDEXDNA
+    indep.seq[is_seq_masked_rna] = ChemData().MASKINDEXRNA
+    indep.seq[is_seq_masked_prot_and_other] = ChemData().MASKINDEX    
+    return indep
+
 
 def add_fake_peptide_frame(indep, generator=None):
     indep = copy.deepcopy(indep)
@@ -1630,7 +1686,15 @@ def idealize_peptide_frames(indep, generator=None):
     atom37 = all_atom.atom37_from_rigid(rigids, generator=generator)
     # Not sure if this clone is necessary
     atom37 = torch.clone(atom37)
-    indep.xyz = atom37[:,:14]
+    # Keeping these comments here in case this breaks tests.
+    # This is incorrect, do not return only :14, now pad to 36 full size 
+    # orig_dim = indep.xyz.shape[1]
+    # if orig_dim > ChemData().NHEAVY:
+    #     indep.xyz = torch.cat([atom37[:,:ChemData().NHEAVY], 
+    #                            torch.zeros(indep.xyz.shape[0], orig_dim - ChemData().NHEAVY, 3)], 
+    #                            dim=1)
+    # else:
+    indep.xyz = atom37[:,:ChemData().NTOTAL]
     return indep
 
 def diffuse_then_add_conditional(conf, diffuser, indep, is_diffused, t):
@@ -1694,12 +1758,13 @@ def self_cond_new(indep, rfi, rfo, use_cb=False):
     return rfi_sc
 
 def self_cond(indep, rfi, rfo, use_cb=False):
+    xyz_last = rfo.xyz[-1:]
     # RFI is already batched
     B = 1
     L = indep.xyz.shape[0]
     rfi_sc = copy.deepcopy(rfi)
     zeros = torch.zeros(B,1,L,36-3,3).float().to(rfi.xyz.device)
-    xyz_t = torch.cat((rfo.xyz[-1:], zeros), dim=-2) # [B,T,L,27,3]
+    xyz_t = torch.cat((xyz_last, zeros), dim=-2) # [B,T,L,27,3]
     t2d, mask_t_2d_remade = util.get_t2d(
         xyz_t[0], indep.is_sm, rfi.atom_frames[0], use_cb=use_cb)
     base_d_t2d = t2d.shape[-1]
@@ -1716,19 +1781,16 @@ def diagnose_xyz(xyz):
     return f'diagnosis: nan-CA: {has_ca}    nan-BB: {has_backbone}'
 
 def get_atomization_state(indep):
-    atomized_labels = []
-    for i in range(indep.length()):
-        atomized_labels.append(
-            AtomizedLabel(
-                coarse_idx0=i,
-                aa=int(indep.seq[i]),
-                atom_name=None,
-                pdb_idx=int(indep.idx[i]),
-                terminus_type=int(indep.terminus_type[i])
-            )
+    return [
+        AtomizedLabel(
+            coarse_idx0=i,
+            aa=int(indep.seq[i]),
+            atom_name=None,
+            pdb_idx=int(indep.idx[i]),
+            terminus_type=int(indep.terminus_type[i]),
         )
-        
-    return atomized_labels
+        for i in range(indep.length())
+    ]
 
 def insert_tensor(body: torch.tensor, fill, index: int, dim: int=0) -> torch.tensor:
     """
@@ -1774,7 +1836,7 @@ def insert_tensor(body: torch.tensor, fill, index: int, dim: int=0) -> torch.ten
 
 
 class AtomizeResidues:
-    def __init__(self, deatomized_state: list[AtomizedLabel], residue_to_atomize: torch.Tensor):
+    def __init__(self, deatomized_state: List[AtomizedLabel], residue_to_atomize: torch.Tensor):
         assert len(deatomized_state) == len(residue_to_atomize)
 
         self.deatomized_state = deatomized_state
@@ -1974,12 +2036,12 @@ class AtomizeResidues:
         L = indep_deatomized.length()
         is_protein_motif = residue_to_atomize * ~indep_deatomized.is_sm
         allatom_mask = ChemData().allatom_mask.clone() # 1 if that atom index exists for that residue and 0 if it doesnt
-        allatom_mask[:, 14:] = False # no Hs
+        allatom_mask[:, ChemData().NHEAVY:] = False # no Hs
         atom_mask = allatom_mask[indep_deatomized.seq]
 
         # make xyz the right dimensions for atomization
         xyz = torch.full((L, ChemData().NTOTAL, 3), np.nan).float()
-        xyz[:, :14] = indep_deatomized.xyz[:, :14]
+        xyz[:, :ChemData().NHEAVY] = indep_deatomized.xyz[:, :ChemData().NHEAVY]
 
         # iterate through residue indices in the structure to atomize
         seq_atomize_all = []
@@ -2007,7 +2069,8 @@ class AtomizeResidues:
             N_resolved = (not N_term) and indep_deatomized.idx[res_idx]-indep_deatomized.idx[res_idx-1] == 1
 
             seq_atomize, _, xyz_atomize, _, frames_atomize, bond_feats_atomize, ra, chirals_atomize = \
-                            rf2aa.util.atomize_protein(res_idx, indep_deatomized.seq[None], xyz, atom_mask, n_res_atomize=1)
+                nucl_utils.atomize_prot_na(res_idx, indep_deatomized.seq[None], xyz, atom_mask, n_res_atomize=1)
+            # rf2aa.util.atomize_protein(res_idx, indep_deatomized.seq[None], xyz, atom_mask, n_res_atomize=1)
             r,a = ra.T
             C_index = torch.all(ra==torch.tensor([r[-1],2]),dim=1).nonzero()
             
@@ -2027,6 +2090,7 @@ class AtomizeResidues:
             bond_feats_new = torch.zeros((L+natoms, L+natoms))
             bond_feats_new[:L, :L] = indep_deatomized.bond_feats
             bond_feats_new[L:, L:] = bond_feats_atomize
+
             # add bond between protein and atomized N
             if N_resolved:
                 bond_feats_new[res_idx-1, L] = 6 # protein (backbone)-atom bond 
@@ -2036,7 +2100,8 @@ class AtomizeResidues:
                 bond_feats_new[res_idx+1, L+int(C_index.numpy())] = 6 # protein (backbone)-atom bond 
                 bond_feats_new[L+int(C_index.numpy()), res_idx+1] = 6 # protein (backbone)-atom bond 
             # handle drawing peptide bond between contiguous atomized residues
-            if indep_deatomized.idx[res_idx]-indep_deatomized.idx[prev_res_idx] == 1 and prev_res_idx > -1:
+            res_is_na = nucl_utils.get_resi_type_mask(residue, 'na')  # Do not include if it is a nucleic acid
+            if indep_deatomized.idx[res_idx]-indep_deatomized.idx[prev_res_idx] == 1 and prev_res_idx > -1 and not res_is_na:
                 bond_feats_new[prev_C_index, L] = 1 # single bond
                 bond_feats_new[L, prev_C_index] = 1 # single bond
             prev_res_idx = res_idx
@@ -2137,7 +2202,7 @@ class AtomizeResidues:
         return indep_atomized
     
     @staticmethod
-    def _atomize_state(atomization_state: list[AtomizedLabel], idx0s: Iterable[int]) -> list[AtomizedLabel]:
+    def _atomize_state(atomization_state: List[AtomizedLabel], idx0s: Iterable[int]) -> List[AtomizedLabel]:
         '''
         Changes the atomization_state for proper bookkeeping when
         atomizing residues.
@@ -2172,7 +2237,7 @@ class AtomizeResidues:
         return atomization_state
         
     @staticmethod
-    def _deatomize_state(atomization_state: list[AtomizedLabel], coarse_idx0: int):
+    def _deatomize_state(atomization_state: List[AtomizedLabel], coarse_idx0: int):
         '''
         Changes the atomization_state for proper bookkeeping when
         deatomizing a residue.
@@ -2280,7 +2345,7 @@ def make_guideposts(indep, is_motif):
     indep_cat = cat_indeps_separate_chains((indep, indep_motif))
     chains_cat =  np.concatenate((chains, motif_chains))
     indep_cat.same_chain = same_chain_from_chain_letters(chains_cat)
-    gp_to_ptn_idx0 = {i:j for i,j in zip(gp_i, is_motif.nonzero()[:,0].tolist())}
+    gp_to_ptn_idx0 = dict(zip(gp_i, is_motif.nonzero()[:,0].tolist()))
 
     is_inter_gp = indep_cat.is_gp[None, :] != indep_cat.is_gp[:, None]
     has_sm = indep_cat.is_sm[None, :] + indep_cat.is_sm[:, None]
@@ -2436,6 +2501,7 @@ def transform_indep(indep, is_res_str_shown, is_res_seq_shown, is_atom_str_shown
     is_diffused = ~is_res_str_shown
     is_masked_seq = ~is_res_seq_shown
     assertpy.assert_that(len(is_diffused)).is_equal_to(indep.length())
+    # assertpy.assert_that(indep.xyz.shape[1]).is_equal_to(input_indep_xyz_shape[1])
     return indep, is_diffused, is_masked_seq, atomizer, gp_to_ptn_idx0
 
 
@@ -2495,7 +2561,7 @@ def generate_pre_to_post_transform_indep_mapping(indep, atomizer=None, gp_to_ptn
 def hetatm_names(pdb):
     d = defaultdict(list)
     with open(pdb) as f:
-        for line in f.readlines():
+        for line in f:
             if line.startswith('HETATM'):
                 lig_name = line[17:20].strip()
                 atom_name = line[12:16].strip()
@@ -2595,10 +2661,10 @@ def open_indep(indep, is_open, break_chirals=False):
         setattr(indep, key, value)
 
 def residue_atoms(res):
-    return [n.strip() for n in ChemData().aa2long[res][:14] if n is not None]
+    return [n.strip() for n in ChemData().aa2long[res][:ChemData().NHEAVY] if n is not None]
 
 def make_conditional_indep(indep, indep_original, is_diffused):
     assert indep.is_sm[~is_diffused].all(), 'sequence unmasking not yet implemented, only coordinate conditioning, so only atomized/small molecule motifs are allowed'
     indep = copy.deepcopy(indep)
-    indep.xyz[~is_diffused] = indep_original.xyz[~is_diffused, :14]
+    indep.xyz[~is_diffused, :ChemData().NHEAVY] = indep_original.xyz[~is_diffused, :ChemData().NHEAVY]
     return indep

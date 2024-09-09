@@ -139,7 +139,7 @@ def rfi_from_input_feats(input_feats):
     psi_t = torch.zeros((1,L,2))
     bb_representations = all_atom.compute_backbone(curr_rigids, psi_t)
     atom37 = bb_representations[0][0]
-    xyz = torch.zeros((L, 14, 3))
+    xyz = torch.zeros((L, ChemData().NHEAVY, 3))
     xyz[:,:3,:] = atom37[:,:3,:]
     idx = input_feats['seq_idx'][0]
     Ls = [len(idx)]

@@ -22,6 +22,8 @@ from rf_diffusion import tip_atoms
 import rf_diffusion.ppi as ppi
 
 
+import rf_diffusion.nucleic_compatibility_utils as nucl_utils
+
 logger = logging.getLogger(__name__)
 
 class InvalidMaskException(Exception):
@@ -323,6 +325,8 @@ def _get_tip_gaussian_mask(indep, atom_mask, *args, std_dev=8, show_tip=False, *
         4. Select a random atom in each residue, weighted towards selecting the tip
         5. Expand the mask starting from each selected atom by traversing 1-3 bonds within the residue.
     '''
+    ic(indep.xyz.shape)
+    ic(atom_mask.shape)
     assert not indep.is_sm.any()
     is_valid_for_atomization = indep.has_heavy_atoms_and_seq(atom_mask)
     if not is_valid_for_atomization.any():
@@ -480,6 +484,153 @@ def _get_diffusion_mask_simple(xyz, low_prop, high_prop, broken_prop, crop=None,
         diffusion_mask[-(mask_length-split):] = False
     return diffusion_mask
 
+def _get_prot_diffusion_mask_islands_from_na_contacts(indep, atom_mask, *args, search_radius_min=1e-2, search_radius_max=20, n_islands_min=1, n_islands_max=4, max_resi_atomize=20, **kwargs):
+    # Initializations
+    L = indep.xyz.shape[0]
+    is_motif = torch.zeros(L).bool()
+
+    is_nucl = nucl_utils.get_resi_type_mask(indep.seq, 'na')
+    if torch.sum(is_nucl) < 1:
+        # No nucleic acids, no atomization
+        return is_motif
+
+    normal_contacts, base_contacts = nucl_utils.get_nucl_prot_contacts(indep, dist_thresh=4.5, ignore_prot_bb=True)  # NOTE: is_gp variable is not used (guide posting compatability)
+    if len(normal_contacts) == 0 and len(base_contacts) == 0:
+        # No nucleic acid contacts, no atomization
+        return is_motif
+    elif len(base_contacts) == 0:
+        # Default on the only available contacts
+        contacts = normal_contacts
+    else:
+        # Select which contacts to use
+        if np.random.rand() < 0.2:
+            contacts = normal_contacts
+        else:
+            contacts = base_contacts
+
+    # Sample the number of islands constrainted by the number of available contacts
+    n_islands_min_eff = min([n_islands_min, len(contacts)])
+    n_islands_max_eff = min([n_islands_max, len(contacts)])    
+    if n_islands_min_eff == n_islands_max_eff:
+        # Not enough potential islands 
+        n_islands = n_islands_min_eff
+    else:
+        n_islands = np.random.randint(n_islands_min_eff, n_islands_max_eff)
+
+    # Sample contact points, expand aroundd random radii, and place into motif mask
+    na_contact_residues = np.random.choice(contacts, n_islands, replace=False)
+    for resi_i in na_contact_residues:
+        # Get search radius, then sample residues
+        search_radius = np.random.rand() * (search_radius_max - search_radius_min) + search_radius_min
+        mask_i = get_neighboring_residues(indep.xyz, atom_mask, resi_i, r=search_radius)
+        mask_i = torch.logical_and(is_nucl, mask_i)  # Only consider nucleic acids for atomization
+        is_motif[mask_i] = True
+    
+    motif_idx = torch.nonzero(is_motif).flatten()
+    if len(motif_idx) > max_resi_atomize:
+        # Too many residues to atomize, in this case, subsample randomly
+        is_motif = torch.zeros(L).bool()
+        # Sample motif_idx
+        motif_idx = np.random.choice(motif_idx, max_resi_atomize, replace=False)
+        is_motif[motif_idx] = True
+
+    # Prevent mask tokens from being atomized
+    is_motif[torch.logical_or(indep.seq == 26, indep.seq == 31)] = False
+
+    # Prevents the entire thing from being motif, as this is disallowed.
+    if is_motif.all():
+        is_motif[np.random.randint(L)] = False
+        
+    is_atom_motif = None  # Do not have any atomization motif
+    return is_motif, is_atom_motif
+
+def _protein_motif_scaffold_dna(indep, atom_mask, expand_max=6, *args, **kwargs):
+    is_atom_motif = None
+
+    prot_contact_indices = nucl_utils.get_dna_contacts(indep, 3.5)
+    if prot_contact_indices is None or len(prot_contact_indices) == 0:
+        return None, None
+    
+    # pick a contact and make motif out of random number of neighbor residues
+    selection = np.random.randint(len(prot_contact_indices))
+    motif_residues = [prot_contact_indices[selection].item()]
+
+    right_max_expand = np.random.randint(0, expand_max)
+    left_max_expand = np.random.randint(0, expand_max)
+
+    bonds = [bond.item() for bond in torch.nonzero(indep.bond_feats[motif_residues[0]]).flatten()]
+    
+    if len(bonds) == 1:
+        to_expand = []
+        to_visit = [bonds[0]]
+        visited = set(motif_residues)
+        while len(to_visit) > 0 and len(to_expand) < max(right_max_expand, left_max_expand):
+            current_index = to_visit.pop()
+            visited.add(current_index)
+            to_expand.append(current_index)
+
+            to_visit.extend([bond.item() for bond in torch.nonzero(indep.bond_feats[current_index]).flatten() if bond.item() not in visited])
+    
+    elif len(bonds) == 2:
+        right_expand = []
+        to_visit = [bonds[0]]
+        visited = set(motif_residues)
+
+        while len(to_visit) > 0 and len(right_expand) < right_max_expand:
+            current_index = to_visit.pop()
+            visited.add(current_index)
+            right_expand.append(current_index)
+
+            to_visit.extend([bond.item() for bond in torch.nonzero(indep.bond_feats[current_index]).flatten() if bond.item() not in visited])
+        
+        left_expand = []
+        to_visit = [bonds[1]]
+        while len(to_visit) > 0 and len(left_expand) < left_max_expand:
+            current_index = to_visit.pop()
+            visited.add(current_index)
+            left_expand.append(current_index)
+
+            to_visit.extend([bond.item() for bond in torch.nonzero(indep.bond_feats[current_index]).flatten() if bond.item() not in visited])
+
+        to_expand = left_expand + right_expand
+    
+    else:
+        return None, None
+
+    motif_residues.extend(to_expand)
+    is_motif = torch.zeros(len(indep.seq)).bool()
+    is_motif[motif_residues] = True
+
+    return is_motif, is_atom_motif
+
+def _protein_motif_scaffold_dna_wrapper(protein_motif_scaffold_dna):
+    # so this one is gonna wrap protein_motif_scaffold_dna and either return is_motif or run unconditional mask and return that
+    @wraps(protein_motif_scaffold_dna)
+    def out_get_mask(indep, atom_mask, *args, **kwargs):
+        is_motif, is_atom_motif = protein_motif_scaffold_dna(indep, atom_mask, *args, **kwargs)
+        if is_motif is None:
+            return get_unconditional_diffusion_mask(indep, atom_mask, *args, **kwargs)
+        else:
+            return is_motif, is_atom_motif
+    return out_get_mask
+
+def _inverse_protein_motif_scaffold_dna(protein_motif_scaffold_dna):
+    # this one is gonna wrap protein_motif_scaffold_dna and either return inverse of is_motif or run unconditional mask and return that.
+    @wraps(protein_motif_scaffold_dna)
+    def out_get_mask(indep, atom_mask, *args, **kwargs):
+        is_motif, is_atom_motif = protein_motif_scaffold_dna(indep, atom_mask, expand_max=10)
+        if is_motif is None:
+            return get_unconditional_diffusion_mask(indep, atom_mask, *args, **kwargs)
+        else:
+            # invert the motif
+            is_prot = nucl_utils.get_resi_type_mask(indep.seq, 'prot')
+            for i in range(len(is_motif)):
+                if is_prot[i]:
+                    is_motif[i] = ~is_motif[i]
+        return is_motif, is_atom_motif
+    return out_get_mask
+                
+
 def _get_diffusion_mask_islands(xyz, *args, island_len_min=1, island_len_max=15, n_islands_min=1, n_islands_max=4, **kwargs):
     L = xyz.shape[0]
     is_motif = torch.zeros(L).bool()
@@ -514,7 +665,133 @@ def make_sm_compatible(get_mask):
         return diffusion_mask, None
     return out_get_mask
 
-def make_atomized(get_mask, min_atomized_residues=1, max_atomized_residues=5):
+def _get_prot_unconditional_atomize_na_contacts_mask(indep, atom_mask, *args, **kwargs):
+    # Initializations
+    L = indep.xyz.shape[0]
+    is_motif = torch.zeros(L).bool()
+    is_atom_motif = None  # Do not have any atomization motif    
+
+    is_nucl = nucl_utils.get_resi_type_mask(indep.seq, 'na')
+    is_prot = nucl_utils.get_resi_type_mask(indep.seq, 'prot')
+    if torch.sum(is_nucl) < 1 or torch.sum(is_prot) < 1:
+        # No nucleic acids, or no proteins, then no atomization
+        return is_motif, is_atom_motif
+
+    prot_contacts, na_contacts = nucl_utils.protein_dna_sidechain_base_contacts(indep, contact_distance=4.5, expand_prot=False)
+    # NOTE: is_gp variable is not used (guide posting compatability)
+    if prot_contacts is None:
+        # No nucleic acid contacts, no atomization
+        return is_motif, is_atom_motif
+
+    # Sample contact points, expand aroundd random radii, and place into motif mask
+    for contact_index in na_contacts:
+        is_motif[contact_index] = True
+
+    # Prevent mask tokens from being atomized
+    is_motif[torch.logical_or(indep.seq == 26, indep.seq == 31)] = False
+
+    # Prevents the entire thing from being motif, as this is disallowed.
+    if is_motif.all():
+        is_motif[np.random.randint(L)] = False
+        
+    return is_motif, is_atom_motif
+
+def _get_prot_contactmotif_atomize_na_contacts_mask(indep, atom_mask, expand_prot_prob=0.25, *args, **kwargs):
+    # Initializations
+    L = indep.xyz.shape[0]
+    is_motif = torch.zeros(L).bool()
+    is_atom_motif = None  # Do not have any atomization motif    
+
+    is_nucl = nucl_utils.get_resi_type_mask(indep.seq, 'na')
+    is_prot = nucl_utils.get_resi_type_mask(indep.seq, 'prot')
+    if torch.sum(is_nucl) < 1 or torch.sum(is_prot) < 1:
+        # No nucleic acids, or no proteins, then no atomization
+        return is_motif, is_atom_motif
+
+
+    # Some fraction of the time (a quarter by default) we will expand the guideposted region to attempt to include the entire recognition helix
+    if random.random() < expand_prot_prob:
+        prot_contacts, na_contacts = nucl_utils.protein_dna_sidechain_base_contacts(indep, contact_distance=4.5, expand_prot=True)
+    else:
+        # otherwise only guidepost the residues making actual contacts
+        prot_contacts, na_contacts = nucl_utils.protein_dna_sidechain_base_contacts(indep, contact_distance=4.5, expand_prot=False)
+    # NOTE: is_gp variable is not used (guide posting compatability)
+    if prot_contacts is None:
+        # No nucleic acid contacts, no atomization
+        return is_motif, is_atom_motif
+
+    # Sample contact points, expand aroundd random radii, and place into motif mask
+    for contact_index in na_contacts:
+        is_motif[contact_index] = True
+
+    for contact_index in prot_contacts:
+        is_motif[contact_index] = True
+
+    # Prevent mask tokens from being atomized
+    is_motif[torch.logical_or(indep.seq == 26, indep.seq == 31)] = False
+
+    # Prevents the entire thing from being motif, as this is disallowed.
+    if is_motif.all():
+        is_motif[np.random.randint(L)] = False
+        
+    return is_motif, is_atom_motif
+
+
+def _get_na_prot_contact_mask(indep, atom_mask, *args, **kwargs):
+    # Initializations
+    L = indep.xyz.shape[0]
+    is_motif = torch.zeros(L).bool()
+    is_atom_motif = None  # Do not have any atomization motif    
+
+    is_nucl = nucl_utils.get_resi_type_mask(indep.seq, 'na')
+    is_prot = nucl_utils.get_resi_type_mask(indep.seq, 'prot')
+    if torch.sum(is_nucl) < 1 or torch.sum(is_prot) < 1:
+        # No nucleic acids, or no proteins, then no atomization
+        return is_motif, is_atom_motif
+
+    prot_contacts, na_contacts = nucl_utils.protein_dna_sidechain_base_contacts(indep, contact_distance=4.5, expand_prot=False)
+
+    # NOTE: is_gp variable is not used (guide posting compatability)
+    if prot_contacts is None:
+        # No nucleic acid contacts, no atomization
+        return is_motif, is_atom_motif
+
+    # Sample contact points, expand aroundd random radii, and place into motif mask
+    for contact_index in na_contacts:
+        is_motif[contact_index] = True
+
+    for contact_index in prot_contacts:
+        is_motif[contact_index] = True
+
+    # Prevent mask tokens from being atomized
+    is_motif[torch.logical_or(indep.seq == 26, indep.seq == 31)] = False
+
+    # Prevents the entire thing from being motif, as this is disallowed.
+    if is_motif.all():
+        is_motif[np.random.randint(L)] = False
+        
+    return is_motif, is_atom_motif
+
+def _get_tipatom_mask_proteinonly_anywhere(indep, atom_mask, sample_min=1, sample_max=6, *args, **kwargs):
+    L = indep.xyz.shape[0]
+    is_motif = torch.zeros(L).bool()
+    is_atom_motif = None  # Do not have any atomization motif    
+
+    is_prot = nucl_utils.get_resi_type_mask(indep.seq, 'prot')
+
+    n_sample = np.random.randint(sample_min, sample_max)
+    prot_indices = torch.where(is_prot)[0]
+    sampled_indices = np.random.choice(prot_indices, n_sample, replace=False)
+
+    is_motif[sampled_indices] = True
+
+    return is_motif, is_atom_motif
+
+def make_atomized(get_mask, min_atomized_residues=1, max_atomized_residues=5, sample=True):
+    """
+    Args:
+        sample (bool): whether or not to sample positions to get a random subset
+    """
     @wraps(get_mask)
     def out_get_mask(indep, atom_mask, *args, **kwargs):
         is_motif, is_atom_motif, *extra_ret = get_mask(indep, atom_mask, *args, **kwargs)
@@ -523,11 +800,241 @@ def make_atomized(get_mask, min_atomized_residues=1, max_atomized_residues=5):
         if not can_be_atomized.any():
             return is_motif, None
         atomize_indices = torch.nonzero(can_be_atomized).flatten()
+
+        # Only sample when allowed (default behavior)
+        if sample:
+            n_sample = random.randint(min_atomized_residues, max_atomized_residues)
+            n_sample = min(len(atomize_indices), n_sample)
+            atomize_indices = np.random.choice(atomize_indices, n_sample, replace=False)
+        is_atom_motif = {i:choose_contiguous_atom_motif(indep.seq[i]) for i in atomize_indices}
+        is_motif[atomize_indices] = False
+        return is_motif, is_atom_motif, *extra_ret
+    return out_get_mask
+
+
+def make_atomized_complete(get_mask, min_atomized_residues=1, max_atomized_residues=8, max_size=384):
+    """
+    Decorator function that atomizes a masking function by adding completely atomized residues until the maximum size is reached.
+
+    Args:
+        get_mask (function): The masking function to be atomized.
+        min_atomized_residues (int): The minimum number of atomized residues to atomize.
+        max_atomized_residues (int): The maximum number of atomized residues to atomize
+        max_size (int): The maximum size of the indep. Defaults to 384.
+
+    Returns:
+        function: The atomized masking function.
+
+    Raises:
+        AssertionError if the input exceeds the max_size
+    """
+    @wraps(get_mask)
+    def out_get_mask(indep, atom_mask, *args, **kwargs):
+        is_motif, is_atom_motif, *extra_ret = get_mask(indep, atom_mask, *args, **kwargs)
+        assert is_atom_motif is None, 'attempting to atomize a masking function that is already returning atomization masks'
+        can_be_atomized = is_motif * indep.is_valid_for_atomization(atom_mask)
+        if not can_be_atomized.any():
+            return is_motif, None
+        atomize_indices = torch.nonzero(can_be_atomized).flatten()
+
+        N_resi = len(is_motif)
+        assert N_resi <= max_size, f'Protein is too large for atomization: {N_resi} > {max_size}'
+
+        # Only sample when allowed (default behavior)
         n_sample = random.randint(min_atomized_residues, max_atomized_residues)
         n_sample = min(len(atomize_indices), n_sample)
         atomize_indices = np.random.choice(atomize_indices, n_sample, replace=False)
-        is_atom_motif = {i:choose_contiguous_atom_motif(indep.seq[i]) for i in atomize_indices}
+        is_atom_motif = {}  
+        # Randomize order
+        atomize_indices = [atomize_indices[i] for i in np.random.permutation(len(atomize_indices))]
+        for i in atomize_indices:
+            # Add new completely atomized atoms until the max size is reached
+            atoms_new = [atom for atom in ChemData().aa2long[indep.seq[i]]
+                                if atom is not None and atom.find('H') == -1]
+            if len(atoms_new) + N_resi > max_size:
+                break
+            is_atom_motif[i] = atoms_new
+            N_resi += len(atoms_new)
         is_motif[atomize_indices] = False
+        return is_motif, is_atom_motif, *extra_ret
+    return out_get_mask
+
+def make_atomized_complete_noprotein(get_mask, min_atomized_residues=1, max_atomized_residues=8, max_size=384):
+    """
+    Decorator function that atomizes a masking function by adding completely atomized residues until the maximum size is reached.
+    Does not atomize protein residues
+
+    Args:
+        get_mask (function): The masking function to be atomized.
+        min_atomized_residues (int): The minimum number of atomized residues to atomize.
+        max_atomized_residues (int): The maximum number of atomized residues to atomize
+        max_size (int): The maximum size of the indep. Defaults to 384.
+
+    Returns:
+        function: The atomized masking function.
+
+    Raises:
+        AssertionError if the input exceeds the max_size
+    """
+    @wraps(get_mask)
+    def out_get_mask(indep, atom_mask, *args, **kwargs): 
+        is_motif, is_atom_motif, *extra_ret = get_mask(indep, atom_mask, *args, **kwargs)
+        assert is_atom_motif is None, 'attempting to atomize a masking function that is already returning atomization masks'
+        can_be_atomized = is_motif * indep.is_valid_for_atomization(atom_mask) * ~nucl_utils.get_resi_type_mask(indep.seq, 'prot')
+        if not can_be_atomized.any():
+            return is_motif, None
+        atomize_indices = torch.nonzero(can_be_atomized).flatten()
+
+        N_resi = len(is_motif)
+        assert N_resi <= max_size, f'Protein is too large for atomization: {N_resi} > {max_size}'
+
+        # Only sample when allowed (default behavior)
+        n_sample = random.randint(min_atomized_residues, max_atomized_residues)
+        n_sample = min(len(atomize_indices), n_sample)
+        atomize_indices = np.random.choice(atomize_indices, n_sample, replace=False)
+        is_atom_motif = {}  
+        # Randomize order
+        atomize_indices = [atomize_indices[i] for i in np.random.permutation(len(atomize_indices))]
+        for i in atomize_indices:
+            # Add new completely atomized atoms until the max size is reached
+            atoms_new = [atom for atom in ChemData().aa2long[indep.seq[i]]
+                                if atom is not None and atom.find('H') == -1]
+            if len(atoms_new) + N_resi > max_size:
+                break
+            is_atom_motif[i] = atoms_new
+            N_resi += len(atoms_new)
+        is_motif[atomize_indices] = False
+        return is_motif, is_atom_motif, *extra_ret
+    return out_get_mask
+
+
+def make_tip_protein_for_na_compl(get_mask, max_size=384):
+    @wraps(get_mask)
+    def out_get_mask(indep, atom_mask, *args, **kwargs):
+        protein_tip_atoms = {
+            1: [' NH1', ' NH2', ' CZ '],
+            2: [' ND2', ' OD1', ' CG '],
+            3: [' OD2', ' CG ', ' OD1'],
+            5: [' OE1', ' NE2', ' CD '],
+            6: [' OE1', ' CD ', ' OE2'],
+            8: [' CG ', ' ND1', ' CE1', ' NE2', ' CD2'],
+            9: [' CD1', ' CG1'],
+            10: [' CD1', ' CG ', ' CD2'],
+            11: [' CE ', ' NZ '],
+            13: [' CG ', ' CD1', ' CE1', ' CZ ', ' CE2', ' CD2'],
+            15: [' OG ', ' CB '],
+            16: [' OG1', ' CB '],
+            17: [' CG ', ' CD1', ' NE1', ' CE2', ' CZ2', ' CH2', ' CZ3', ' CE3', ' CD2'],
+            18: [' CG ', ' CD1', ' CE1', ' CZ ', ' OH ', ' CE2', ' CD2'],
+            19: [' CG1', ' CG2', ' CB ']
+            }
+        
+        is_motif, is_atom_motif, *extra_ret = get_mask(indep, atom_mask, *args, **kwargs)
+        
+        if not is_motif.any():
+            is_motif, is_atom_motif, *extra_ret = _get_tipatom_mask_proteinonly_anywhere(indep, atom_mask)
+
+        can_be_atomized_prot = is_motif * indep.is_valid_for_atomization(atom_mask) * nucl_utils.get_resi_type_mask(indep.seq, 'prot')
+        # can_be_atomized_na = is_motif * indep.is_valid_for_atomization(atom_mask) * ~nucl_utils.get_resi_type_mask(indep.seq, 'prot')
+
+        if not can_be_atomized_prot.any(): # and not can_be_atomized_na.any():
+            return is_motif, None
+        prot_atomize_indices = torch.nonzero(can_be_atomized_prot).flatten()
+        # na_atomize_indices = torch.nonzero(can_be_atomized_na).flatten()
+
+        N_resi = len(is_motif)
+        assert N_resi <= max_size, 'Protein is too large for atomization'
+        is_atom_motif = {}
+
+        # tip atomize all proteins
+        for i in prot_atomize_indices:
+            if indep.seq[i].item() not in protein_tip_atoms.keys():
+                continue
+            atoms_new = protein_tip_atoms[indep.seq[i].item()]
+            if len(atoms_new) + N_resi > max_size:
+                break
+            is_atom_motif[i] = atoms_new
+            N_resi += len(atoms_new)
+
+        # n_sample = random.randint(min_atomized_residues, max_atomized_residues)
+        # n_sample = min(len(na_atomize_indices), n_sample)
+        # na_atomize_indices = np.random.choice(na_atomize_indices, n_sample, replace=False)
+        # na_atomize_indices = [na_atomize_indices[i] for i in np.random.permutation(len(na_atomize_indices))]
+        # for i in na_atomize_indices:
+            # Add new completely atomized atoms until the max size is reached
+            # atoms_new = [atom for atom in ChemData().aa2long[indep.seq[i]]
+                                # if atom is not None and atom.find('H') == -1]
+            # if len(atoms_new) + N_resi > max_size:
+                # break
+            # is_atom_motif[i] = atoms_new
+            # N_resi += len(atoms_new)
+
+        # is_motif[na_atomize_indices] = False
+        is_motif[prot_atomize_indices] = False
+
+        return is_motif, is_atom_motif, *extra_ret
+    return out_get_mask
+
+
+def make_atomized_dna_tip_protein_for_na_compl(get_mask, min_atomized_residues=1, max_atomized_residues=8, max_size=384):
+    @wraps(get_mask)
+    def out_get_mask(indep, atom_mask, *args, **kwargs):
+        protein_tip_atoms = {
+            1: [' NH1', ' NH2', ' CZ '],
+            2: [' ND2', ' OD1', ' CG '],
+            3: [' OD2', ' CG ', ' OD1'],
+            5: [' OE1', ' NE2', ' CD '],
+            6: [' OE1', ' CD ', ' OE2'],
+            8: [' CG ', ' ND1', ' CE1', ' NE2', ' CD2'],
+            9: [' CD1', ' CG1'],
+            10: [' CD1', ' CG ', ' CD2'],
+            11: [' CE ', ' NZ '],
+            13: [' CG ', ' CD1', ' CE1', ' CZ ', ' CE2', ' CD2'],
+            15: [' OG ', ' CB '],
+            16: [' OG1', ' CB '],
+            17: [' CG ', ' CD1', ' NE1', ' CE2', ' CZ2', ' CH2', ' CZ3', ' CE3', ' CD2'],
+            18: [' CG ', ' CD1', ' CE1', ' CZ ', ' OH ', ' CE2', ' CD2'],
+            19: [' CG1', ' CG2', ' CB ']
+            }
+        is_motif, is_atom_motif, *extra_ret = get_mask(indep, atom_mask, *args, **kwargs)
+        can_be_atomized_prot = is_motif * indep.is_valid_for_atomization(atom_mask) * nucl_utils.get_resi_type_mask(indep.seq, 'prot')
+        can_be_atomized_na = is_motif * indep.is_valid_for_atomization(atom_mask) * ~nucl_utils.get_resi_type_mask(indep.seq, 'prot')
+
+        if not can_be_atomized_prot.any() and not can_be_atomized_na.any():
+            return is_motif, None
+        prot_atomize_indices = torch.nonzero(can_be_atomized_prot).flatten()
+        na_atomize_indices = torch.nonzero(can_be_atomized_na).flatten()
+
+        N_resi = len(is_motif)
+        assert N_resi <= max_size, 'Protein is too large for atomization'
+        is_atom_motif = {}
+
+        # tip atomize all proteins
+        for i in prot_atomize_indices:
+            if indep.seq[i].item() not in protein_tip_atoms.keys():
+                continue
+            atoms_new = protein_tip_atoms[indep.seq[i].item()]
+            if len(atoms_new) + N_resi > max_size:
+                break
+            is_atom_motif[i] = atoms_new
+            N_resi += len(atoms_new)
+
+        n_sample = random.randint(min_atomized_residues, max_atomized_residues)
+        n_sample = min(len(na_atomize_indices), n_sample)
+        na_atomize_indices = np.random.choice(na_atomize_indices, n_sample, replace=False)
+        na_atomize_indices = [na_atomize_indices[i] for i in np.random.permutation(len(na_atomize_indices))]
+        for i in na_atomize_indices:
+            # Add new completely atomized atoms until the max size is reached
+            atoms_new = [atom for atom in ChemData().aa2long[indep.seq[i]]
+                                if atom is not None and atom.find('H') == -1]
+            if len(atoms_new) + N_resi > max_size:
+                break
+            is_atom_motif[i] = atoms_new
+            N_resi += len(atoms_new)
+
+        is_motif[na_atomize_indices] = False
+        is_motif[prot_atomize_indices] = False
+
         return is_motif, is_atom_motif, *extra_ret
     return out_get_mask
 
@@ -709,6 +1216,23 @@ get_PPI_interface_motif_planar_crop = make_covale_compatible(_PPI_planar_crop(_P
 get_PPI_random_motif_no_crop = make_covale_compatible(_PPI_no_crop(_PPI_random_motif_scaffolding))
 get_PPI_random_motif_radial_crop = make_covale_compatible(_PPI_radial_crop(_PPI_random_motif_scaffolding))
 get_PPI_random_motif_planar_crop = make_covale_compatible(_PPI_planar_crop(_PPI_random_motif_scaffolding))
+
+# NA specific mask generators, may generalize to other systems, but not guaranteed currently
+get_na_contacting_atomized_islands = no_pop(make_covale_compatible(make_atomized_complete(
+        partial(_get_prot_diffusion_mask_islands_from_na_contacts, n_islands_max=3, search_radius_min=1e-2, search_radius_max=10, max_resi_atomize=8))))
+
+get_na_motif_scaffold = no_pop(make_covale_compatible(_protein_motif_scaffold_dna_wrapper(_protein_motif_scaffold_dna)))
+get_na_inverse_motif_scaffold = no_pop(make_covale_compatible(_inverse_protein_motif_scaffold_dna(_protein_motif_scaffold_dna)))
+
+get_prot_unconditional_atomize_na_contacts = no_pop(make_covale_compatible(make_atomized_complete(_get_prot_unconditional_atomize_na_contacts_mask, max_atomized_residues=20)))
+
+get_prot_contactmotif_atomize_na_contacts = no_pop(make_covale_compatible(make_atomized_complete_noprotein(_get_prot_contactmotif_atomize_na_contacts_mask, max_atomized_residues=20)))
+
+get_prot_tipatom_guidepost_atomize_na_contacts = no_pop(make_covale_compatible(make_atomized_dna_tip_protein_for_na_compl(_get_na_prot_contact_mask, max_atomized_residues=20)))
+
+get_prot_tipatom_guidepost_na_contacts = no_pop(make_covale_compatible(make_tip_protein_for_na_compl(_get_na_prot_contact_mask)))
+
+get_prot_tipatom_guidepost_anywhere = no_pop(make_covale_compatible(make_tip_protein_for_na_compl(_get_tipatom_mask_proteinonly_anywhere)))
 
 sm_mask_fallback = {
     get_closest_tip_atoms: get_tip_gaussian_mask,

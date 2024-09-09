@@ -12,6 +12,7 @@ import string
 import rf2aa.chemical
 import rf2aa.tensor_util
 import rf_diffusion.parsers
+from rf_diffusion.chemical import ChemicalData as ChemData
 
 ###########################################################
 #### Functions which can be called outside of Denoiser ####
@@ -455,10 +456,10 @@ def process_target(pdb_path, parse_hetatom=False, center=True):
 
     # Make 27 atom representation
     xyz_27 = torch.full((seq_len, 27, 3), np.nan).float()
-    xyz_27[:, :14, :] = xyz[:, :14, :]
+    xyz_27[:, :ChemData().NHEAVY, :] = xyz[:, :ChemData().NHEAVY, :]
 
     mask_27 = torch.full((seq_len, 27), False)
-    mask_27[:, :14] = atom_mask
+    mask_27[:, :ChemData().NHEAVY] = atom_mask[:, :ChemData().NHEAVY]
     out = {
            'xyz_27': xyz_27,
             'mask_27': mask_27,

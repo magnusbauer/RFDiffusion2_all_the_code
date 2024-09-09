@@ -95,19 +95,21 @@ def parse_pdb(filename, xyz27=False,seq=False):
 
 def parse_pdb_lines_target(lines, parse_hetatom=False, ignore_het_h=True):
     # indices of residues observed in the structure
-    res = [(l[22:26],l[17:20]) for l in lines if l[:4]=="ATOM" and l[12:16].strip()=="CA"]
+    prot_base_atom = 'CA'
+    nucl_base_atom = 'P'
+    res = [(l[22:26],l[17:20]) for l in lines if l[:4]=="ATOM" and (l[12:16].strip()==prot_base_atom or l[12:16].strip()==nucl_base_atom)] # Add compatability for nucleic
     seq = [ChemData().aa2num[r[1]] if r[1] in ChemData().aa2num.keys() else 20 for r in res]
-    pdb_idx = [( l[21:22].strip(), int(l[22:26].strip()) ) for l in lines if l[:4]=="ATOM" and l[12:16].strip()=="CA"]  # chain letter, res num
+    pdb_idx = [( l[21:22].strip(), int(l[22:26].strip()) ) for l in lines if l[:4]=="ATOM" and (l[12:16].strip()==prot_base_atom or l[12:16].strip()==nucl_base_atom)]  # chain letter, res num
 
     # 4 BB + up to 10 SC atoms
-    xyz = np.full((len(res), 14, 3), np.nan, dtype=np.float32)
+    xyz = np.full((len(res), ChemData().NHEAVY, 3), np.nan, dtype=np.float32)
     for l in lines:
         if l[:4] != "ATOM":
             continue
         chain, resNo, atom, aa = l[21:22], int(l[22:26]), ' '+l[12:16].strip().ljust(3), l[17:20]
         idx = pdb_idx.index((chain,resNo))
         # for i_atm, tgtatm in enumerate(util.aa2long[util.aa2num[aa]]):
-        for i_atm, tgtatm in enumerate(ChemData().aa2long[ChemData().aa2num[aa]][:14]): # Nate's proposed change
+        for i_atm, tgtatm in enumerate(ChemData().aa2long[ChemData().aa2num[aa]][:ChemData().NHEAVY]): # Nate's proposed change            
             if tgtatm is not None and tgtatm.strip() == atom.strip(): # ignore whitespace
                 xyz[idx,i_atm,:] = [float(l[30:38]), float(l[38:46]), float(l[46:54])]
                 break

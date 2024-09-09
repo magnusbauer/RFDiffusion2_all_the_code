@@ -6,6 +6,7 @@ from icecream import ic
 import hydra
 import numpy as np
 import torch
+import copy
 
 from dev import analyze
 from rf_diffusion.data_loader import get_fallback_dataset_and_dataloader
@@ -239,6 +240,9 @@ REWRITE=False
 class Dataloader(unittest.TestCase):
 
     def cmp(self, a, b):
+        # For NA compataibility
+        a.xyz = a.xyz[:,:ChemData().NHEAVYPROT]  # xyz dimension should be 23, but only check the first 14
+        b.xyz = b.xyz[:,:ChemData().NHEAVYPROT]  
         cmp = partial(tensor_util.cmp, atol=1e-4, rtol=1e-5)
         return cmp(a, b)
 
@@ -613,6 +617,193 @@ class Dataloader(unittest.TestCase):
                 # Enough aa in each dataset have been checked
                 break
 
+    def test_na_compl(self):
+        dataset = 'na_compl'
+        mask = 'get_unconditional_diffusion_mask'
+
+        loader_out = self.indep_for_dataset(dataset, mask, overrides=['dataloader.CROP=364'])
+        indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context, conditions_dict = loader_out
+        indep.metadata = None
+
+        golden_name = f'indep_{dataset}-{mask}'
+        test_utils.assert_matches_golden(self, golden_name, indep, rewrite=REWRITE, custom_comparator=self.cmp)
+
+        unique_chains = np.unique(indep.chains())
+        assertpy.assert_that(len(unique_chains)).is_equal_to(2)
+
+        dataset = 'na_compl'
+        mask = 'get_diffusion_mask_simple'
+
+        loader_out = self.indep_for_dataset(dataset, mask, overrides=['dataloader.CROP=364'])
+        indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context, conditions_dict = loader_out
+        indep.metadata = None
+
+        golden_name = f'indep_{dataset}-{mask}'
+        test_utils.assert_matches_golden(self, golden_name, indep, rewrite=REWRITE, custom_comparator=self.cmp)
+
+        unique_chains = np.unique(indep.chains())
+        assertpy.assert_that(len(unique_chains)).is_equal_to(2)
+
+    def test_na_compl_island_and_atomization_masks(self):
+        dataset = 'na_compl'
+        mask = 'get_diffusion_mask_islands'
+
+        loader_out = self.indep_for_dataset(dataset, mask, overrides=['dataloader.CROP=364'])
+        indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context, conditions_dict= loader_out
+        indep.metadata = None
+        indep.write_pdb('get_na_contacting_atomized_islands.pdb')
+
+        golden_name = f'indep_{dataset}-{mask}'
+        test_utils.assert_matches_golden(self, golden_name, indep, rewrite=REWRITE, custom_comparator=self.cmp)
+
+        unique_chains = np.unique(indep.chains())
+        assertpy.assert_that(len(unique_chains)).is_equal_to(2)        
+
+
+REWRITE=False
+# REWRITE=True
+class DataloaderTransformsNucleic(unittest.TestCase):
+
+    def cmp(self, a, b):
+        # For NA compataibility
+        a.xyz = a.xyz[:,:14]  # xyz dimension should be 23, but only check the first 14
+        b.xyz = b.xyz[:,:14]  
+        cmp = partial(tensor_util.cmp, atol=1e-4, rtol=1e-5)
+        return cmp(a, b)
+
+    def tearDown(self) -> None:
+        hydra.core.global_hydra.GlobalHydra().clear()
+        return super().tearDown()
+
+    def indep_for_dataset(self, dataset, mask, epoch=0, overrides=[], **kwargs):
+
+        #show_tip_pa.clear()
+        #cmd.set('grid_mode', 1)
+        return test_utils.loader_out_for_dataset(dataset,mask,overrides=overrides,epoch=epoch, **kwargs)
+
+    def test_transmute_na(self):
+        import rf_diffusion.nucleic_compatibility_utils as nucl_utils
+
+        overrides = ['transforms.names=["TransmuteNA", "GenerateMasks", "Center", "AddConditionalInputs"]',
+                     '+transforms.configs.TransmuteNA.p_rna_to_dna=1.0', 
+                     '+transforms.configs.TransmuteNA.p_dna_to_rna=1.0',
+                     '+transforms.configs.Center={}',
+                     '+transforms.configs.GenerateMasks={}',                     
+                     ]
+        
+        loader_out = test_utils.loader_out_for_dataset('na_compl', 'get_unconditional_diffusion_mask', overrides=overrides, epoch=0)
+        indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context, conditions_dict = loader_out
+        loader_out = test_utils.loader_out_for_dataset('na_compl', 'get_unconditional_diffusion_mask', overrides=[], epoch=0)        
+        indep_orig = loader_out[0]
+
+        seq_orig = indep_orig.seq[nucl_utils.get_resi_type_mask(indep_orig.seq, 'na')]
+        seq = indep.seq[nucl_utils.get_resi_type_mask(indep_orig.seq, 'na')]
+        # Ensure transmutation is taking place at the sequence level
+        assertpy.assert_that(torch.any(seq != seq_orig)).is_equal_to(True)
+
+        xyz_orig = indep_orig.xyz[nucl_utils.get_resi_type_mask(indep_orig.seq, 'na')]
+        xyz = indep.xyz[nucl_utils.get_resi_type_mask(indep_orig.seq, 'na')] 
+        # Ensure transmutation is taking place at the xyz level               
+        assertpy.assert_that(torch.any(xyz_orig != xyz)).is_equal_to(True)
+
+        # Ensure all backbone positions are the same
+        xyz_orig = indep_orig.xyz
+        xyz = indep.xyz
+        max_diff = torch.max(torch.sqrt(torch.sum((xyz_orig[:,0:4] - xyz[:,0:4]) ** 2, dim=-1))).item()
+        assertpy.assert_that(max_diff).is_less_than(1e-5)
+
+        # Check all proteins coordinates are correct
+        xyz_orig = indep_orig.xyz[nucl_utils.get_resi_type_mask(indep_orig.seq, 'prot_and_mask')]
+        xyz = indep.xyz[nucl_utils.get_resi_type_mask(indep_orig.seq, 'prot_and_mask')]         
+        seq_orig = indep_orig.seq[nucl_utils.get_resi_type_mask(indep_orig.seq, 'prot_and_mask')]
+        # Compare indep to original using valid coordinates only
+        is_valid = torch.zeros_like(xyz_orig[:,:,0], dtype=torch.bool)
+        ic(indep_orig.xyz.shape)
+        ic(seq_orig.shape)
+        for i in range(xyz_orig.shape[0]):
+            # Disregard hydrogens
+            is_valid[i] = torch.tensor([not (u is None or u.find('H') > -1) 
+                                        for u in ChemData().aa2long[seq_orig[i]]][:xyz_orig.shape[1]],
+                                    dtype=bool)
+        max_diff = torch.max(torch.sqrt(torch.sum((xyz_orig - xyz) ** 2, dim=-1)) * is_valid).item()
+        assertpy.assert_that(max_diff).is_less_than(1e-5)            
+
+    def test_transmute_na_raw(self):
+        import rf_diffusion.nucleic_compatibility_utils as nucl_utils
+        dataset = 'na_compl'
+        #mask = 'get_atomized_islands'
+        mask = 'get_unconditional_diffusion_mask'
+
+        for epoch in range(10):
+            loader_out = self.indep_for_dataset(dataset, mask, overrides=['dataloader.CROP=364'], epoch=epoch)
+            indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context, conditions_dict = loader_out
+            indep.metadata = None
+
+            indep_orig = indep.clone()
+
+            fh = open('indep_swap_dna_rna_orig.pdb', 'w')
+            indep.write_pdb_file(fh)
+            fh.close()
+
+            indep = indep.clone()
+
+            is_dna = nucl_utils.get_resi_type_mask(indep.seq, 'dna')
+            is_rna = nucl_utils.get_resi_type_mask(indep.seq, 'rna')
+            is_other = ~torch.logical_or(is_dna, is_rna)
+            has_dna = torch.any(is_dna)
+            has_rna = torch.any(is_rna)
+
+            xyz_new = torch.zeros_like(indep.xyz)
+            seq_new = copy.deepcopy(indep.seq)
+
+            if has_dna:
+                seq_new, xyz_new = nucl_utils.TransmuteNA.transmute_dna_to_rna(indep.seq, indep.xyz, seq_new, xyz_new, is_dna)
+            if has_rna:
+                seq_new, xyz_new = nucl_utils.TransmuteNA.transmute_rna_to_dna(indep.seq, indep.xyz, seq_new, xyz_new, is_rna)
+            # Copy all else
+            xyz_new[is_other] = indep.xyz[is_other]
+
+            indep.xyz = xyz_new
+            indep.seq = seq_new
+
+            fh = open('indep_swap_dna_rna_transmute.pdb', 'w')
+            indep.write_pdb_file(fh)
+            fh.close()
+
+            indep = indep.clone()
+
+            is_dna = nucl_utils.get_resi_type_mask(indep.seq, 'dna')
+            is_rna = nucl_utils.get_resi_type_mask(indep.seq, 'rna')
+            is_other = ~torch.logical_or(is_dna, is_rna)
+            has_dna = torch.any(is_dna)
+            has_rna = torch.any(is_rna)
+
+            xyz_new = torch.zeros_like(indep.xyz)
+            seq_new = copy.deepcopy(indep.seq)
+
+            if has_dna:
+                seq_new, xyz_new = nucl_utils.TransmuteNA.transmute_dna_to_rna(indep.seq, indep.xyz, seq_new, xyz_new, is_dna)     
+            if has_rna:
+                seq_new, xyz_new = nucl_utils.TransmuteNA.transmute_rna_to_dna(indep.seq, indep.xyz, seq_new, xyz_new, is_rna)
+            # Copy all else
+            xyz_new[is_other] = indep.xyz[is_other]
+
+            indep.xyz = xyz_new
+            indep.seq = seq_new
+
+            fh = open('indep_swap_dna_rna_transmute_restore.pdb', 'w')
+            indep.write_pdb_file(fh)
+            fh.close()
+
+            # Compare indep to original using valid coordinates only
+            is_valid = torch.zeros_like(indep_orig.xyz[:,:,0], dtype=torch.bool)
+            for i in range(indep_orig.xyz.shape[0]):
+                # Disregard hydrogens
+                is_valid[i] = torch.tensor([not (u is None or u.find('H') > -1) 
+                                            for u in ChemData().aa2long[indep_orig.seq[i]]][:indep_orig.xyz.shape[1]],
+                                        dtype=bool)
+            max_diff = torch.max(torch.sqrt(torch.sum((indep_orig.xyz - indep.xyz) ** 2, dim=-1)) * is_valid).item()
+            assertpy.assert_that(max_diff).is_less_than(5e-1)    
 
     def test_invalid_mask_exception(self):
         '''
@@ -640,8 +831,9 @@ class TestCenterDiffused(unittest.TestCase):
         return super().tearDown()
 
     def test_center_diffused(self):
-        overrides = ['upstream_training_transforms.names=["PopMask"]',
-                     '+upstream_training_transforms.configs.PopMask={}',
+        overrides = ['upstream_training_transforms.names=["GenerateMasks", "PopMask"]',
+                     '+upstream_training_transforms.configs.GenerateMasks={}',            
+                     '+upstream_training_transforms.configs.PopMask={}',              
                      'transforms.names=["AddConditionalInputs", "CenterPostTransform"]',
                      '+transforms.configs.CenterPostTransform.jitter=0.0',                     
                     ]
@@ -655,8 +847,9 @@ class TestCenterDiffused(unittest.TestCase):
                 assertpy.assert_that(torch.norm(com - zero).item()).is_less_than(1e-4)
 
     def test_not_diffused(self):
-        overrides = ['upstream_training_transforms.names=["PopMask"]',
-                     '+upstream_training_transforms.configs.PopMask={}',
+        overrides = ['upstream_training_transforms.names=["GenerateMasks", "PopMask"]',
+                     '+upstream_training_transforms.configs.GenerateMasks={}',            
+                     '+upstream_training_transforms.configs.PopMask={}',    
                      'transforms.names=["AddConditionalInputs", "CenterPostTransform"]',
                      '+transforms.configs.CenterPostTransform.jitter=0.0',  
                      '+transforms.configs.CenterPostTransform.center_type="is_not_diffused"',
@@ -666,7 +859,6 @@ class TestCenterDiffused(unittest.TestCase):
             for dataset in ['pdb_aa', 'sm_complex']:
                 loader_out = test_utils.loader_out_for_dataset(dataset, mask, overrides=overrides, epoch=0)
                 indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context, conditions_dict = loader_out
-
                 com = torch.mean(indep.xyz[~is_diffused,1,:], dim=0)
                 zero = torch.tensor([0,0,0], dtype=indep.xyz.dtype)
                 assertpy.assert_that(torch.norm(com - zero).item()).is_less_than(1e-4)

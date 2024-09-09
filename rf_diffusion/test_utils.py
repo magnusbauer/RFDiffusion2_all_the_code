@@ -83,6 +83,42 @@ def assert_matches_golden(t, name, got, rewrite=False, processor_specific=False,
     else:
         t.assertEqual(got, want)
 
+    # seq: torch.Tensor # [L]
+    # xyz: torch.Tensor # [L, 36?, 3]
+    # idx: torch.Tensor
+
+    # # SM specific
+    # bond_feats: torch.Tensor
+    # chirals: torch.Tensor
+    # same_chain: torch.Tensor
+    # terminus_type: torch.Tensor
+    # extra_t1d: torch.Tensor = dataclasses.field(default_factory=lambda: None)
+
+def indep_NA_comparator(got, want):
+    if ~torch.eq(got.seq, want.seq):
+        return True
+    common_dim = min(got.xyz.shape[1], want.xyz.shape[1])
+    # In rare cases, the goldens have 36 atoms, in which case the code should also produce 36 atoms
+    if want.xyz.shape[1] >= 36 and got.xyz.shape[1] != want.xyz.shape[1]:
+        return True
+    if ~torch.eq(got.xyz[:,:common_dim], want.xyz[:,:common_dim]):
+        return True
+    if ~torch.eq(got.idx, want.idx):
+        return True
+    if ~torch.eq(got.is_sm, want.is_sm):
+        return True
+    if ~torch.eq(got.bond_feats, want.bond_feats):
+        return True
+    if ~torch.eq(got.chirals, want.chirals):
+        return True
+    if ~torch.eq(got.same_chain, want.same_chain):
+        return True
+    if ~torch.eq(got.terminus_type, want.terminus_type):
+        return True
+    if ~torch.eq(got.extra_t1d, want.extra_t1d):
+        return True
+    return False
+
 def assertEqual(t, custom_comparator, got, want):
     diff = custom_comparator(got, want)
     if not diff:
@@ -258,6 +294,7 @@ def construct_conf_single(overrides=None, config_name='debug', inference=False):
     if inference:
         config_path = 'config/inference'
     initialize(version_base=None, config_path=config_path, job_name="test_app")
+    ic(f'{config_name}.yaml', overrides, inference, config_path)
     conf = compose(config_name=f'{config_name}.yaml', overrides=overrides, return_hydra_config=True)
     return conf
 
@@ -300,6 +337,8 @@ def loader_out_from_conf(conf, epoch=0):
 def loader_out_for_dataset(dataset, mask, overrides=[], epoch=0, config_name='debug'):
     conf = construct_conf([
         'dataloader.DATAPKL_AA=aa_dataset_256_subsampled_10.pkl',
+        '+dataloader.ligands_to_remove=[]', # Remove this line when the subsampled dataset is remade
+        '+dataloader.min_metal_contacts=0', # Remove this line when the subsampled dataset is remade        
         'dataloader.CROP=256',
         f'dataloader.DATASETS={dataset}',
         'dataloader.DATASET_PROB=[1.0]',

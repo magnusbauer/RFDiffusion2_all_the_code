@@ -160,7 +160,7 @@ def atomize_and_mask(indep, is_res_str_shown, is_res_seq_shown, is_atom_str_show
         is_atomized[k] = True
 
     deatomized_state = aa_model.get_atomization_state(indep)
-    atomizer = aa_model.AtomizeResidues(deatomized_state, is_atomized)
+    atomizer = aa_model.AtomizeResidues(deatomized_state, is_atomized)  # These types of inports are confusing, can this be revised? Maybe AtomizeResidues should be in this module
     indep = atomizer.atomize(indep)
 
     indep.same_chain = indep.same_chain.bool()

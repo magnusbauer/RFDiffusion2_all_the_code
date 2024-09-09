@@ -1,0 +1,154 @@
+# This yaml is for training nucleic acid diffusion/flow models with a mix of NA diffusion and protein diffusion for NA binders 
+defaults:
+  - fm
+
+rundir: /net/scratch/ahern/se3_diffusion/training/fm_tip
+wandb_prefix: 'fm_tip_nucl'
+
+ckpt_load_path: /home/altaeth/rf_diffusion/rf_diffusion_nucleic_dev/data/models/rf2a_25c_414_t1d-120.pt
+wandb_project: 'rna_diffusion '
+wandb_entity: 'han-altaetran'
+
+resume: null
+resume_scheduler: True
+
+scheduler:
+  n_warmup_steps: 500
+n_write_pdb: 60
+pseudobatch: 32
+epoch_size: 25600
+saves_per_epoch: 1
+
+dataloader:
+  P_IS_GUIDEPOST_EXAMPLE: 0.0
+  DATAPKL_AA: aa_dataset_256.pkl
+  DATASETS: pdb_aa,compl,na_compl,rna
+  DATASET_PROB:
+  - 0.25
+  - 0.05
+  - 0.5
+  - 0.2
+  CROP: 256
+  CROP_NA: 256  # For use with NA interface cropping
+  CROP_NA_COMPL: 2560 # For use with NA cropping, secondary cropping is used
+  DIFF_MASK_PROBS:
+    get_unconditional_diffusion_mask_free_ligand: 0.0
+    get_unconditional_diffusion_mask: 0.6
+    get_unconditional_diffusion_mask_partial_ligand: 0.0
+    get_diffusion_mask_islands_free_ligand: 0.0
+    get_diffusion_mask_islands: 0.1
+    get_diffusion_mask_islands_partial_ligand: 0.0
+    get_tip_mask: 0.0
+    get_tip_mask_unconditional_free_ligand: 0.0
+    get_tip_mask_unconditional_partial_ligand: 0.0
+
+    get_closest_tip_atoms: 0.0
+    get_closest_tip_atoms_partial_ligand: 0.0
+    get_atomized_islands: 0.0
+    get_entirely_atomized: 0.0
+    get_na_contacting_atomized_islands: 0.3
+
+experiment:
+  trans_loss_weight: 0
+  rot_loss_weight: 0
+  trans_x0_threshold: 0
+  bb_atom_loss_weight: 0
+  dist_mat_loss_weight: 0
+  aux_loss_weight: 0
+  c6d_loss_weight: 0.0
+  fm_translation_loss_weight: 2.0
+  fm_rotation_loss_weight: 1.0
+  i_fm_translation_loss_weight: 1.0
+  i_fm_rotation_loss_weight: 0.5  
+  i_fm_kernel_width: 7.5
+  fm_bb_atom: 0.0
+  fm_dist_mat: 0.0
+  aux_loss_ti_pass: 0.25
+  gamma: 0.8 # Change to 0.8 after 54 epochs
+
+pin_memory: True
+num_workers: 1
+
+
+metrics:
+  - rigid_loss
+  - true_bond_lengths
+  - displacement_permutations
+  # - VarianceNormalizedPredTransMSE
+  # - VarianceNormalizedInputTransMSE
+  - rotations
+  - rotations_input
+
+diffuser:
+  t_distribution: uniform_t001
+  preserve_motif_sidechains: true
+
+benchmark: null
+
+
+transforms:
+  names_premask:
+    - NAInterfaceTightCrop
+    - TransmuteNA  
+    - RejectBadComplexes    
+  names:  
+    - UnmaskAndFreezeNA
+    - PopMask
+    - AddConditionalInputs
+    - CenterPostTranform
+    - RejectOutOfMemoryHazards
+
+  configs:
+    NAInterfaceTightCrop:
+      contact_type : "protein_na"
+      dist_min: 20.0
+      dist_max: 40.0
+      dist_na_min: 20.0
+      dist_na_max: 80.0
+      max_size: 256
+    TransmuteNA : 
+      p_dna_to_rna: 0.2
+      p_rna_to_dna: 0.1
+    GenerateMasks: {}      
+    UnmaskAndFreezeNA:
+      p_freeze_na: 0.8
+      p_unmask_na: 0.5
+    PopMask: {}
+    CenterPostTranform:
+      jitter: 5.0
+      jitter_clip: 20.0
+    RejectBadComplexes:
+      max_inter_chain_dist: 6.0
+      n_interacting_residues: 10
+    RejectOutOfMemoryHazards:
+      max_size: 364
+    AddConditionalInputs:
+      p_is_guidepost_example: ${....dataloader.P_IS_GUIDEPOST_EXAMPLE}
+      guidepost_bonds: ${....guidepost_bonds}    
+
+rf:
+  model:
+    use_chiral_l1: True
+    use_lj_l1: True
+    use_atom_frames: True
+    use_same_chain: True
+    recycling_type: all
+    enable_same_chain: True
+    refiner_topk: 128
+    d_t1d: 120 # 80 + 20 + 14 + 4 + 2
+
+extra_t1d:
+  - radius_of_gyration_v2 # ? dimensions
+  - relative_sasa_v2 # ? dimensions, both sum to 14
+  - sinusoidal_timestep_embedding
+  - secondary_structure_composition # 4 dimensions
+  - nucleic_base_hotspots # 2 dimensions
+
+extra_t1d_params:
+  sinusoidal_timestep_embedding:
+    embedding_dim: 20
+    max_positions: 10000
+  secondary_structure_composition:
+    p_unconditional: 0.5
+  nucleic_base_hotspots:
+    p_unconditional: 0.5

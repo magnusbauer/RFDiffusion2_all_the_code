@@ -128,6 +128,9 @@ class NormalizingFlow(interpolant.Interpolant):
         pred_trans_1 = rigid_pred.get_trans()
         pred_rotmats_1 = rigid_pred.get_rots().get_rot_mats()
 
+        trans_t_1 = trans_t_1.to(pred_trans_1.device)
+        rotmats_t_1 = rotmats_t_1.to(pred_rotmats_1.device)
+
         # Take reverse step
         trans_grad = (pred_trans_1 - trans_t_1)  #* trans_schedule_scaling
 

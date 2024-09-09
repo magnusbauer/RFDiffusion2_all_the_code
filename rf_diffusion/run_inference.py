@@ -45,9 +45,12 @@ import copy
 from rf_diffusion import atomize
 from rf_diffusion.dev import idealize_backbone
 from rf_diffusion.idealize import idealize_pose
+import rf_diffusion.features as features
 from tqdm import trange
 import rf_diffusion.atomization_primitives
 ic.configureOutput(includeContext=True)
+
+import rf_diffusion.nucleic_compatibility_utils as nucl_utils
 
 logger = logging.getLogger(__name__)
 
@@ -125,7 +128,7 @@ def sample(sampler):
         if sampler.inf_conf.cautious and len(existing_outputs):
             log.info(f'(cautious mode) Skipping this design because {out_prefix}.pdb already exists.')
             continue
-        ic(f'making design {i_des} of {des_i_start}:{des_i_end}')
+        print(f'making design {i_des} of {des_i_start}:{des_i_end}', flush=True)
         sampler_out = sample_one(sampler)
         log.info(f'Finished design in {(time.time()-start_time)/60:.2f} minutes')
         original_conf = copy.deepcopy(sampler._conf)
@@ -156,6 +159,10 @@ def sample_one(sampler, simple_logging=False):
         'rfo_cond': None,
     }
 
+    # Initialize featurizers
+    extra_tXd_names = getattr(sampler._conf, 'extra_tXd', [])
+    features_cache = features.init_tXd_inference(indep, extra_tXd_names, sampler._conf.extra_tXd_params, sampler._conf.inference.conditions)
+
     # Loop over number of reverse diffusion time steps.
     for t in trange(int(t_step_input), sampler.inf_conf.final_step-1, -1):
         sampler._log.info(f'Denoising {t=}')
@@ -168,12 +175,18 @@ def sample_one(sampler, simple_logging=False):
             print('randomizing frames')
             indep.xyz = aa_model.randomly_rotate_frames(indep.xyz)
         px0, x_t, seq_t, rfo, extra = sampler.sample_step(
-            t, indep, rfo, extra)
+            t, indep, rfo, extra, features_cache)
         # assert_that(indep.xyz.shape).is_equal_to(x_t.shape)
         rf2aa.tensor_util.assert_same_shape(indep.xyz, x_t)
+        # ic(t)
+        # # @Altaeth EXPERIMENT: final step, replace x_t with px0
+        # if sampler._conf.experiment.get('final_sc_pred', False) and t == sampler.inf_conf.final_step:
+        #     x_t = px0[:,:ChemData().NHEAVY,:]
+        # ic(x_t.shape)
         indep.xyz = x_t
         x_t = copy.deepcopy(x_t)
-        x_t[:,3:] = np.nan
+        # @Altaeth, this code below might not be necessary, but it blocks important coordinates
+        #x_t[:,3:] = np.nan
             
         aa_model.assert_has_coords(indep.xyz, indep)
         # missing_backbone = torch.isnan(indep.xyz).any(dim=-1)[...,:3].any(dim=-1)
@@ -191,9 +204,7 @@ def sample_one(sampler, simple_logging=False):
         denoised_xyz_stack.append(x_t)
         seq_stack.append(seq_t)
         for k, v in extra['traj'].items():
-            traj_stack[k].append(
-                v
-            )
+            traj_stack[k].append(v)
 
     if t_step_input == 0:
         # Null-case: no diffusion performed.
@@ -218,23 +229,23 @@ def sample_one(sampler, simple_logging=False):
         seq=indep.seq,
         act_on_residue=~sampler.is_diffused,
         xyz=denoised_xyz_stack,
-        xyz_with_sc=sampler.indep_orig.xyz[..., :14, :],
+        xyz_with_sc=sampler.indep_orig.xyz,
     )
     px0_xyz_stack_filler = add_implicit_side_chain_atoms(
         seq=indep.seq,
         act_on_residue=~sampler.is_diffused,
-        xyz=px0_xyz_stack[..., :14, :],
+        xyz=px0_xyz_stack[..., :ChemData().NHEAVY, :],
         # xyz_with_sc=sampler.indep_orig.xyz,
-        xyz_with_sc=sampler.indep_orig.xyz[..., :14, :],
+        xyz_with_sc=sampler.indep_orig.xyz[..., :ChemData().NHEAVY, :],
     )
-    px0_xyz_stack[..., :14, :] = px0_xyz_stack_filler
+    px0_xyz_stack[..., :ChemData().NHEAVY, :] = px0_xyz_stack_filler
 
     for k, v in traj_stack.items():
         traj_stack[k] = add_implicit_side_chain_atoms(
             seq=indep.seq,
             act_on_residue=~sampler.is_diffused,
-            xyz=v[..., :14, :],
-            xyz_with_sc=sampler.indep_orig.xyz[..., :14, :],
+            xyz=v[..., :ChemData().NHEAVY, :],
+            xyz_with_sc=sampler.indep_orig.xyz[..., :ChemData().NHEAVY, :],
         )
 
     # Idealize protein backbone
@@ -297,6 +308,7 @@ def add_implicit_side_chain_atoms(seq, act_on_residue, xyz, xyz_with_sc):
         xyz_with_sc (L, n_atoms, 3)
 
     '''
+    # ic(xyz.shape, xyz_with_sc.shape)
     # Shape checks
     L, n_atoms = xyz_with_sc.shape[:2]
     assert xyz.shape[-3:] == xyz_with_sc.shape, f'{xyz.shape[-3:]=} != {xyz_with_sc.shape=}'
@@ -304,7 +316,8 @@ def add_implicit_side_chain_atoms(seq, act_on_residue, xyz, xyz_with_sc):
     assert len(act_on_residue) == L
 
     replace_sc_atom = ChemData().allatom_mask[seq][:, :n_atoms]
-    replace_sc_atom[:, :5] = False  # Does not add cb, since that can be calculated from N, CA and C
+    is_prot = nucl_utils.get_resi_type_mask(seq, 'prot_and_mask')
+    replace_sc_atom[is_prot, :5] = False  # Does not add cb, since that can be calculated from N, CA and C for proteins
     replace_sc_atom[~act_on_residue] = False
 
     xyz[..., replace_sc_atom, :] = xyz_with_sc[replace_sc_atom]
@@ -353,15 +366,18 @@ def save_outputs(sampler, out_prefix, indep, contig_map, atomizer, t_step_input,
 
     if sampler._conf.seq_diffuser.seqdiff is not None:
         # When doing sequence diffusion the model does not make predictions beyond category 19
-        final_seq = final_seq[:,:20] # [L,20]
+        #final_seq = final_seq[:,:20] # [L,20]
+        # Cannot do above code for NA, but instead get rid of mask tokens
+        final_seq = final_seq[20:22] = 0 
 
-    # All samplers now use a one-hot seq so they all need this step
-    final_seq[~indep.is_sm, 22:] = 0
+    # All samplers now use a one-hot seq so they all need this step, get rid of non polymer residues
+    final_seq[~indep.is_sm, ChemData().NNAPROTAAS:] = 0 
     final_seq = torch.argmax(final_seq, dim=-1)
 
     # replace mask and unknown tokens in the final seq with alanine
     final_seq = torch.where((final_seq == 20) | (final_seq==21), 0, final_seq)
     seq_design = final_seq.clone()
+    # ic(seq_design)
     xyz_design = px0_xyz_stack[0].clone()
     gp_contig_mappings = {}
     is_atomized = torch.zeros(indep.length()).bool()

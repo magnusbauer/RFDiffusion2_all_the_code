@@ -1,8 +1,16 @@
+from __future__ import annotations  # Fake import for type hinting, must be at beginning of file
+
 import types
+# Imports for typing only
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from rf_diffusion.aa_model import Indep
 
 import numpy as np
 import torch
 import logging
+from icecream import ic
+import copy
 
 from rf_diffusion import aa_model
 from rf_diffusion.aa_model import Indep
@@ -11,6 +19,10 @@ from rf_diffusion.contigs import ContigMap
 from rf2aa.chemical import ChemicalData as ChemData
 
 from typing import Union
+import nucleic_compatibility_utils as nucl_utils
+
+from rf_diffusion import run_inference
+from rf_diffusion import mask_generator
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +34,7 @@ def get_center_of_mass(xyz14, mask):
 LEGACY_TRANSFORMS_TO_IGNORE = ['PopMask']
 
 class PopMask:
-    def __call__(self, indep, metadata, masks_1d, **kwargs):
+    def __call__(self, indep: Indep, metadata: dict, masks_1d: torch.Tensor, **kwargs):
         
         aa_model.pop_mask(indep, masks_1d['pop'])
         masks_1d['input_str_mask'] = masks_1d['input_str_mask'][masks_1d['pop']]
@@ -30,18 +42,381 @@ class PopMask:
         masks_1d['is_atom_motif'] = aa_model.reindex_dict(masks_1d['is_atom_motif'], masks_1d['pop'])
         metadata['covale_bonds'] = aa_model.reindex_covales(metadata['covale_bonds'], masks_1d['pop'])
         metadata['ligand_names'] = np.array(['LIG']*indep.length(),  dtype='<U3')
-        is_atom_str_shown = masks_1d['is_atom_motif']
-        is_atom_str_shown
+        # is_atom_str_shown = masks_1d['is_atom_motif']
+        # Pop atom_mask if exists
+        if 'atom_mask' in kwargs:
+            kwargs['atom_mask'] = kwargs['atom_mask'][masks_1d['pop']]
+
         return dict(
             indep=indep,
             metadata=metadata,
             masks_1d=masks_1d,
             **kwargs
         )
+    
+class NullTransform:
+    """
+    A null transform for testing purposes
+    """
+    def __call__(self, **kwargs):
+        return dict(**kwargs)
+    
+class GenerateMasks:
+    """
+    Non-public class for generating masks. Is not a traditional tranform
+    because it uses configurations from many places in the configuration file
+    and also relies on hard coded functions and their names within mask_generator.py
+
+    When using, note that the params come from dataloader params in the config.
+
+    The reason this function is a transform and not hard-coded is because some transforms might want to be applied before masks are generated - for example more specific cropping. 
+    """
+    def __call__(self, 
+                 indep: Indep, 
+                 task: str,
+                 params,
+                 chosen_dataset: str, 
+                 atom_mask: torch.Tensor, 
+                 metadata: dict, 
+                 mask_gen_seed: int, 
+                 **kwargs):
+        # Mask the independent inputs.
+        run_inference.seed_all(mask_gen_seed) # Reseed the RNGs for test stability.
+        masks_1d = mask_generator.generate_masks(indep, task, params, chosen_dataset, None, atom_mask=atom_mask[:, :ChemData().NHEAVY], metadata=metadata)
+        # Pop masks_1d if exists since it is being overwritten
+        if 'masks_1d' in kwargs: kwargs.pop('masks_1d')
+
+        return dict(
+            indep=indep,
+            task=task,
+            params=params,
+            chosen_dataset=chosen_dataset,
+            atom_mask=atom_mask,
+            metadata=metadata,
+            masks_1d=masks_1d,
+            mask_gen_seed=mask_gen_seed,
+            **kwargs
+        )
+
+class NAInterfaceTightCrop:
+    """
+    A class for performing tight cropping of nucleic acid interfaces. This class handles data passes 
+    from other dataets that may not contain relevent nucleic acid interfaces.
+
+    Args:
+        contact_type (str): The type of contact to consider. Default is 'protein_na'.
+        closest_k (int): The number of closest contacts to consider. Default is 2.
+        distance_ball_around_contact_angstroms (int): The distance around each contact to consider for cropping. Default is 80.
+        chain_search_angstroms (int): The distance to search for chains around each contact. Default is 10.
+        max_gap_to_add (int): The maximum gap size to add when cropping. Default is 5.
+        contact_offcenter_var (int): The variance of the offcenter of the contact. Default is 3.
+        min_island_size (int): The minimum size of the island to consider. Default is 20.
+        min_island_size_na (int): The minimum size of the island to consider for nucleic acids. Default is 4.
+        min_indep_len (int): The minimum length of the independent input. Default is 10.
+        max_size (int): The maximum size of the independent input. Default is 256.        
+    """
+
+    def __init__(self,
+                 contact_type: str = 'protein_na',
+                 closest_k: int = 2,
+                 distance_ball_around_contact_angstroms_min_prot: float = 30,
+                 distance_ball_around_contact_angstroms_max_prot: float = 85,
+                 distance_ball_around_contact_angstroms_min_na: float=20,
+                 distance_ball_around_contact_angstroms_max_na: float=50,
+                 chain_search_angstroms: float = 10.,
+                 max_gap_to_add: int = 5,
+                 contact_offcenter_var: float = 3.,
+                 min_island_size: int = 20,
+                 min_island_size_na: int = 4,
+                 max_size: int = 256,
+                 ) -> None:        
+        # Initialize cropper
+        # distance_ball_around_contact_angstroms = dist_min
+        # distance_ball_around_contact_angstroms_na = dist_min_na
+        self.cropper = nucl_utils.NucleicAcid_Interface_Preserving_Crop(contact_type=contact_type,
+                                                                        closest_k=closest_k,
+                                                                        distance_ball_around_contact_angstroms_min_prot=distance_ball_around_contact_angstroms_min_prot,
+                                                                        distance_ball_around_contact_angstroms_max_prot=distance_ball_around_contact_angstroms_max_prot,
+                                                                        distance_ball_around_contact_angstroms_min_na=distance_ball_around_contact_angstroms_min_na,
+                                                                        distance_ball_around_contact_angstroms_max_na=distance_ball_around_contact_angstroms_max_na,
+                                                                        chain_search_angstroms=chain_search_angstroms,
+                                                                        max_gap_to_add=max_gap_to_add,
+                                                                        contact_offcenter_var=contact_offcenter_var,
+                                                                        min_island_size=min_island_size,
+                                                                        min_island_size_na=min_island_size_na,
+                                                                        max_size=max_size,
+                                                                        )
+
+    def __call__(self, indep: Indep, atom_mask, **kwargs):
+        out = self.cropper(indep, atom_mask)
+        indep = out['indep']
+
+        return dict(
+            indep=indep,
+            atom_mask=atom_mask,
+            **kwargs
+        )
+
+class UnmaskAndFreezeNA:
+    """
+    A class that conditionally converts nucleic acid residues to masked residues in the input sequence
+    for diffusing chains. Note when randomly applied, this will override masks when used
+
+    Args:
+        p_unmask_na (float): The probability of unmasking nucleic acid residue sequence when diffusing
+        p_freeze_na (float): The probability of freezing the nucleic acid residue
+        p_unmask_prot (float): The probability of unmasking protein residue sequence when diffusing
+        p_freeze_prot (float): The probability of freezing the protein residue
+
+    Returns:
+        dict: A dictionary containing the updated inputs, metadata, masks, and other keyword arguments.
+    """
+    def __init__(self, p_unmask_na: float = 0.0, 
+                 p_freeze_na: float = 0.0,
+                 p_unmask_prot: float = 0.0, 
+                 p_freeze_prot: float = 0.0):
+        self.p_unmask_na = p_unmask_na
+        self.freeze_na = p_freeze_na
+        self.p_unmask_prot = p_unmask_prot
+        self.p_freeze_prot = p_freeze_prot
+
+    def __call__(self, indep: Indep, masks_1d: torch.Tensor, **kwargs):    
+        is_res_str_shown = masks_1d['input_str_mask']  # True when the sequence is shown
+        is_atom_str_shown = masks_1d['is_atom_motif']
+        is_atom_mask = torch.zeros_like(indep.seq, dtype=torch.bool, device=indep.seq.device)
+        for k in is_atom_str_shown:
+            is_atom_mask[k] = True
+        is_diffused = ~is_res_str_shown * ~is_atom_mask
+
+        chain_masks = indep.chain_masks()
+        chain_masks_rand = [chain_masks[i] for i in np.random.permutation(len(indep.chain_masks()))]
+
+        diffusing_chains = [False] * len(chain_masks_rand)
+        for ch_id,chain_mask in enumerate(chain_masks_rand):
+            if torch.any(is_diffused[chain_mask]):
+                diffusing_chains[ch_id] = True
+        
+        assert len(diffusing_chains) > 0, "No diffusing chains found."
+
+        for ch_id,chain_mask in enumerate(chain_masks_rand):
+            is_na_chain = torch.any(nucl_utils.get_resi_type_mask(indep.seq[chain_mask], 'na'))
+            is_prot_chain = torch.any(nucl_utils.get_resi_type_mask(indep.seq[chain_mask], 'prot'))
+
+            # Iterate but do not allow there to be fewer than 1 diffusing chain
+            if sum(diffusing_chains) <= 1:
+                continue
+
+            # Previous mask may indicate motif is present, in which case it should be frozen 
+            # When is_res_str_shown is True, this should stay the case and is_diffused should be False 
+            
+            if is_na_chain and (np.random.rand() < self.freeze_na):
+                # In this case, freeze (do not diffuse and show as motif, does not affect other motifs)
+                is_diffused[chain_mask] = False
+                # Atomized residues cannot be shown 
+                is_res_str_shown[chain_mask] = torch.ones(sum(chain_mask), dtype=bool) * ~is_atom_mask[chain_mask]
+                diffusing_chains[ch_id] = False
+            elif is_na_chain and (np.random.rand() < self.p_unmask_na):
+                # In this case, diffuse, but show the sequence. Do not difuse motif residues or atomized residues                           
+                is_diffused[chain_mask] = torch.ones(sum(chain_mask), dtype=bool) * ~is_res_str_shown[chain_mask] * ~is_atom_mask[chain_mask]
+                # Atomized residues cannot be shown 
+                is_res_str_shown[chain_mask] = torch.ones(sum(chain_mask), dtype=bool) * ~is_atom_mask[chain_mask]
+            elif is_prot_chain and (np.random.rand() < self.p_freeze_prot):
+                # In this case, freeze (do not diffuse and show as motif, does not affect other motifs)
+                is_diffused[chain_mask] = False
+                # Atomized residues cannot be shown 
+                is_res_str_shown[chain_mask] = torch.ones(sum(chain_mask), dtype=bool) * ~is_atom_mask[chain_mask]
+                diffusing_chains[ch_id] = False
+            elif is_prot_chain and (np.random.rand() < self.p_unmask_prot):
+                # In this case, diffuse, but show the sequence. Do not diffuse motif residues or atomized residues           
+                is_diffused[chain_mask] = torch.ones(sum(chain_mask), dtype=bool) * ~is_res_str_shown[chain_mask] * ~is_atom_mask[chain_mask]
+                # Atomized residues cannot be shown 
+                is_res_str_shown[chain_mask] = torch.ones(sum(chain_mask), dtype=bool) * ~is_atom_mask[chain_mask]
+            else:
+                # Do nothing, use default of token being diffused and not shown (or being motif)
+                pass
+
+        assert len(diffusing_chains) > 0, "No diffusing chains found."
+
+        return dict(
+            indep=indep,
+            masks_1d=masks_1d,
+            is_diffused_seq_shown=is_diffused,
+            **kwargs
+        )
+
+class TransmuteNA:
+    """
+    A class that probabilistically converts DNA to RNA and vice versa
+
+    Args:
+        p_mask (float): The probability of freezing nucleic acid residues.
+
+    Returns:
+        dict: A dictionary containing the updated inputs, metadata, masks, and other keyword arguments.
+    """
+    def __init__(self, p_dna_to_rna: float = 0.0, p_rna_to_dna: float = 0.0):
+        self.p_dna_to_rna = p_dna_to_rna
+        self.p_rna_to_dna = p_rna_to_dna
+
+    def __call__(self, indep: Indep, **kwargs):       
+        indep = indep.clone()
+
+        # Calculate guidance information about indep
+        is_dna = nucl_utils.get_resi_type_mask(indep.seq, 'dna')
+        is_rna = nucl_utils.get_resi_type_mask(indep.seq, 'rna')
+        is_other = ~torch.logical_or(is_dna, is_rna)
+
+        # Create new sequences
+        xyz_new = torch.zeros_like(indep.xyz)
+        seq_new = copy.deepcopy(indep.seq)
+
+        chain_masks = indep.chain_masks()
+
+        for chain_mask in chain_masks:
+            chain_mask = torch.tensor(chain_mask, device=indep.xyz.device)
+            has_dna_chain = torch.any(is_dna[chain_mask])
+            has_rna_chain = torch.any(is_rna[chain_mask])
+            chain_mask_dna = torch.logical_and(chain_mask, is_dna)
+            chain_mask_rna = torch.logical_and(chain_mask, is_rna)
+            chain_mask_other = torch.logical_and(chain_mask, is_other)
+
+            # Apply transmute operations probabilistically
+            if has_dna_chain and (np.random.rand() < self.p_dna_to_rna):
+                seq_new, xyz_new = nucl_utils.TransmuteNA.transmute_dna_to_rna(indep.seq, indep.xyz, seq_new, xyz_new, chain_mask_dna)
+            else:
+                xyz_new[chain_mask_dna] = indep.xyz[chain_mask_dna]
+
+            if has_rna_chain and (np.random.rand() < self.p_rna_to_dna):
+                seq_new, xyz_new = nucl_utils.TransmuteNA.transmute_rna_to_dna(indep.seq, indep.xyz, seq_new, xyz_new, chain_mask_rna)
+            else:
+                xyz_new[chain_mask_rna] = indep.xyz[chain_mask_rna]
+            xyz_new[chain_mask_other] = indep.xyz[chain_mask_other]
+
+        indep.xyz = xyz_new
+        indep.seq = seq_new
+
+        return dict(
+            indep=indep,
+            **kwargs
+        )
+
+
+class RejectBadComplexes:
+    """
+    Use before AddConditionalInputs to reject complexes with inter chain distances that are too far apart
+    
+    TODO: Implement sc vs all
+
+    Args:
+        max_inter_chain_dist (float): The maximum allowed closest inter chain distance. Defaults to 6.0 angstroms.
+        n_interacting_residues (int): The number of interfacing residues to require being below distance threshold. Defaults to 5.
+        mode (str): Currently only one mode, all_vs_all, which looks for interactions between all atom types. Other modes could be side chain only vs all etc
+        debug (bool): Whether to print debug information. Defaults to True.
+    """
+    def __init__(self, max_inter_chain_dist: float = 5.0,
+                 n_interacting_residues: int = 10,
+                 mode: str = 'all_vs_all',
+                 debug: bool = True):
+        self.max_inter_chain_dist = max_inter_chain_dist
+        self.n_interacting_residues = n_interacting_residues
+        assert mode == all_vs_all
+        self.debug = debug
+        self.count = 0
+
+    def __call__(self, indep: Indep, **kwargs):
+        # Empty tensor of interchain distances
+        n_consider = min([self.n_interacting_residues, indep.xyz.shape[0]])
+        D = 9999*torch.ones(indep.xyz.shape[0], dtype=indep.xyz.dtype, device=indep.xyz.device)            
+
+        # By default use the first atom in the sequence as the atom to check for interface contacts
+        default_atom_list = [None, 'A', None] + [None] * (ChemData().NTOTAL - 3)
+
+        # Get tensor mask of valid atoms
+        # NOTE: the use of this code and similar code in calc_loss could be condensed into a single function,
+        # though are calculated differently for numerical stability purposes since calc_loss is used for gradients
+        is_valid = torch.zeros(indep.xyz.shape[:2], dtype=torch.bool, device=indep.xyz.device)
+        for i in range(indep.seq.shape[0]):   
+            r = indep.seq[i]             
+            is_valid[i] = torch.tensor([atom is not None and atom.find('H') == -1 
+                                        for atom in (ChemData().aa2long[r] 
+                                                    if r < len(ChemData().aa2long) 
+                                                    else default_atom_list)
+                                        ][:indep.xyz.shape[1]], 
+                                        dtype=torch.bool)
+
+        # Iterate through all chain pairs and calculate inter chain distances for kernel weights
+        n_chains = len(np.unique(indep.chains()))
+        if n_chains > 1:
+            for i,i_chain_mask in enumerate(indep.chain_masks()):
+                i_chain_mask = torch.tensor(i_chain_mask, device=indep.xyz.device)
+                for j,j_chain_mask in enumerate(indep.chain_masks()):
+                    j_chain_mask = torch.tensor(j_chain_mask, device=indep.xyz.device)
+                    if i == j:
+                        continue
+                    xyz_i = indep.xyz[i_chain_mask]
+                    xyz_j = indep.xyz[j_chain_mask]
+
+                    is_valid_i = is_valid[i_chain_mask]
+                    is_valid_j = is_valid[j_chain_mask]
+                    Li, N_atoms = xyz_i.shape[0], xyz_i.shape[1]
+                    Lj, N_atoms = xyz_j.shape[0], xyz_j.shape[1]
+                    cdist = torch.cdist(xyz_i.view(-1, 3), xyz_j.view(-1, 3)).view(Li, N_atoms, Lj, N_atoms)
+                    cdist = torch.nan_to_num(cdist, 9999)
+
+                    # Get the mask of invalid positions and make invalid pair have a large distance
+                    pair_mask_valid = is_valid_i[:,:,None,None] * is_valid_j[None,None,:,:]
+                    cdist = cdist*pair_mask_valid + (~pair_mask_valid) * 9999
+                    # Calculate the minimum values for each nucleic acid base position
+                    cdist_min_i = cdist.min(3)[0].min(2)[0].min(1)[0]  # [Li,]
+                    cdist_min_j = cdist.min(3)[0].min(1)[0].min(0)[0]  # [Lj,]
+                    D[i_chain_mask] = torch.minimum(D[i_chain_mask], cdist_min_i)
+                    D[j_chain_mask] = torch.minimum(D[j_chain_mask], cdist_min_j)
+
+            if torch.sum(D <= self.max_inter_chain_dist).item() < n_consider:
+                ic('failed!')
+                if self.debug:
+                    indep.write_pdb(f'bad_complex_{self.count}.pdb')
+                self.count += 1
+                assert False, f'Rejection using RejectBadComplexes: {torch.topk(D, n_consider, largest=False, sorted=True)[0][-1].item()} > {self.max_inter_chain_dist}'
+
+        return dict(
+            indep=indep,
+            **kwargs
+        )
+
+import pickle
+
+class RejectOutOfMemoryHazards:
+    """
+    A class that rejects instances with a length exceeding a maximum size to avoid out-of-memory hazards.
+
+    Args:
+        max_size (int): The maximum size allowed for an instance. Defaults to 396.
+        debug (bool): Whether to enable debug mode. Defaults to True.
+    """
+
+    def __init__(self, max_size: int = 364, debug: bool = True):
+        self.max_size = max_size
+        self.debug = debug
+        self.count = 0
+
+    def __call__(self, indep: Indep, **kwargs):
+        if indep.length() > self.max_size:
+            if self.debug:
+                indep.write_pdb(f'oom_candidate_{self.count}.pdb')
+                with open(f'oom_candidate_{self.count}.pkl', 'wb') as f:
+                    pickle.dump((indep, kwargs), f)
+            self.count += 1
+            assert False, f'Rejection using RejectOutOfMemoryHazards: {indep.length()} > {self.max_size}'
+
+        return dict(
+            indep=indep,
+            **kwargs
+        )
 
 
 class Center:
-    def __call__(self, indep, masks_1d, **kwargs):
+    def __call__(self, indep: Indep, masks_1d: torch.Tensor, **kwargs):
 
         is_res_str_shown = masks_1d['input_str_mask']
         is_atom_str_shown = masks_1d['is_atom_motif']
@@ -54,23 +429,22 @@ class Center:
             f'{n_atomic_motif=} {n_residue_motif=} {is_atom_str_shown=} {is_res_str_shown.nonzero()[:, 0]=}', 
         )
 
-        motif_atom_name_by_res_idx = {}
-        for i in is_res_str_shown.nonzero()[:,0]:
-            motif_atom_name_by_res_idx[i] = aa_model.CA_ONLY
-        motif_atom_name_by_res_idx.update(is_atom_str_shown)
+        motif_atom_name_by_res_idx = {
+            i: aa_model.CA_ONLY for i in is_res_str_shown.nonzero()[:, 0]
+        }
+        motif_atom_name_by_res_idx |= is_atom_str_shown
         is_motif14 = aa_model.make_is_motif14(indep.seq, motif_atom_name_by_res_idx)
         center_of_mass_mask = is_motif14
         if not center_of_mass_mask.any():
             # Unconditional case
             center_of_mass_mask[:, 1] = True
 
-        indep.xyz -= get_center_of_mass(indep.xyz[:,:ChemData().NHEAVYPROT], center_of_mass_mask)
+        indep.xyz -= get_center_of_mass(indep.xyz[:,:ChemData().NHEAVY], center_of_mass_mask)
         return dict(
             indep=indep,
             masks_1d=masks_1d,
             **kwargs
         )
-
 
 class CenterPostTransform:
     """
@@ -259,10 +633,10 @@ def get_contig_map(indep, input_str_mask, is_atom_motif):
             contigs.append(f'{ch}{i}-{i}')
         else:
             contigs.append('1-1')
-    contig_atoms = {}
-    for i, atom_names in is_atom_motif.items():
-        contig_atoms[f'{indep.chains()[i]}{indep.idx[i]}'] = atom_names
-
+    contig_atoms = {
+        f'{indep.chains()[i]}{indep.idx[i]}': atom_names
+        for i, atom_names in is_atom_motif.items()
+    }
     contig_map_args = {
         'parsed_pdb': {
             'seq': indep.seq.numpy(),
@@ -282,3 +656,49 @@ class ReconstructContigMap:
             indep=indep,
             masks_1d=masks_1d,
         ) | kwargs
+    
+
+class NAMotifPreservingTightCrop:
+    """
+    Cropping based on Paul's older motif cropping code
+
+    Args:
+        min_na_expand: minimum amount to expand around the crop index in each direction
+        max_na_expand:
+        min_prot_expand:
+        max_prot_expand:
+        closest_k: top k closest contacts to select from
+    """
+
+    def __init__(self,
+                 min_na_expand = 5,
+                 max_na_expand = 20,
+                 min_prot_expand = 15,
+                 max_prot_expand = 50,
+                 closest_k = 4
+                 ) -> None:        
+        # Initialize cropper
+        self.cropper = nucl_utils.NA_Motif_Preserving_Tight_Crop(
+            min_na_expand=min_na_expand,
+            max_na_expand=max_na_expand,
+            min_prot_expand=min_prot_expand,
+            max_prot_expand=max_prot_expand,
+            closest_k=closest_k
+        )
+
+    def __call__(self, indep: Indep, atom_mask: torch.Tensor, **kwargs): 
+        # Simply call the cropper and return the output indep     
+        has_prot = torch.any(nucl_utils.get_resi_type_mask(indep.seq, 'prot_and_mask'))
+        has_na = torch.any(nucl_utils.get_resi_type_mask(indep.seq, 'na'))
+
+        if has_prot and has_na:
+            # Only apply when there is protein and nucleic acid
+            out = self.cropper(indep, atom_mask)
+            indep = out['indep']
+            atom_mask = out['atom_mask']
+        
+        return dict(
+            indep=indep,
+            atom_mask=atom_mask,
+            **kwargs
+        )

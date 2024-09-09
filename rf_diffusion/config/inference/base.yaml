@@ -1,7 +1,7 @@
 # Base inference Configuration.
 
 inference:
-  input_pdb: test_data/1qys.pdb
+  input_pdb: rf_diffusion/test_data/1qys.pdb
   num_designs: 10
   design_startnum: 0
   ckpt_path: /net/scratch/ahern/se3_diffusion/training/fm_tip_resume_24/fm_tip_resume_242023-12-03_14:20:34.490797/rank_0/models/RFD_44.pt
@@ -65,6 +65,7 @@ inference:
   classifier_free_guidance_scale: 1
   idealize_sidechain_outputs: False
   recenter_xt: False
+  update_seq_t: False
 
 contigmap:
   contigs: ['20', 'A3-23', '30']
@@ -152,6 +153,7 @@ diffuser:
   aa_decode_steps: 40
   so3:
     use_cached_score: false
+  preserve_motif_sidechains: false
 
 seq_diffuser:
   s_b0: null

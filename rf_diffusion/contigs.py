@@ -31,7 +31,7 @@ class ContigMap():
             shuffle=False,
             intersperse='10-100',
             ):
-        
+
         if shuffle:
             shuffled_contig_list = np.array(contigs[0].strip().split(','))
             print(f'{length=}')
@@ -48,18 +48,17 @@ class ContigMap():
         #sanity checks
         if contigs is None and ref_idx is None:
             sys.exit("Must either specify a contig string or precise mapping")
-        if idx_rf is not None or hal_idx is not None or ref_idx is not None:
-            if idx_rf is None or hal_idx is None or ref_idx is None:
-                sys.exit("If you're specifying specific contig mappings, the reference and output positions must be specified, AND the indexing for RoseTTAFold (idx_rf)")
-        
+        if all([idx_rf is not None or hal_idx is not None or ref_idx is not None,
+                idx_rf is None or hal_idx is None or ref_idx is None]):
+            sys.exit("If you're specifying specific contig mappings, the reference and output positions must be specified, AND the indexing for RoseTTAFold (idx_rf)")
+
         self.chain_order='ABCDEFGHIJKLMNOPQRSTUVWXYZ'
-        if length is not None:
-            if '-' not in length:
-                self.length = [int(length),int(length)+1]
-            else:
-                self.length = [int(length.split("-")[0]),int(length.split("-")[1])+1]
-        else:
+        if length is None:
             self.length = None
+        elif '-' not in length:
+            self.length = [int(length),int(length)+1]
+        else:
+            self.length = [int(length.split("-")[0]),int(length.split("-")[1])+1]
         self.has_termini=has_termini
         self.ref_idx = ref_idx
         self.hal_idx=hal_idx
@@ -73,11 +72,15 @@ class ContigMap():
         if ref_idx is None:
             #using default contig generation, which outputs in rosetta-like format
             self.contigs=contigs
-            if contig_atoms is not None:
+            if contig_atoms is None:
+                self.contig_atoms = None
+            elif contig_atoms.find('-') > -1:
+                # Use alternative reader
+                self.contig_atoms={kv.split('-')[0]:kv.split("-")[1:] for kv in contig_atoms.split('_')}
+            else:
+                # Use standard
                 self.contig_atoms={k:v.split(",") for k,v in eval(contig_atoms).items()}
                 self.contig_atoms={k:[e for e in v if e != ''] for k,v in self.contig_atoms.items()}
-            else:
-                self.contig_atoms = None
             self.sampled_mask,self.contig_length,self.n_inpaint_chains = self.get_sampled_mask()
             self.inpaint, self.inpaint_hal, self.atomize_resnum2atomnames = self.expand_sampled_mask()
             self.ref = self.inpaint.copy()
@@ -89,13 +92,13 @@ class ContigMap():
             self.ref=ref_idx
             self.hal=hal_idx
 
-        self.mask_1d = [False if i == ('_','_') else True for i in self.ref]
+        self.mask_1d = [bool(i != ('_','_')) for i in self.ref]
         #take care of sequence and structure masking
         if self.inpaint_seq_tensor is None:
             if self.inpaint_seq is not None:
                 self.inpaint_seq = self.get_inpaint_seq_str(self.inpaint_seq)
             else:
-                self.inpaint_seq = np.array([True if i != ('_','_') else False for i in self.ref])
+                self.inpaint_seq = np.array([bool(i != ('_','_')) for i in self.ref])
         else:
             self.inpaint_seq = self.inpaint_seq_tensor
 
@@ -103,12 +106,13 @@ class ContigMap():
             if self.inpaint_str is not None:
                 self.inpaint_str = self.get_inpaint_seq_str(self.inpaint_str)
             else:
-                self.inpaint_str = np.array([True if i != ('_','_') else False for i in self.ref])
+                self.inpaint_str = np.array([bool(i != ('_','_')) for i in self.ref])
         else:
-            self.inpaint_str = self.inpaint_str_tensor        
+            self.inpaint_str = self.inpaint_str_tensor
         #get 0-indexed input/output (for trb file)
         self.ref_idx0,self.hal_idx0, self.ref_idx0_inpaint, self.hal_idx0_inpaint=self.get_idx0()
         self.con_ref_pdb_idx=[i for i in self.ref if i != ('_','_')] 
+
 
     def get_sampled_mask(self):
         '''
@@ -116,7 +120,7 @@ class ContigMap():
         '''
         length_compatible=False
         count = 0
-        while length_compatible is False:
+        while not length_compatible:
             inpaint_chains=0
             contig_list = self.contigs[0].strip().split('_')
             sampled_mask = []
@@ -128,7 +132,7 @@ class ContigMap():
                 subcon_out = []
                 for subcon in subcons:
                     if subcon[0].isalpha():
-                        subcon_out.append(subcon)  
+                        subcon_out.append(subcon)
                         if '-' in subcon:
                             sampled_mask_length += (int(subcon.split("-")[1])-int(subcon.split("-")[0][1:])+1)
                         else:
@@ -146,12 +150,10 @@ class ContigMap():
                             subcon_out.append(f'{length_inpaint}-{length_inpaint}')
                             sampled_mask_length += int(subcon)
                 sampled_mask.append(','.join(subcon_out))
-            #check length is compatible 
-            if self.length is not None:
-                # print(f'{sampled_mask_length=}, {self.length=}, {subcon_out=}')
-                if sampled_mask_length >= self.length[0] and sampled_mask_length < self.length[1]:
-                    length_compatible = True
-            else:
+            #check length is compatible
+            if self.length is None:
+                length_compatible = True
+            elif sampled_mask_length >= self.length[0] and sampled_mask_length < self.length[1]:
                 length_compatible = True
             count+=1
             if count == 100000: #contig string incompatible with this length
@@ -164,7 +166,7 @@ class ContigMap():
     
     def atom_names(self, chain, residue_idx):
         seq_token = self.seq(chain, residue_idx)
-        atom_names = [atom_name.strip() for atom_name in ChemData().aa2long[seq_token][:ChemData().NHEAVYPROT] if atom_name is not None]
+        atom_names = [atom_name.strip() for atom_name in ChemData().aa2long[seq_token][:ChemData().NHEAVY] if atom_name is not None]
         return atom_names
 
     def expand_sampled_mask(self):
@@ -190,9 +192,9 @@ class ContigMap():
                         for k, v in self.contig_atoms.items():
                             chain_residue = (k[0], int(k[1:]))
                             if chain_residue in inpaint:
-                                if v == ['all']:
+                                if v in [['all'], ['*']]:
                                     v = self.atom_names(chain_residue[0], chain_residue[1])
-                                atomize_resnum2atomnames[chain_residue] = v  
+                                atomize_resnum2atomnames[chain_residue] = v
                 else:
                     inpaint.extend([('_','_')] * int(subcon.split("-")[0]))
                     inpaint_hal.extend([(chain_order[inpaint_chain_idx], i) for i in np.arange(inpaint_idx,inpaint_idx+int(subcon.split("-")[0]))])
@@ -238,14 +240,15 @@ class ContigMap():
         return ref_idx0, hal_idx0, ref_idx0_inpaint, hal_idx0_inpaint
 
     def get_mappings(self):
-        mappings = {}
-        mappings['con_ref_pdb_idx'] = [i for i in self.inpaint if i != ('_','_')]
-        mappings['con_hal_pdb_idx'] = [self.inpaint_hal[i] for i in range(len(self.inpaint_hal)) if self.inpaint[i] != ("_","_")]
-        mappings['con_ref_idx0'] = np.array(self.ref_idx0_inpaint)
-        mappings['con_hal_idx0'] = np.array(self.hal_idx0_inpaint)
-        mappings['inpaint_str'] = self.inpaint_str
-        mappings['inpaint_seq'] = self.inpaint_seq
-        mappings['sampled_mask'] = self.sampled_mask
-        mappings['mask_1d'] = self.mask_1d
-        mappings['atomize_indices2atomname'] = self.atomize_indices2atomname
-        return mappings
+        return dict(
+            con_ref_pdb_idx=[i for i in self.inpaint if i[:2] != ('_','_')],
+            con_hal_pdb_idx=[self.inpaint_hal[i] for i in range(len(self.inpaint_hal)) if self.inpaint[i][:2] != ("_","_")],
+            con_ref_idx0=np.array(self.ref_idx0_inpaint),
+            con_hal_idx0=np.array(self.hal_idx0_inpaint),
+            inpaint_str=self.inpaint_str,
+            inpaint_seq=self.inpaint_seq,
+            sampled_mask=self.sampled_mask,
+            mask_1d=self.mask_1d,
+            atomize_indices2atomname=self.atomize_indices2atomname,
+        )
+

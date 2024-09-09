@@ -53,13 +53,19 @@ class ModelInputs(unittest.TestCase):
     def test_self_cond_tp1(self):
         os.environ['MASTER_PORT'] = '12320'
         run_regression(self,
-                       ['prob_self_cond=1.0'],
+                        ['prob_self_cond=1.0',
+                        '+dataloader.ligands_to_remove=[]', # Remove this line when the subsampled dataset is remade, grep for this to find others #$%^
+                        '+dataloader.min_metal_contacts=0', # Remove this line when the subsampled dataset is remade, grep for this to find others #$%^
+                       ],
                        'model_input_self_cond_tp1')
 
     def test_self_cond_t(self):
         os.environ['MASTER_PORT'] = '12321'
         run_regression(self,
-                       ['prob_self_cond=1.0'],
+                       ['prob_self_cond=1.0',
+                        '+dataloader.ligands_to_remove=[]', # Remove this line when the subsampled dataset is remade, grep for this to find others #$%^
+                        '+dataloader.min_metal_contacts=0', # Remove this line when the subsampled dataset is remade, grep for this to find others #$%^
+                       ],
                        'model_input_self_cond_t',
                        call_number=2)
 
@@ -69,6 +75,8 @@ class ModelInputs(unittest.TestCase):
                        [
                             'dataloader.DIFF_MASK_PROBS=null',
                             '+dataloader.DIFF_MASK_PROBS.get_sm_contacts=1.0',
+                            '+dataloader.ligands_to_remove=[]', # Remove this line when the subsampled dataset is remade, grep for this to find others #$%^
+                            '+dataloader.min_metal_contacts=0', # Remove this line when the subsampled dataset is remade, grep for this to find others #$%^                            
                         ],
                         'model_input_atomize',
                         call_number=1)
@@ -92,6 +100,7 @@ def run_regression(self, overrides, golden_name, call_number=1, assert_loss=Fals
                         xyz = kwargs['xyz']
                     else:
                         xyz = args[4] # [1, L, 36 3]
+                    xyz[:,:,14:,:] = 0.0
                     L = xyz.shape[1]
                     px0_xyz = xyz[None,:,:,:3].repeat(40, 1, 1, 1, 1)
                     px0_xyz = torch.normal(0, 1, px0_xyz.shape) + px0_xyz
@@ -145,7 +154,13 @@ def construct_conf(overrides):
 class Loss(unittest.TestCase):
     def test_loss_grad(self):
         os.environ['MASTER_PORT'] = '12400'
-        self.run_regression_loss_grad([], 'loss_grad_no_self_cond', call_number=2, assert_loss=True)
+        self.run_regression_loss_grad([
+                                        '+dataloader.ligands_to_remove=[]', # Remove this line when the subsampled dataset is remade, grep for this to find others #$%^
+                                        '+dataloader.min_metal_contacts=0', # Remove this line when the subsampled dataset is remade, grep for this to find others #$%^
+                                        ],
+                                        'loss_grad_no_self_cond',
+                                        call_number=2,
+                                        assert_loss=True)
 
     def tearDown(self) -> None:
         hydra.core.global_hydra.GlobalHydra().clear()

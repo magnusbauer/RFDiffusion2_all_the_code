@@ -5,6 +5,7 @@ import rf_diffusion
 PKG_DIR = rf_diffusion.__path__[0]
 from rf_diffusion.inference.utils import parse_pdb
 from rf_diffusion import idealize
+from rf2aa.chemical import ChemicalData as ChemData
 
 
 class TestSideChainIdealization(unittest.TestCase):
@@ -24,7 +25,7 @@ class TestSideChainIdealization(unittest.TestCase):
         xyz14 = torch.tensor(parsed_pdb['xyz'])
         xyz14[~is_resolved] = torch.nan
         xyz = torch.full((1, 91, 36, 3), torch.nan)
-        xyz[0, :, :14] = xyz14
+        xyz[0, :, :ChemData().NHEAVY] = xyz14
 
         seq = torch.tensor(parsed_pdb['seq'])[None]
 
@@ -51,3 +52,6 @@ class TestSideChainIdealization(unittest.TestCase):
 
         # The rmsd to the true structure roughly scales with the noise scale
         self.assertTrue(( rmsds_to_true_structure <= (noise_scales + rmsd_to_true_structure_no_noise) ).all())
+
+if __name__ == '__main__':
+        unittest.main()

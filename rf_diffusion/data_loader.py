@@ -1,3 +1,4 @@
+import contextlib
 import logging
 import torch
 import itertools
@@ -22,7 +23,6 @@ import rf2aa.kinematics
 from rf_diffusion.chemical import ChemicalData as ChemData
 
 # for diffusion training
-import rf_diffusion.mask_generator as mask_generator
 from icecream import ic
 import pickle
 import random
@@ -62,36 +62,36 @@ if not os.path.exists(base_dir):
 def set_data_loader_params(args):
     ic(args)
     PARAMS = {
-        "COMPL_LIST" : "%s/list.hetero.csv"%compl_dir,
-        "HOMO_LIST" : "%s/list.homo.csv"%compl_dir,
-        "NEGATIVE_LIST" : "%s/list.negative.csv"%compl_dir,
-        "PDB_LIST"   : "%s/list_v02.csv"%base_dir,
-        "FB_LIST"    : "%s/list_b1-3.csv"%fb_dir,
-        "VAL_PDB"    : "%s/val/xaa"%base_dir,
-        "VAL_COMPL"  : "%s/val_lists/xaa"%compl_dir,
-        "VAL_NEG"    : "%s/val_lists/xaa.neg"%compl_dir,
-        "DATAPKL"    : args.data_pkl, # cache for faster loading
-        "DATAPKL_AA"    : args.data_pkl_aa, # cache for faster loading
-        "PDB_DIR"    : base_dir,
-        "FB_DIR"     : fb_dir,
-        "CN_DIR"     : cn_dir,
-        "CN_DICT"    : os.path.join(cn_dir, 'cn_ideal_train_test.pt'),
-        "COMPL_DIR"  : compl_dir,
-        "MINTPLT" : 0,
-        "MAXTPLT" : 5,
-        "MINSEQ"  : 1,
-        "MAXSEQ"  : 1024,
-        "MAXLAT"  : 128, 
-        "CROP"    : 256,
-        "DATCUT"  : "2020-Apr-30",
-        "RESCUT"  : 5.0,
+        "COMPL_LIST": f"{compl_dir}/list.hetero.csv",
+        "HOMO_LIST": f"{compl_dir}/list.homo.csv",
+        "NEGATIVE_LIST": f"{compl_dir}/list.negative.csv",
+        "PDB_LIST": f"{base_dir}/list_v02.csv",
+        "FB_LIST": f"{fb_dir}/list_b1-3.csv",
+        "VAL_PDB": f"{base_dir}/val/xaa",
+        "VAL_COMPL": f"{compl_dir}/val_lists/xaa",
+        "VAL_NEG": f"{compl_dir}/val_lists/xaa.neg",
+        "DATAPKL": args.data_pkl,
+        "DATAPKL_AA": args.data_pkl_aa,
+        "PDB_DIR": base_dir,
+        "FB_DIR": fb_dir,
+        "CN_DIR": cn_dir,
+        "CN_DICT": os.path.join(cn_dir, 'cn_ideal_train_test.pt'),
+        "COMPL_DIR": compl_dir,
+        "MINTPLT": 0,
+        "MAXTPLT": 5,
+        "MINSEQ": 1,
+        "MAXSEQ": 1024,
+        "MAXLAT": 128,
+        "CROP": 256,
+        "DATCUT": "2020-Apr-30",
+        "RESCUT": 5.0,
         "BLOCKCUT": 5,
         "PLDDTCUT": 70.0,
-        "SCCUT"   : 90.0,
-        "ROWS"    : 1,
-        "SEQID"   : 95.0,
+        "SCCUT": 90.0,
+        "ROWS": 1,
+        "SEQID": 95.0,
         "MAXCYCLE": 4,
-        "HAL_MASK_HIGH": 35, #added by JW for hal masking
+        "HAL_MASK_HIGH": 35,
         "HAL_MASK_LOW": 10,
         "HAL_MASK_HIGH_AR": 50,
         "HAL_MASK_LOW_AR": 20,
@@ -100,25 +100,27 @@ def set_data_loader_params(args):
         "COMPLEX_HAL_MASK_HIGH_AR": 50,
         "COMPLEX_HAL_MASK_LOW_AR": 20,
         "FLANK_HIGH": 6,
-        "FLANK_LOW" : 3,
-        "STR2SEQ_FULL_LOW" : 0.9,
-        "STR2SEQ_FULL_HIGH" : 1.0,
-        "MAX_LENGTH" : 260,
-        "MAX_COMPLEX_CHAIN" : 200,
-        "TASK_NAMES" : ['seq2str'],
-        "TASK_P" : [1.0],
+        "FLANK_LOW": 3,
+        "STR2SEQ_FULL_LOW": 0.9,
+        "STR2SEQ_FULL_HIGH": 1.0,
+        "MAX_LENGTH": 260,
+        "MAX_COMPLEX_CHAIN": 200,
+        "TASK_NAMES": ['seq2str'],
+        "TASK_P": [1.0],
         "DIFF_MASK_PROBS": args.diff_mask_probs,
-        "DIFF_MASK_LOW":args.diff_mask_low,
-        "DIFF_MASK_HIGH":args.diff_mask_high,
-        "DATASETS":args.dataset,
-        "DATASET_PROB":args.dataset_prob,
-        "MASK_MIN_PROPORTION":args.mask_min_proportion,
-        "MASK_MAX_PROPORTION":args.mask_max_proportion,
-        "MASK_BROKEN_PROPORTION":args.mask_broken_proportion,
-        "SPOOF_ITEM":args.spoof_item,
-        "MOL_DIR":rf2aa.data.compose_dataset.default_dataloader_params['MOL_DIR'],
+        "DIFF_MASK_LOW": args.diff_mask_low,
+        "DIFF_MASK_HIGH": args.diff_mask_high,
+        "DATASETS": args.dataset,
+        "DATASET_PROB": args.dataset_prob,
+        "MASK_MIN_PROPORTION": args.mask_min_proportion,
+        "MASK_MAX_PROPORTION": args.mask_max_proportion,
+        "MASK_BROKEN_PROPORTION": args.mask_broken_proportion,
+        "SPOOF_ITEM": args.spoof_item,
+        "MOL_DIR": rf2aa.data.compose_dataset.default_dataloader_params[
+            'MOL_DIR'
+        ],
         "DISCONTIGUOUS_CROP": True,
-        "USE_GUIDE_POSTS": args.use_guide_posts
+        "USE_GUIDE_POSTS": args.use_guide_posts,
     }
     for param in PARAMS:
         if hasattr(args, param.lower()):
@@ -152,11 +154,11 @@ def cluster_sum(data, assignment, N_seq, N_res):
     csum = torch.zeros(N_seq, N_res, data.shape[-1]).scatter_add(0, assignment.view(-1,1,1).expand(-1,N_res,data.shape[-1]), data.float())
     return csum
 
-def MSAFeaturize(msa, ins, params, eps=1e-6, nmer=1, L_s=[]):
+def MSAFeaturize(msa, ins, params, eps=1e-6, nmer=1, L_s=None):
     '''
     Input: full MSA information (after Block deletion if necessary) & full insertion information
     Output: seed MSA features & extra sequences
-    
+
     Seed MSA features:
         - aatype of seed sequence (20 regular aa + 1 gap/unknown + 1 mask)
         - profile of clustered sequences (22)
@@ -167,8 +169,9 @@ def MSAFeaturize(msa, ins, params, eps=1e-6, nmer=1, L_s=[]):
         - insertion info (1)
         - N-term or C-term? (2)
     '''
+    if L_s is None: L_s = []
     N, L = msa.shape
-    
+
     term_info = torch.zeros((L,2), device=msa.device).float()
     if len(L_s) < 1:
         term_info[0,0] = 1.0 # flag for N-term
@@ -179,15 +182,15 @@ def MSAFeaturize(msa, ins, params, eps=1e-6, nmer=1, L_s=[]):
             term_info[start, 0] = 1.0 # flag for N-term
             term_info[start+L_chain-1,1] = 1.0 # flag for C-term
             start += L_chain
-        
+
     # raw MSA profile
     raw_profile = torch.nn.functional.one_hot(msa, num_classes=21)
-    raw_profile = raw_profile.float().mean(dim=0) 
+    raw_profile = raw_profile.float().mean(dim=0)
 
     # Select Nclust sequence randomly (seed MSA or latent MSA)
-    Nclust = (min(N, params['MAXLAT'])-1) // nmer 
+    Nclust = (min(N, params['MAXLAT'])-1) // nmer
     Nclust = Nclust*nmer + 1
-    
+
     if N > Nclust*2:
         Nextra = N - Nclust
     else:
@@ -208,7 +211,7 @@ def MSAFeaturize(msa, ins, params, eps=1e-6, nmer=1, L_s=[]):
         msa_clust = torch.cat((msa[:1,:], msa[1:,:][sample[:Nclust-1]]), dim=0)
         ins_clust = torch.cat((ins[:1,:], ins[1:,:][sample[:Nclust-1]]), dim=0)
 
-        # 15% random masking 
+        # 15% random masking
         # - 10%: aa replaced with a uniformly sampled random amino acid
         # - 10%: aa replaced with an amino acid sampled from the MSA profile
         # - 10%: not replaced
@@ -217,14 +220,14 @@ def MSAFeaturize(msa, ins, params, eps=1e-6, nmer=1, L_s=[]):
         same_aa = torch.nn.functional.one_hot(msa_clust, num_classes=21)
         probs = 0.1*random_aa + 0.1*raw_profile + 0.1*same_aa
         probs = torch.nn.functional.pad(probs, (0, 1), "constant", 0.7)
-        
+
         sampler = torch.distributions.categorical.Categorical(probs=probs)
         mask_sample = sampler.sample()
 
         mask_pos = torch.rand(msa_clust.shape, device=msa_clust.device) < 0.15
         msa_masked = torch.where(mask_pos, mask_sample, msa_clust)
         b_seq.append(msa_masked[0].clone())
-       
+
         ## get extra sequenes
         if N > Nclust*2:  # there are enough extra sequences
             msa_extra = msa[1:,:][sample[Nclust-1:]]
@@ -242,12 +245,12 @@ def MSAFeaturize(msa, ins, params, eps=1e-6, nmer=1, L_s=[]):
             ins_extra = torch.cat((ins_clust, ins_add), dim=0)
             extra_mask = torch.cat((mask_pos, mask_add), dim=0)
         N_extra = msa_extra.shape[0]
-        
+
         # clustering (assign remaining sequences to their closest cluster by Hamming distance
         msa_clust_onehot = torch.nn.functional.one_hot(msa_masked, num_classes=22)
         msa_extra_onehot = torch.nn.functional.one_hot(msa_extra, num_classes=22)
         count_clust = torch.logical_and(~mask_pos, msa_clust != 20) # 20: index for gap, ignore both masked & gaps
-        count_extra = torch.logical_and(~extra_mask, msa_extra != 20) 
+        count_extra = torch.logical_and(~extra_mask, msa_extra != 20)
         agreement = torch.matmul((count_extra[:,:,None]*msa_extra_onehot).view(N_extra, -1), (count_clust[:,:,None]*msa_clust_onehot).view(Nclust, -1).T)
         assignment = torch.argmax(agreement, dim=-1)
 
@@ -280,7 +283,7 @@ def MSAFeaturize(msa, ins, params, eps=1e-6, nmer=1, L_s=[]):
         b_msa_seed.append(msa_seed)
         b_msa_extra.append(msa_extra)
         b_mask_pos.append(mask_pos)
-    
+
     b_seq = torch.stack(b_seq)
     b_msa_clust = torch.stack(b_msa_clust)
     b_msa_seed = torch.stack(b_msa_seed)
@@ -318,12 +321,12 @@ def MSAFeaturize_fixbb(msa, params, L_s=[]):
     # raw MSA profile
     raw_profile = torch.nn.functional.one_hot(msa, num_classes=21)
     raw_profile = raw_profile.float().mean(dim=0)
-    b_seq = list()
-    b_msa_clust = list()
-    b_msa_seed = list()
-    b_msa_extra = list()
-    b_mask_pos = list()
-    for i_cycle in range(params['MAXCYCLE']):
+    b_seq = []
+    b_msa_clust = []
+    b_msa_seed = []
+    b_msa_extra = []
+    b_mask_pos = []
+    for _ in range(params['MAXCYCLE']):
         assert torch.max(msa) < 22
         msa_onehot = torch.nn.functional.one_hot(msa[:1],num_classes=22)
         msa_fakeprofile_onehot = torch.nn.functional.one_hot(msa[:1],num_classes=24) #add the extra two indel planes, which will be set to zero
@@ -441,7 +444,7 @@ def get_train_valid_set(params, OFFSET=1000000):
         # read validation IDs for PDB set
         val_pdb_ids = set([int(l) for l in open(params['VAL_PDB']).readlines()])
         val_compl_ids = set([int(l) for l in open(params['VAL_COMPL']).readlines()])
-    
+
         # read homo-oligomer list
         homo = {}
         # with open(params['HOMO_LIST'], 'r') as f:
@@ -456,41 +459,41 @@ def get_train_valid_set(params, OFFSET=1000000):
         #         homo[r[0]] = [r[1:]]
 
         # read & clean list.csv
-        
+
         with open(params['PDB_LIST'], 'r') as f:
             reader = csv.reader(f)
             next(reader)
             rows = [[r[0],r[3],int(r[4]), int(r[-1].strip())] for r in reader
                     if float(r[2])<=params['RESCUT'] and
                     parser.parse(r[1])<=parser.parse(params['DATCUT']) and len(r[-2]) <= params['MAX_LENGTH'] and len(r[-2]) >= 60] #added length max so only have full chains, and minimum length of 60aa
-        
+
         # compile training and validation sets
-        val_hash = list()
+        val_hash = []
         train_pdb = {}
         valid_pdb = {}
         valid_homo = {}
-    
+
         for r in rows:
             if r[2] in val_pdb_ids:
                 val_hash.append(r[1])
-                if r[2] in valid_pdb.keys():
+                if r[2] in valid_pdb:
                     valid_pdb[r[2]].append((r[:2], r[-1]))
                 else:
                     valid_pdb[r[2]] = [(r[:2], r[-1])]
                 #
                 if r[0] in homo:
-                    if r[2] in valid_homo.keys():
+                    if r[2] in valid_homo:
                         valid_homo[r[2]].append((r[:2], r[-1]))
                     else:
                         valid_homo[r[2]] = [(r[:2], r[-1])]
             else:
-                if r[2] in train_pdb.keys():
+                if r[2] in train_pdb:
                     train_pdb[r[2]].append((r[:2], r[-1]))
                 else:
                     train_pdb[r[2]] = [(r[:2], r[-1])]
-        
+
         val_hash = set(val_hash)
-        
+
         # compile facebook model sets
         with open(params['FB_LIST'], 'r') as f:
             reader = csv.reader(f)
@@ -498,17 +501,17 @@ def get_train_valid_set(params, OFFSET=1000000):
             rows = [[r[0],r[2],int(r[3]),len(r[-1].strip())] for r in reader
                      if float(r[1]) > 80.0 and
                      len(r[-1].strip()) > 100 and len(r[-1].strip()) <= params['MAX_LENGTH']] #added max length to allow only full chains. Also reduced minimum length to 100aa
-       
+
         fb = {}
-        
+
         for r in rows:
-            if r[2] in fb.keys():
+            if r[2] in fb:
                 fb[r[2]].append((r[:2], r[-1]))
             else:
                 fb[r[2]] = [(r[:2], r[-1])]
-        
+
         #compile complex sets
-        
+
         with open(params['COMPL_LIST'], 'r') as f:
             reader = csv.reader(f)
             next(reader)
@@ -516,10 +519,10 @@ def get_train_valid_set(params, OFFSET=1000000):
             rows = [[r[0], r[3], int(r[4]), [int(plen) for plen in r[5].split(':')], r[6] , [int(r[7]), int(r[8]), int(r[9]), int(r[10])]] for r in reader
                      if float(r[2]) <= params['RESCUT'] and
                      parser.parse(r[1]) <= parser.parse(params['DATCUT']) and min([int(i) for i in r[5].split(":")]) < params['MAX_COMPLEX_CHAIN'] and min([int(i) for i in r[5].split(":")]) > 50] #require one chain of the hetero complexes to be smaller than a certain value so it can be kept complete. This chain must also be > 50aa long.
-        
+
         train_compl = {}
         valid_compl = {}
-        
+
         for r in rows:
             if r[2] in val_compl_ids:
                 if r[2] in valid_compl.keys():
@@ -548,10 +551,10 @@ def get_train_valid_set(params, OFFSET=1000000):
         #             if float(r[2])<=params['RESCUT'] and
         #             parser.parse(r[1])<=parser.parse(params['DATCUT'])]
 
-        
+
         train_neg = {}
         valid_neg = {}
-        
+
         # for r in rows:
         #     if r[2] in val_neg_ids:
         #         if r[2] in valid_neg.keys():
@@ -568,7 +571,7 @@ def get_train_valid_set(params, OFFSET=1000000):
         #             train_neg[r[2]].append((r[:2], r[-2], r[-1], []))
         #         else:
         #             train_neg[r[2]] = [(r[:2], r[-2], r[-1], [])]
-        
+
 
         train_cn = {}
         valid_cn = {}
@@ -579,7 +582,7 @@ def get_train_valid_set(params, OFFSET=1000000):
                     train_cn[r[0]].append((r[1], r[2]))
                 else:
                     train_cn[r[0]] = [(r[1], r[2])]
-        
+
         for r in cn_dict['test_seqs']:
             if r[2] < params['MAX_LENGTH']:
                 if r[0] in valid_cn.keys():
@@ -594,27 +597,27 @@ def get_train_valid_set(params, OFFSET=1000000):
         neg_IDs = list(train_neg.keys())
         cn_IDs = list(train_cn.keys())
 
-        pdb_weights = list()
-        fb_weights = list()
-        compl_weights = list()
-        neg_weights = list()
-        cn_weights = list()
-        
+        pdb_weights = []
+        fb_weights = []
+        compl_weights = []
+        neg_weights = []
+        cn_weights = []
+
         for key in pdb_IDs:
             plen = sum([plen for _, plen in train_pdb[key]]) // len(train_pdb[key])
             w = (1/512.)*max(min(float(plen),512.),256.)
             pdb_weights.append(w)
-    
+
         for key in fb_IDs:
             plen = sum([plen for _, plen in fb[key]]) // len(fb[key])
             w = (1/512.)*max(min(float(plen),512.),256.)
             fb_weights.append(w)
-    
+
         for key in compl_IDs:
             plen = sum([sum(plen) for _, plen, _, _ in train_compl[key]]) // len(train_compl[key])
             w = (1/512.)*max(min(float(plen),512.),256.)
             compl_weights.append(w)
-    
+
         for key in neg_IDs:
             plen = sum([sum(plen) for _, plen, _, _ in train_neg[key]]) // len(train_neg[key])
             w = (1/512.)*max(min(float(plen),512.),256.)
@@ -626,7 +629,7 @@ def get_train_valid_set(params, OFFSET=1000000):
             cn_weights.append(w)
 
         # save
-        
+
         obj = (
            pdb_IDs, pdb_weights, train_pdb,
            fb_IDs, fb_weights, fb,
@@ -638,7 +641,7 @@ def get_train_valid_set(params, OFFSET=1000000):
             print ('Writing',params["DATAPKL"])
             pickle.dump(obj, f)
             print ('Done')
-        
+
     else:
         start = time.time()
         with open(params["DATAPKL"], "rb") as f:
@@ -681,21 +684,21 @@ def get_crop(l, mask, device, params, unclamp=False):
 def get_complex_crop(len_s, mask, device, params):
     tot_len = sum(len_s)
     sel = torch.arange(tot_len, device=device)
-    
+
     n_added = 0
     n_remaining = sum(len_s)
     preset = 0
-    sel_s = list()
+    sel_s = []
     for k in range(len(len_s)):
         n_remaining -= len_s[k]
         crop_max = min(params['CROP']-n_added, len_s[k])
         crop_min = min(len_s[k], max(1, params['CROP'] - n_added - n_remaining))
-        
+
         if k == 0:
             crop_max = min(crop_max, params['CROP']-5)
         crop_size = np.random.randint(crop_min, crop_max+1)
         n_added += crop_size
-        
+
         mask_chain = ~(mask[preset:preset+len_s[k],:3].sum(dim=-1) < 3.0)
         exists = mask_chain.nonzero()[0]
         res_idx = exists[torch.randperm(len(exists))[0]].item()
@@ -734,7 +737,7 @@ def get_spatial_crop_fixbb(xyz, mask, sel, len_s, params, cutoff=10.0, eps=1e-6)
 
     #choose which chain to keep whole
     if sum(len_s) < params['MAX_LENGTH']: # don't need to crop
-        if all([i < params['MAX_COMPLEX_CHAIN'] for i in len_s]): #both chains are small enough
+        if all(i < params['MAX_COMPLEX_CHAIN'] for i in len_s): #both chains are small enough
             chain=torch.randint(0,2,(1,))[0] #choose either first or second chain
         else:
             chain=np.argmin(len_s)
@@ -831,8 +834,8 @@ def merge_a3m_homo(msa_orig, ins_orig, nmer):
     ins = torch.full((1+(N-1)*nmer, L*nmer), 0, dtype=ins_orig.dtype, device=msa_orig.device)
     start=0
     start2 = 1
-    for i_c in range(nmer):
-        msa[0, start:start+L] = msa_orig[0] 
+    for _ in range(nmer):
+        msa[0, start:start+L] = msa_orig[0]
         msa[start2:start2+(N-1), start:start+L] = msa_orig[1:]
         ins[0, start:start+L] = ins_orig[0]
         ins[start2:start2+(N-1), start:start+L] = ins_orig[1:]
@@ -925,7 +928,7 @@ def featurize_single_chain_fixbb(msa, pdb, params, unclamp=False, pick_top=False
 # Generate input features for homo-oligomers
 def featurize_homo(msa_orig, ins_orig, tplt, pdbA, pdbid, interfaces, params, pick_top=True):
     L = msa_orig.shape[1]
-    
+
     msa, ins = merge_a3m_homo(msa_orig, ins_orig, 2) # make unpaired alignments, for training, we always use two chains
     seq, msa_seed_orig, msa_seed, msa_extra, mask_msa = MSAFeaturize(msa, ins, params, nmer=2, L_s=[L,L])
 
@@ -941,13 +944,13 @@ def featurize_homo(msa_orig, ins_orig, tplt, pdbA, pdbid, interfaces, params, pi
     xyz_t[ntempl:,L:] = xyz_t_single
     f1d_t[:ntempl,:L] = f1d_t_single
     f1d_t[ntempl:,L:] = f1d_t_single
-    
+
     # get initial coordinates
     xyz_prev = torch.cat((xyz_t_single[0], xyz_t_single[0]), dim=0)
 
     # get ground-truth structures
     # load metadata
-    PREFIX = "%s/torch/pdb/%s/%s"%(params['PDB_DIR'],pdbid[1:3],pdbid)
+    PREFIX = f"{params['PDB_DIR']}/torch/pdb/{pdbid[1:3]}/{pdbid}"
     meta = torch.load(PREFIX+".pt")
 
     # get all possible pairs
@@ -962,7 +965,7 @@ def featurize_homo(msa_orig, ins_orig, tplt, pdbA, pdbid, interfaces, params, pi
         xyzB = torch.einsum('ij,raj->rai', xformB[:3,:3], pdbB['xyz']) + xformB[:3,3][None,None,:]
         xyz[i_int,:,:14] = torch.cat((xyzA, xyzB), dim=0)
         mask[i_int,:,:14] = torch.cat((pdbA['mask'], pdbB['mask']), dim=0)
-    
+
     idx = torch.arange(L*2)
     idx[L:] += 200 # to let network know about chain breaks
 
@@ -970,7 +973,7 @@ def featurize_homo(msa_orig, ins_orig, tplt, pdbA, pdbid, interfaces, params, pi
     chain_idx = torch.zeros((2*L, 2*L)).long()
     chain_idx[:L, :L] = 1
     chain_idx[L:, L:] = 1
-    
+
     # Residue cropping
     if 2*L > params['CROP']:
         spatial_crop_tgt = np.random.randint(0, npairs)
@@ -987,12 +990,12 @@ def featurize_homo(msa_orig, ins_orig, tplt, pdbA, pdbid, interfaces, params, pi
         idx = idx[crop_idx]
         chain_idx = chain_idx[crop_idx][:,crop_idx]
         xyz_prev = xyz_prev[crop_idx]
-    
+
     # replace missing with blackholes & conovert NaN to zeros to avoid any NaN problems during loss calculation
     init = ChemData().INIT_CRDS.reshape(1, 1, 27, 3).repeat(npairs, xyz.shape[1], 1, 1)
     xyz = torch.where(mask[...,None], xyz, init).contiguous()
     xyz = torch.nan_to_num(xyz)
-    
+
     return seq.long(), msa_seed_orig.long(), msa_seed.float(), msa_extra.float(), mask_msa, \
            xyz.float(), mask, idx.long(),\
            xyz_t.float(), f1d_t.float(), xyz_prev.float(), \
@@ -1072,10 +1075,10 @@ def loader_pdb_fixbb(item, params, homo = None, unclamp=False, pick_top=False,p_
     is_sm = torch.zeros(L).bool()
     return seq, msa, msa_masked, msa_full, mask_msa, true_crds, atom_mask, idx_pdb, xyz_t, t1d, mask_t, xyz_prev, mask_prev, same_chain, unclamp, negative, atom_frames, bond_feats, chirals, is_sm
     
-    return seq.long(), msa_seed_orig.long(), msa_seed.float(), msa_extra.float(), mask_msa, \
-           xyz.float(), mask, idx.long(),\
-           xyz_t.float(), f1d_t.float(), xyz_prev.float(), \
-           chain_idx, unclamp, False, [0,None], mask
+    # return seq.long(), msa_seed_orig.long(), msa_seed.float(), msa_extra.float(), mask_msa, \
+    #        xyz.float(), mask, idx.long(),\
+    #        xyz_t.float(), f1d_t.float(), xyz_prev.float(), \
+    #        chain_idx, unclamp, False, [0,None], mask
 
 
 def loader_fb(item, params, unclamp=False):
@@ -1151,7 +1154,7 @@ def loader_cn_fixbb(item, params, unclamp=False, pick_top=False):
 def loader_complex(item, L_s, taxID, assem, params, negative=False, pick_top=True):
     pdb_pair = item[0]
     pMSA_hash = item[1]
-    
+
     msaA_id, msaB_id = pMSA_hash.split('_')
     if len(set(taxID.split(':'))) == 1: # two proteins have same taxID -- use paired MSA
         # read pMSA
@@ -1170,7 +1173,7 @@ def loader_complex(item, L_s, taxID, assem, params, negative=False, pick_top=Tru
 
     # get MSA features
     msa = a3m['msa'].long()
-    if negative: # Qian's paired MSA for true-pairs have no insertions... (ignore insertion to avoid any weird bias..) 
+    if negative: # Qian's paired MSA for true-pairs have no insertions... (ignore insertion to avoid any weird bias..)
         ins = torch.zeros_like(msa)
     else:
         ins = a3m['ins'].long()
@@ -1184,9 +1187,9 @@ def loader_complex(item, L_s, taxID, assem, params, negative=False, pick_top=Tru
     tpltA = torch.load(tpltA_fn)
     tpltB = torch.load(tpltB_fn)
     ntempl = np.random.randint(params['MINTPLT'], params['MAXTPLT']//2+1)
-    xyz_t_A, f1d_t_A = TemplFeaturize(tpltA, sum(L_s), params, offset=0, npick=ntempl, pick_top=pick_top) 
+    xyz_t_A, f1d_t_A = TemplFeaturize(tpltA, sum(L_s), params, offset=0, npick=ntempl, pick_top=pick_top)
     ntempl = np.random.randint(params['MINTPLT'], params['MAXTPLT']//2+1)
-    xyz_t_B, f1d_t_B = TemplFeaturize(tpltB, sum(L_s), params, offset=L_s[0], npick=ntempl, pick_top=pick_top) 
+    xyz_t_B, f1d_t_B = TemplFeaturize(tpltB, sum(L_s), params, offset=L_s[0], npick=ntempl, pick_top=pick_top)
     xyz_t = torch.cat((xyz_t_A, xyz_t_B), dim=0)
     f1d_t = torch.cat((f1d_t_A, f1d_t_B), dim=0)
 
@@ -1197,7 +1200,7 @@ def loader_complex(item, L_s, taxID, assem, params, negative=False, pick_top=Tru
     pdbA_id, pdbB_id = pdb_pair.split(':')
     pdbA = torch.load(params['PDB_DIR']+'/torch/pdb/'+pdbA_id[1:3]+'/'+pdbA_id+'.pt')
     pdbB = torch.load(params['PDB_DIR']+'/torch/pdb/'+pdbB_id[1:3]+'/'+pdbB_id+'.pt')
-    
+
     if len(assem) > 0:
         # read metadata
         pdbid = pdbA_id.split('_')[0]
@@ -1206,19 +1209,17 @@ def loader_complex(item, L_s, taxID, assem, params, negative=False, pick_top=Tru
         # get transform
         xformA = meta['asmb_xform%d'%assem[0]][assem[1]]
         xformB = meta['asmb_xform%d'%assem[2]][assem[3]]
-        
+
         # apply transform
         xyzA = torch.einsum('ij,raj->rai', xformA[:3,:3], pdbA['xyz']) + xformA[:3,3][None,None,:]
         xyzB = torch.einsum('ij,raj->rai', xformB[:3,:3], pdbB['xyz']) + xformB[:3,3][None,None,:]
         xyz = torch.full((sum(L_s), 27, 3), np.nan).float()
         xyz[:,:14] = torch.cat((xyzA, xyzB), dim=0)
-        mask = torch.full((sum(L_s), 27), False)
-        mask[:,:14] = torch.cat((pdbA['mask'], pdbB['mask']), dim=0)
     else:
         xyz = torch.full((sum(L_s), 27, 3), np.nan).float()
         xyz[:,:14] = torch.cat((pdbA['xyz'], pdbB['xyz']), dim=0)
-        mask = torch.full((sum(L_s), 27), False)
-        mask[:,:14] = torch.cat((pdbA['mask'], pdbB['mask']), dim=0)
+    mask = torch.full((sum(L_s), 27), False)
+    mask[:,:14] = torch.cat((pdbA['mask'], pdbB['mask']), dim=0)
     idx = torch.arange(sum(L_s))
     idx[L_s[0]:] += 200
 
@@ -1246,12 +1247,12 @@ def loader_complex(item, L_s, taxID, assem, params, negative=False, pick_top=Tru
         #
         idx = idx[sel]
         chain_idx = chain_idx[sel][:,sel]
-    
+
     # replace missing with blackholes & conovert NaN to zeros to avoid any NaN problems during loss calculation
     init = ChemData().INIT_CRDS.reshape(1, 27, 3).repeat(len(xyz), 1, 1)
     xyz = torch.where(mask[...,None], xyz, init).contiguous()
     xyz = torch.nan_to_num(xyz)
-    
+
     #print ("loader_compl", xyz_t.shape, f1d_t.shape, xyz_prev.shape, negative)
 
     return seq.long(), msa_seed_orig.long(), msa_seed.float(), msa_extra.float(), mask_msa,\
@@ -1296,13 +1297,11 @@ def loader_complex_fixbb(item, L_s, taxID, assem, params, negative=False, pick_t
         xyzB = torch.einsum('ij,raj->rai', xformB[:3,:3], pdbB['xyz']) + xformB[:3,3][None,None,:]
         xyz = torch.full((sum(L_s), 27, 3), np.nan).float()
         xyz[:,:14] = torch.cat((xyzA, xyzB), dim=0)
-        mask = torch.full((sum(L_s), 27), False)
-        mask[:,:14] = torch.cat((pdbA['mask'], pdbB['mask']), dim=0)
     else:
         xyz = torch.full((sum(L_s), 27, 3), np.nan).float()
         xyz[:,:14] = torch.cat((pdbA['xyz'], pdbB['xyz']), dim=0)
-        mask = torch.full((sum(L_s), 27), False)
-        mask[:,:14] = torch.cat((pdbA['mask'], pdbB['mask']), dim=0)
+    mask = torch.full((sum(L_s), 27), False)
+    mask[:,:14] = torch.cat((pdbA['mask'], pdbB['mask']), dim=0)
     idx = torch.arange(sum(L_s))
     idx[L_s[0]:] += 200
     chain_idx = torch.zeros((sum(L_s), sum(L_s))).long()
@@ -1324,7 +1323,7 @@ def loader_complex_fixbb(item, L_s, taxID, assem, params, negative=False, pick_t
     xyz_t = xyz_t[:,sel]
     f1d_t = f1d_t[:,sel]
     xyz_prev = xyz_prev[sel]
-    
+
     idx = idx[sel]
     chain_idx = chain_idx[sel][:,sel]
     # replace missing with blackholes & conovert NaN to zeros to avoid any NaN problems during loss calculation
@@ -1380,7 +1379,7 @@ def default_dataset_configs(loader_param, debug=False):
         train_dict = valid_dict
         weights_dict = {}
         ic(list(train_ID_dict.keys()))
-        for k in ['pdb', 'compl', 'sm_compl', 'sm_compl_covale', 'sm_compl_asmb', 'sm_compl_multi', 'metal_compl']:
+        for k in ['pdb', 'compl', 'sm_compl', 'sm_compl_covale', 'sm_compl_asmb', 'sm_compl_multi', 'metal_compl', 'na_compl']:
             weights_dict[k] = torch.full(train_ID_dict[k].shape, 0.5)
 
     #all the pdb sets use the default rf2aa loader_pdb, but the fixbb adaptor will not be applied to the seq2str task
@@ -1414,6 +1413,44 @@ def default_dataset_configs(loader_param, debug=False):
         'hal_ar':      rf2aa.data.data_loader.loader_complex,
         'diff':        rf2aa.data.data_loader.loader_complex},
         weights_dict["compl"])
+
+    na_compl_config = WeightedDataset(train_ID_dict["na_compl"], train_dict["na_compl"], {
+        'seq2str':     rf2aa.data.data_loader.loader_na_complex,
+        'str2seq':     rf2aa.data.data_loader.loader_na_complex, 
+        'str2seq_full':rf2aa.data.data_loader.loader_na_complex, 
+        'hal':         rf2aa.data.data_loader.loader_na_complex, 
+        'hal_ar':      rf2aa.data.data_loader.loader_na_complex,
+        'diff':        rf2aa.data.data_loader.loader_na_complex},
+        weights_dict["na_compl"])        
+
+    # Just need to regenerate the dataset pickle file with reference to distill tf csv file path
+    # tf_distill_config = WeightedDataset(train_ID_dict["distil_tf"], train_dict["distil_tf"], {
+    #     'seq2str':     rf2aa.data.data_loader.loader_distil_tf,
+    #     'str2seq':     rf2aa.data.data_loader.loader_distil_tf, 
+    #     'str2seq_full':rf2aa.data.data_loader.loader_distil_tf, 
+    #     'hal':         rf2aa.data.data_loader.loader_distil_tf, 
+    #     'hal_ar':      rf2aa.data.data_loader.loader_distil_tf,
+    #     'diff':        rf2aa.data.data_loader.loader_distil_tf},
+    #     weights_dict["distil_tf"])   
+
+    rna_config = WeightedDataset(train_ID_dict["rna"], train_dict["rna"], {
+        'seq2str':     rf2aa.data.data_loader.loader_dna_rna,
+        'str2seq':     rf2aa.data.data_loader.loader_dna_rna, 
+        'str2seq_full':rf2aa.data.data_loader.loader_dna_rna, 
+        'hal':         rf2aa.data.data_loader.loader_dna_rna, 
+        'hal_ar':      rf2aa.data.data_loader.loader_dna_rna,
+        'diff':        rf2aa.data.data_loader.loader_dna_rna},
+        weights_dict["rna"])    
+
+    # Just need to regenerate the dataset pickle file with reference to dna csv file path
+    # dna_config = WeightedDataset(train_ID_dict["dna"], train_dict["dna"], {
+    #     'seq2str':     rf2aa.data.data_loader.loader_dna_rna,
+    #     'str2seq':     rf2aa.data.data_loader.loader_dna_rna, 
+    #     'str2seq_full':rf2aa.data.data_loader.loader_dna_rna, 
+    #     'hal':         rf2aa.data.data_loader.loader_dna_rna, 
+    #     'hal_ar':      rf2aa.data.data_loader.loader_dna_rna,
+    #     'diff':        rf2aa.data.data_loader.loader_dna_rna},
+    #     weights_dict["dna"])                                
     
     # neg_config = WeightedDataset(neg_IDs, neg_dict, loader_complex, neg_weights)
     # fb_config = WeightedDataset(train_ID_dict["fb"], train_dict["fb"], {
@@ -1450,6 +1487,10 @@ def default_dataset_configs(loader_param, debug=False):
     o = OrderedDict({
         'pdb': pdb_config,
         'compl': compl_config,
+        'na_compl': na_compl_config,
+        # 'tf_distill': tf_distill_config,
+        'rna': rna_config,
+        # 'dna': dna_config,
         # 'negative': neg_config,
         # 'fb': fb_config,
         # 'cn': cn_config,
@@ -1563,6 +1604,7 @@ class DistilledDatasetUnnoised(data.Dataset):
         return d
 
     def getitem_unsafe(self, index):
+        # This function is run when items are loaded in pytorch dataloaders
         mask_gen_seed = np.random.randint(0, 99999999)
         p_unclamp = np.random.rand()
         task_idx = np.random.choice(np.arange(len(self.task_names)), 1, p=self.p_task)[0]
@@ -1605,17 +1647,27 @@ class DistilledDatasetUnnoised(data.Dataset):
         with error.context(item_context):
             if chosen_dataset == 'cn':
                 raise NotImplementedError("new aa dataset don't have backwards compatibility with CN set")
-                chosen_loader = dataset_config.task_loaders[task]
-                out = chosen_loader(sel_item[0], self.params)
+                # chosen_loader = dataset_config.task_loaders[task]
+                # out = chosen_loader(sel_item[0], self.params)
 
             elif chosen_dataset == 'negative':
                 raise NotImplementedError("new aa dataset don't have backwards compatibility with negative set")
-                out = dataset_config.task_loaders(sel_item[0], sel_item[1], sel_item[2], sel_item[3], self.params, negative=True)
+                # out = dataset_config.task_loaders(sel_item[0], sel_item[1], sel_item[2], sel_item[3], self.params, negative=True)
 
             elif chosen_dataset == 'compl':
                 chosen_loader = dataset_config.task_loaders[task]
                 out = chosen_loader(sel_item, 
                     {**rf2aa.data.compose_dataset.default_dataloader_params, **self.params}, fixbb=fixbb)
+            elif chosen_dataset in ['na_compl']:
+                # Note, fixbb not available for rf2aa data loaders
+                chosen_loader = dataset_config.task_loaders[task]
+                out = chosen_loader(sel_item, 
+                    {**rf2aa.data.compose_dataset.default_dataloader_params, **self.params}, native_NA_frac=0.0, fixbb=fixbb)                    
+            elif chosen_dataset in ['rna', 'dna']:
+                # Note, fixbb not available for rf2aa data loaders
+                chosen_loader = dataset_config.task_loaders[task]
+                out = chosen_loader(sel_item, 
+                    {**rf2aa.data.compose_dataset.default_dataloader_params, **self.params}, fixbb=fixbb)                  
             elif chosen_dataset == 'pdb' or chosen_dataset == 'pdb_aa':
                 chosen_loader = dataset_config.task_loaders[task]
                 # if p_unclamp > self.unclamp_cut:
@@ -1667,7 +1719,6 @@ class DistilledDatasetUnnoised(data.Dataset):
                 pop = aa_model.is_occupied(indep, atom_mask)
                 # For now, do not pop unoccupied small molecule atoms, exit instead, as popping them can lose covale information.
                 unoccupied_sm = (~pop) * indep.is_sm
-                # ic(chosen_dataset, unoccupied_sm.any())
                 if unoccupied_sm.any():
                     raise Exception(f'there are small molecule atoms that are unoccupied at indices:  {unoccupied_sm.nonzero()[:,0]}')
                 aa_model.pop_mask(indep, pop)
@@ -1686,9 +1737,8 @@ class DistilledDatasetUnnoised(data.Dataset):
 
                 indep, atom_mask, metadata = aa_model.deatomize_covales(indep, atom_mask)
 
-                # Mask the independent inputs.
-                run_inference.seed_all(mask_gen_seed) # Reseed the RNGs for test stability.
-                masks_1d = mask_generator.generate_masks(indep, task, self.params, chosen_dataset, None, atom_mask=atom_mask[:, :ChemData().NHEAVYPROT], metadata=metadata)
+                ic(indep.xyz.shape)
+                ic(atom_mask.shape)
 
                 return {
                     'indep': indep,
@@ -1697,12 +1747,11 @@ class DistilledDatasetUnnoised(data.Dataset):
                     'chosen_dataset': chosen_dataset,
                     'sel_item': sel_item,
                     'task': task,
-                    'masks_1d': masks_1d,
                     'item_context': item_context,
                     'mask_gen_seed': mask_gen_seed,
+                    'params': self.params,
                     'conditions_dict': {}
                 }
-
             processed = process_out(out)
             return processed
 
@@ -1719,6 +1768,8 @@ class TransformedDataset(data.Dataset):
     '''
     Applies transformations to a dataset following the pytorch Transformation paradigm:
     https://pytorch.org/tutorials/beginner/basics/transforms_tutorial.html
+
+    Called after the dataset is loaded, but before it is returned to the user.
     '''
 
     def __init__(self,
@@ -1728,16 +1779,21 @@ class TransformedDataset(data.Dataset):
             self.dataset = dataset
             
         
-    def __getitem__(self, index):
+    def __getitem__(self, index: int):
+        # Entry point for dataset iteration
         feats = self.dataset[index]
         logger.debug(f'Transform root inputs: {set(feats.keys()) if isinstance(feats, dict) else type(feats)}')
-        for t in self.transforms:
+
+        # Iterate through all transforms in order and update the features
+        for T in self.transforms:
             feats_before = set(feats.keys()) if isinstance(feats, dict) else set()
-            feats = t(**feats)
+            feats = T(**feats)
+            
+            # Logger information to track changes
             feats_after = set(feats.keys()) if isinstance(feats, dict) else set()
             new_feats = feats_after - feats_before
             removed_feats = feats_before - feats_after
-            logger.debug(f'Transform[{get_class_name(t)}] added: {new_feats}    removed: {removed_feats}')
+            logger.debug(f'Transform[{get_class_name(T)}] added: {new_feats}    removed: {removed_feats}')
         logger.debug(f'Transform root outputs: {set(feats.keys()) if isinstance(feats, dict) else type(feats)}')
         return feats
 
@@ -1808,13 +1864,14 @@ class DistilledDataset(data.Dataset):
             indep.extra_t1d, indep.extra_t2d = features.get_extra_tXd(indep, self.conf.extra_tXd, t_cont=t_cont, **self.conf.extra_tXd_params, **conditions_dict)
 
             run_inference.seed_all(mask_gen_seed) # Reseed the RNGs for test stability.
+            
             indep_t, diffuser_out = aa_model.diffuse(self.conf, self.diffuser, indep, is_diffused, t)
 
             # Compute all strictly dependent model inputs from the independent inputs.
             if self.preprocess_param['randomize_frames']:
                 print('randomizing frames')
                 indep_t.xyz = aa_model.randomly_rotate_frames(indep_t.xyz)
-            aa_model.mask_indep(indep_t, is_masked_seq)
+            indep_t = aa_model.mask_seq(indep_t, is_masked_seq) # Changed to new function that allows for multiple polymers
             rfi = self.model_adaptor.prepro(indep_t, t, is_diffused)
 
             # Sanity checks
@@ -1836,7 +1893,7 @@ class DistilledDataset(data.Dataset):
                 diffuser_out=diffuser_out,
                 item_context=item_context,
                 conditions_dict=conditions_dict)
-        
+
         transforms = []
         # Add training only transforms
         upstream_names = self.conf.upstream_training_transforms.names if hasattr(self.conf, 'upstream_training_transforms') else []
@@ -1868,22 +1925,33 @@ class DatasetWithFallback(data.Dataset):
                  dataset,
                  fallback_dataset,
                  fallback_sampler,
-                 use_fallback=True):
+                 use_fallback=True,
+                 max_attempts=10):
             self.dataset = dataset
             self.fallback_dataset = fallback_dataset
             self.fallback_sampler = fallback_sampler
             self.fallback_iter = itertools.cycle(fallback_sampler.__iter__())
             self.use_fallback = use_fallback
+            self.max_attempts = max_attempts
         
     def __getitem__(self, index):
         try:
             return self.dataset[index]
         except Exception as e:
-            fallback_index = next(self.fallback_iter)
+            # Attempt up retry the new dataset up to max_attempts times
+            orig_traceback = traceback.format_exc()
             if not self.use_fallback:
+                print(f'WARNING: dataset.__getitem__[{index}] raised exception with no fallback: {orig_traceback}')
                 raise e
-            print(f'WARNING: dataset.__getitem__ raised exception, falling back to fallback_dataset[{fallback_index}]: {traceback.format_exc()}')
-            return self.fallback_dataset[fallback_index]
+            for _ in range(self.max_attempts):
+                fallback_index = next(self.fallback_iter)
+                with contextlib.suppress(Exception):
+                    out = self.fallback_dataset[fallback_index]
+                    print(f'WARNING: dataset.__getitem__[{index}] raised exception, falling back to fallback_dataset[{fallback_index}]: {orig_traceback}')
+                    return out
+            # Unable to find fallback
+            print(f'ERROR: dataset.__getitem__[{index}] raised exception that could not be resolved with fallback dataset: {traceback.format_exc()}')
+            raise e
 
 
 class DistributedWeightedSampler(data.Sampler):

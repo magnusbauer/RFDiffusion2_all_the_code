@@ -207,7 +207,7 @@ class NRBStyleSelfCond(Sampler):
     Works for diffusion and flow matching models.
     """
 
-    def sample_step(self, t, indep, rfo, extra):
+    def sample_step(self, t, indep, rfo, extra, features_cache):
         '''
         Generate the next pose that the model should be supplied at timestep t-1.
         Args:
@@ -215,6 +215,7 @@ class NRBStyleSelfCond(Sampler):
             seq_t (torch.tensor): (L,22) The sequence at the beginning of this timestep
             x_t (torch.tensor): (L,14,3) The residue positions at the beginning of this timestep
             seq_init (torch.tensor): (L,22) The initialized sequence used in updating the sequence.
+            features_cache (dict): Cache of initialized and stored values for t1d/t2d features 
         Returns:
             px0: (L,14,3) The model's prediction of x0.
             x_t_1: (L,14,3) The updated positions of the next step.
@@ -222,7 +223,7 @@ class NRBStyleSelfCond(Sampler):
             tors_t_1: (L, ?) The updated torsion angles of the next  step.
             plddt: (L, 1) Predicted lDDT of x0.
         '''
-    
+
         if self._conf.inference.get('recenter_xt'):
             indep_cond = copy.deepcopy(indep)
             indep_uncond_com = indep.xyz[:,1,:].mean(dim=0)
@@ -231,7 +232,7 @@ class NRBStyleSelfCond(Sampler):
 
         extra_tXd_names = getattr(self._conf, 'extra_tXd', [])
         t_cont = t/self._conf.diffuser.T
-        indep.extra_t1d, indep.extra_t2d = features.get_extra_tXd_inference(indep, extra_tXd_names, self._conf.extra_tXd_params, self._conf.inference.conditions, t_cont=t_cont, **self.conditions_dict)
+        indep.extra_t1d, indep.extra_t2d = features.get_extra_tXd_inference(indep, extra_tXd_names, self._conf.extra_tXd_params, self._conf.inference.conditions, t_cont=t_cont, features_cache=features_cache, **self.conditions_dict)
         rfi = self.model_adaptor.prepro(indep, t, self.is_diffused)
 
         rf2aa.tensor_util.to_device(rfi, self.device)
@@ -239,8 +240,9 @@ class NRBStyleSelfCond(Sampler):
         ##################################
         ######## Str Self Cond ###########
         ##################################
-        do_self_cond = ((t < self._conf.diffuser.T) and (t != self._conf.diffuser.partial_T)) and self._conf.inference.str_self_cond
-        if do_self_cond:
+        if all([t < self._conf.diffuser.T,
+                t != self._conf.diffuser.partial_T,
+                self._conf.inference.str_self_cond]):
             rfi = aa_model.self_cond(indep, rfi, rfo, use_cb=self._conf.preprocess.use_cb_to_get_pair_dist)
 
         if self.symmetry is not None:
@@ -249,28 +251,39 @@ class NRBStyleSelfCond(Sampler):
         with torch.no_grad():
             if self.recycle_schedule[t-1] > 1:
                 raise Exception('not implemented')
-            for rec in range(self.recycle_schedule[t-1]):
+            for _ in range(self.recycle_schedule[t-1]):
                 # This is the assertion we should be able to use, but the
                 # network's ComputeAllAtom requires even atoms to have N and C coords.
                 # aa_model.assert_has_coords(rfi.xyz[0], indep)
                 assert not rfi.xyz[0,:,:3,:].isnan().any(), f'{t}: {rfi.xyz[0,:,:3,:]}'
+                # Model does not have side chain outputs
                 model_out = self.model.forward_from_rfi(rfi, torch.tensor([t/self._conf.diffuser.T]).to(rfi.xyz.device), use_checkpoint=False)
 
         # self._log.info(
         #         f'{current_time}: Timestep {t}')
 
+        # Generate rigids
         rigids_t = du.rigid_frames_from_atom_14(rfi.xyz)
+
+        # Default behavior
+        rigid_pred = model_out['rigids_raw'][:,-1]
+        trans_score = du.move_to_np(model_out['trans_score'][:,-1])
+        rot_score = du.move_to_np(model_out['rot_score'][:,-1])
+
+        px0 = all_atom.atom37_from_rigid(rigid_pred)[0,:]
+        px0 = px0.cpu()
+
         # ic(self._conf.denoiser.noise_scale, do_self_cond)
         rigids_t = self.diffuser.reverse(
             rigid_t=rigids_t,
-            rot_score=du.move_to_np(model_out['rot_score'][:,-1]),
-            trans_score=du.move_to_np(model_out['trans_score'][:,-1]),
+            rot_score=rot_score,
+            trans_score=trans_score,
             diffuse_mask=du.move_to_np(self.is_diffused.float()[None,...]),
             t=t/self._conf.diffuser.T,
             dt=1/self._conf.diffuser.T,
             center=self._conf.denoiser.center,
             noise_scale=self._conf.denoiser.noise_scale,
-            rigid_pred=model_out['rigids_raw'][:,-1]
+            rigid_pred=rigid_pred,
         )
         # x_t_1 = all_atom.atom37_from_rigid(rigids_t)
         # x_t_1 = x_t_1[0,:,:14]
@@ -279,8 +292,12 @@ class NRBStyleSelfCond(Sampler):
         # seq_t_1 = seq_t
         # tors_t_1 = torch.ones((self.is_diffused.shape[-1], 10, 2))
 
-        px0 = model_out['atom37'][0, -1]
-        px0 = px0.cpu()
+        # @Altaeth EXPERIMENT: replace px0 model out with rfo out which has sc
+        #px0 = model_out['atom37'][0, -1]
+        #px0 = model_out['rfo'].xyz_allatom[0] # Dimension is 36 rather than 37 for atoms
+        #px0 = all_atom.atom37_from_rigid(rigid_pred)[0,:]
+        #px0 = px0.cpu()
+
         # x_t_1 = x_t_1.cpu()
         # seq_t_1 = seq_t_1.cpu()
 
@@ -292,9 +309,9 @@ class NRBStyleSelfCond(Sampler):
 
 def get_x_t_1(rigids_t, xyz, is_diffused):
     x_t_1 = all_atom.atom37_from_rigid(rigids_t)
-    x_t_1 = x_t_1[0,:,:14]
+    x_t_1 = x_t_1[0,:,:ChemData().NTOTAL]  # Conversion from 37 style to 36 style
     # Replace the xyzs of the motif
-    x_t_1[~is_diffused.bool(), :14] = xyz[~is_diffused.bool(), :14]
+    x_t_1[~is_diffused.bool(), :ChemData().NHEAVY] = xyz[~is_diffused.bool(), :ChemData().NHEAVY]
     x_t_1 = x_t_1.cpu()
     return x_t_1
 
@@ -312,18 +329,19 @@ class FlowMatching(Sampler):
     Model Runner for flow matching.
     """
 
-    def run_model(self, t, indep, rfo, is_diffused):
+    def run_model(self, t, indep, rfo, is_diffused, features_cache):
         extra_tXd_names = getattr(self._conf, 'extra_tXd', [])
         t_cont = t/self._conf.diffuser.T
-        indep.extra_t1d, indep.extra_t2d = features.get_extra_tXd_inference(indep, extra_tXd_names, self._conf.extra_tXd_params, self._conf.inference.conditions, t_cont=t_cont, **self.conditions_dict)
+        indep.extra_t1d, indep.extra_t2d = features.get_extra_tXd_inference(indep, extra_tXd_names, self._conf.extra_tXd_params, self._conf.inference.conditions, t_cont=t_cont, features_cache=features_cache, **self.conditions_dict)
         rfi = self.model_adaptor.prepro(indep, t, is_diffused)
         rf2aa.tensor_util.to_device(rfi, self.device)
 
         ##################################
         ######## Str Self Cond ###########
         ##################################
-        do_self_cond = ((t < self._conf.diffuser.T) and (t != self._conf.diffuser.partial_T)) and self._conf.inference.str_self_cond
-        if do_self_cond:
+        if all([t < self._conf.diffuser.T,
+                t != self._conf.diffuser.partial_T,
+                self._conf.inference.str_self_cond]):
             rfi = aa_model.self_cond(indep, rfi, rfo, use_cb=self._conf.preprocess.use_cb_to_get_pair_dist)
 
         if self.symmetry is not None:
@@ -348,9 +366,9 @@ class FlowMatching(Sampler):
         )
         return trans_grad, rots_grad
 
-    def get_grads(self, t, indep_in, indep_t, rfo, is_diffused):
+    def get_grads(self, t, indep_in, indep_t, rfo, is_diffused, features_cache):
 
-        model_out = self.run_model(t, indep_in, rfo, is_diffused)
+        model_out = self.run_model(t, indep_in, rfo, is_diffused, features_cache)
         rigids_pred = model_out['rigids_raw'][:,-1]
         rigids_t = du.rigid_frames_from_atom_14(indep_t.xyz)
         trans_grad, rots_grad = self.get_grads_rigid(rigids_t, rigids_pred, t, model_out)
@@ -360,11 +378,11 @@ class FlowMatching(Sampler):
 
         return trans_grad, rots_grad, px0, model_out
     
-    def get_rigids(indep):
-        rigids = du.rigid_frames_from_atom_14(indep.xyz)
+    def get_rigids(self):
+        rigids = du.rigid_frames_from_atom_14(self.xyz)
         return rigids
 
-    def sample_step(self, t, indep, rfo, extra):
+    def sample_step(self, t, indep, rfo, extra, features_cache):
         '''
         Generate the next pose that the model should be supplied at timestep t-1.
         Args:
@@ -372,6 +390,7 @@ class FlowMatching(Sampler):
             seq_t (torch.tensor): (L,22) The sequence at the beginning of this timestep
             x_t (torch.tensor): (L,14,3) The residue positions at the beginning of this timestep
             seq_init (torch.tensor): (L,22) The initialized sequence used in updating the sequence.
+            features_cache (dict): data cache for features
         Returns:
             px0: (L,14,3) The model's prediction of x0.
             x_t_1: (L,14,3) The updated positions of the next step.
@@ -379,6 +398,7 @@ class FlowMatching(Sampler):
             tors_t_1: (L, ?) The updated torsion angles of the next  step.
             plddt: (L, 1) Predicted lDDT of x0.
         '''
+        ic('sample using FM model')
         trans_grad, rots_grad, px0, model_out = self.get_grads(t, indep, indep, rfo, self.is_diffused)
         trans_dt, rots_dt = self.diffuser.get_dt(t/self._conf.diffuser.T, 1/self._conf.diffuser.T)
         rigids_t = du.rigid_frames_from_atom_14(indep.xyz)[None,...]
@@ -477,7 +497,7 @@ class FlowMatching_make_conditional_diffuse_all_xt_unfrozen(FlowMatching):
         indep_uncond, self.indep_orig, self.indep_cond, metadata, self.is_diffused, atomizer, contig_map, t_step_input, self.conditions_dict = next(iter(dataset))
         return indep_uncond, contig_map, atomizer, t_step_input
     
-    def sample_step(self, t, indep, rfo, extra):
+    def sample_step(self, t, indep, rfo, extra, features_cache):
         indep_cond = aa_model.make_conditional_indep(indep, self.indep_cond, self.is_diffused)
         trans_grad, rots_grad, px0, model_out = self.get_grads(t, indep_cond, indep, rfo, self.is_diffused)
         trans_dt, rots_dt = self.diffuser.get_dt(t/self._conf.diffuser.T, 1/self._conf.diffuser.T)
@@ -496,9 +516,9 @@ class ClassifierFreeGuidance(FlowMatching):
         indep_uncond, self.indep_orig, self.indep_cond, metadata, self.is_diffused, atomizer, contig_map, t_step_input, self.conditions_dict = next(iter(dataset))
         return indep_uncond, contig_map, atomizer, t_step_input
     
-    def get_grads(self, t, indep_in, indep_t, rfo, is_diffused):
+    def get_grads(self, t, indep_in, indep_t, rfo, is_diffused, features_cache):
 
-        model_out = self.run_model(t, indep_in, rfo, is_diffused)
+        model_out = self.run_model(t, indep_in, rfo, is_diffused, features_cache)
         rigids_pred = model_out['rigids_raw'][:,-1]
         rigids_t = du.rigid_frames_from_atom_14(indep_t.xyz.to(self.device))
         trans_grad, rots_grad = self.get_grads_rigid(rigids_t, rigids_pred, t, model_out)
@@ -508,22 +528,20 @@ class ClassifierFreeGuidance(FlowMatching):
 
         return trans_grad, rots_grad, px0, model_out
     
-    def sample_step(self, t, indep, rfo, extra):
-        extra_out = {}
-
+    def sample_step(self, t, indep, rfo, extra, features_cache):
         if self._conf.inference.get('classifier_free_guidance_recenter_xt'):
             if self._conf.inference.str_self_cond:
-                print('warning, self._conf.inference.str_self_cond is true, may need to change') 
+                print('warning, self._conf.inference.str_self_cond is true, may need to change')
             indep_uncond_com = indep.xyz[:,1,:].mean(dim=0)
             indep.xyz = indep.xyz - indep_uncond_com
 
         uncond_is_diffused = torch.ones_like(self.is_diffused).bool()
         indep_cond = aa_model.make_conditional_indep(indep, self.indep_cond, self.is_diffused)
         with torch.random.fork_rng():
-            trans_grad_cond, rots_grad_cond, px0_cond, model_out_cond = self.get_grads(t, indep_cond, indep, extra['rfo_cond'], self.is_diffused)
+            trans_grad_cond, rots_grad_cond, px0_cond, model_out_cond = self.get_grads(t, indep_cond, indep, extra['rfo_cond'], self.is_diffused, features_cache)
 
-        extra_out['rfo_cond'] = model_out_cond['rfo']
-        trans_grad, rots_grad, px0_uncond, model_out_uncond = self.get_grads(t, indep, indep, extra['rfo_uncond'], uncond_is_diffused)
+        extra_out = {'rfo_cond': model_out_cond['rfo']}
+        trans_grad, rots_grad, px0_uncond, model_out_uncond = self.get_grads(t, indep, indep, extra['rfo_uncond'], uncond_is_diffused, features_cache)
         extra_out['rfo_uncond'] = model_out_uncond['rfo']
         w = self._conf.inference.classifier_free_guidance_scale
         if self._conf.inference.get('classifier_free_guidance_ignore_rots'):
@@ -542,12 +560,12 @@ class ClassifierFreeGuidance(FlowMatching):
         px0 = px0_cond
         if w == 0:
             px0 = px0_uncond
-        
+
         extra_out['traj'] = {
-            'px0_cond': px0_cond[:,:14],
-            'px0_uncond': px0_uncond[:,:14],
-            'Xt_cond': indep_cond.xyz[:,:14],
-            'Xt_uncond': indep.xyz[:,:14],
+            'px0_cond': px0_cond[:,:ChemData().NHEAVY],
+            'px0_uncond': px0_uncond[:,:ChemData().NHEAVY],
+            'Xt_cond': indep_cond.xyz[:,:ChemData().NHEAVY],
+            'Xt_uncond': indep.xyz[:,:ChemData().NHEAVY],
         }
         x_t_1 = get_x_t_1(rigids_t, indep.xyz, uncond_is_diffused)
         return px0, x_t_1, get_seq_one_hot(indep.seq), extra_out['rfo_cond'], extra_out

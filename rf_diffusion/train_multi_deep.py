@@ -72,6 +72,9 @@ global DEBUG
 global WANDB
 USE_AMP = False
 
+# For nucleic
+import nucleic_compatibility_utils as nucl_utils
+
 #BATCH_SIZE = 1 * torch.cuda.device_count()
 
 class ReturnTrueOnFirstInvocation:
@@ -187,7 +190,7 @@ class Trainer():
                   seq_diffusion_mask, seq_t, is_sm, unclamp=False, negative=False,
                   w_dist=1.0, w_aa=1.0, w_str=1.0, w_all=0.5, w_exp=1.0,
                   w_lddt=1.0, w_blen=1.0, w_bang=1.0, w_lj=0.0, w_hb=0.0,
-                  lj_lin=0.75, use_H=False, w_disp=0.0, w_motif_disp=0.0, w_ax_ang=0.0, w_frame_dist=0.0, eps=1e-6, backprop_non_displacement_on_given=False):
+                  lj_lin=0.75, use_H=False, w_disp=0.0, w_motif_disp=0.0, w_ax_ang=0.0, w_frame_dist=0.0, eps=1e-6, backprop_non_displacement_on_given=False, atomizer=None):
 
         aux_data = {}
         
@@ -225,7 +228,6 @@ class Trainer():
             pred_trans_1 = model_out['rigids_raw'].get_trans().to(device)
             pred_rotmats_1 = model_out['rigids_raw'].get_rots().get_rot_mats().to(device)
             rotmats_t = diffuser_out['rigids_t'].get_rots().get_rot_mats().to(device)
-            # ic(rotmats_t.device, pred_rotmats_1.device)
             pred_rots_vf = so3_utils.calc_rot_vf(rotmats_t, pred_rotmats_1)
             gt_rot_vf = so3_utils.calc_rot_vf(
                 rotmats_t, gt_rotmats_1.type(torch.float32))
@@ -250,35 +252,53 @@ class Trainer():
             ) / rot_loss_denom
             loss_dict['fm_rotation'] = rots_vf_loss
 
-            # ------------------ Auxiliary losses ------------------ #
+            # ------------------ Auxiliary losses ------------------ #            
 
             aux_active = (
                 ti > self.conf.experiment.aux_loss_ti_pass
             )
 
+            # Auxiliary interface weighted loss for multi chain diffusion (nucleic, PPI, etc)
+            if 'i_fm_translation_loss_weight' in self.conf.experiment and 'i_fm_rotation_loss_weight' in self.conf.experiment:                         
+                assert gt_trans_1.shape[0] == 1  # Only currently implemented for batch size 1
+                assert indep.xyz.shape[0] == gt_trans_1.shape[1]
+
+                # Create kernel weights and calculate using the gt_trans_1 values 
+                K = loss_module.calc_generalized_interface_weights(indep, dtype=trans_error.dtype, device=device, conf=self.conf)      
+                K = K * loss_mask.double()
+
+                # Interface translation VF loss
+                trans_error = (gt_trans_1 - pred_trans_1) / norm_scale * self.conf.fm.trans_scale
+                trans_loss = torch.sum(
+                    trans_error ** 2 * K[..., None],
+                    dim=(-1, -2)
+                ) / loss_denom
+                trans_loss *= aux_active
+                loss_dict['i_fm_translation'] = trans_loss
+
+                # Interface rotation VF loss
+                rot_loss_mask = K * ~is_sm
+                rot_loss_denom = torch.sum(loss_mask * ~is_sm, dim=-1) * 3 + eps
+                rots_vf_error = (gt_rot_vf - pred_rots_vf) / norm_scale
+                rots_vf_loss = torch.sum(
+                    rots_vf_error ** 2 * rot_loss_mask[..., None],
+                    dim=(-1, -2)
+                ) / rot_loss_denom
+                rots_vf_loss *= aux_active
+                loss_dict['i_fm_rotation'] = rots_vf_loss
+
             # Backbone atom loss
             pred_bb_atoms = all_atom_fm.to_atom37(pred_trans_1, pred_rotmats_1)[..., :3, :]
             gt_bb_atoms = all_atom_fm.to_atom37(gt_trans_1, gt_rotmats_1)[..., :3, :]
             gt_bb_atoms = gt_bb_atoms.unsqueeze(1)
-            # ic(gt_bb_atoms.shape, pred_bb_atoms.shape, norm_scale.shape)
             gt_bb_atoms *= self.conf.diffuser.r3.coordinate_scaling / norm_scale[..., None]
             pred_bb_atoms *= self.conf.diffuser.r3.coordinate_scaling / norm_scale[..., None]
-            # ic(gt_bb_atoms.shape, pred_bb_atoms.shape)
-            # ic(gt_bb_atoms[0, 0, 0, 0:2],
-            #    gt_bb_atoms[0, 0, 0, 0:2] / self.conf.diffuser.r3.coordinate_scaling * norm_scale,
-            #    pred_bb_atoms[0, 20, 0, 0:2] / self.conf.diffuser.r3.coordinate_scaling * norm_scale)
+
             bb_atom_loss = torch.sum(
                 (gt_bb_atoms - pred_bb_atoms) ** 2 * loss_mask[..., None, None],
                 dim=(-1, -2, -3)
             ) / loss_denom
-            # ic(
-            #     'EQ 1',
-            #     torch.sum(
-            #         (gt_bb_atoms - pred_bb_atoms) ** 2 * loss_mask[..., None, None],
-            #         dim=(-1, -2, -3)
-            #     ) / (self.conf.diffuser.r3.coordinate_scaling / norm_scale[..., None]) ** 2,
-            #     loss_denom,
-            # )
+
             bb_atom_loss *= aux_active
             loss_dict['fm_bb_atom'] = bb_atom_loss
 
@@ -303,13 +323,6 @@ class Trainer():
             pred_pair_dists = pred_pair_dists * flat_loss_mask[..., None]
             pair_dist_mask = flat_loss_mask[..., None] * flat_res_mask[:, None, :]
 
-            # ic(gt_pair_dists.shape,
-            #     pred_pair_dists.shape,
-            #     (gt_pair_dists - pred_pair_dists).shape,
-            #     pair_dist_mask.shape,
-            #     pair_dist_mask.float().mean(),
-            #     gt_pair_dists[0,0,100],
-            #     pred_pair_dists[0,20,0,100])
             dist_mat_loss = torch.sum(
                 (gt_pair_dists - pred_pair_dists)**2 * pair_dist_mask,
                 dim=(-1, -2))
@@ -329,10 +342,6 @@ class Trainer():
 
 
         # Translation x0 loss
-        # test_bb = diffuser_out['rigids_0'][..., 4:][0] # [L, 3]
-        # ic(test_bb.shape)
-        # n_test = 10
-        # ic(torch.linalg.vector_norm(test_bb[1:n_test] - test_bb[:n_test-1], dim=-1))
         gt_trans_x0 = diffuser_out['rigids_0'][..., 4:] * self.conf.diffuser.r3.coordinate_scaling
         pred_trans_x0 = model_out['rigids'][..., 4:] * self.conf.diffuser.r3.coordinate_scaling
         
@@ -368,7 +377,15 @@ class Trainer():
 
         # Backbone atom loss
         pred_atom37 = model_out['atom37'][...,:self.conf.experiment.n_bb,:]
+        # try:
+            # test_utils.assert_no_nan(pred_atom37)
         test_utils.assert_no_nan(pred_atom37)
+        # except Exception:
+            # indep.write_pdb('nan_pred.pdb')
+            # if atomizer:
+                # indep_write = atomizer.deatomize(indep.clone())
+                # indep_write.write_pdb('nan_pred_deatomized.pdb')            
+            # test_utils.assert_no_nan(pred_atom37)
         gt_rigids = ru.Rigid.from_tensor_7(diffuser_out['rigids_0'].type(torch.float32))
         # gt_psi = diffuser_out['torsion_angles_sin_cos'][..., 2, :][None] <-- ignored since n_bb is 3
         gt_psi = torch.rand(gt_rigids.shape+(2,))
@@ -384,22 +401,12 @@ class Trainer():
         gt_atom37 = gt_atom37.to(pred_atom37.device)
         atom37_mask = atom37_mask.to(pred_atom37.device)
         bb_atom_loss_mask = atom37_mask * loss_mask[..., None]
-        # ic(bb_atom_loss_mask.shape, bb_atom_loss_mask.float().mean())
-        # ic(gt_atom37.shape, pred_atom37.shape)
-        # ic(gt_atom37[0, 0, 0:2],
-        #    pred_atom37[0, 20, 0, 0:2])
+
         bb_atom_loss = torch.sum(
             (pred_atom37 - gt_atom37)**2 * bb_atom_loss_mask[..., None],
             dim=(-1, -2, -3)
         ) / (bb_atom_loss_mask.sum(dim=(-1, -2)) + 1e-10)
-        # ic(
-        #     'EQ2',
-        #     torch.sum(
-        #         (pred_atom37 - gt_atom37)**2 * bb_atom_loss_mask[..., None],
-        #         dim=(-1, -2, -3)
-        #     ),
-        #     (bb_atom_loss_mask.sum(dim=(-1, -2)) + 1e-10)
-        # )
+
         bb_atom_loss *= t < self._exp_conf.bb_atom_loss_t_filter
         loss_dict['bb_atom'] = bb_atom_loss
 
@@ -425,14 +432,6 @@ class Trainer():
         proximity_mask = gt_pair_dists < 60000000
         pair_dist_mask  = pair_dist_mask * proximity_mask
 
-        # ic(gt_pair_dists.shape,
-        #    pred_pair_dists.shape,
-        #    (gt_pair_dists - pred_pair_dists).shape,
-        #    pair_dist_mask.shape,
-        #    pair_dist_mask.float().mean(),
-        #    gt_pair_dists[0,0,100],
-        #    pred_pair_dists[0,20,0,100],
-        # )
         dist_mat_loss = torch.sum(
             (gt_pair_dists - pred_pair_dists)**2 * pair_dist_mask,
             dim=(-2, -1))
@@ -471,18 +470,6 @@ class Trainer():
             aux_data[f'weighted.{k}'] = weighted_loss
 
             tot_loss += weighted_loss
-
-        # ic(
-        #     t,
-        #     norm_scale,
-        #     norm_scale**2,
-        #     self.conf.diffuser.r3.coordinate_scaling / norm_scale[..., None],
-        #     aux_data['mean_block.fm_bb_atom'] / aux_data['mean_block.bb_atom'],
-        #     aux_data['last_block.fm_bb_atom'] / aux_data['last_block.bb_atom'],
-        #     aux_data['last_block.fm_bb_atom'], aux_data['last_block.bb_atom'],
-        #     aux_data['mean_block.fm_dist_mat'] / aux_data['mean_block.dist_mat'],
-        #     aux_data['mean_block.fm_dist_mat'], aux_data['mean_block.dist_mat'],
-        # )
         
         return tot_loss, aux_data
 
@@ -886,6 +873,8 @@ class Trainer():
             'fm_rotation': self._exp_conf.fm_rotation_loss_weight,
             'fm_bb_atom': self._exp_conf.fm_bb_atom,
             'fm_dist_mat': self._exp_conf.fm_dist_mat,
+            'i_fm_translation': self._exp_conf.i_fm_translation_loss_weight if 'i_fm_translation_loss_weight' in self._exp_conf else 0.0,   
+            'i_fm_rotation': self._exp_conf.i_fm_rotation_loss_weight if 'i_fm_rotation_loss_weight' in self._exp_conf else 0.0,            
         }
 
         print('Entering self.train_cycle')
@@ -957,7 +946,7 @@ class Trainer():
                                         )
                                 rfo = model_out['rfo']
                                 rfi = aa_model.self_cond(indep, rfi, rfo, use_cb=use_cb)
-                                xyz_prev_orig = rfi.xyz[0,:,:14].clone()
+                                xyz_prev_orig = rfi.xyz[0,:,:ChemData().NHEAVY].clone()
 
                 timer.checkpoint('self-conditioning')
 
@@ -980,7 +969,7 @@ class Trainer():
                         indep.same_chain = indep.same_chain.to(gpu)
                         indep.idx = indep.idx.to(gpu)
                         true_crds = torch.zeros((1,L,36,3)).to(gpu)
-                        true_crds[0,:,:14,:] = indep.xyz[:,:14,:]
+                        true_crds[0,:,:ChemData().NHEAVY,:] = indep.xyz[:,:ChemData().NHEAVY,:]
                         mask_crds = ~torch.isnan(true_crds).any(dim=-1)
                         true_crds, mask_crds = resolve_equiv_natives(pred_crds[-1], true_crds, mask_crds)
                         mask_crds[:,~is_diffused,:] = False
@@ -1005,7 +994,11 @@ class Trainer():
 
                         seq_diffusion_mask[:] = True
                         mask_crds[:] = False
-                        true_crds[:,:,14:] = 0
+                        # remove hydrogens                      
+                        mask_prot = nucl_utils.get_resi_type_mask(indep.seq, 'prot')
+                        mask_na = nucl_utils.get_resi_type_mask(indep.seq, 'na')
+                        true_crds[:,mask_prot,ChemData().NHEAVYPROT:] = 0
+                        true_crds[:,mask_na,ChemData().NHEAVY:] = 0
                         xyz_t[:] = 0
                         seq_t[:] = 0
                         loss, loss_dict = self.calc_loss(indep, loss_weights, model_out, diffuser_out, logit_s, c6d,
@@ -1014,7 +1007,7 @@ class Trainer():
                                 mask_BB, mask_2d, same_chain,
                                 pred_lddts, indep.idx[None], chosen_dataset, chosen_task, is_diffused=is_diffused,
                                 seq_diffusion_mask=seq_diffusion_mask, seq_t=seq_t, xyz_in=xyz_t, is_sm=indep.is_sm, unclamp=unclamp,
-                                negative=negative, t=little_t)
+                                negative=negative, t=little_t, atomizer=atomizer)
                         # Force all model parameters to participate in loss. Truly a cursed workaround.
                         loss += 0.0 * (
                             logits_pae.mean() +
@@ -1173,7 +1166,7 @@ class Trainer():
                         ('true', indep.xyz),
                     ]:
                         indep_write = copy.deepcopy(indep)
-                        indep_write.xyz[:,:14] = xyz[:,:14]
+                        indep_write.xyz[:,:ChemData().NHEAVY] = xyz[:,:ChemData().NHEAVY]
                         pymol_names = indep_write.write_pdb(f'{output_pdb_prefix}_{suffix}.pdb')
                         if atomizer:
                             indep_write = atomizer.deatomize(indep_write)

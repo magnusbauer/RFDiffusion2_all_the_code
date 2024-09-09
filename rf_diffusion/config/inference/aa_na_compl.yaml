@@ -1,0 +1,62 @@
+# Base inference Configuration.
+defaults:
+  - base
+
+guidepost_bonds: True
+
+inference:
+  align_motif: False
+  str_self_cond: True
+  state_dict_to_use: model_state_dict
+  deterministic: False # Set to True if you want to reproduce results
+  input_pdb: rf_diffusion/benchmark/input/4qil_rna_v2_cm.pdb
+  center_on_ori: True  # Using an ORI model
+  num_designs: 10
+  design_startnum: 0
+  ckpt_path: '/net/scratch/altaeth/rf_diffusion/rf_diffusion_nucleic_dev/training/fm_na_compl_ss_comp/fm_tip2024-04-16_15:10:57.383633/rank_0/models/RFD_26.pt'  # equivalent to 5 epochs
+  output_prefix: samples_4qil_rna_v2_cm_RFD_26/samples_4qil_rna_v2_cm_aa_ss
+  
+  debug_perfect_pred: False
+  conditions:
+    relative_sasa:
+      active: False      
+    radius_of_gyration:
+      active: False
+    radius_of_gyration_v2:
+      active: True
+      rog: 20
+      spread: 10
+    relative_sasa_v2:
+      active: True
+      rasa: -1
+    little_t_embedding: null
+    sinusoidal_timestep_embedding:
+      active: True
+    secondary_structure_composition:
+      active: True
+      #loop_range: '0.2-0.4'
+      #helix_range: '0.2-0.8'
+      #helix_only: True
+      unconditional: True
+    nucleic_base_hotspots:
+      active: true
+      #hotspots: 'B-13,B-14'
+      hotspots: '' # Cannot atomize and hotspot the same residues
+
+contigmap:
+  contigs: ['60-120_B1-15']
+  contig_atoms: null
+  inpaint_str: null
+  inpaint_seq: null
+  length: null
+  shuffle: null
+  has_termini: [True,False]
+  intersperse: null
+
+diffuser:
+  T: 50
+  partial_T: null    
+  aa_decode_steps: 40
+  so3:
+    use_cached_score: false
+  diffuse_is_diffused_only: true

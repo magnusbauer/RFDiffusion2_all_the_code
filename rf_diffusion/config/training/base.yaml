@@ -1,8 +1,10 @@
 upstream_training_transforms:
   names:
+    - GenerateMasks
     - PopMask
 
-  configs:  
+  configs:      
+    GenerateMasks: {}
     PopMask: {}
 
 transforms:
@@ -11,7 +13,8 @@ transforms:
     - AddConditionalInputs
     - ExpandConditionsDict
 
-  configs:
+  configs:    
+    PopMask: {}
     ReconstructContigMap: {}
     Center: {}
     AddConditionalInputs:
@@ -44,6 +47,7 @@ diffuser:
   time_type: discrete
   t_distribution: uniform
   type: diffusion
+  preserve_motif_sidechains: false  # Default behavior (set to false) is to diffuse all atoms and restore rigids of the frame for position that are not diffused (meaning side chain information is lost). When set to true, diffusion and frames addition are only performed on positions that are set to diffuse via the is_diffused boolean mask
 experiment:
   trans_loss_weight: 1.0
   rot_loss_weight: 1.0
@@ -65,6 +69,11 @@ experiment:
   fm_rotation_loss_weight: 0.0
   fm_bb_atom: 0.0
   fm_dist_mat: 0.0
+  i_fm_translation_loss_weight: 0.0
+  i_fm_rotation_loss_weight: 0.0 
+  i_fm_kernel_width: 7.5  # Kernel width
+  i_fm_kernel_activation_thresh: 0.0   # Activation threhold bias to allow all values below this to have the same width
+  i_fm_kernel_exponent: 1  # Kernel exponent (exponential gaussian etc)
 rf:
   model:
     n_extra_block: 4

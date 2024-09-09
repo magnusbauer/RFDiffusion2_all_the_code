@@ -1,3 +1,5 @@
+from __future__ import annotations  # Fake Import for type hinting, must be at beginning of file
+
 import torch
 import numpy as np
 from opt_einsum import contract as einsum
@@ -6,6 +8,14 @@ from rf_diffusion.util import rigid_from_3_points, get_mu_xt_x0
 from rf2aa.kinematics import get_dih
 from rf2aa.scoring import HbHybType
 from rf_diffusion.diff_util import th_min_angle 
+import nucleic_compatibility_utils as nucl_util
+from rf_diffusion.chemical import ChemicalData as ChemData
+
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from rf_diffusion.aa_model import Indep
+    from omegaconf import OmegaConf
+
 
 # Loss functions for the training
 # 1. BB rmsd loss
@@ -31,6 +41,81 @@ def normalize_loss(x: torch.Tensor, gamma: float):
     w_loss = w_loss / w_loss.sum()
 
     return torch.sum(x * w_loss, dim=-1)
+
+
+def calc_generalized_interface_weights(indep: Indep, dtype: type, device:str, conf: OmegaConf):
+    """
+    Calculate the generalized interface weights for inter-chain interactions.
+
+    Args:
+        indep (Indep): The holy indep.
+        dtype (torch.dtype): The torch data type.
+        device (str): The device to place the weights on
+        conf (OmegaConf): The training config.
+
+    Returns:
+        torch.tensor: The generalized interface weights with shape [1, L,]
+
+    """
+    K = torch.zeros(indep.xyz.shape[0], dtype=dtype, device=device)            
+
+    # By default use the first atom in the sequence as the atom to check for interface contacts
+    default_atom_list = [None, 'A', None] + [None] * (ChemData().NTOTAL - 3)
+
+    # Get tensor mask of valid atoms
+    is_valid = torch.zeros(indep.xyz.shape[:2], dtype=torch.bool, device=device )
+    for i in range(indep.seq.shape[0]):   
+        r = indep.seq[i]             
+        is_valid[i] = torch.tensor([atom is not None and atom.find('H') == -1 
+                                    for atom in (ChemData().aa2long[r] 
+                                                if r < len(ChemData().aa2long) 
+                                                else default_atom_list)
+                                    ][:indep.xyz.shape[1]], 
+                                    dtype=torch.bool)
+
+    interface_kernel_width = conf.experiment.i_fm_kernel_width if 'i_fm_kernel_width' in conf.experiment else 7.5
+    interface_kernel_activation_thresh = conf.experiment.i_fm_kernel_activation_thresh if 'i_fm_kernel_activation_thresh' in conf.experiment else 0.0
+    interface_kernel_exponent = conf.experiment.i_fm_kernel_exponent if 'i_fm_kernel_exponent' in conf.experiment else 1
+
+    # Iterate through all chain pairs and calculate inter chain distances for kernel weights
+    for i,i_chain_mask in enumerate(indep.chain_masks()):
+        for j,j_chain_mask in enumerate(indep.chain_masks()):
+            i_chain_mask = torch.tensor(i_chain_mask, device=device)
+            j_chain_mask = torch.tensor(j_chain_mask, device=device)
+            if i == j:
+                continue
+            xyz_i = indep.xyz[i_chain_mask]
+            xyz_j = indep.xyz[j_chain_mask]
+
+            is_valid_i = is_valid[i_chain_mask]
+            is_valid_j = is_valid[j_chain_mask]                    
+            Li, N_atoms = xyz_i.shape[0], xyz_i.shape[1]
+            Lj, N_atoms = xyz_j.shape[0], xyz_j.shape[1]
+            cdist = torch.cdist(xyz_i.view(-1, 3), xyz_j.view(-1, 3)).view(Li, N_atoms, Lj, N_atoms)
+            cdist = torch.nan_to_num(cdist, 999)
+            
+            # Get the mask of invalid positions and make invalid pair have a large distance
+            pair_mask_valid = is_valid_i[:,:,None,None] * is_valid_j[None,None,:,:]
+            cdist = cdist*pair_mask_valid + (~pair_mask_valid) * 999
+            # Calculate the minimum values for each nucleic acid base position    
+            cdist_min_i = cdist.min(3)[0].min(2)[0].min(1)[0]  # [Li,]
+            cdist_min_j = cdist.min(3)[0].min(1)[0].min(0)[0]  # [Lj,]
+            if interface_kernel_exponent == 1:
+                K_i = torch.exp(- torch.relu(cdist_min_i - interface_kernel_activation_thresh) / interface_kernel_width)
+                K_j = torch.exp(- torch.relu(cdist_min_j - interface_kernel_activation_thresh) / interface_kernel_width)
+            elif interface_kernel_exponent == 2:
+                K_i = torch.exp(- torch.square(torch.relu(cdist_min_i - interface_kernel_activation_thresh)) / interface_kernel_width**2)
+                K_j = torch.exp(- torch.square(torch.relu(cdist_min_j - interface_kernel_activation_thresh)) / interface_kernel_width**2)
+            else:
+                K_i = torch.exp(- torch.pow(torch.relu(cdist_min_i - interface_kernel_activation_thresh), interface_kernel_exponent) / interface_kernel_width**interface_kernel_exponent)   
+                K_j = torch.exp(- torch.pow(torch.relu(cdist_min_j - interface_kernel_activation_thresh), interface_kernel_exponent) / interface_kernel_width**interface_kernel_exponent)   
+            # Replace with max values (corresponding to closest interchain chains interactions)
+            K[i_chain_mask] = torch.maximum(K_i, K[i_chain_mask])
+            K[j_chain_mask] = torch.maximum(K_j, K[j_chain_mask])
+
+    K = K.unsqueeze(0)  # [1, L]
+    return K
+
 
 def mse(xyz_other: torch.Tensor, xyz_true: torch.Tensor):
     '''
@@ -203,11 +288,9 @@ def calc_ca_displacement_loss(xyz_1, xyz_2, squared=False):
     Displacement (squared or not of Ca coordinates)
     """
     if squared:
-        err = torch.sum(torch.square(xyz_1 - xyz_2), dim=-1)
+        return torch.sum(torch.square(xyz_1 - xyz_2), dim=-1)
     else:
-        err = torch.sqrt(torch.sum(torch.square(xyz_1 - xyz_2), dim=-1)) # (L)
-
-    return err
+        return torch.sqrt(torch.sum(torch.square(xyz_1 - xyz_2), dim=-1))
 
 def calc_displacement_loss(pred, true, gamma=0.99, d_clamp=None):
     """
@@ -518,7 +601,10 @@ def calc_lj(
     # mask keeps running total of what to compute
     aamask = aamask[seq]
     if not use_H:
-        aamask[...,14:] = False
+        mask_prot = nucl_util.get_resi_type_mask(seq, 'prot')
+        mask_na = nucl_util.get_resi_type_mask(seq, 'na')
+        aamask[...,mask_prot,ChemData().NHEAVYPROT:] = False
+        aamask[...,mask_na, ChemData().NHEAVY:] = False
     mask = aamask[seq][...,None,None]*aamask[seq][None,None,...]
     if negative:
         # ignore inter-chains
@@ -527,7 +613,7 @@ def calc_lj(
     mask[idxes1r[0],:,idxes1r[1],:] = False
     idxes2r = torch.arange(L)
     idxes2a = torch.tril_indices(27,27,0)
-    mask[idxes2r[:,None],idxes2a[0:1],idxes2r[:,None],idxes2a[1:2]] = False
+    mask[idxes2r[:,None], idxes2a[:1], idxes2r[:,None], idxes2a[1:2]] = False
 
     # "countpair" can be enforced by making this a weight
     mask[idxes2r,:,idxes2r,:] *= num_bonds[seq,:,:]>=3 #intra-res
@@ -539,24 +625,24 @@ def calc_lj(
 
     # hbond correction
     use_hb_dis = (
-        ljcorr[seq[si],ai,0]*ljcorr[seq[sj],aj,1] 
+        ljcorr[seq[si],ai,0]*ljcorr[seq[sj],aj,1]
         + ljcorr[seq[si],ai,1]*ljcorr[seq[sj],aj,0] )
     use_ohdon_dis = ( # OH are both donors & acceptors
-        ljcorr[seq[si],ai,0]*ljcorr[seq[si],ai,1]*ljcorr[seq[sj],aj,0] 
-        +ljcorr[seq[si],ai,0]*ljcorr[seq[sj],aj,0]*ljcorr[seq[sj],aj,1] 
+        ljcorr[seq[si],ai,0]*ljcorr[seq[si],ai,1]*ljcorr[seq[sj],aj,0]
+        +ljcorr[seq[si],ai,0]*ljcorr[seq[sj],aj,0]*ljcorr[seq[sj],aj,1]
     )
 
     ljrs = ljparams[seq[si],ai,0] + ljparams[seq[si],aj,0]
     ljrs[use_hb_dis] = lj_hb_dis
     ljrs[use_ohdon_dis] = lj_OHdon_dis
-    
+
     if use_H:
         use_hb_hdis = (
-            ljcorr[seq[si],ai,2]*ljcorr[seq[sj],aj,1] 
-            +ljcorr[seq[si],ai,1]*ljcorr[seq[sj],aj,2] 
+            ljcorr[seq[si],ai,2]*ljcorr[seq[sj],aj,1]
+            +ljcorr[seq[si],ai,1]*ljcorr[seq[sj],aj,2]
         )
         ljrs[use_hb_hdis] = lj_hbond_hdis
-    
+
     # disulfide correction
     potential_disulf = ljcorr[seq[si],ai,3]*ljcorr[seq[sj],aj,3] 
 
