@@ -24,6 +24,7 @@ import torch.nn as nn
 from omegaconf import DictConfig, OmegaConf
 
 from rf_diffusion.chemical import ChemicalData as ChemData
+from rf_diffusion.chemical import reinitialize_chemical_data
 import rf2aa.data.data_loader
 import rf2aa.util
 import rf2aa.loss.loss
@@ -1309,6 +1310,9 @@ def run(conf: DictConfig) -> None:
     # Necessary to compose another contextual config (i.e. benchmarking config).
     GlobalHydra.instance().clear()
 
+    if 'custom_chemical_config' in conf:
+        reinitialize_chemical_data(**conf.custom_chemical_config) 
+        
     train = make_trainer(conf=conf)
     train.run_model_training(torch.cuda.device_count())
 

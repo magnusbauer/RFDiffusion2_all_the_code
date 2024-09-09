@@ -39,6 +39,7 @@ from rf_diffusion.inference import model_runners
 import rf2aa.tensor_util
 import rf2aa.util
 from rf_diffusion.chemical import ChemicalData as ChemData
+from rf_diffusion.chemical import reinitialize_chemical_data
 from rf_diffusion import aa_model
 from rf_diffusion import guide_posts as gp
 import copy
@@ -74,6 +75,9 @@ def get_seeds():
 
 @hydra.main(version_base=None, config_path='config/inference', config_name='base')
 def main(conf: HydraConfig) -> None:
+    if 'custom_chemical_config' in conf:
+        reinitialize_chemical_data(**conf.custom_chemical_config)
+        
     sampler = get_sampler(conf)
     sample(sampler)
 
