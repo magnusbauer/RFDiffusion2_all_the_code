@@ -1130,7 +1130,7 @@ def get_nucl_prot_contacts(indep: Indep,
     return normal_contacts_indices, base_contacts_indices
 
 
-def protein_dna_sidechain_base_contacts(indep, contact_distance):
+def protein_dna_sidechain_base_contacts(indep, contact_distance, expand_prot=True):
     is_dna = get_resi_type_mask(indep.seq, 'dna')
     protein_index_seq_residue = {}
     na_index_seq_residue = {}
@@ -1203,16 +1203,17 @@ def protein_dna_sidechain_base_contacts(indep, contact_distance):
     na_contact_indices = torch.tensor(na_base_atom_indices)[dna_contacts]
 
     # expanding contacts to fill in the gaps
-    if protein_contact_indices.max() - protein_contact_indices.min() < 8:
-        protein_contact_indices = torch.arange(protein_contact_indices.min(), protein_contact_indices.max()+1).detach().cpu().numpy().tolist()
-    else:
-        protein_contact_indices = list(set(protein_contact_indices.detach().cpu().numpy().tolist()))
+    if expand_prot:
+        if protein_contact_indices.max() - protein_contact_indices.min() < 8:
+            protein_contact_indices = torch.arange(protein_contact_indices.min(), protein_contact_indices.max()+1).detach().cpu().numpy().tolist()
+        else:
+            protein_contact_indices = list(set(protein_contact_indices.detach().cpu().numpy().tolist()))
 
-    # just adding adjacent residues either side of the contact
-    if len(protein_contact_indices) <= 3:
-        for index in protein_contact_indices.copy():
-            if index >= 1: protein_contact_indices.append(index - 1)
-            if index + 1 < len(indep.seq): protein_contact_indices.append(index + 1)
+        # just adding adjacent residues either side of the contact
+        if len(protein_contact_indices) <= 3:
+            for index in protein_contact_indices.copy():
+                if index >= 1: protein_contact_indices.append(index - 1)
+                if index + 1 < len(indep.seq): protein_contact_indices.append(index + 1)
 
     na_contact_indices = list(set(na_contact_indices.detach().cpu().numpy().tolist()))
 

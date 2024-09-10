@@ -651,13 +651,27 @@ class Dataloader(unittest.TestCase):
         loader_out = self.indep_for_dataset(dataset, mask, overrides=['dataloader.CROP=364'])
         indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context, conditions_dict= loader_out
         indep.metadata = None
-        indep.write_pdb('get_na_contacting_atomized_islands.pdb')
 
         golden_name = f'indep_{dataset}-{mask}'
         test_utils.assert_matches_golden(self, golden_name, indep, rewrite=REWRITE, custom_comparator=self.cmp)
 
         unique_chains = np.unique(indep.chains())
-        assertpy.assert_that(len(unique_chains)).is_equal_to(2)        
+        assertpy.assert_that(len(unique_chains)).is_equal_to(2)    
+
+    def test_na_compl_masks(self):
+        dataset = 'na_compl'
+
+        masks = ['get_na_motif_scaffold', 'get_na_inverse_motif_scaffold', 'get_prot_unconditional_atomize_na_contacts', 'get_prot_contactmotif_atomize_na_contacts', 'get_prot_tipatom_guidepost_atomize_na_contacts', 'get_prot_tipatom_guidepost_na_contacts', 'get_prot_tipatom_guidepost_anywhere']
+
+        for mask in masks:
+            print(f'testing na_compl mask {mask}')
+            loader_out = self.indep_for_dataset(dataset, mask, overrides=['dataloader.CROP=364'])
+            indep = loader_out[0]
+            indep.metadata= None
+
+            golden_name = f'indep_{dataset}_{mask}'
+            test_utils.assert_matches_golden(self, golden_name, indep, rewrite=REWRITE, custom_comparator=self.cmp)
+    
 
 
 REWRITE=False
@@ -741,10 +755,6 @@ class DataloaderTransformsNucleic(unittest.TestCase):
 
             indep_orig = indep.clone()
 
-            fh = open('indep_swap_dna_rna_orig.pdb', 'w')
-            indep.write_pdb_file(fh)
-            fh.close()
-
             indep = indep.clone()
 
             is_dna = nucl_utils.get_resi_type_mask(indep.seq, 'dna')
@@ -766,10 +776,6 @@ class DataloaderTransformsNucleic(unittest.TestCase):
             indep.xyz = xyz_new
             indep.seq = seq_new
 
-            fh = open('indep_swap_dna_rna_transmute.pdb', 'w')
-            indep.write_pdb_file(fh)
-            fh.close()
-
             indep = indep.clone()
 
             is_dna = nucl_utils.get_resi_type_mask(indep.seq, 'dna')
@@ -790,10 +796,6 @@ class DataloaderTransformsNucleic(unittest.TestCase):
 
             indep.xyz = xyz_new
             indep.seq = seq_new
-
-            fh = open('indep_swap_dna_rna_transmute_restore.pdb', 'w')
-            indep.write_pdb_file(fh)
-            fh.close()
 
             # Compare indep to original using valid coordinates only
             is_valid = torch.zeros_like(indep_orig.xyz[:,:,0], dtype=torch.bool)
