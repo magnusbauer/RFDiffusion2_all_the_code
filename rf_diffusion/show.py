@@ -62,8 +62,8 @@ def diffused(indep, is_diffused, name=None):
 
     indep_motif = copy.deepcopy(indep)
     indep_diffused = copy.deepcopy(indep)
-    aa_model.pop_mask(indep_motif, ~is_diffused)
-    aa_model.pop_mask(indep_diffused, is_diffused)
+    aa_model.pop_mask(indep_motif, ~is_diffused, break_chirals=True)
+    aa_model.pop_mask(indep_diffused, is_diffused, break_chirals=True)
     one(indep_motif, None, f'{name}_motif')
     one(indep_diffused, None, f'{name}_diffused')
 

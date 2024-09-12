@@ -1,6 +1,7 @@
 import random
 import logging
 import sys
+from collections.abc import Mapping
 
 import torch
 import scipy.stats
@@ -38,7 +39,8 @@ def get_invalid_mask(*args, **kwargs):
 def make_covale_compatible(get_mask):
     @wraps(get_mask)
     def out_get_mask(indep, atom_mask, *args, **kwargs):
-        is_motif, is_atom_motif, *extra_ret = get_mask(indep, atom_mask, *args, **kwargs)
+        ret = get_mask(indep, atom_mask, *args, **kwargs)
+        is_motif, is_atom_motif = ret.pop('is_motif'), ret.pop('is_atom_motif')
         covale_res_i = torch.tensor([res_i for (res_i, atom_name), lig_i, _ in indep.metadata['covale_bonds']]).tolist()
         is_atom_motif = is_atom_motif or {}
         for res_i in covale_res_i:
@@ -61,7 +63,7 @@ def make_covale_compatible(get_mask):
             atom_names = atom_names[atom_mask_i]
             is_atom_motif[res_i] = atom_names.tolist()
             is_motif[res_i] = False
-        return is_motif, is_atom_motif, *extra_ret
+        return dict(is_motif=is_motif, is_atom_motif=is_atom_motif, **ret)
     return out_get_mask
 
 #####################################
@@ -134,7 +136,7 @@ def sample_around_contact(L, indices, len_low, len_high):
         l = max(0, l)
         r = min(r, L)
         diffusion_mask[l:r] = True
-    return diffusion_mask
+    return dict(is_motif=diffusion_mask)
 
 
 def _get_double_contact(xyz, low_prop, high_prop, broken_prop, xyz_less_than=5, seq_dist_greater_than=25, len_low=5, len_high=10):
@@ -205,7 +207,7 @@ def _get_sm_contacts(
     dist_conf = dist_conf.nan_to_num(9999)
     #ic(is_motif, n_sample, picked_distances, dist_cutoff, indices)
 
-    return is_motif, {}
+    return dict(is_motif=is_motif, is_atom_motif={})
 
 def get_triple_contact_atomize(*args, **kwargs):
     raise Exception('not implemented')
@@ -236,7 +238,7 @@ def _get_closest_tip_atoms(indep, atom_mask,
     is_valid_for_atomization = indep.is_valid_for_atomization(atom_mask)[~indep.is_sm]
     if not is_valid_for_atomization.any():
         ic('No valid residues for atomization, falling back to unconditional generation')
-        return torch.zeros(L).bool(), None
+        return dict(is_motif=torch.zeros(L).bool(), is_atom_motif=None)
     dist[~is_valid_for_atomization] = 9999
 
     # Calculate distance cutoff
@@ -280,7 +282,7 @@ def _get_closest_tip_atoms(indep, atom_mask,
     is_motif = torch.zeros(L).bool()
     is_motif[indep.is_sm] = True
 
-    return is_motif, is_atom_diffused
+    return dict(is_motif=is_motif, is_atom_motif=is_atom_diffused)
 
 
 def get_atom_names_within_n_bonds(res, source_node, n_bonds):
@@ -333,7 +335,7 @@ def _get_tip_gaussian_mask(indep, atom_mask, *args, std_dev=8, show_tip=False, *
         ic('No valid residues for atomization in tip_gaussian_mask, falling back to unconditional generation')
         is_motif = torch.zeros(indep.length()).bool()
         is_motif[indep.is_sm] = True
-        return is_motif, None
+        return dict(is_motif=is_motif, is_atom_motif=None)
     valid_idx = is_valid_for_atomization.nonzero()[:,0]
     
     origin_i = np.random.choice(valid_idx, 1)[0]
@@ -370,7 +372,7 @@ def _get_tip_gaussian_mask(indep, atom_mask, *args, std_dev=8, show_tip=False, *
         is_atom_motif[i] = atom_names
 
     is_motif = torch.zeros(indep.length()).bool()
-    return is_motif, is_atom_motif
+    return dict(is_motif=is_motif, is_atom_motif=is_atom_motif)
 
 def _get_tip_mask(indep, atom_mask, *args,
                   n_atomize_min=1,
@@ -378,14 +380,17 @@ def _get_tip_mask(indep, atom_mask, *args,
                   p_tip=0.8,
                   bond_inclusion_p=0.5,
                   unconditional=False,
+                  can_be_tip=None,
                    **kwargs):
     # assert not indep.is_sm.any()
     is_valid_for_atomization = indep.has_heavy_atoms_and_seq(atom_mask)
+    if can_be_tip is not None:
+        is_valid_for_atomization &= can_be_tip
     if not is_valid_for_atomization.any():
         ic('No valid residues for atomization in _get_tip_mask, falling back to unconditional generation')
         is_motif = torch.zeros(indep.length()).bool()
         is_motif[indep.is_sm] = True
-        return is_motif, None
+        return dict(is_motif=is_motif, is_atom_motif=None)
     valid_idx = is_valid_for_atomization.nonzero()[:,0]
     n_valid_targets = is_valid_for_atomization.sum()
     
@@ -408,7 +413,7 @@ def _get_tip_mask(indep, atom_mask, *args,
         is_atom_motif[i] = atom_names
 
     is_motif = torch.zeros(indep.length()).bool()
-    return is_motif, is_atom_motif
+    return dict(is_motif=is_motif, is_atom_motif=is_atom_motif)
 
 def atomize_all_res(indep, atom_mask, *args, **kwargs):
     is_motif = torch.zeros(indep.length()).bool()
@@ -418,7 +423,7 @@ def atomize_all_res(indep, atom_mask, *args, **kwargs):
             is_atom_motif[i] = []
 
     is_motif = torch.zeros(indep.length()).bool()
-    return is_motif, is_atom_motif
+    return dict(is_motif=is_motif, is_atom_motif=is_atom_motif)
 
 def _get_entirely_atomized(indep, atom_mask, crop=9999, *args, **kwargs):
     pop = indep.is_sm.clone()
@@ -444,7 +449,7 @@ def _get_entirely_atomized(indep, atom_mask, crop=9999, *args, **kwargs):
     if pop.sum() == 0:
         # Fall back to unconditional if none are atomizable
         pop = torch.ones_like(indep.is_sm)
-    return is_motif, is_atom_motif, pop
+    return dict(is_motif=is_motif, is_atom_motif=is_atom_motif, pop=pop)
 
 def _get_triple_contact(xyz, low_prop, high_prop, broken_prop, xyz_less_than=6, seq_dist_greater_than=10, len_low=1, len_high=3):
     contacts = get_contacts(xyz, xyz_less_than, seq_dist_greater_than)
@@ -470,7 +475,7 @@ def _get_diffusion_mask_simple(xyz, low_prop, high_prop, broken_prop, crop=None,
     diffusion_mask = torch.ones(L).bool()
     if L <= 3:
         # Too small to mask
-        return torch.zeros(L).bool()
+        return dict(is_motif=torch.zeros(L).bool())
     mask_length = int(np.floor(random.uniform(low_prop, high_prop) * L))
     # decide if mask goes in the middle or the ends
     if random.uniform(0,1) < broken_prop or mask_length < 3:
@@ -482,7 +487,7 @@ def _get_diffusion_mask_simple(xyz, low_prop, high_prop, broken_prop, crop=None,
         split = random.randint(1, mask_length-2)
         diffusion_mask[:split] = False
         diffusion_mask[-(mask_length-split):] = False
-    return diffusion_mask
+    return dict(is_motif=diffusion_mask)
 
 def _get_prot_diffusion_mask_islands_from_na_contacts(indep, atom_mask, *args, search_radius_min=1e-2, search_radius_max=20, n_islands_min=1, n_islands_max=4, max_resi_atomize=20, **kwargs):
     # Initializations
@@ -545,11 +550,9 @@ def _get_prot_diffusion_mask_islands_from_na_contacts(indep, atom_mask, *args, s
     return is_motif, is_atom_motif
 
 def _protein_motif_scaffold_dna(indep, atom_mask, expand_max=6, *args, **kwargs):
-    is_atom_motif = None
-
     prot_contact_indices = nucl_utils.get_dna_contacts(indep, 3.5)
     if prot_contact_indices is None or len(prot_contact_indices) == 0:
-        return None, None
+        return dict(is_motif=None, is_atom_motif=None)
     
     # pick a contact and make motif out of random number of neighbor residues
     selection = np.random.randint(len(prot_contact_indices))
@@ -595,45 +598,50 @@ def _protein_motif_scaffold_dna(indep, atom_mask, expand_max=6, *args, **kwargs)
         to_expand = left_expand + right_expand
     
     else:
-        return None, None
+        return dict(is_motif=None, is_atom_motif=None)
 
     motif_residues.extend(to_expand)
     is_motif = torch.zeros(len(indep.seq)).bool()
     is_motif[motif_residues] = True
 
-    return is_motif, is_atom_motif
+    return dict(is_motif=is_motif, is_atom_motif=None)
 
 def _protein_motif_scaffold_dna_wrapper(protein_motif_scaffold_dna):
     # so this one is gonna wrap protein_motif_scaffold_dna and either return is_motif or run unconditional mask and return that
     @wraps(protein_motif_scaffold_dna)
     def out_get_mask(indep, atom_mask, *args, **kwargs):
-        is_motif, is_atom_motif = protein_motif_scaffold_dna(indep, atom_mask, *args, **kwargs)
+        ret = protein_motif_scaffold_dna(indep, atom_mask, *args, **kwargs)
+        is_motif = ret['is_motif']
         if is_motif is None:
-            return get_unconditional_diffusion_mask(indep, atom_mask, *args, **kwargs)
-        else:
-            return is_motif, is_atom_motif
+            ret = _get_unconditional_diffusion_mask(indep.xyz, atom_mask, *args, **kwargs)
+            ret['is_atom_motif'] = None
+        return ret
     return out_get_mask
 
 def _inverse_protein_motif_scaffold_dna(protein_motif_scaffold_dna):
     # this one is gonna wrap protein_motif_scaffold_dna and either return inverse of is_motif or run unconditional mask and return that.
     @wraps(protein_motif_scaffold_dna)
     def out_get_mask(indep, atom_mask, *args, **kwargs):
-        is_motif, is_atom_motif = protein_motif_scaffold_dna(indep, atom_mask, expand_max=10)
+        ret = protein_motif_scaffold_dna(indep, atom_mask, expand_mask=10)
+        is_motif = ret.pop('is_motif')
         if is_motif is None:
-            return get_unconditional_diffusion_mask(indep, atom_mask, *args, **kwargs)
+            ret = _get_unconditional_diffusion_mask(indep.xyz, atom_mask, *args, **kwargs)
         else:
             # invert the motif
             is_prot = nucl_utils.get_resi_type_mask(indep.seq, 'prot')
             for i in range(len(is_motif)):
                 if is_prot[i]:
                     is_motif[i] = ~is_motif[i]
-        return is_motif, is_atom_motif
+            ret['is_motif'] = is_motif
+        ret['is_atom_motif'] = None
+        return ret
     return out_get_mask
                 
 
-def _get_diffusion_mask_islands(xyz, *args, island_len_min=1, island_len_max=15, n_islands_min=1, n_islands_max=4, **kwargs):
+def _get_diffusion_mask_islands(xyz, *args, island_len_min=1, island_len_max=15, n_islands_min=1, n_islands_max=4, p_island_can_be_gp=1, **kwargs):
     L = xyz.shape[0]
     is_motif = torch.zeros(L).bool()
+    can_be_gp = torch.zeros(L).bool()
     n_islands = np.random.randint(n_islands_min, n_islands_max)
     for _ in range(n_islands):
         mask_length = np.random.randint(island_len_min, island_len_max)
@@ -641,11 +649,137 @@ def _get_diffusion_mask_islands(xyz, *args, island_len_min=1, island_len_max=15,
         high_start = L - mask_length
         start = random.randint(0, high_start)
         is_motif[start:start+mask_length] = True
+        if p_island_can_be_gp >= 1:
+            can_be_gp[start:start+mask_length] = True
+        else:
+            can_be_gp[start:start+mask_length] = torch.rand(1) < p_island_can_be_gp
     
     # Prevents the entire thing from being motif, as this is disallowed.
     if is_motif.all():
         is_motif[np.random.randint(L)] = False
-    return is_motif
+    return dict(is_motif=is_motif, can_be_gp=can_be_gp)
+
+def add_tips(get_mask):
+    '''
+    Add tip-atom conditions to another mask.
+    '''
+    @wraps(get_mask)
+    def out_get_mask(indep, atom_mask, *args, **kwargs):
+        ret = get_mask(indep, atom_mask, *args, **kwargs)
+        is_motif, is_atom_motif, can_be_gp, is_res_seq_shown = ret.pop('is_motif'), ret.pop('is_atom_motif'), ret.pop('can_be_gp'), ret.pop('is_res_seq_shown')
+        is_atom_motif = is_atom_motif or {}
+
+        # We only want to turn non-motif residues into tips. The idea being we're adding more constraints to a mask
+        can_be_tip = ~is_motif
+        can_be_tip[list(is_atom_motif)] = False
+
+        if 'pop' in ret:
+            can_be_tip &= ret['pop']
+
+        if can_be_tip.any():
+
+            tip_ret = _get_tip_mask(indep, atom_mask, *args, can_be_tip=can_be_tip, **kwargs)
+            tip_atom_motifs = tip_ret['is_atom_motif']
+            if tip_atom_motifs is not None:
+                for key, value in tip_atom_motifs.items():
+                    is_atom_motif[key] = value
+                    can_be_gp[key] = True
+                    is_res_seq_shown[key] = True # this value is unused but oh well
+                    is_motif[key] = False # this value is unused but oh well
+        else:
+            print("WARNING: add_tips() can't find any region allowed to be tip atoms")
+
+        return dict(is_motif=is_motif, is_atom_motif=is_atom_motif, can_be_gp=can_be_gp, is_res_seq_shown=is_res_seq_shown, **ret)
+    return out_get_mask
+
+def add_seq_islands(get_mask, mode='anywhere', p_islands_means_shown=0.5, seq_island_len_min=1, seq_island_len_max=15, seq_n_islands_min=1, seq_n_islands_max=4):
+    '''
+    Modify the is_res_seq_shown vector to be different from is_motif
+
+    if get_mask has is_res_seq_shown:
+        - Only the mode region is modified
+    else:
+        - is_res_seq_shown is defaulted to is_motif then mode region is modified
+
+    Modes:
+        - anywhere - the islands have no correlation with is_motif
+        - is_motif - the islands are only inside is_motif
+        - is_diffused - the islands are only inside is_diffused
+
+    Inputs:
+        get_mask (mask_generator func): A function that returns at least is_motif, is_atom_motif, and can_be_gp
+        mode (str): One of the modes listed above. Defines where islands can be
+        p_islands_means_shown (float): 0-1. Probability that islands are True and the rest is False
+        seq_island_len_min (int): Minimum size of island
+        seq_island_len_max (int): Maximum size of island
+        seq_n_islands_min (int): Min number of islands
+        seq_n_islands_max (int): Max number of islands
+
+
+    '''
+    assert mode in ['anywhere', 'is_motif', 'is_diffused'], f'Unknown add_seq_islands mode: {mode}'
+
+    @wraps(get_mask)
+    def out_get_mask(indep, atom_mask, *args, **kwargs):
+        ret = get_mask(indep, atom_mask, *args, **kwargs)
+        is_motif, is_atom_motif, can_be_gp = ret.pop('is_motif'), ret.pop('is_atom_motif'), ret.pop('can_be_gp')
+        is_atom_motif = is_atom_motif or {}
+        if 'is_res_seq_shown' in ret:
+            is_res_seq_shown = ret.pop('is_res_seq_shown')
+        else:
+            is_res_seq_shown = is_motif.clone()
+            is_res_seq_shown[list(is_atom_motif)] = True
+
+
+        # Figure out where we are going to put the islands
+        if mode == 'anywhere':
+            can_be_island = torch.ones(len(is_motif), dtype=bool)
+        elif mode == 'is_motif':
+            can_be_island = is_motif.clone()
+        elif mode == 'is_diffused':
+            can_be_island = ~is_motif.clone()
+        else:
+            assert False, "This shouldn't be possible."
+
+        can_be_island[list(is_atom_motif)] = False
+        if 'pop' in ret:
+            can_be_island &= ret['pop']
+
+
+        if can_be_island.sum() > 0:
+
+            # A sea of False with islands of True? (means_shown = True) Or a sea of True with islands of False (means_shown = False)
+            if p_islands_means_shown < 1e-8:
+                means_shown = False
+            elif p_islands_means_shown > 1 - 1e-8:
+                means_shown = True
+            else:
+                means_shown = torch.rand(1) < p_islands_means_shown
+
+            # Use _diffusion_mask_islands to do the island calculation
+            island_ret = _get_diffusion_mask_islands(indep.xyz[can_be_island], atom_mask,
+                            island_len_min=seq_island_len_min, island_len_max=seq_island_len_max, n_islands_min=seq_n_islands_min, n_islands_max=seq_n_islands_max)
+
+            # Create the sea
+            is_res_seq_shown[can_be_island] = not means_shown
+            # Create the islands
+            wh_can_be_island = torch.where(can_be_island)[0]
+            island_indices = wh_can_be_island[island_ret['is_motif']]
+            is_res_seq_shown[island_indices] = means_shown
+
+            # can_be_gp needs to be set to false for anything we just masked the sequence of
+            if means_shown:
+                we_masked_seq_of = ~island_ret['is_motif']
+            else:
+                we_masked_seq_of = island_ret['is_motif']
+            can_be_gp[wh_can_be_island[we_masked_seq_of]] = False
+
+        else:
+            print("WARNING: add_seq_islands() can't find any region allowed to be sequence islands")
+
+        return dict(is_motif=is_motif, is_atom_motif=is_atom_motif, is_res_seq_shown=is_res_seq_shown, can_be_gp=can_be_gp, **ret)
+    return out_get_mask
+
 
 def _get_unconditional_diffusion_mask(xyz, *args, **kwargs):
     """
@@ -653,35 +787,35 @@ def _get_unconditional_diffusion_mask(xyz, *args, **kwargs):
     """
     L = xyz.shape[0]
     is_motif = torch.zeros(L).bool()
-    return is_motif
+    return dict(is_motif=is_motif)
 
 def make_sm_compatible(get_mask):
     @wraps(get_mask)
     def out_get_mask(indep, atom_mask, *args, **kwargs):
         L = indep.length()
         diffusion_mask = torch.ones(L).bool()
-        diffusion_mask_prot = get_mask(indep.xyz[~indep.is_sm], *args, **kwargs)
+        diffusion_mask_prot = get_mask(indep.xyz[~indep.is_sm], *args, **kwargs).pop('is_motif')
         diffusion_mask[~indep.is_sm] = diffusion_mask_prot
-        return diffusion_mask, None
+        return dict(is_motif=diffusion_mask, is_atom_motif=None)
     return out_get_mask
 
 def _get_prot_unconditional_atomize_na_contacts_mask(indep, atom_mask, *args, **kwargs):
     # Initializations
     L = indep.xyz.shape[0]
     is_motif = torch.zeros(L).bool()
-    is_atom_motif = None  # Do not have any atomization motif    
+    is_atom_motif = None
 
     is_nucl = nucl_utils.get_resi_type_mask(indep.seq, 'na')
     is_prot = nucl_utils.get_resi_type_mask(indep.seq, 'prot')
     if torch.sum(is_nucl) < 1 or torch.sum(is_prot) < 1:
         # No nucleic acids, or no proteins, then no atomization
-        return is_motif, is_atom_motif
+        return dict(is_motif=is_motif, is_atom_motif=is_atom_motif)
 
     prot_contacts, na_contacts = nucl_utils.protein_dna_sidechain_base_contacts(indep, contact_distance=4.5, expand_prot=False)
     # NOTE: is_gp variable is not used (guide posting compatability)
     if prot_contacts is None:
         # No nucleic acid contacts, no atomization
-        return is_motif, is_atom_motif
+        return dict(is_motif=is_motif, is_atom_motif=is_atom_motif)
 
     # Sample contact points, expand aroundd random radii, and place into motif mask
     for contact_index in na_contacts:
@@ -694,7 +828,7 @@ def _get_prot_unconditional_atomize_na_contacts_mask(indep, atom_mask, *args, **
     if is_motif.all():
         is_motif[np.random.randint(L)] = False
         
-    return is_motif, is_atom_motif
+    return dict(is_motif=is_motif, is_atom_motif=is_atom_motif)
 
 def _get_prot_contactmotif_atomize_na_contacts_mask(indep, atom_mask, expand_prot_prob=0.25, *args, **kwargs):
     # Initializations
@@ -706,7 +840,7 @@ def _get_prot_contactmotif_atomize_na_contacts_mask(indep, atom_mask, expand_pro
     is_prot = nucl_utils.get_resi_type_mask(indep.seq, 'prot')
     if torch.sum(is_nucl) < 1 or torch.sum(is_prot) < 1:
         # No nucleic acids, or no proteins, then no atomization
-        return is_motif, is_atom_motif
+        return dict(is_motif=is_motif, is_atom_motif=is_atom_motif)
 
 
     # Some fraction of the time (a quarter by default) we will expand the guideposted region to attempt to include the entire recognition helix
@@ -718,7 +852,7 @@ def _get_prot_contactmotif_atomize_na_contacts_mask(indep, atom_mask, expand_pro
     # NOTE: is_gp variable is not used (guide posting compatability)
     if prot_contacts is None:
         # No nucleic acid contacts, no atomization
-        return is_motif, is_atom_motif
+        return dict(is_motif=is_motif, is_atom_motif=is_atom_motif)
 
     # Sample contact points, expand aroundd random radii, and place into motif mask
     for contact_index in na_contacts:
@@ -734,7 +868,7 @@ def _get_prot_contactmotif_atomize_na_contacts_mask(indep, atom_mask, expand_pro
     if is_motif.all():
         is_motif[np.random.randint(L)] = False
         
-    return is_motif, is_atom_motif
+    return dict(is_motif=is_motif, is_atom_motif=is_atom_motif)
 
 
 def _get_na_prot_contact_mask(indep, atom_mask, *args, **kwargs):
@@ -747,14 +881,14 @@ def _get_na_prot_contact_mask(indep, atom_mask, *args, **kwargs):
     is_prot = nucl_utils.get_resi_type_mask(indep.seq, 'prot')
     if torch.sum(is_nucl) < 1 or torch.sum(is_prot) < 1:
         # No nucleic acids, or no proteins, then no atomization
-        return is_motif, is_atom_motif
+        return dict(is_motif=is_motif, is_atom_motif=is_atom_motif)
 
     prot_contacts, na_contacts = nucl_utils.protein_dna_sidechain_base_contacts(indep, contact_distance=4.5, expand_prot=False)
 
     # NOTE: is_gp variable is not used (guide posting compatability)
     if prot_contacts is None:
         # No nucleic acid contacts, no atomization
-        return is_motif, is_atom_motif
+        return dict(is_motif=is_motif, is_atom_motif=is_atom_motif)
 
     # Sample contact points, expand aroundd random radii, and place into motif mask
     for contact_index in na_contacts:
@@ -770,7 +904,7 @@ def _get_na_prot_contact_mask(indep, atom_mask, *args, **kwargs):
     if is_motif.all():
         is_motif[np.random.randint(L)] = False
         
-    return is_motif, is_atom_motif
+    return dict(is_motif=is_motif, is_atom_motif=is_atom_motif)
 
 def _get_tipatom_mask_proteinonly_anywhere(indep, atom_mask, sample_min=1, sample_max=6, *args, **kwargs):
     L = indep.xyz.shape[0]
@@ -785,7 +919,7 @@ def _get_tipatom_mask_proteinonly_anywhere(indep, atom_mask, sample_min=1, sampl
 
     is_motif[sampled_indices] = True
 
-    return is_motif, is_atom_motif
+    return dict(is_motif=is_motif, is_atom_motif=is_atom_motif)
 
 def make_atomized(get_mask, min_atomized_residues=1, max_atomized_residues=5, sample=True):
     """
@@ -794,11 +928,12 @@ def make_atomized(get_mask, min_atomized_residues=1, max_atomized_residues=5, sa
     """
     @wraps(get_mask)
     def out_get_mask(indep, atom_mask, *args, **kwargs):
-        is_motif, is_atom_motif, *extra_ret = get_mask(indep, atom_mask, *args, **kwargs)
+        ret = get_mask(indep, atom_mask, *args, **kwargs)
+        is_motif, is_atom_motif = ret.pop('is_motif'), ret.pop('is_atom_motif')
         assert is_atom_motif is None, 'attempting to atomize a masking function that is already returning atomization masks'
         can_be_atomized = is_motif * indep.is_valid_for_atomization(atom_mask)
         if not can_be_atomized.any():
-            return is_motif, None
+            return dict(is_motif=is_motif, is_atom_motif=None, **ret)
         atomize_indices = torch.nonzero(can_be_atomized).flatten()
 
         # Only sample when allowed (default behavior)
@@ -830,11 +965,12 @@ def make_atomized_complete(get_mask, min_atomized_residues=1, max_atomized_resid
     """
     @wraps(get_mask)
     def out_get_mask(indep, atom_mask, *args, **kwargs):
-        is_motif, is_atom_motif, *extra_ret = get_mask(indep, atom_mask, *args, **kwargs)
+        ret = get_mask(indep, atom_mask, *args, **kwargs)
+        is_motif, is_atom_motif = ret.pop('is_motif'), ret.pop('is_atom_motif')
         assert is_atom_motif is None, 'attempting to atomize a masking function that is already returning atomization masks'
         can_be_atomized = is_motif * indep.is_valid_for_atomization(atom_mask)
         if not can_be_atomized.any():
-            return is_motif, None
+            return dict(is_motif=is_motif, is_atom_motif=is_atom_motif)
         atomize_indices = torch.nonzero(can_be_atomized).flatten()
 
         N_resi = len(is_motif)
@@ -846,7 +982,7 @@ def make_atomized_complete(get_mask, min_atomized_residues=1, max_atomized_resid
         atomize_indices = np.random.choice(atomize_indices, n_sample, replace=False)
         is_atom_motif = {}  
         # Randomize order
-        atomize_indices = [atomize_indices[i] for i in np.random.permutation(len(atomize_indices))]
+        atomize_indices = [atomize_indices[i].item() for i in np.random.permutation(len(atomize_indices))]
         for i in atomize_indices:
             # Add new completely atomized atoms until the max size is reached
             atoms_new = [atom for atom in ChemData().aa2long[indep.seq[i]]
@@ -856,7 +992,7 @@ def make_atomized_complete(get_mask, min_atomized_residues=1, max_atomized_resid
             is_atom_motif[i] = atoms_new
             N_resi += len(atoms_new)
         is_motif[atomize_indices] = False
-        return is_motif, is_atom_motif, *extra_ret
+        return dict(is_motif=is_motif, is_atom_motif=is_atom_motif)
     return out_get_mask
 
 def make_atomized_complete_noprotein(get_mask, min_atomized_residues=1, max_atomized_residues=8, max_size=384):
@@ -878,11 +1014,12 @@ def make_atomized_complete_noprotein(get_mask, min_atomized_residues=1, max_atom
     """
     @wraps(get_mask)
     def out_get_mask(indep, atom_mask, *args, **kwargs): 
-        is_motif, is_atom_motif, *extra_ret = get_mask(indep, atom_mask, *args, **kwargs)
+        ret = get_mask(indep, atom_mask, *args, **kwargs)
+        is_motif, is_atom_motif = ret.pop('is_motif'), ret.pop('is_atom_motif')
         assert is_atom_motif is None, 'attempting to atomize a masking function that is already returning atomization masks'
         can_be_atomized = is_motif * indep.is_valid_for_atomization(atom_mask) * ~nucl_utils.get_resi_type_mask(indep.seq, 'prot')
         if not can_be_atomized.any():
-            return is_motif, None
+            return dict(is_motif=is_motif, is_atom_motif=is_atom_motif)
         atomize_indices = torch.nonzero(can_be_atomized).flatten()
 
         N_resi = len(is_motif)
@@ -894,7 +1031,7 @@ def make_atomized_complete_noprotein(get_mask, min_atomized_residues=1, max_atom
         atomize_indices = np.random.choice(atomize_indices, n_sample, replace=False)
         is_atom_motif = {}  
         # Randomize order
-        atomize_indices = [atomize_indices[i] for i in np.random.permutation(len(atomize_indices))]
+        atomize_indices = [atomize_indices[i].item() for i in np.random.permutation(len(atomize_indices))]
         for i in atomize_indices:
             # Add new completely atomized atoms until the max size is reached
             atoms_new = [atom for atom in ChemData().aa2long[indep.seq[i]]
@@ -904,7 +1041,7 @@ def make_atomized_complete_noprotein(get_mask, min_atomized_residues=1, max_atom
             is_atom_motif[i] = atoms_new
             N_resi += len(atoms_new)
         is_motif[atomize_indices] = False
-        return is_motif, is_atom_motif, *extra_ret
+        return dict(is_motif=is_motif, is_atom_motif=is_atom_motif)
     return out_get_mask
 
 
@@ -929,16 +1066,18 @@ def make_tip_protein_for_na_compl(get_mask, max_size=384):
             19: [' CG1', ' CG2', ' CB ']
             }
         
-        is_motif, is_atom_motif, *extra_ret = get_mask(indep, atom_mask, *args, **kwargs)
+        ret = get_mask(indep, atom_mask, *args, **kwargs)
+        is_motif, is_atom_motif = ret.pop('is_motif'), ret.pop('is_atom_motif')
         
         if not is_motif.any():
-            is_motif, is_atom_motif, *extra_ret = _get_tipatom_mask_proteinonly_anywhere(indep, atom_mask)
+            ret = _get_tipatom_mask_proteinonly_anywhere(indep, atom_mask)
+            is_motif, is_atom_motif = ret.pop('is_motif'), ret.pop('is_atom_motif')
 
         can_be_atomized_prot = is_motif * indep.is_valid_for_atomization(atom_mask) * nucl_utils.get_resi_type_mask(indep.seq, 'prot')
         # can_be_atomized_na = is_motif * indep.is_valid_for_atomization(atom_mask) * ~nucl_utils.get_resi_type_mask(indep.seq, 'prot')
 
         if not can_be_atomized_prot.any(): # and not can_be_atomized_na.any():
-            return is_motif, None
+            return dict(is_motif=is_motif, is_atom_motif=is_atom_motif)
         prot_atomize_indices = torch.nonzero(can_be_atomized_prot).flatten()
         # na_atomize_indices = torch.nonzero(can_be_atomized_na).flatten()
 
@@ -953,7 +1092,7 @@ def make_tip_protein_for_na_compl(get_mask, max_size=384):
             atoms_new = protein_tip_atoms[indep.seq[i].item()]
             if len(atoms_new) + N_resi > max_size:
                 break
-            is_atom_motif[i] = atoms_new
+            is_atom_motif[i.item()] = atoms_new
             N_resi += len(atoms_new)
 
         # n_sample = random.randint(min_atomized_residues, max_atomized_residues)
@@ -972,7 +1111,7 @@ def make_tip_protein_for_na_compl(get_mask, max_size=384):
         # is_motif[na_atomize_indices] = False
         is_motif[prot_atomize_indices] = False
 
-        return is_motif, is_atom_motif, *extra_ret
+        return dict(is_motif=is_motif, is_atom_motif=is_atom_motif)
     return out_get_mask
 
 
@@ -996,12 +1135,14 @@ def make_atomized_dna_tip_protein_for_na_compl(get_mask, min_atomized_residues=1
             18: [' CG ', ' CD1', ' CE1', ' CZ ', ' OH ', ' CE2', ' CD2'],
             19: [' CG1', ' CG2', ' CB ']
             }
-        is_motif, is_atom_motif, *extra_ret = get_mask(indep, atom_mask, *args, **kwargs)
+        ret = get_mask(indep, atom_mask, *args, **kwargs)
+        is_motif, is_atom_motif = ret.pop('is_motif'), ret.pop('is_atom_motif')
+
         can_be_atomized_prot = is_motif * indep.is_valid_for_atomization(atom_mask) * nucl_utils.get_resi_type_mask(indep.seq, 'prot')
         can_be_atomized_na = is_motif * indep.is_valid_for_atomization(atom_mask) * ~nucl_utils.get_resi_type_mask(indep.seq, 'prot')
 
         if not can_be_atomized_prot.any() and not can_be_atomized_na.any():
-            return is_motif, None
+            return dict(is_motif=is_motif, is_atom_motif=is_atom_motif)
         prot_atomize_indices = torch.nonzero(can_be_atomized_prot).flatten()
         na_atomize_indices = torch.nonzero(can_be_atomized_na).flatten()
 
@@ -1016,7 +1157,7 @@ def make_atomized_dna_tip_protein_for_na_compl(get_mask, min_atomized_residues=1
             atoms_new = protein_tip_atoms[indep.seq[i].item()]
             if len(atoms_new) + N_resi > max_size:
                 break
-            is_atom_motif[i] = atoms_new
+            is_atom_motif[i.item()] = atoms_new
             N_resi += len(atoms_new)
 
         n_sample = random.randint(min_atomized_residues, max_atomized_residues)
@@ -1025,24 +1166,25 @@ def make_atomized_dna_tip_protein_for_na_compl(get_mask, min_atomized_residues=1
         na_atomize_indices = [na_atomize_indices[i] for i in np.random.permutation(len(na_atomize_indices))]
         for i in na_atomize_indices:
             # Add new completely atomized atoms until the max size is reached
-            atoms_new = [atom for atom in ChemData().aa2long[indep.seq[i]]
+            atoms_new = [atom for atom in ChemData().aa2long[indep.seq[i].item()]
                                 if atom is not None and atom.find('H') == -1]
             if len(atoms_new) + N_resi > max_size:
                 break
-            is_atom_motif[i] = atoms_new
+            is_atom_motif[i.item()] = atoms_new
             N_resi += len(atoms_new)
 
         is_motif[na_atomize_indices] = False
         is_motif[prot_atomize_indices] = False
 
-        return is_motif, is_atom_motif, *extra_ret
+        return dict(is_motif=is_motif, is_atom_motif=is_atom_motif)
     return out_get_mask
 
 
 def atomize_and_diffuse_motif(get_mask):
     @wraps(get_mask)
     def out_get_mask(indep, atom_mask, *args, **kwargs):
-        is_motif, is_atom_motif, *extra_ret = get_mask(indep, atom_mask, *args, **kwargs)
+        ret = get_mask(indep, atom_mask, *args, **kwargs)
+        is_motif, is_atom_motif = ret.pop('is_motif'), ret.pop('is_atom_motif')
         is_motif[indep.is_sm] = False
         motif_idx = is_motif.nonzero()[:,0].tolist()
         is_atom_motif = {}
@@ -1051,7 +1193,7 @@ def atomize_and_diffuse_motif(get_mask):
             if is_valid_for_atomization[res_i]:
                 is_atom_motif[res_i] = []
         is_motif[:] = False
-        return is_motif, is_atom_motif, *extra_ret
+        return dict(is_motif=is_motif, is_atom_motif=is_atom_motif, **ret)
     return out_get_mask
 
 
@@ -1062,7 +1204,8 @@ def partially_mask_ligand(get_mask, ligand_mask_low=0.0, ligand_mask_high=1.0):
     '''
     @wraps(get_mask)
     def out_get_mask(indep, atom_mask, *args, **kwargs):
-        is_motif, is_atom_motif, *extra_ret = get_mask(indep, atom_mask, *args, **kwargs)
+        ret = get_mask(indep, atom_mask, *args, **kwargs)
+        is_motif = ret.pop('is_motif')
         is_motif[indep.is_sm] = False
         abs_from_sm_i = indep.is_sm.nonzero()[:, 0]
         G = nx.from_numpy_matrix(indep.bond_feats[indep.is_sm,:][:,indep.is_sm].detach().cpu().numpy())
@@ -1081,15 +1224,16 @@ def partially_mask_ligand(get_mask, ligand_mask_low=0.0, ligand_mask_high=1.0):
             if to_show_abs.any():
                 assertpy.assert_that(indep.is_sm[to_show_abs].all()).is_true()
             is_motif[to_show_abs] = True
-        return is_motif, is_atom_motif, *extra_ret
+        return dict(is_motif=is_motif, **ret)
     return out_get_mask
 
 def completely_mask_ligand(get_mask):
     @wraps(get_mask)
     def out_get_mask(indep, atom_mask, *args, **kwargs):
-        is_motif, is_atom_motif, *extra_ret = get_mask(indep, atom_mask, *args, **kwargs)
+        ret = get_mask(indep, atom_mask, *args, **kwargs)
+        is_motif = ret.pop('is_motif')
         is_motif[indep.is_sm] = False
-        return is_motif, is_atom_motif, *extra_ret
+        return dict(is_motif=is_motif, **ret)
     return out_get_mask
 
 def clean_mask(get_mask):
@@ -1098,11 +1242,12 @@ def clean_mask(get_mask):
     '''
     @wraps(get_mask)
     def out_get_mask(indep, atom_mask, *args, **kwargs):
-        is_motif, is_atom_motif, *extra_ret = get_mask(indep, atom_mask, *args, **kwargs)
+        ret = get_mask(indep, atom_mask, *args, **kwargs)
+        is_motif, is_atom_motif = ret.pop('is_motif'), ret.pop('is_atom_motif')
         for k in is_atom_motif.keys():
             assert not indep.is_sm[k]
             is_motif[k] = False
-        return is_motif, is_atom_motif,  *extra_ret
+        return dict(is_motif=is_motif, is_atom_motif=is_atom_motif, **ret)
     return out_get_mask
 
 
@@ -1112,9 +1257,68 @@ def no_pop(get_mask):
     '''
     @wraps(get_mask)
     def out_get_mask(indep, atom_mask, *args, **kwargs):
-        is_motif, is_atom_motif, *extra_ret = get_mask(indep, atom_mask, *args, **kwargs)
+        ret = get_mask(indep, atom_mask, *args, **kwargs)
         pop = torch.ones(indep.length()).bool()
-        return is_motif, is_atom_motif, pop
+        return dict(pop=pop, **ret)
+    return out_get_mask
+
+def motif_gp(get_mask):
+    '''
+    Adapter for old masks that don't return can_be_gp
+    Applies default behavior of can_be_gp = is_motif + list(is_atom_motif)
+    '''
+    @wraps(get_mask)
+    def out_get_mask(indep, atom_mask, *args, **kwargs):
+        ret = get_mask(indep, atom_mask, *args, **kwargs)
+        is_motif, is_atom_motif = ret.pop('is_motif'), ret.pop('is_atom_motif')
+        can_be_gp = is_motif.clone()
+        if is_atom_motif is not None:
+            can_be_gp[list(is_atom_motif)] = True
+
+        return dict(is_motif=is_motif, is_atom_motif=is_atom_motif, can_be_gp=can_be_gp, **ret)
+    return out_get_mask
+
+def no_gp(get_mask):
+    '''
+    Forbids guideposting everywhere
+    '''
+    @wraps(get_mask)
+    def out_get_mask(indep, atom_mask, *args, **kwargs):
+        ret = get_mask(indep, atom_mask, *args, **kwargs)
+        can_be_gp = torch.zeros(len(indep.seq)).bool()
+        return dict(can_be_gp=can_be_gp, **ret)
+    return out_get_mask
+
+def protein_gp_only(get_mask):
+    '''
+    Allows guideposting only at protein residues
+    '''
+    @wraps(get_mask)
+    def out_get_mask(indep, atom_mask, *args, **kwargs):
+        ret = get_mask(indep, atom_mask, *args, **kwargs)
+        is_motif, is_atom_motif = ret.pop('is_motif'), ret.pop('is_atom_motif')
+        can_be_gp = is_motif.clone()
+        if is_atom_motif is not None and is_atom_motif:
+            can_be_gp[list(is_atom_motif)] = True
+        can_be_gp = can_be_gp * nucl_utils.get_resi_type_mask(indep.seq, 'prot')
+        return dict(is_motif=is_motif, is_atom_motif=is_atom_motif, can_be_gp=can_be_gp, **ret)
+    
+    return out_get_mask
+
+def motif_shows_seq(get_mask):
+    '''
+    Adapter for old masks that don't return is_res_seq_shown
+    Applies default behavior of is_res_seq_shown = is_motif + list(is_atom_motif) + indep.is_sm
+    '''
+    @wraps(get_mask)
+    def out_get_mask(indep, atom_mask, *args, **kwargs):
+        ret = get_mask(indep, atom_mask, *args, **kwargs)
+        is_motif, is_atom_motif = ret.pop('is_motif'), ret.pop('is_atom_motif')
+        is_res_seq_shown = is_motif.clone()
+        if is_atom_motif is not None and is_atom_motif:
+            is_res_seq_shown[list(is_atom_motif)] = True
+        is_res_seq_shown[indep.is_sm] = True # small molecules must have their sequence shown
+        return dict(is_motif=is_motif, is_atom_motif=is_atom_motif, is_res_seq_shown=is_res_seq_shown, **ret)
     return out_get_mask
 
 
@@ -1125,8 +1329,9 @@ def _PPI_fully_diffused(indep, *args, **kwargs):
         raise InvalidMaskException('_PPI_fully_diffused requires a binder/target pair.')
 
     is_motif = is_target.clone()
+    can_be_gp = torch.zeros(indep.length(), dtype=bool)
 
-    return is_motif, is_target
+    return dict(is_motif=is_motif, is_target=is_target, can_be_gp=can_be_gp)
 
 def _PPI_interface_motif_scaffolding(indep, *args, max_frac_ppi_motifs=0.8, max_ppi_motif_trim_frac=0.4, **kwargs):
 
@@ -1137,7 +1342,7 @@ def _PPI_interface_motif_scaffolding(indep, *args, max_frac_ppi_motifs=0.8, max_
 
     is_motif = is_target | is_ppi_motif
 
-    return is_motif, is_target
+    return dict(is_motif=is_motif, is_target=is_target, can_be_gp=is_ppi_motif)
 
 def _PPI_random_motif_scaffolding(indep, *args, max_frac_ppi_motifs=0.8, max_ppi_motif_trim_frac=0.4, **kwargs):
 
@@ -1148,91 +1353,115 @@ def _PPI_random_motif_scaffolding(indep, *args, max_frac_ppi_motifs=0.8, max_ppi
 
     is_motif = is_target | is_ppi_motif
 
-    return is_motif, is_target
+    return dict(is_motif=is_motif, is_target=is_target, can_be_gp=is_ppi_motif)
 
 def _PPI_no_crop(get_mask):
 
     @wraps(get_mask)
     def out_get_mask(indep, *args, **kwargs):
-        is_motif, is_target = get_mask(indep, *args, **kwargs)
+        ret = get_mask(indep, *args, **kwargs)
+        ret.pop('is_target')
         pop = torch.ones(indep.length()).bool()
-        return is_motif, None, pop
+        return dict(is_atom_motif=None, pop=pop, **ret)
     return out_get_mask
 
 def _PPI_radial_crop(get_mask):
 
     @wraps(get_mask)
     def out_get_mask(indep, *args, ppi_radial_crop_low=10, ppi_radial_crop_high=25, **kwargs):
-        is_motif, is_target = get_mask(indep, *args, **kwargs)
+        ret = get_mask(indep, *args, **kwargs)
+        is_motif, is_target = ret.pop('is_motif'), ret.pop('is_target')
         is_hotspot, is_antihotspot = ppi.find_hotspots_antihotspots(indep, 1, 1, return_all=True)
         pop = ppi.radial_crop(indep, ~is_motif, is_hotspot, is_target, distance=random.uniform(ppi_radial_crop_low,ppi_radial_crop_high))
-        return is_motif, None, pop
+        return dict(is_motif=is_motif, is_atom_motif=None, pop=pop, **ret)
     return out_get_mask
 
 def _PPI_planar_crop(get_mask):
 
     @wraps(get_mask)
     def out_get_mask(indep, *args, ppi_planar_crop_low=10, ppi_planar_crop_high=25, **kwargs):
-        is_motif, is_target = get_mask(indep, *args, **kwargs)
+        ret = get_mask(indep, *args, **kwargs)
+        is_motif, is_target = ret.pop('is_motif'), ret.pop('is_target')
         is_hotspot, is_antihotspot = ppi.find_hotspots_antihotspots(indep, 1, 1, return_all=True)
         pop = ppi.planar_crop(indep, ~is_motif, is_hotspot, is_target, distance=random.uniform(ppi_planar_crop_low,ppi_planar_crop_high))
-        return is_motif, None, pop
+        return dict(is_motif=is_motif, is_atom_motif=None, pop=pop, **ret)
     return out_get_mask
 
-get_sm_contacts = no_pop(_get_sm_contacts)
-get_diffusion_mask_simple = no_pop(make_covale_compatible(make_sm_compatible(_get_diffusion_mask_simple)))
-get_diffusion_mask_islands = no_pop(make_covale_compatible(make_sm_compatible(_get_diffusion_mask_islands)))
-get_triple_contact = no_pop(make_sm_compatible(_get_triple_contact))
-get_double_contact = no_pop(make_sm_compatible(_get_double_contact))
-atomize_get_triple_contact = no_pop(make_atomized(get_triple_contact))
-atomize_get_double_contact = no_pop(make_atomized(get_double_contact))
-get_unconditional_diffusion_mask = no_pop(make_covale_compatible(make_sm_compatible(_get_unconditional_diffusion_mask)))
-get_tip_gaussian_mask = no_pop(_get_tip_gaussian_mask)
-get_tip_mask = no_pop(make_covale_compatible(_get_tip_mask))
-get_tip_mask_unconditional = no_pop(make_covale_compatible(partial(_get_tip_mask, unconditional=True)))
-get_tip_mask_unconditional_free_ligand = no_pop(completely_mask_ligand(make_covale_compatible(partial(_get_tip_mask, unconditional=True))))
-get_tip_mask_unconditional_partial_ligand = no_pop(partially_mask_ligand(make_covale_compatible(_get_tip_mask)))
-get_closest_tip_atoms = no_pop(_get_closest_tip_atoms)
+get_sm_contacts = motif_shows_seq(motif_gp(no_pop(_get_sm_contacts)))
+get_diffusion_mask_simple = motif_shows_seq(motif_gp(no_pop(make_covale_compatible(make_sm_compatible(_get_diffusion_mask_simple)))))
+get_diffusion_mask_islands = motif_shows_seq(motif_gp(no_pop(make_covale_compatible(make_sm_compatible(_get_diffusion_mask_islands)))))
+get_triple_contact = motif_shows_seq(motif_gp(no_pop(make_sm_compatible(_get_triple_contact))))
+get_double_contact = motif_shows_seq(motif_gp(no_pop(make_sm_compatible(_get_double_contact))))
+atomize_get_triple_contact = make_atomized(get_triple_contact)
+atomize_get_double_contact = make_atomized(get_double_contact)
+get_unconditional_diffusion_mask = motif_shows_seq(motif_gp(no_pop(make_covale_compatible(make_sm_compatible(_get_unconditional_diffusion_mask)))))
+get_tip_gaussian_mask = motif_shows_seq(motif_gp(no_pop(_get_tip_gaussian_mask)))
+get_tip_mask = motif_shows_seq(motif_gp(no_pop(make_covale_compatible(_get_tip_mask))))
+get_tip_mask_unconditional = motif_shows_seq(motif_gp(no_pop(make_covale_compatible(partial(_get_tip_mask, unconditional=True)))))
+get_tip_mask_unconditional_free_ligand = motif_shows_seq(motif_gp(no_pop(completely_mask_ligand(make_covale_compatible(partial(_get_tip_mask, unconditional=True))))))
+get_tip_mask_unconditional_partial_ligand = motif_shows_seq(motif_gp(no_pop(partially_mask_ligand(make_covale_compatible(_get_tip_mask)))))
+get_closest_tip_atoms = motif_shows_seq(motif_gp(no_pop(_get_closest_tip_atoms)))
 
-get_atomized_islands = no_pop(make_covale_compatible(atomize_and_diffuse_motif(make_sm_compatible(
-        partial(_get_diffusion_mask_islands, n_islands_max=2, island_len_min=10, island_len_max=15)))))
+get_atomized_islands = motif_gp(no_pop(make_covale_compatible(atomize_and_diffuse_motif(make_sm_compatible(
+        partial(_get_diffusion_mask_islands, n_islands_max=2, island_len_min=10, island_len_max=15))))))
 
-get_unconditional_diffusion_mask_free_ligand = no_pop(completely_mask_ligand(get_unconditional_diffusion_mask))
-get_diffusion_mask_islands_partial_ligand = no_pop(partially_mask_ligand(get_diffusion_mask_islands))
-get_diffusion_mask_islands_free_ligand = no_pop(completely_mask_ligand(get_diffusion_mask_islands))
-get_tip_gaussian_mask_partial_ligand = no_pop(partially_mask_ligand(_get_tip_gaussian_mask))
-get_closest_tip_atoms_partial_ligand = no_pop(partially_mask_ligand(_get_closest_tip_atoms))
-get_unconditional_diffusion_mask_partial_ligand = no_pop(partially_mask_ligand(get_unconditional_diffusion_mask))
-get_entirely_atomized = make_covale_compatible(_get_entirely_atomized)
+get_unconditional_diffusion_mask_free_ligand = completely_mask_ligand(get_unconditional_diffusion_mask)
+get_diffusion_mask_islands_partial_ligand = partially_mask_ligand(get_diffusion_mask_islands)
+get_diffusion_mask_islands_free_ligand = completely_mask_ligand(get_diffusion_mask_islands)
+get_tip_gaussian_mask_partial_ligand = motif_shows_seq(motif_gp(no_pop(partially_mask_ligand(_get_tip_gaussian_mask))))
+get_closest_tip_atoms_partial_ligand = motif_shows_seq(motif_gp(no_pop(partially_mask_ligand(_get_closest_tip_atoms))))
+get_unconditional_diffusion_mask_partial_ligand = partially_mask_ligand(get_unconditional_diffusion_mask)
+get_entirely_atomized = motif_shows_seq(motif_gp(make_covale_compatible(_get_entirely_atomized)))
 get_tip_gaussian_mask.name = 'get_tip_gaussian_mask'
 get_tip_gaussian_mask_partial_ligand.name = 'get_tip_gaussian_mask_partial_ligand'
 
-get_PPI_fully_diffused_no_crop = make_covale_compatible(_PPI_no_crop(_PPI_fully_diffused))
-get_PPI_fully_diffused_radial_crop = make_covale_compatible(_PPI_radial_crop(_PPI_fully_diffused))
-get_PPI_fully_diffused_planar_crop = make_covale_compatible(_PPI_planar_crop(_PPI_fully_diffused))
-get_PPI_interface_motif_no_crop = make_covale_compatible(_PPI_no_crop(_PPI_interface_motif_scaffolding))
-get_PPI_interface_motif_radial_crop = make_covale_compatible(_PPI_radial_crop(_PPI_interface_motif_scaffolding))
-get_PPI_interface_motif_planar_crop = make_covale_compatible(_PPI_planar_crop(_PPI_interface_motif_scaffolding))
-get_PPI_random_motif_no_crop = make_covale_compatible(_PPI_no_crop(_PPI_random_motif_scaffolding))
-get_PPI_random_motif_radial_crop = make_covale_compatible(_PPI_radial_crop(_PPI_random_motif_scaffolding))
-get_PPI_random_motif_planar_crop = make_covale_compatible(_PPI_planar_crop(_PPI_random_motif_scaffolding))
+get_PPI_fully_diffused_no_crop = motif_shows_seq(make_covale_compatible(_PPI_no_crop(_PPI_fully_diffused)))
+get_PPI_fully_diffused_radial_crop = motif_shows_seq(make_covale_compatible(_PPI_radial_crop(_PPI_fully_diffused)))
+get_PPI_fully_diffused_planar_crop = motif_shows_seq(make_covale_compatible(_PPI_planar_crop(_PPI_fully_diffused)))
+get_PPI_interface_motif_no_crop = motif_shows_seq(make_covale_compatible(_PPI_no_crop(_PPI_interface_motif_scaffolding)))
+get_PPI_interface_motif_radial_crop = motif_shows_seq(make_covale_compatible(_PPI_radial_crop(_PPI_interface_motif_scaffolding)))
+get_PPI_interface_motif_planar_crop = motif_shows_seq(make_covale_compatible(_PPI_planar_crop(_PPI_interface_motif_scaffolding)))
+get_PPI_random_motif_no_crop = motif_shows_seq(make_covale_compatible(_PPI_no_crop(_PPI_random_motif_scaffolding)))
+get_PPI_random_motif_radial_crop = motif_shows_seq(make_covale_compatible(_PPI_radial_crop(_PPI_random_motif_scaffolding)))
+get_PPI_random_motif_planar_crop = motif_shows_seq(make_covale_compatible(_PPI_planar_crop(_PPI_random_motif_scaffolding)))
+
+
+get_diffusion_mask_islands_w_tip = add_tips(get_diffusion_mask_islands)
+get_diffusion_mask_islands_partial_ligand_w_tip = add_tips(get_diffusion_mask_islands_partial_ligand)
+get_diffusion_mask_islands_free_ligand_w_tip = add_tips(get_diffusion_mask_islands_free_ligand)
+get_PPI_fully_diffused_no_crop_w_tip = add_tips(get_PPI_fully_diffused_no_crop)
+get_PPI_fully_diffused_radial_crop_w_tip = add_tips(get_PPI_fully_diffused_radial_crop)
+get_PPI_fully_diffused_planar_crop_w_tip = add_tips(get_PPI_fully_diffused_planar_crop)
+get_PPI_interface_motif_no_crop_w_tip = add_tips(get_PPI_interface_motif_no_crop)
+get_PPI_interface_motif_radial_crop_w_tip = add_tips(get_PPI_interface_motif_radial_crop)
+get_PPI_interface_motif_planar_crop_w_tip = add_tips(get_PPI_interface_motif_planar_crop)
+get_PPI_random_motif_no_crop_w_tip = add_tips(get_PPI_random_motif_no_crop)
+get_PPI_random_motif_radial_crop_w_tip = add_tips(get_PPI_random_motif_radial_crop)
+get_PPI_random_motif_planar_crop_w_tip = add_tips(get_PPI_random_motif_planar_crop)
+
+
+get_diffusion_mask_islands_w_seq_islands = add_seq_islands(get_diffusion_mask_islands)
+get_diffusion_mask_islands_w_tip_w_seq_islands = add_seq_islands(get_diffusion_mask_islands_w_tip)
+get_PPI_fully_diffused_no_crop_w_binder_seqshown_islands = add_seq_islands(get_PPI_fully_diffused_no_crop, mode='is_diffused', p_islands_means_shown=1)
+get_PPI_fully_diffused_no_crop_w_target_seqhidden_islands = add_seq_islands(get_PPI_fully_diffused_no_crop, mode='is_motif', p_islands_means_shown=0)
 
 # NA specific mask generators, may generalize to other systems, but not guaranteed currently
 get_na_contacting_atomized_islands = no_pop(make_covale_compatible(make_atomized_complete(
         partial(_get_prot_diffusion_mask_islands_from_na_contacts, n_islands_max=3, search_radius_min=1e-2, search_radius_max=10, max_resi_atomize=8))))
 
-get_na_motif_scaffold = no_pop(make_covale_compatible(_protein_motif_scaffold_dna_wrapper(_protein_motif_scaffold_dna)))
-get_na_inverse_motif_scaffold = no_pop(make_covale_compatible(_inverse_protein_motif_scaffold_dna(_protein_motif_scaffold_dna)))
+get_na_motif_scaffold = motif_shows_seq(no_gp(no_pop(make_covale_compatible(_protein_motif_scaffold_dna_wrapper(_protein_motif_scaffold_dna)))))
+get_na_inverse_motif_scaffold = motif_shows_seq(no_gp(no_pop(make_covale_compatible(_inverse_protein_motif_scaffold_dna(_protein_motif_scaffold_dna)))))
 
-get_prot_unconditional_atomize_na_contacts = no_pop(make_covale_compatible(make_atomized_complete(_get_prot_unconditional_atomize_na_contacts_mask, max_atomized_residues=20)))
+get_prot_unconditional_atomize_na_contacts = motif_shows_seq(no_gp(no_pop(make_covale_compatible(make_atomized_complete(_get_prot_unconditional_atomize_na_contacts_mask, max_atomized_residues=20)))))
 
-get_prot_contactmotif_atomize_na_contacts = no_pop(make_covale_compatible(make_atomized_complete_noprotein(_get_prot_contactmotif_atomize_na_contacts_mask, max_atomized_residues=20)))
+get_prot_contactmotif_atomize_na_contacts = motif_shows_seq(no_gp(no_pop(make_covale_compatible(make_atomized_complete_noprotein(_get_prot_contactmotif_atomize_na_contacts_mask, max_atomized_residues=20)))))
 
-get_prot_tipatom_guidepost_atomize_na_contacts = no_pop(make_covale_compatible(make_atomized_dna_tip_protein_for_na_compl(_get_na_prot_contact_mask, max_atomized_residues=20)))
+# guideposted tipatoms on the protein motif contacting residues, na_contacts are atomized motif
+get_prot_tipatom_guidepost_atomize_na_contacts = motif_shows_seq(protein_gp_only(no_pop(make_covale_compatible(make_atomized_dna_tip_protein_for_na_compl(_get_na_prot_contact_mask, max_atomized_residues=20)))))
 
-get_prot_tipatom_guidepost_na_contacts = no_pop(make_covale_compatible(make_tip_protein_for_na_compl(_get_na_prot_contact_mask)))
+get_prot_tipatom_guidepost_na_contacts = motif_shows_seq(protein_gp_only(no_pop(make_covale_compatible(make_tip_protein_for_na_compl(_get_na_prot_contact_mask)))))
 
-get_prot_tipatom_guidepost_anywhere = no_pop(make_covale_compatible(make_tip_protein_for_na_compl(_get_tipatom_mask_proteinonly_anywhere)))
+get_prot_tipatom_guidepost_anywhere = motif_shows_seq(protein_gp_only(no_pop(make_covale_compatible(make_tip_protein_for_na_compl(_get_tipatom_mask_proteinonly_anywhere)))))
 
 sm_mask_fallback = {
     get_closest_tip_atoms: get_tip_gaussian_mask,
@@ -1266,7 +1495,17 @@ def get_diffusion_mask(
         logger.debug(f'{get_mask.name=}')
         with error.context(f'mask - {get_mask.name}'):
             try:
-                return get_mask(indep, atom_mask, low_prop=low_prop, high_prop=high_prop, broken_prop=broken_prop, **kwargs), get_mask.name
+                # Call the mask function to get the mask
+                ret = get_mask(indep, atom_mask, low_prop=low_prop, high_prop=high_prop, broken_prop=broken_prop, **kwargs)
+
+                # Make sure we have all the return types
+                assert isinstance(ret, Mapping), 'Mask functions now return a dictionary'
+                required_keys = ['is_motif', 'is_res_seq_shown', 'is_atom_motif', 'pop', 'can_be_gp']
+                for key in required_keys:
+                    assert key in ret, f'Mask: {get_mask.name} failed to return "{key}"'
+
+                # Return as a tuple
+                return (ret['is_motif'], ret['is_res_seq_shown'], ret['is_atom_motif'], ret['pop'], ret['can_be_gp']), get_mask.name
             except InvalidMaskException as e:
                 logger.debug(f'Mask {get_mask.name} incompatible with example: {e}')
 
@@ -1519,6 +1758,7 @@ def generate_masks(indep, task, loader_params, chosen_dataset, full_chain=None, 
 
     input_seq_mask = torch.ones(L).bool()
     input_str_mask = torch.ones(L).bool()
+    can_be_gp = torch.ones(L).bool()
     input_floating_mask = -1
     loss_seq_mask = torch.ones(L).bool()
     loss_str_mask = torch.ones(L).bool()
@@ -1533,6 +1773,7 @@ def generate_masks(indep, task, loader_params, chosen_dataset, full_chain=None, 
         #input_seq_mask = torch.clone(seq2str_mask) #this is not 1D
         input_str_mask = torch.ones(L).bool()
         input_floating_mask = torch.ones(L).bool()
+        can_be_gp = input_str_mask.clone()
 
         #loss masks
         # Currently msa loss masking is performed in train_multi_EMA
@@ -1554,7 +1795,7 @@ def generate_masks(indep, task, loader_params, chosen_dataset, full_chain=None, 
         # Plumbing hack
         indep.metadata = metadata
     
-        (diffusion_mask, is_atom_motif, pop), mask_name = get_diffusion_mask(
+        (diffusion_mask, is_res_seq_shown, is_atom_motif, pop, can_be_gp), mask_name = get_diffusion_mask(
             indep,
             atom_mask,
             low_prop=loader_params['MASK_MIN_PROPORTION'],
@@ -1567,7 +1808,7 @@ def generate_masks(indep, task, loader_params, chosen_dataset, full_chain=None, 
             ) 
         # ic(is_atom_motif, torch.nonzero(diffusion_mask), diffusion_mask.sum())
         input_str_mask = diffusion_mask.clone()
-        input_seq_mask = diffusion_mask.clone()
+        input_seq_mask = is_res_seq_shown.clone()
         # t1dconf scaling will be taken care of by diffuser, so just leave those at 1 here 
 
         ## loss masks 
@@ -1582,6 +1823,7 @@ def generate_masks(indep, task, loader_params, chosen_dataset, full_chain=None, 
         
         input_str_mask = torch.clone(full_chain)
         input_seq_mask = torch.clone(input_str_mask)
+        can_be_gp = input_str_mask.clone()
 
     elif task == 'hal' and chosen_dataset != 'complex':
         '''
@@ -1596,6 +1838,7 @@ def generate_masks(indep, task, loader_params, chosen_dataset, full_chain=None, 
         input_str_mask = torch.clone(input_seq_mask)
         input_str_mask[splice[0]-1] = True #give structure of two flanking residues
         input_str_mask[splice[1]] = True
+        can_be_gp = input_str_mask.clone()
 
         input_floating_mask = torch.ones(L).bool()
         input_floating_mask[splice[0]-1] = False #immediate two flanking residues are set to false/floating
@@ -1630,6 +1873,7 @@ def generate_masks(indep, task, loader_params, chosen_dataset, full_chain=None, 
         input_str_mask[splice[0]-flank_width:splice[1]+flank_width] = False
         input_str_mask[splice[0]-1] = True #give structure of two flanking residues
         input_str_mask[splice[1]] = True
+        can_be_gp = input_str_mas.clone()
 
         input_floating_mask = torch.ones(L).bool()
         input_floating_mask[splice[0]-1] = False #immediate two flanking residues are set to false/floating
@@ -1660,6 +1904,7 @@ def generate_masks(indep, task, loader_params, chosen_dataset, full_chain=None, 
         input_seq_mask[start:start+len_to_mask] = False
         input_str_mask = torch.ones(L).bool()
         input_str_mask[start:start+len_to_mask] = False #not doing flanking masking now
+        can_be_gp = input_str_mask.clone()
 
         #loss masks
         loss_seq_mask = torch.zeros(L).bool()
@@ -1687,6 +1932,7 @@ def generate_masks(indep, task, loader_params, chosen_dataset, full_chain=None, 
         input_seq_mask[start+len_to_mask:] = True
         input_str_mask = torch.ones(L).bool()
         input_str_mask[start:start+len_to_mask] = False #not doing flanking masking now. No AR unmasking of structure
+        can_be_gp = input_str_mask.clone()
 
         #loss masks
         loss_seq_mask = torch.zeros(L).bool()
@@ -1708,6 +1954,7 @@ def generate_masks(indep, task, loader_params, chosen_dataset, full_chain=None, 
         input_str_mask = torch.ones(L).bool()
         input_str_mask[splice[0] - flank_width:splice[0]] = False #mask out flanks only (i.e. provide structure of the central region)
         input_str_mask[splice[1]:splice[1] + flank_width] = False
+        can_be_gp = input_str_mask.clone()
         input_floating_mask = torch.ones(L).bool()
 
         #loss masks
@@ -1733,6 +1980,7 @@ def generate_masks(indep, task, loader_params, chosen_dataset, full_chain=None, 
         input_seq_mask = torch.ones(L).bool()
         input_seq_mask[start:start+len_to_mask] = False
         input_str_mask = torch.ones(L).bool()
+        can_be_gp = input_str_mask.clone()
  
         #loss masks
         loss_seq_mask = torch.zeros(L).bool()
@@ -1752,6 +2000,7 @@ def generate_masks(indep, task, loader_params, chosen_dataset, full_chain=None, 
         #input masks
         input_seq_mask = torch.rand(L).bool() < rand_prop
         input_str_mask = torch.ones(L).bool()
+        can_be_gp = input_str_mask.clone()
         input_floating_mask = torch.ones(L).bool()
 
         #loss masks
@@ -1776,6 +2025,7 @@ def generate_masks(indep, task, loader_params, chosen_dataset, full_chain=None, 
                 'input_seq_mask':input_seq_mask,
                 'is_atom_motif': is_atom_motif or {},
                 'pop': pop,
+                'can_be_gp': can_be_gp,
                 'mask_name': mask_name
                 }
     

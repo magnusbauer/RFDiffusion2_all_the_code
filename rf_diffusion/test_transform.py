@@ -54,7 +54,7 @@ class TestTransform(unittest.TestCase):
             # Create the init xyz values with the legacy centering
             o.xyz = rf_diffusion.kinematics.get_init_xyz(o.xyz[None, None], o.is_sm, center=True).squeeze() 
 
-            o, is_diffused, is_seq_masked, atomizer, contig_map.gp_to_ptn_idx0 = aa_model.transform_indep(o, masks_1d['input_str_mask'], masks_1d['input_seq_mask'], masks_1d['is_atom_motif'], conf.inference.contig_as_guidepost, conf.guidepost_bonds, metadata=metadata)
+            o, is_diffused, is_seq_masked, atomizer, contig_map.gp_to_ptn_idx0 = aa_model.transform_indep(o, masks_1d['input_str_mask'], masks_1d['input_seq_mask'], masks_1d['is_atom_motif'], masks_1d['can_be_gp'], conf.inference.contig_as_guidepost, conf.guidepost_bonds, metadata=metadata)
 
             sm_ca = o.xyz[o.is_sm, 1]
             o.xyz[o.is_sm,:3] = sm_ca[...,None,:]
@@ -72,8 +72,10 @@ class TestTransform(unittest.TestCase):
             is_res_str_shown[res_str_shown_idx] = True
             is_res_seq_shown = is_res_str_shown.clone()
             is_res_seq_shown[indep.is_sm] = True
+            can_be_gp = is_res_str_shown.clone()
+            can_be_gp[list(is_atom_str_shown)] = True
             n_res_shown = is_res_str_shown.sum()
-            indep, is_diffused, is_masked_seq, atomizer, gp_to_ptn_idx0 = aa_model.transform_indep(indep, is_res_str_shown, is_res_seq_shown, is_atom_str_shown, True, metadata=metadata)
+            indep, is_diffused, is_masked_seq, atomizer, gp_to_ptn_idx0 = aa_model.transform_indep(indep, is_res_str_shown, is_res_seq_shown, is_atom_str_shown, can_be_gp, True, metadata=metadata)
 
             n_ligand = indep_init.is_sm.sum()
             n_motif = sum(len(v) for v in is_atom_str_shown.values()) + n_res_shown

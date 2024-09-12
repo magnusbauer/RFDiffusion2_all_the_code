@@ -1,0 +1,68 @@
+# This contig is how one would modify fm_tip such that motif and gp residues can co-exist
+
+defaults:
+  - fm
+
+ckpt_load_path: /home/bcov/sc/flow/binder_dev/rf_diffusion/models/rf2a_25c_414_t1d-114.pt
+rundir: /net/scratch/bcov/sc/flow/rf_diffusion_repo/rf_diffusion/training
+wandb_prefix: 'fm_tip_w_motif'
+
+dataloader:
+  P_IS_GUIDEPOST_EXAMPLE: 0.5
+  DATAPKL_AA: aa_dataset_256.pkl
+  DATASETS: pdb_aa,compl,sm_complex,sm_compl_covale,metal_compl,sm_compl_asmb,sm_compl_multi
+  DATASET_PROB:
+  - 0.4
+  - 0.2
+  - 0.15
+  - 0.1
+  - 0.05
+  - 0.05
+  - 0.05
+  DIFF_MASK_PROBS:
+    get_unconditional_diffusion_mask_free_ligand: 0.2
+    get_unconditional_diffusion_mask: 0.075
+    get_unconditional_diffusion_mask_partial_ligand: 0.075
+    get_diffusion_mask_islands_free_ligand: 0.05
+    get_diffusion_mask_islands: 0.05
+    get_diffusion_mask_islands_partial_ligand: 0.05
+    get_diffusion_mask_islands_free_ligand_w_tip: 0.05     # These 3 ensure gp tip-atom and motifs happen at same time 
+    get_diffusion_mask_islands_w_tip: 0.05
+    get_diffusion_mask_islands_partial_ligand_w_tip: 0.05
+    get_tip_mask: 0.125
+    get_tip_mask_unconditional_free_ligand: 0.25
+    get_tip_mask_unconditional_partial_ligand: 0.125
+
+    get_closest_tip_atoms: 0.0
+    get_closest_tip_atoms_partial_ligand: 0.0
+    get_atomized_islands: 0.0
+    get_entirely_atomized: 0.0
+
+  mask:
+    p_island_can_be_gp: 0.5 # Ensures the model has seen guideposted and motifed protein at the same time
+
+
+metrics:
+  - rigid_loss
+  - true_bond_lengths
+  - displacement_permutations
+  # - VarianceNormalizedPredTransMSE
+  # - VarianceNormalizedInputTransMSE
+  - rotations
+  - rotations_input
+
+diffuser:
+  t_distribution: uniform_t001
+
+benchmark:
+  pipeline_yaml: 'training_benchmarks.yaml'
+
+rf:
+  model:
+    use_chiral_l1: True
+    use_lj_l1: True
+    use_atom_frames: True
+    use_same_chain: True
+    recycling_type: all
+    enable_same_chain: True
+    refiner_topk: 128

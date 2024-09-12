@@ -41,6 +41,7 @@ inference:
   infer_guidepost_positions: True
   guidepost_xyz_as_design: True
   guidepost_xyz_as_design_bb: [False]
+  only_guidepost_positions: null # String. Do not guidepost every position, only guidepost these residues. "A1-4,B5,B8,B9,LG1:C1-C16"
   conditions:
     relative_sasa:
       mean: 0.5

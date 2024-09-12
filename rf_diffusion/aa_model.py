@@ -633,7 +633,17 @@ def parse_ligand(pdb, ligand):
     atom_frames = rf2aa.util.get_atom_frames(seq_sm, G, omit_permutation=False)
     chirals = get_chirals(mol, xyz_sm[0])
     bond_feats = rf2aa.util.get_bond_feats(mol)
-    return xyz_sm[0], seq_sm, atom_frames, chirals, bond_feats
+
+    atom_names = []
+    for line in stream:
+        if line.startswith('HETATM'):
+            atom_type = line[76:78].strip()
+            if atom_type == 'H':
+                continue
+            atom_names.append(line[12:16])
+    atom_names = np.array(atom_names, dtype='<U4')
+
+    return xyz_sm[0], seq_sm, atom_frames, chirals, bond_feats, atom_names
     # if chirals.numel() !=0:
     #     chirals[:,:-1] += protein_L
 
@@ -722,10 +732,11 @@ def make_indep(pdb, ligand='', return_metadata=False):
         atom_frames_stack = []
         chirals_stack = []
         bond_feats_stack = []
+        sm_atom_names_stack = []
         # covale_bonds_stack = []
         for ligand in ligands:
             o = parse_ligand(pdb, ligand)
-            xyz_sm, seq_sm, atom_frames, chirals, bond_feats = o
+            xyz_sm, seq_sm, atom_frames, chirals, bond_feats, atom_names = o
 
             chirals[:, :-1] += sum(Ls)
             xyz_sm_stack.append(xyz_sm)
@@ -733,6 +744,7 @@ def make_indep(pdb, ligand='', return_metadata=False):
             atom_frames_stack.append(atom_frames)
             chirals_stack.append(chirals)
             bond_feats_stack.append(bond_feats)
+            sm_atom_names_stack.append(atom_names)
             # covale_bonds_stack.append(covale_bonds)
 
             Ls.append(seq_sm.shape[0])
@@ -742,6 +754,7 @@ def make_indep(pdb, ligand='', return_metadata=False):
         atom_frames = torch.cat(atom_frames_stack)
         chirals = torch.cat(chirals_stack)
         bond_feats_sm = torch.block_diag(*bond_feats_stack)
+        sm_atom_names = np.concatenate(sm_atom_names_stack)
     else:
         Ls.append(0)
 
@@ -812,10 +825,14 @@ def make_indep(pdb, ligand='', return_metadata=False):
         ligand_name_arr = []
         for l, name in zip(Ls, N_poly * [''] + ligands):
             ligand_name_arr.extend(l * [name])
+        ligand_atom_names_arr = ['']*sum(Ls[:N_poly])
+        if ligand:
+            ligand_atom_names_arr.extend(sm_atom_names)
 
         metadata = {
             'covale_bonds': covale_bonds,
             'ligand_names': np.array(ligand_name_arr,  dtype='<U3'),
+            'ligand_atom_names': np.array(ligand_atom_names_arr,  dtype='<U4'),
         }
         return indep, metadata
     return indep
@@ -859,6 +876,7 @@ class Model:
             print("warning, insert contig with no metadata is not handled gracefully")
             metadata = defaultdict(dict)
             metadata['ligand_names'] = np.array([])
+            metadata['ligand_atom_names'] = np.array([])
         o = copy.deepcopy(indep)
 
         # Insert small mol into contig_map
@@ -885,6 +903,7 @@ class Model:
         chain_start_end = chain_start_end_from_hal(contig_map.hal)
 
         contig_map.hal.extend(zip(new_chain_arr, new_idx_arr))
+        contig_map.ref.extend(zip(metadata['ligand_names'][indep.is_sm],metadata['ligand_atom_names'][indep.is_sm]))
         chain_id = np.array([c for c, _ in contig_map.hal])
         L_mapped = len(contig_map.hal)
         n_prot = L_mapped - n_sm
@@ -944,6 +963,16 @@ class Model:
         # this line looks wrong but it's because inpaint_seq is defined backwards. inpaint_seq[i] == False means mask this residue's sequence
         is_res_seq_shown = torch.cat((inpaint_seq, is_res_str_shown_sm))
 
+        # If the user hasn't specified only_guidepost_positions then all motif residues and atomized residues can be guideposts
+        if self.conf.inference.only_guidepost_positions is None:
+            can_be_gp = is_res_str_shown & is_res_seq_shown
+            if is_atom_str_shown:
+                can_be_gp[list(is_atom_str_shown)] = True
+        else:
+            assert isinstance(self.conf.inference.only_guidepost_positions, str), (
+                f'inference.only_guidepost_positions must be a string! You passed "{self.conf.inference.only_guidepost_positions}"')
+            can_be_gp = contig_map.res_list_to_mask(self.conf.inference.only_guidepost_positions)
+
         for i, ((res_i, atom_name), sm_i, bond_type) in enumerate(metadata['covale_bonds']):
             res_i = hal_by_ref_d[res_i]
             sm_i = hal_by_ref_d[sm_i]
@@ -959,6 +988,7 @@ class Model:
             'input_str_mask': is_res_str_shown,
             'input_seq_mask': is_res_seq_shown,
             'is_atom_motif': is_atom_str_shown,
+            'can_be_gp': can_be_gp
         }
         return o, masks_1d
 
@@ -2352,7 +2382,7 @@ def make_guideposts(indep, is_motif):
     indep_cat.bond_feats[is_inter_gp * ~has_sm] = GP_BOND
     return indep_cat, gp_to_ptn_idx0
 
-def transform_indep(indep, is_res_str_shown, is_res_seq_shown, is_atom_str_shown, use_guideposts, guidepost_bonds=True, metadata=None):
+def transform_indep(indep, is_res_str_shown, is_res_seq_shown, is_atom_str_shown, can_be_gp, use_guideposts, guidepost_bonds=True, metadata=None):
     '''
     Add guidepost residues (duplicates of residues set to be guideposted), atomize residues, and prepare is_diffused and is_seq_diffused
 
@@ -2369,9 +2399,10 @@ def transform_indep(indep, is_res_str_shown, is_res_seq_shown, is_atom_str_shown
         is_res_str_shown (torch.Tensor[bool]): Is this residue/atom part of the motif that will not have XYZ noising? [L]
         is_res_seq_shown (torch.Tensor[bool]): Is the sequence of this residue/atom known during calls to RF2 (True) or is it mask (False)? [L]
         is_atom_str_shown (dict[int,list[str]]): Should this residue be atomized? dict(key=residue_idx, value=list(atom_name1, atom_name2, ...))
+        can_be_gp (torch.Tensor[bool]): Is this residue elgible to be a guidepost? [L]
         use_guideposts (bool): Should motif residues (any residue or atom with str_shown) be duplicated into a guidepost residue?
         guidepost_bonds (bool): bcov honestly doesn't know
-        metadata (dict): Extra data about indep that realistically should be stored inside indep someday
+        metadata (dict): Extra data about indep ligands
 
     Returns:
         indep (Indep): The indep but with guidepost residues added and residues atomized [new_L]
@@ -2392,6 +2423,11 @@ def transform_indep(indep, is_res_str_shown, is_res_seq_shown, is_atom_str_shown
         print('WARNING! Atoms may not have masked seq! See assert_valid_seq_mask()')
         is_res_seq_shown[indep.is_sm] = True
 
+    # It really doesn't matter either way how these are set but set them to true such that asserts make sense
+    #  if they happen to be guideposted
+    is_res_str_shown[list(is_atom_str_shown.keys())] = True
+    is_res_seq_shown[list(is_atom_str_shown.keys())] = True
+
     if use_guideposts:
         # All motif residues are turned into guideposts (for now...)
         mask_gp = is_res_str_shown.clone()
@@ -2399,6 +2435,10 @@ def transform_indep(indep, is_res_str_shown, is_res_seq_shown, is_atom_str_shown
         if use_atomize:
             atomized_residues = list(is_atom_str_shown.keys())
             mask_gp[atomized_residues] = True
+        mask_gp &= can_be_gp
+
+        assert not (mask_gp & ~is_res_seq_shown).any(), "If a residue is set to be a guidepost, it's sequence must be shown."
+
 
         # Actually add guideposts to indep
         indep, gp_to_ptn_idx0 = make_guideposts(indep, mask_gp)
@@ -2415,8 +2455,8 @@ def transform_indep(indep, is_res_str_shown, is_res_seq_shown, is_atom_str_shown
             # Create mapping from original motif residue -> guidepost residue dict(key=original_residue_idx, value=guidepost_residue_idx)
             gp_from_ptn_idx0 = {v:k for k,v in gp_to_ptn_idx0.items()}
 
-            # Translate is_atom_str_shown to be relative to the guideposts, not the original residues. (Note: Assumes can_be_gp.all())
-            is_atom_str_shown = {gp_from_ptn_idx0[k]: v for k,v in is_atom_str_shown.items()}
+            # Translate is_atom_str_shown to be relative to the guideposts, not the original residues. If residue wasn't guideposted key remains the same
+            is_atom_str_shown = {gp_from_ptn_idx0.get(k, k):v for k,v in is_atom_str_shown.items()}
 
             # Mark to-be-atomized duplicated guidepost residues to be diffused? This was to overcome a shortcoming in atomization. Delete this someday
             # is_res_str_shown[list(is_atom_str_shown.keys())] = False  # By all accounts this should be true. But these residues get dropped anyways

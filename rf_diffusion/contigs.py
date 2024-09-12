@@ -1,3 +1,4 @@
+import torch
 import sys
 import numpy as np 
 import random
@@ -111,7 +112,7 @@ class ContigMap():
             self.inpaint_str = self.inpaint_str_tensor
         #get 0-indexed input/output (for trb file)
         self.ref_idx0,self.hal_idx0, self.ref_idx0_inpaint, self.hal_idx0_inpaint=self.get_idx0()
-        self.con_ref_pdb_idx=[i for i in self.ref if i != ('_','_')] 
+        self.con_ref_pdb_idx=[i for i in self.ref if i != ('_','_')]
 
 
     def get_sampled_mask(self):
@@ -252,3 +253,48 @@ class ContigMap():
             atomize_indices2atomname=self.atomize_indices2atomname,
         )
 
+    def res_list_to_mask(self, res_list):
+        '''
+        Using self.ref as the guide (which refers to the numbering in the input pdb)
+        Return a mask of residues specified by res_list. Think ppi hotspot list
+        res_list should be comma separated and have chain letters for all residues
+        Ligand residues can also be specified with LIGNAME:ATOM. Atom ranges are allowed and are in pdb order. Drop spaces from ligand names
+
+        Args:
+            res_list (str): comma separated list to select, must have chain letters for all residues (A5,A6-10,B12 etc). Ligands like LG1:C1-C9
+
+        Returns:
+            mask (torch.Tensor[bool]): Which residues were selected
+        '''
+        mask = torch.zeros((len(self.ref),), dtype=bool)
+
+        ref_stripped = [(x.strip() if isinstance(x, str) else x, y.strip() if isinstance(y, str) else y) for x,y in self.ref]
+
+        for part in res_list.split(','):
+            if ':' in part:
+                lig_name, atom_part = part.split(':')
+                if '-' in atom_part:
+                    start,stop = atom_part.split('-')
+                else:
+                    start = stop = atom_part
+                assert (lig_name, start) in ref_stripped, f'Atom {lig_name}:{start} not found. From residue list: {res_list}'
+                start_idx = ref_stripped.index((lig_name, start))
+                assert (lig_name, stop) in ref_stripped, f'Atom {lig_name}:{stop} not found. From residue list: {res_list}'
+                stop_idx = ref_stripped.index((lig_name, stop))
+                mask[start_idx:stop_idx+1] = True
+            else:
+                goal_chain = part[0]
+                assert goal_chain.isalpha(), f'Residue list: {res_list} missing chain identifier on this part: {part}'
+                if '-' in part[1:]:
+                    start,stop = int(part[1:].split('-')[0]),int(part[1:].split('-')[1])
+                else:
+                    start = stop = int(part[1:])
+                for goal_num in range(start, stop+1):
+                    found = False
+                    for i, (chain,num) in enumerate(self.ref):
+                        if chain == goal_chain and num == goal_num:
+                            mask[i] = True
+                            found = True
+                            break
+                    assert found, f'Residue {goal_chain}{goal_num} not found. From residue list: {res_list}'
+        return mask

@@ -40,6 +40,7 @@ class PopMask:
         masks_1d['input_str_mask'] = masks_1d['input_str_mask'][masks_1d['pop']]
         masks_1d['input_seq_mask'] = masks_1d['input_seq_mask'][masks_1d['pop']]
         masks_1d['is_atom_motif'] = aa_model.reindex_dict(masks_1d['is_atom_motif'], masks_1d['pop'])
+        masks_1d['can_be_gp'] = masks_1d['can_be_gp'][masks_1d['pop']]
         metadata['covale_bonds'] = aa_model.reindex_covales(metadata['covale_bonds'], masks_1d['pop'])
         metadata['ligand_names'] = np.array(['LIG']*indep.length(),  dtype='<U3')
         # is_atom_str_shown = masks_1d['is_atom_motif']
@@ -548,11 +549,12 @@ class AddConditionalInputs:
         is_res_str_shown = masks_1d['input_str_mask']
         is_res_seq_shown = masks_1d['input_seq_mask']
         is_atom_str_shown = masks_1d['is_atom_motif']
+        can_be_gp = masks_1d['can_be_gp']
 
         # Sample guide posts with probability p_is_guidepost_example, or simply set true or false if p_is_guidepost_example is a boolean
         use_guideposts = self.p_is_guidepost_example if isinstance(self.p_is_guidepost_example, bool) else (torch.rand(1) < self.p_is_guidepost_example).item()
         masks_1d['use_guideposts'] = use_guideposts
-        indep, is_diffused, is_masked_seq, atomizer, contig_map.gp_to_ptn_idx0 = aa_model.transform_indep(indep, is_res_str_shown, is_res_seq_shown, is_atom_str_shown, use_guideposts, guidepost_bonds=self.guidepost_bonds, metadata=metadata)
+        indep, is_diffused, is_masked_seq, atomizer, contig_map.gp_to_ptn_idx0 = aa_model.transform_indep(indep, is_res_str_shown, is_res_seq_shown, is_atom_str_shown, can_be_gp, use_guideposts, guidepost_bonds=self.guidepost_bonds, metadata=metadata)
 
         masks_1d['is_masked_seq']=is_masked_seq
         # The previous code here was wrong. All is_gp are not necessarily contiguously at the end.

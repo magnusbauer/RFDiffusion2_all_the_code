@@ -481,6 +481,53 @@ class Dataloader(unittest.TestCase):
         
         test_utils.assert_matches_golden(self, golden_name, indep, rewrite=REWRITE, custom_comparator=self.cmp)
 
+
+    def test_PPI_random_motif_no_crop_can_be_gp(self):
+        '''
+        The point of this test is to make sure that can_be_gp is actually working
+        '''
+        dataset = 'compl'
+        mask = 'get_PPI_random_motif_no_crop'
+        loader_out = self.indep_for_dataset(dataset, mask, overrides=['transforms.configs.AddConditionalInputs.p_is_guidepost_example=1'])
+        indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context, conditions_dict = loader_out
+        indep.metadata = None
+
+        golden_name = f'indep_{dataset}-{mask}_can_be_gp'
+
+        if self.show_in_pymol:
+            name, names = show.one(indep, None)
+            show.cmd.do('util.cbc')
+            show.diffused(indep, is_diffused, 'true')
+        
+        test_utils.assert_matches_golden(self, golden_name, indep, rewrite=REWRITE, custom_comparator=self.cmp)
+
+    def test_get_diffusion_mask_islands_w_tip_w_seq_islands(self):
+        '''
+        This test tests two things:
+        1. Does the add_tips() function actually work
+        2. Does the add_seq_islands() function work with a complex scenario
+        '''
+        dataset = 'compl'
+        mask = 'get_diffusion_mask_islands_w_tip_w_seq_islands'
+        loader_out = self.indep_for_dataset(dataset, mask, overrides=['transforms.configs.AddConditionalInputs.p_is_guidepost_example=1',
+                                                                      '+dataloader.mask.n_islands_min=5',
+                                                                      '+dataloader.mask.n_islands_max=7',
+                                                                      '+dataloader.mask.seq_n_islands_min=5',
+                                                                      '+dataloader.mask.seq_n_islands_max=7'])
+        indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context, conditions_dict = loader_out
+        indep.metadata = None
+        indep.seq = rfi.seq[0] # This line is critical for any test of sequence masking
+
+        golden_name = f'indep_{dataset}-{mask}'
+
+        if self.show_in_pymol:
+            name, names = show.one(indep, None)
+            show.cmd.do('util.cbc')
+            show.diffused(indep, is_diffused, 'true')
+
+        test_utils.assert_matches_golden(self, golden_name, indep, rewrite=REWRITE, custom_comparator=self.cmp)
+
+
     def test_multi_covale(self):
         dataset = 'sm_compl_multi'
         mask = 'get_unconditional_diffusion_mask'

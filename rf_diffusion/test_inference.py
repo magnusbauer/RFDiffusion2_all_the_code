@@ -426,11 +426,31 @@ class TestRegression(unittest.TestCase):
             "+contigmap.contig_atoms=\"{'A518':'CG,OD1,OD2','A616':'CG,OD1,OD2'}\"",
             'inference.ligand=LG1',
             'inference.output_prefix=tmp/test_tip',
-            '++inference.zero_weights=True',            
+            '++inference.zero_weights=True',
         ])
         mapped_calls = get_rfi(conf)
         cmp = partial(tensor_util.cmp, atol=5e-2, rtol=0)
         test_utils.assert_matches_golden(self, 'rfi_tip_regression', mapped_calls, rewrite=REWRITE, custom_comparator=cmp)
+
+    @pytest.mark.generates_golden
+    def test_inference_rfi_tip_w_motif(self):
+        # Tests tip diffusion input preparation
+        run_inference.make_deterministic()
+        conf = construct_conf([
+            'diffuser.T=1',
+            'inference.num_designs=1',
+            'inference.input_pdb=benchmark/input/gaa.pdb',
+            'contigmap.contigs=["A518-518,10,A616-620"]',
+            'inference.contig_as_guidepost=True',
+            'inference.only_guidepost_positions="A518-518,A616-617,LG1:C1-C16"',
+            "+contigmap.contig_atoms=\"{'A518':'CG,OD1,OD2','A616':'CG,OD1,OD2'}\"",
+            'inference.ligand=LG1',
+            'inference.output_prefix=tmp/test_tip',
+            '++inference.zero_weights=True',
+        ])
+        mapped_calls = get_rfi(conf)
+        cmp = partial(tensor_util.cmp, atol=5e-2, rtol=0)
+        test_utils.assert_matches_golden(self, 'rfi_tip_regression_w_motif', mapped_calls, rewrite=REWRITE, custom_comparator=cmp)
 
     @pytest.mark.generates_golden
     def test_inference_rfi_atomize(self):

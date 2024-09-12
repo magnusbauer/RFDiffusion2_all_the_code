@@ -703,6 +703,9 @@ def validate_guideposting_strategy(conf: OmegaConf):
     is_valid = (conf.inference.contig_as_guidepost and supports_guideposts or 
                 not conf.inference.contig_as_guidepost and supports_no_guideposts)
 
+    if not conf.inference.contig_as_guidepost:
+        assert conf.inference.only_guidepost_positions is None, 'In order to use inference.only_guidepost_positions, set inference.contig_as_guidepost=True'
+
     if not is_valid:
         raise ValueError(
             f'The model was only trained {"with" if not conf.inference.contig_as_guidepost else "without"} guideposts '
