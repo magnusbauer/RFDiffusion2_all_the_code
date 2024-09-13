@@ -1,4 +1,4 @@
-#!/net/software/containers/users/dtischer/shebang_rf_se3_diffusion_dev.sh
+#!/net/software/containers/users/altaeth/rf_diffusion_aa_nucleic.sif
 
 """
 Flattens and formats Hydra configurations with overrides into a single YAML file. It initializes Hydra,
