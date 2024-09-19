@@ -270,7 +270,7 @@ class NRBStyleSelfCond(Sampler):
         trans_score = du.move_to_np(model_out['trans_score'][:,-1])
         rot_score = du.move_to_np(model_out['rot_score'][:,-1])
 
-        px0 = all_atom.atom37_from_rigid(rigid_pred)[0,:]
+        px0 = model_out['atom37'][0, -1]
         px0 = px0.cpu()
 
         # ic(self._conf.denoiser.noise_scale, do_self_cond)
