@@ -326,6 +326,7 @@ def main(path,
          hide_oxygen=False,
          debug=False,
          filt=None,
+         extra=None,
          ):
     ic(pymol_url)
     if debug:
@@ -372,6 +373,9 @@ def main(path,
         add_pymol_name(data, keys)
     if clear:
         show_tip_pa.clear()
+    if extra:
+        data['extra'] = extra
+    ic(extra)
     all_entities = show_df(
             data,
             structs=structs,

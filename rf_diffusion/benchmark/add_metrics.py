@@ -61,12 +61,21 @@ def main(conf: HydraConfig) -> list[int]:
     # raise Exception('stop')
 
     # General metrics
-    for cohort, filenames, metrics in [
+    for cohort, in_filenames, metrics in [
         ('design', backbone_filenames, conf.design_metrics),
         ('sequence', sequence_filenames, conf.sequence_metrics),
     ]:
-        ic(cohort, len(filenames), metrics)
+        ic(cohort, len(in_filenames), metrics)
         for metric in metrics:
+            filenames = in_filenames
+            if metric in conf.subset_metrics:
+                subset_filenames_path = conf.subset_metrics[metric]
+                with open(subset_filenames_path) as f:
+                    subset_filenames = set(f.read().splitlines())
+
+                filenames = [f for f in filenames if f in subset_filenames]
+                print(f'{len(in_filenames)} files trimmed to {len(filenames)}')
+
             job_fn = conf.datadir + f'/jobs.metrics_per_{cohort}_{metric}.list'
             job_list_file = open(job_fn, 'w') if conf.slurm.submit else sys.stdout
             for i in np.arange(0,len(filenames),conf.chunk):

@@ -8,6 +8,8 @@
 import sys
 import os
 import glob
+import copy
+import pandas as pd
 import numpy as np
 import hydra
 from hydra.core.hydra_config import HydraConfig
@@ -79,15 +81,32 @@ def main(conf: HydraConfig) -> list[int]:
     if 'af2' in conf.run:
         job_fn = conf.datadir + '/jobs.score.af2.list'
         job_list_file = open(job_fn, 'w') if conf.slurm.submit else sys.stdout
+        already_ran = {}
         for i in np.arange(0,len(filenames),conf.chunk):
             tmp_fn = f'{conf.datadir}/{conf.tmp_pre}.{i}'
+            input_filenames = []
             with open(tmp_fn,'w') as outf:
                 for j in np.arange(i,min(i+conf.chunk, len(filenames))):
+                    input_filenames.append(filenames[j])
                     print(filenames[j], file=outf)
-            print(f'/usr/bin/apptainer run --nv --bind /software/mlfold/alphafold:/software/mlfold/alphafold --bind /net/databases/alphafold/params/params_model_4_ptm.npz:/software/mlfold/alphafold-data/params/params_model_4_ptm.npz /software/containers/mlfold.sif {script_dir}/util/af2_metrics.py --use_ptm '\
-                  f'--outcsv {conf.datadir}/af2_metrics.csv.{i} '\
+            outcsv = f'{conf.datadir}/af2_metrics.csv.{i}'
+            job = (f'/usr/bin/apptainer run --nv --bind /software/mlfold/alphafold:/software/mlfold/alphafold --bind /net/databases/alphafold/params/params_model_4_ptm.npz:/software/mlfold/alphafold-data/params/params_model_4_ptm.npz /software/containers/mlfold.sif {script_dir}/util/af2_metrics.py --use_ptm '\
+                  f'--outcsv {outcsv} '\
                   f'--trb_dir {conf.trb_dir} '\
-                  f'{tmp_fn}', file=job_list_file)
+                  f'{tmp_fn}')
+            print(job, file=job_list_file)
+            def outputs_exist(outcsv=outcsv, input_filenames=input_filenames):
+                if not os.path.exists(outcsv):
+                    return False
+                df = pd.read_csv(outcsv)
+                name_set = set(df['name'])
+                for i, input_filename in enumerate(input_filenames):
+                    name = os.path.basename(input_filename).removesuffix('.pdb')
+                    if name not in name_set:
+                        return False
+                return True
+
+            already_ran[job] = copy.deepcopy(outputs_exist)
 
         # submit job
         if conf.slurm.submit: 
@@ -96,7 +115,7 @@ def main(conf: HydraConfig) -> list[int]:
                 job_name = conf.slurm.J 
             else:
                 job_name = 'af2_'+os.path.basename(conf.datadir.strip('/'))
-            af2_job, proc = slurm_tools.array_submit(job_fn, p = conf.slurm.p, gres=None if conf.slurm.p=='cpu' else conf.slurm.gres, log=conf.slurm.keep_logs, J=job_name, in_proc=conf.slurm.in_proc)
+            af2_job, proc = slurm_tools.array_submit(job_fn, p = conf.slurm.p, gres=None if conf.slurm.p=='cpu' else conf.slurm.gres, log=conf.slurm.keep_logs, J=job_name, in_proc=conf.slurm.in_proc, already_ran=already_ran)
             if af2_job > 0:
                 job_ids.append(af2_job)
             print(f'Submitted array job {af2_job} with {int(np.ceil(len(filenames)/conf.chunk))} jobs to AF2-predict {len(filenames)} designs')

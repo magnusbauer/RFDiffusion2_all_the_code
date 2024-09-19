@@ -12,4 +12,4 @@ alias hydrophobic, select hydrophobes,(resn ala+gly+val+ile+leu+phe+met; show st
 set sphere_scale, 0.3;
 set sphere_transparency, 0.5; 
 
-set internal_gui_width, 500
+set sphere_scale, 0.3;

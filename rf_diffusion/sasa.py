@@ -19,16 +19,19 @@ np.int = np.int64
 from rf_diffusion import aa_model
 
 p = PDBParser(PERMISSIVE=0, QUIET=1)
+pdb_parser = PDBParser(PERMISSIVE=0, QUIET=1)
 
 def get_sasa_indep(indep, probe_radius=1.4):
     buffer = io.StringIO()
     names = indep.write_pdb_file(buffer)
     buffer.seek(0)
-    struct = p.get_structure('none', buffer)
+    return get_sasa_pdb_file(buffer, probe_radius=probe_radius), names
+
+def get_sasa_pdb_file(pdb_file, probe_radius=1.4):
+    struct = p.get_structure('none', pdb_file)
     sr = ShrakeRupley(probe_radius=probe_radius)
     sr.compute(struct, level="A")
-    return struct, names
-
+    return struct
 
 def small_molecules(indep):
     e = indep.bond_feats.detach().cpu().clone().numpy()

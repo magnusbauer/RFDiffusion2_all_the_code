@@ -14,6 +14,8 @@ class XMLRPCWrapperProxy(object):
         return wrapped
 
     def __call__(self, *args, **kw):
+        all_args = tuple(map(repr, args))
+        all_args += tuple(f'{k}={repr(v)}' for k,v in kw.items())
         try:
             return self.wrapped(*args, **kw)
         except Exception as e:
@@ -34,6 +36,7 @@ def init(pymol_url='http://localhost:9123'):
     if cmd is None:
         cmd = XMLRPCWrapperProxy(cmd_inner)
     else:
+        print(f'cmd.wrapped = {cmd_inner=}')
         cmd.wrapped = cmd_inner
     
 

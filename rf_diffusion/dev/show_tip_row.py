@@ -9,12 +9,14 @@ cmd = analyze.cmd
 
 class PymolPalette:
 
-    def __init__(self, cmd, cmap_name, start_val, stop_val):
+    def __init__(self, cmd, cmap_name, start_val, stop_val, reverse=False):
         self.cmd = cmd
         self.start_val = start_val
         self.stop_val = stop_val
         self.cmap_name = cmap_name
         self.cmap = plt.get_cmap(cmap_name)
+        if reverse:
+            self.cmap = self.cmap.reversed()
         self.norm = mpl.colors.Normalize(vmin=start_val, vmax=stop_val)
         self.scalarMap = cm.ScalarMappable(norm=self.norm, cmap=self.cmap)
         self.defined = {}
@@ -135,6 +137,7 @@ def get_selectors_2(atom_names_by_res_idx_0):
             '(name C or name N or name CA)',
             OR(motif_resi_selectors),
             # resi_motifs_selector,
+            residue_selectors['residue_motif'],
             lig,
         ])
     selectors = {

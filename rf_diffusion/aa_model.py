@@ -1,3 +1,4 @@
+import logging
 import torch
 import contextlib
 from functools import wraps
@@ -33,6 +34,8 @@ import rf_diffusion.frame_diffusion.data.utils as du
 from rf_diffusion.frame_diffusion.data import all_atom
 
 from typing import List
+
+logger = logging.getLogger(__name__)
 
 AtomizerSpec.__sizeof__(None) # To avoid Ruff unused import error. aa_model.AtomizerSpec used elsewhere
 import rf_diffusion.nucleic_compatibility_utils as nucl_utils
@@ -461,6 +464,13 @@ def get_non_target_hetatm_ids(pdb_lines, ligands):
     return set(non_target_hetatm_ids)
 
 def filter_connect(l, invalid_ids):
+    return filter_connect_by_func(l, lambda d, r: d in invalid_ids or r in invalid_ids)
+
+def filter_connect_by_func(l, is_invalid):
+    '''
+    is_invalid: (donor:int, receptor:int) --> bool
+    l: PDB CONECT line
+    '''
     ids = [int(e.strip()) for e in l[6:].strip().split()]
     implied_bonds = []
     d = ids[0]
@@ -471,7 +481,7 @@ def filter_connect(l, invalid_ids):
     valid_bonds = []
     invalid_bonds = []
     for d, r in implied_bonds:
-        if d in invalid_ids or r in invalid_ids:
+        if is_invalid(d,r):
             invalid_bonds.append((d,r))
         else:
             valid_bonds.append((d,r))
@@ -483,7 +493,7 @@ def filter_connect(l, invalid_ids):
     R = [b[1] for b in valid_bonds]
     new_l = ['CONECT']
     for atom_id in [d] + R:
-        new_l.append(f'{atom_id:>4}')
+        new_l.append(f'{atom_id:>5}')
 
     return ''.join(new_l), invalid_bonds
 

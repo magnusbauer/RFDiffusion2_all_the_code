@@ -88,7 +88,10 @@ def main(conf: HydraConfig) -> list[int]:
             filenames_by_ligand_presence[has_ligand].append(fn)
         return filenames_by_ligand_presence
         
-    filenames_by_ligand_presence = categorize_by_ligand_presence(cache_key=filenames)
+    if conf.ligand_present_for_all:
+        filenames_by_ligand_presence = {True: filenames}
+    else:
+        filenames_by_ligand_presence = categorize_by_ligand_presence(cache_key=filenames)
     job_ids = []
     for use_ligand, filenames in filenames_by_ligand_presence.items():
         conf_for_mpnn_flavor = copy.deepcopy(conf)
@@ -153,8 +156,8 @@ def run_mpnn(conf, filenames):
         # submit to slurm
         job_ids = []
         if conf.slurm.submit:
-            pre = 'ligmpnn_pre' if conf.use_ligand else 'mpnn_pre'
-            job_id, proc = slurm_tools.array_submit(job_fn, p='cpu', gres=None, J=pre, log=conf.slurm.keep_logs, in_proc=conf.slurm.in_proc)
+            job_name = ('ligmpnn_pre' if conf.use_ligand else 'mpnn_pre') + conf.preprocessing_slurm.J
+            job_id, proc = slurm_tools.array_submit(job_fn, p = conf.preprocessing_slurm.p, gres=conf.preprocessing_slurm.gres, log=conf.preprocessing_slurm.keep_logs, J=job_name, in_proc=conf.preprocessing_slurm.in_proc)
             if job_id > 0:
                 job_ids.append(job_id)
             print(f'Submitted array job {job_id} with {int(np.ceil(len(filenames)/conf.chunk))} jobs to preprocess {len(filenames)} designs for MPNN')
@@ -177,7 +180,7 @@ def run_mpnn(conf, filenames):
             f'--ligand_mpnn_use_side_chain_context 1 '\
             f'--zero_indexed 1 '\
             f'--packed_suffix "" '\
-            f'--omit_AA XC ',
+            f'--omit_AA {conf.omit_AA} ',
             f'--repack_everything {1 if conf.pack_motif else 0}',
             '--force_hetatm 1',
             file=job_list_file)

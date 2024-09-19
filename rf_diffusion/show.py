@@ -19,7 +19,6 @@ def get_counter():
 def show_backbone_spheres(selection):
     cmd.hide('everything', selection)
     cmd.alter(f'name CA and {selection}', 'vdw=2.0')
-    cmd.set('sphere_transparency', 0.1)
     cmd.show('spheres', f'name CA and {selection}')
     cmd.show('licorice', f'{selection} and (name CA or name C or name N)')
 

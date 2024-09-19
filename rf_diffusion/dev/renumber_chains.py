@@ -10,7 +10,7 @@ import fire
 from pdbtools import *
 import io
 
-from dev import analyze
+from rf_diffusion.dev import analyze
 
 def main(input_dir, output_dir=None, prefix='', cautious=True):
     '''

@@ -1,3 +1,4 @@
+import logging
 import torch
 import copy
 
@@ -6,6 +7,8 @@ from openfold.utils import rigid_utils as ru
 from rf_diffusion.frame_diffusion.data import se3_diffuser
 from se3_flow_matching.data import interpolant
 from se3_flow_matching.data import so3_utils
+
+logger = logging.getLogger(__name__)
 
 def get(noiser_conf):
     if 'type' not in noiser_conf or noiser_conf.type == 'diffusion':
@@ -137,18 +140,24 @@ class NormalizingFlow(interpolant.Interpolant):
         rots_grad = so3_utils.calc_rot_vf(rotmats_t_1, pred_rotmats_1)
 
         return trans_grad, rots_grad
+
+    def get_scale(self, t, schedule, rate):
+        if schedule == 'linear':
+            return 1 / (1-t)
+        elif schedule == 'exp':
+            return rate
+        elif schedule == 'normed_exp':
+            c = torch.tensor(rate)
+            return c * torch.exp(-c*t) / (torch.exp(-c*t) - torch.exp(-c))
+        raise ValueError(
+                f'Unknown sample schedule {schedule}')
     
     def get_dt(self, t, dt):
-        # Rotations
         t = 1 - t
-        if self._rots_cfg.sample_schedule == 'linear':
-            rot_scaling = 1 / (1 - t)
-        elif self._rots_cfg.sample_schedule == 'exp':
-            rot_scaling = self._rots_cfg.exp_rate
-        
-        trans_scaling = 1 / (1 - t)
-
-        return trans_scaling * dt, rot_scaling * dt
+        return (
+            self.get_scale(t, self._trans_cfg.sample_schedule, self._trans_cfg.exp_rate) * dt,
+            self.get_scale(t, self._rots_cfg.sample_schedule, self._rots_cfg.exp_rate) * dt
+        )
     
     def apply_grads(self, rigid_t, trans_grad, rots_grad, trans_dt, rots_dt):
 

@@ -1,0 +1,3 @@
+{
+    "example_a": "inference.input_pdb=partial_T_example.pdb contigmap.contigs=[\\'62,A63-63,81\\'] contigmap.contig_atoms=\"'{\\'A63\\':\\'OE2,CD\\'}'\" inference.ligand=FMN"
+}

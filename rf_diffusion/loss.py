@@ -8,7 +8,7 @@ from rf_diffusion.util import rigid_from_3_points, get_mu_xt_x0
 from rf2aa.kinematics import get_dih
 from rf2aa.scoring import HbHybType
 from rf_diffusion.diff_util import th_min_angle 
-import nucleic_compatibility_utils as nucl_util
+import rf_diffusion.nucleic_compatibility_utils as nucl_util
 from rf_diffusion.chemical import ChemicalData as ChemData
 
 from typing import TYPE_CHECKING

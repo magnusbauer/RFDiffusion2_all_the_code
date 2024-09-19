@@ -1,0 +1,24 @@
+defaults:
+  - demo
+
+sweep:
+  command_args: >
+    --config-name=aa_v2
+    ()|(
+      inference.conditions.relative_sasa_v2.active=True inference.conditions.relative_sasa_v2.rasa=0.0
+    )
+    inference.seed_offset=0
+    inference.deterministic=True
+  benchmark_json: demo_enzymes.json
+  num_per_condition: 1
+  benchmarks: all
+
+metrics:
+  design_metrics:
+    - backbone
+    - guidepost
+  sequence_metrics:
+    - sidechain_symmetry_resolved
+    - ligand_sasa
+
+outdir: /net/scratch/${oc.env:USER}/se3_diffusion/benchmarks/${now:%Y-%m-%d}_${now:%H-%M-%S}_demo_enzymes_only_design

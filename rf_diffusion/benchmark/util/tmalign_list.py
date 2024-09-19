@@ -42,8 +42,12 @@ try:
             cmd = f'/home/aivan/prog/TMalign {fn1} {fn2} -a'
             proc = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             out,err = proc.communicate()
-
-            m = re.search('TM\-score\= ((0|1)\.\d+).*average',out.decode('ascii'))
+            if err:
+                raise Exception(f'{cmd=} resulted in err: {err}')
+            stdout = out.decode('ascii')
+            m = re.search('TM\-score\= ((0|1)\.\d+).*average',stdout)
+            if not m:
+                raise Exception(f'{stdout=} did not match TM-align regex')
             score = float(m.groups()[0])
 
             output = '%s %s %f' % (os.path.basename(fn1).replace('.pdb',''), \

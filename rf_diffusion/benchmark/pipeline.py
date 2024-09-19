@@ -77,6 +77,13 @@ def main(conf: HydraConfig) -> None:
             ic(script_dir)
             run_pipeline_step(f'{os.path.join(script_dir, "../dev/graft_native_motif.py")} {conf.outdir} {conf.outdir}')
             run_pipeline_step(f'{os.path.join(script_dir, "../dev/renumber_chains.py")} {conf.outdir} {conf.outdir} --cautious=False')
+    
+    do_tm_align = step_in_scope(conf.start_step, conf.stop_step, 'tm_align') and 'tm_align' not in conf.skip_steps
+    if do_tm_align:
+        tm_align_cmd = f"{os.path.join(script_dir, 'pair_tmalign.py')} {conf.outdir} --subdivide prefix"
+        if conf.in_proc:
+            tm_align_cmd += " --in_proc"
+        _ = run_pipeline_step(tm_align_cmd)
 
     if step_in_scope(conf.start_step, conf.stop_step, 'mpnn') and 'mpnn' not in conf.skip_steps:
 
@@ -143,7 +150,7 @@ def main(conf: HydraConfig) -> None:
 
     if step_in_scope(conf.start_step, conf.stop_step, 'compile'):
         print('Compiling metrics...')
-        run_pipeline_step(f'{script_dir}compile_metrics.py {conf.outdir} --cached_trb_df')
+        run_pipeline_step(f'{script_dir}compile_metrics.py {conf.outdir} --cached_trb_df --metrics_chunk {conf.metrics.chunk}')
 
     print('Done.')
 
@@ -164,8 +171,8 @@ def run_pipeline_step(cmd):
     '''Runs a script in shell, prints its output, quits if there's an error,
     and returns list of slurm ids that appear in its output'''
 
+    print(f'RUNNING: {cmd}')
     if IN_PROC:
-        print(f'RUNNING: {cmd}')
         proc = subprocess.run(cmd, shell=True)
         out = ''
         if proc.returncode != 0:
@@ -210,7 +217,7 @@ def wait_for_jobs(job_ids, interval=60):
         return 
 
 def step_in_scope(start_step, stop_step, current_step):
-    all_steps = ['sweep', 'foldseek', 'graft', 'mpnn', 'thread_mpnn', 'score', 'metrics', 'compile', 'end']
+    all_steps = ['sweep', 'foldseek', 'graft', 'tm_align', 'mpnn', 'thread_mpnn', 'score', 'metrics', 'compile', 'end']
     steps_to_run = all_steps[all_steps.index(start_step):all_steps.index(stop_step)+1]
     do_run = current_step in steps_to_run
     print(f'{"Running" if do_run else "Skipping"} step: {current_step}')

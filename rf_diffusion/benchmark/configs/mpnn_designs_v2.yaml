@@ -7,6 +7,7 @@ v2: True
 regen_jobs: True
 unsafe_skip_parsing: False
 pack_motif: False
+omit_AA: XC
 # outdir: ${.datadir}
 outdirs: 
   # - ${..datadir}
@@ -14,10 +15,20 @@ outdirs:
   - ${..datadir}/mpnn/packed
   - ${..datadir}/ligmpnn/packed
 
+ligand_present_for_all: False
+
 slurm:
   J: mpnn
   p: gpu-bf
   gres: gpu:1
+  submit: True
+  in_proc: False
+  keep_logs: True
+
+preprocessing_slurm:
+  J: mpnn_prepro
+  p: cpu
+  gres: None
   submit: True
   in_proc: False
   keep_logs: True

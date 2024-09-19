@@ -1,3 +1,5 @@
+import logging
+
 from rf_diffusion import aa_model
 from rf_diffusion import data_loader
 from rf_diffusion import conditioning
@@ -13,6 +15,9 @@ import torch.utils.data
 from rf_diffusion.inference import utils as iu
 
 from typing import Tuple
+
+logger = logging.getLogger(__name__)
+
 
 class PDBLoaderDataset(torch.utils.data.Dataset):
     """

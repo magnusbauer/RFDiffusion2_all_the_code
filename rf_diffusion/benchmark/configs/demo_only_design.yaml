@@ -1,7 +1,6 @@
 defaults:
   - demo
 
-sweep:
-  stop_step: sweep
+stop_step: sweep
 
 outdir: /net/scratch/${oc.env:USER}/se3_diffusion/benchmarks/${now:%Y-%m-%d}_${now:%H-%M-%S}_demo_only_design

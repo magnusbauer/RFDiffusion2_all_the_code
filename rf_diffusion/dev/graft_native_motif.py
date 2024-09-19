@@ -2,18 +2,21 @@
 
 import sys
 import os
+from icecream import ic
+
 sys.path.append('/home/ahern/tools/pdb-tools/')
 sys.path.append('/home/ahern/projects/pagan/swiss_army_knife/')
 import protein as sak
-from dev import analyze
+from rf_diffusion.dev import analyze
 import shutil
 import glob
 from icecream import ic
 from tqdm import tqdm
 import fire
 from pdbtools import *
-import aa_model
+from rf_diffusion import aa_model
 import torch
+import assertpy
 
 def get_input_aligned_pdb(row, out_path=None):
     input_pdb = analyze.get_input_pdb(row)
@@ -23,10 +26,21 @@ def get_input_aligned_pdb(row, out_path=None):
     if len(self_idx):
         input_p = sak.parse_pdb(input_pdb)
         trb = analyze.get_trb(row)
-        other_ch = trb['con_ref_pdb_idx'][0][0]
+        other_chains = [ch for ch, _ in trb['con_ref_pdb_idx']]
         self_ch = 'A'
-        des_p = des_p.aligned_to_chain_idxs(input_p, self_ch, self_idx, other_ch, other_idx)
-        des_p.chains[self_ch].xyz[self_idx, 3:] = input_p[other_ch].xyz[other_idx, 3:]
+        other_ch_idx = tuple(zip(other_chains, other_idx))
+
+        other_ch_idx = []
+        for abs_i in other_idx:
+            other_ch_idx.append(input_p.get_relative_index_from_absolute(abs_i))
+        # Defensive programming
+        assertpy.assert_that(
+            [ch for ch, _ in other_ch_idx]
+        ).is_equal_to(other_chains)
+
+        des_p = des_p.aligned_to_chain_idx_tuples(input_p, self_ch, self_idx, other_ch_idx)
+        # We omit the oxygen here as it should have already been placed.
+        des_p.chains[self_ch].xyz[self_idx, 4:] = input_p.get_xyz_by_ch_idx(other_ch_idx)[:, 4:]
 
     aligned_path = des_p.write_pdb(out_path)
     return aligned_path

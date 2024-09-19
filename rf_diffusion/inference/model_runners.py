@@ -1,3 +1,4 @@
+import logging
 import copy
 import torch
 import numpy as np
@@ -15,7 +16,6 @@ import rf_diffusion.aa_model as aa_model
 from rf_diffusion.inference import utils as iu
 from rf_diffusion.potentials.manager import PotentialManager
 from rf_diffusion.inference import symmetry
-import logging
 from hydra.core.hydra_config import HydraConfig
 from rf_diffusion.frame_diffusion.data import all_atom
 import rf_diffusion.frame_diffusion.data.utils as du
@@ -35,6 +35,7 @@ import sys
 # import data_loader 
 # from rf_diffusion.model_input_logger import pickle_function_call
 
+logger = logging.getLogger(__name__)
 
 class Sampler:
 
@@ -370,7 +371,7 @@ class FlowMatching(Sampler):
 
         model_out = self.run_model(t, indep_in, rfo, is_diffused, features_cache)
         rigids_pred = model_out['rigids_raw'][:,-1]
-        rigids_t = du.rigid_frames_from_atom_14(indep_t.xyz)
+        rigids_t = du.rigid_frames_from_atom_14(indep_t.xyz.to(self.device))
         trans_grad, rots_grad = self.get_grads_rigid(rigids_t, rigids_pred, t, model_out)
 
         px0 = model_out['atom37'][0, -1]
@@ -401,11 +402,53 @@ class FlowMatching(Sampler):
         ic('sample using FM model')
         trans_grad, rots_grad, px0, model_out = self.get_grads(t, indep, indep, rfo, self.is_diffused)
         trans_dt, rots_dt = self.diffuser.get_dt(t/self._conf.diffuser.T, 1/self._conf.diffuser.T)
-        rigids_t = du.rigid_frames_from_atom_14(indep.xyz)[None,...]
+        rigids_t = du.rigid_frames_from_atom_14(indep.xyz.to(self.device))[None,...]
         rigids_t = self.diffuser.apply_grads(rigids_t, trans_grad, rots_grad, trans_dt, rots_dt)
         x_t_1 = get_x_t_1(rigids_t, indep.xyz, self.is_diffused)
     
         return px0, x_t_1, get_seq_one_hot(indep.seq), model_out['rfo'], {'traj':{}}
+
+
+class DifferentialAtomizedDecoder(FlowMatching):
+
+    def __init__(self, conf):
+        super().__init__(conf)
+        atomized_diffuser_conf = copy.deepcopy(self._conf.diffuser)
+        OmegaConf.set_struct(self._conf.diffuser, False)
+        OmegaConf.set_struct(self._conf.atomized_diffuser_overrides, False)
+        atomized_diffuser_conf = OmegaConf.merge(
+            self._conf.diffuser, self._conf.atomized_diffuser_overrides)
+        self.atomized_diffuser = noisers.get(atomized_diffuser_conf)
+
+    def sample_step(self, t, indep, rfo, extra):
+        
+        # res_atom_by_i = atomize.get_res_atom_name_by_atomized_idx(atomizer)
+        atomized_res_idx_from_res = self.atomizer.get_atom_idx_by_res()
+        atomized_indices = []
+        for v in atomized_res_idx_from_res.values():
+            atomized_indices.extend(v)
+        
+        trans_grad, rots_grad, px0, model_out = self.get_grads(t, indep, indep, rfo, self.is_diffused)
+        trans_dt, rots_dt = self.diffuser.get_dt(t/self._conf.diffuser.T, 1/self._conf.diffuser.T)
+
+        ic(
+            trans_dt,
+            rots_dt,
+        )
+        trans_dt = torch.full((indep.length(), 3), trans_dt, device=self.device)
+        rots_dt = torch.full((indep.length(), 3), rots_dt, device=self.device)
+
+        atomized_trans_dt, atomized_rots_dt = self.atomized_diffuser.get_dt(t/self._conf.diffuser.T, 1/self._conf.diffuser.T)
+        trans_dt[atomized_indices] = atomized_trans_dt
+        rots_dt[atomized_indices] = atomized_rots_dt
+
+        rigids_t = du.rigid_frames_from_atom_14(indep.xyz.to(self.device))[None,...]
+        rigids_t = self.diffuser.apply_grads(rigids_t, trans_grad, rots_grad, trans_dt, rots_dt)
+        x_t_1 = get_x_t_1(rigids_t, indep.xyz, self.is_diffused)
+    
+        return px0, x_t_1, get_seq_one_hot(indep.seq), model_out['rfo'], {'traj':{}}
+
+    
 
 def sampler_selector(conf: DictConfig):
     ic(conf.inference.model_runner)
@@ -421,6 +464,8 @@ def sampler_selector(conf: DictConfig):
         sampler = NRBStyleSelfCond_debug(conf)
     elif conf.inference.model_runner == 'ClassifierFreeGuidance':
         sampler = ClassifierFreeGuidance(conf)
+    elif conf.inference.model_runner == 'DifferentialAtomizedDecoder':
+        sampler = DifferentialAtomizedDecoder(conf)
     elif conf.inference.model_runner in globals():
         sampler = globals()[conf.inference.model_runner](conf)
     else:

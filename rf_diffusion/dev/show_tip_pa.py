@@ -219,9 +219,10 @@ def show(row, structs = {'X0'}, af2=False, des=True, des_color=None, hetatm_colo
     for label in pymol_objects:
         is_traj = label in structs
         logger.debug(f'{is_rf_diff(row)=}')
+        print(f'{is_rf_diff(row)=}')
         if is_rf_diff(row):
             trb = analyze.get_trb(row)
-            atom_names_by_res_idx = {resi: ['ALL'] for ch, resi in trb['con_hal_pdb_idx']}
+            atom_names_by_res_idx = {resi: 'RES' for ch, resi in trb['con_hal_pdb_idx']}
         else:
             atom_names_by_res_idx = get_motif_spec(row, traj=is_traj)
         selectors = show_tip_row.get_selectors_2(atom_names_by_res_idx)
@@ -239,13 +240,13 @@ def show(row, structs = {'X0'}, af2=False, des=True, des_color=None, hetatm_colo
         if gp_selector in sels:
             cmd.unbond(sels[gp_selector], show_tip_row.NOT(sels[gp_selector]))
         show_tip_row.color_selectors(sels, verbose=False, des_color=des_color, hetatm_color=hetatm_color)
-    
+        cmd.show('spheres', f'name CA and {pymol_name}')
+
+    cmd.alter('name CA', 'vdw=2.0')
+    cmd.set('sphere_transparency', 0.0)
     if unbond_motif:
         cmd.unbond('chain A', 'chain B')
 
-    cmd.alter('name CA', 'vdw=2.0')
-    cmd.set('sphere_transparency', 0.1)
-    cmd.show('spheres', 'name CA')
     if af2:
         cmd.color('white', pymol_objects['af2'])
 
@@ -255,7 +256,7 @@ def show(row, structs = {'X0'}, af2=False, des=True, des_color=None, hetatm_colo
     
     for k, e in entities.items():
         is_traj = k in structs
-        if row['inference.contig_as_guidepost'] and is_traj:
+        if row.get('inference.contig_as_guidepost') and is_traj:
             gp = OR([
                 e['residue_gp_motif'],
                 e['sidechains_diffused'],
@@ -274,6 +275,9 @@ class PymolObj:
 
     def __getitem__(self, k):
         return f'({self.name} and {self.selectors[k]})'
+    
+    def inverse(self, k):
+        return f'{self.name} and not ({self[k]})'
     
     def self_selectors(self):
         o = {}

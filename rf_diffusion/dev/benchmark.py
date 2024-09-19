@@ -1,4 +1,5 @@
 import glob
+import itertools
 import math
 import os
 from rf_diffusion.dev import analyze
@@ -673,3 +674,12 @@ def get_sweep_df(df, sweeps):
     print(f"{sweep_df.value_counts('sweep')=}")
     return sweep_df
 
+def grouped_palette(
+        hue_groups, # [(a,b,c), (d,e)]
+        palettes=itertools.cycle(['flare', 'mako', 'vlag'])):
+    hues_flat = []
+    palette_flat = []
+    for hues, sub_pallete in zip(hue_groups, palettes):
+        hues_flat.extend(hues)
+        palette_flat.extend(sns.color_palette(sub_pallete, n_colors=len(hues)))
+    return hues_flat, palette_flat

@@ -303,7 +303,7 @@ def prune_jobs_list(jobs_path):
         def has_output(want_out):
             want_out = want_out[:-4]
             for suffix in ['', '-atomized-bb-False', '-atomized-bb-True']:
-                possible_path = want_out + suffix + '.pdb'
+                possible_path = want_out + suffix + '.trb'
                 if os.path.exists(possible_path):
                     return True
             return False

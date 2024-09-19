@@ -64,7 +64,7 @@ def idealize_pose(xyz, seq, steps=50, lr=1e-1):
         per_residue_rmsd (B, L)
     '''
     # Shape check
-    assert xyz.shape[-2:] == (36, 3)
+    assert xyz.shape[-2:] == (36, 3), f'{xyz.shape=}'
     assert xyz.shape[:2] == seq.shape
 
     # Since empty tensors as input to torch.einsum is not handled by some versions of torch, see https://github.com/pytorch/pytorch/issues/111757

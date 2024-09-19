@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env -S /bin/sh -c '"$(dirname "$0")/../exec/rf_diffusion_aa_shebang.sh" "$0" "$@"'
 #
 # Compiles metrics from scoring runs into a single dataframe CSV
 #
@@ -37,6 +37,7 @@ def main():
     parser.add_argument('datadir',type=str,help='Folder of designs')
     parser.add_argument('--outcsv',type=str,default='compiled_metrics.csv',help='Output filename')
     parser.add_argument('--cached_trb_df', action=argparse.BooleanOptionalAction)
+    parser.add_argument('--metrics_chunk',type=int,default=1,help='Ignore output csvs that do not end in csv.i where i % metrics_chunk == 0')
     args = parser.parse_args()
     print('finding trbs')
     filenames = glob.glob(args.datadir+'/*.trb')
@@ -143,6 +144,7 @@ def main():
             df_accum = df_accum.merge(chemnet, on='name', how='outer')
 
         # rosetta ligand
+        print('loading rosetta ligand scores')
         df_s = [pd.read_csv(fn,index_col=None) for fn in glob.glob(mpnn_dir+'/rosettalig_scores.csv.*')]
         tmp = pd.concat(df_s) if len(df_s)>0 else pd.DataFrame(dict(name=[]))
         if len(tmp)>0:
@@ -155,6 +157,7 @@ def main():
         ]:
             if os.path.exists(seq_dir):
                 break
+        print('loading mpnn scores')
         mpnn_scores = load_mpnn_scores(seq_dir)
         df_accum = df_accum.merge(mpnn_scores, on='name', how='outer')
             
@@ -166,6 +169,7 @@ def main():
         return df_out
 
     # MPNN metrics
+    print('loading mpnn metrics')
     for flavor in ['mpnn', 'ligmpnn']:
         mpnn_dir = f'{args.datadir}/{flavor}/'
         if os.path.exists(mpnn_dir):
@@ -185,18 +189,29 @@ def main():
         df = df_base
 
     # add seq/struc clusters (assumed to be the same for mpnn designs as non-mpnn)
+    print('loading backbone metrics')
     backbone_metric_dirs = [os.path.join(d, 'csv.*') for d in glob.glob(args.datadir+'/metrics/per_design/*/')]
     for path in [
         args.datadir+'/tm_clusters.csv',
         args.datadir+'/blast_clusters.csv',
     ] + backbone_metric_dirs:
-        df_s = [ pd.read_csv(fn,index_col=0) for fn in glob.glob(path) ]
+        print('backbone metrics: loading from {path}')
+
+        metrics_csvs = glob.glob(path)
+        if args.metrics_chunk:
+            new_metrics_csvs = []
+            for p in metrics_csvs:
+                i = 0
+                if not p.endswith('csv'):
+                    i = int(p.split('.')[-1])
+                if i % args.metrics_chunk == 0:
+                    new_metrics_csvs.append(p)
+            print(f'Using {args.metrics_chunk=}, pared down {len(metrics_csvs)} to {len(new_metrics_csvs)}')
+            metrics_csvs = new_metrics_csvs
+
+        df_s = [ pd.read_csv(fn,index_col=0) for fn in tqdm(metrics_csvs) ]
         tmp = pd.concat(df_s) if len(df_s)>0 else pd.DataFrame(dict(name=[]))
-        ic(
-            path,
-            tmp.shape,
-            tmp['name'][:3],
-        )
+        print('backbone metrics: merging from {path}')
         df = df.merge(tmp, on='name', how='outer')
         design_id_counts = sorted_value_counts(tmp, ['name'])
         assert (design_id_counts['count'] == 1).all(), f'{path} has duplicate metrics for some designs, re-run pipeline with metrics.invalidate_cache=1'
@@ -204,11 +219,21 @@ def main():
     # add seq/struc clusters (assumed to be the same for mpnn designs as non-mpnn)
     sequence_metric_dirs = [os.path.join(d, 'csv.*') for d in glob.glob(args.datadir+'/metrics/per_sequence/*/')]
     for path in sequence_metric_dirs:
-        ic('sequence metrics path', path, len(glob.glob(path)))
+        print('sequence metrics: loading from {path}')
         if len(glob.glob(path)) == 0:
             continue
 
-        df_s = [ pd.read_csv(fn,index_col=0) for fn in glob.glob(path) ]
+        metrics_csvs = glob.glob(path)
+        if args.metrics_chunk:
+            new_metrics_csvs = []
+            for p in metrics_csvs:
+                i = int(p.split('.')[-1])
+                if i % args.metrics_chunk == 0:
+                    new_metrics_csvs.append(p)
+            print(f'Using {args.metrics_chunk=}, pared down {len(metrics_csvs)} to {len(new_metrics_csvs)}')
+            metrics_csvs = new_metrics_csvs
+
+        df_s = [ pd.read_csv(fn,index_col=0) for fn in tqdm(metrics_csvs) ]
         tmp = pd.concat(df_s) if len(df_s)>0 else pd.DataFrame(dict(name=[]))
         if 'catalytic_constraints.mpnn_packed.name' in tmp.columns:
             prefix = 'catalytic_constraints.mpnn_packed.'
@@ -222,6 +247,7 @@ def main():
         merge_keys = ['name']
         if 'mpnn_index' in tmp.columns:
             merge_keys.append('mpnn_index')
+        print('sequence metrics: merging from {path}')
         df = df.merge(tmp, on=merge_keys, how='left', suffixes=(False, False))
 
     df.to_csv(args.datadir+'/'+args.outcsv, index=None)
@@ -232,7 +258,7 @@ def load_mpnn_scores(folder):
     filenames = glob.glob(os.path.join(folder, '*.fa'))
 
     records = []
-    for fn in filenames:
+    for fn in tqdm(filenames):
         scores = []
         with open(fn) as f:
             lines = f.readlines()

@@ -17,3 +17,5 @@ slurm:
   submit: True
   in_proc: False
   keep_logs: True
+
+subset_metrics: []

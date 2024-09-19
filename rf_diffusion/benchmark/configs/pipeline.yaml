@@ -39,6 +39,9 @@ foldseek:
 mpnn:
   datadir: ${outdir}
   use_ligand: ${use_ligand}
+  slurm_preprocessing:
+    in_proc: ${in_proc}
+    submit: ${slurm_submit}
   slurm:
     in_proc: ${in_proc}
     submit: ${slurm_submit}

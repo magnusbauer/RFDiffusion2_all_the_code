@@ -119,18 +119,18 @@ def sample(sampler):
 
     log = logging.getLogger(__name__)
     des_i_start = sampler._conf.inference.design_startnum
-    des_i_end = sampler._conf.inference.design_startnum + sampler.inf_conf.num_designs
+    des_i_end = des_i_start + sampler.inf_conf.num_designs
     for i_des in range(sampler._conf.inference.design_startnum, sampler._conf.inference.design_startnum + sampler.inf_conf.num_designs):
         if sampler._conf.inference.deterministic:
-            seed_all(i_des)
+            seed_all(i_des + sampler._conf.inference.seed_offset)
 
         start_time = time.time()
         out_prefix = f'{sampler.inf_conf.output_prefix}_{i_des}'
         sampler.output_prefix = out_prefix
         log.info(f'Making design {out_prefix}')
-        existing_outputs = glob.glob(out_prefix + '.pdb') + glob.glob(out_prefix + '-*.pdb')
+        existing_outputs = glob.glob(out_prefix + '.trb') + glob.glob(out_prefix + '-*.trb')
         if sampler.inf_conf.cautious and len(existing_outputs):
-            log.info(f'(cautious mode) Skipping this design because {out_prefix}.pdb already exists.')
+            log.info(f'(cautious mode) Skipping this design because {out_prefix}.trb already exists.')
             continue
         print(f'making design {i_des} of {des_i_start}:{des_i_end}', flush=True)
         sampler_out = sample_one(sampler)
@@ -401,29 +401,30 @@ def save_outputs(sampler, out_prefix, indep, contig_map, atomizer, t_step_input,
         match_idx_by_gp_idx = {}
         for k, v in gp_alone_to_diffused_idx0.items():
             match_idx_by_gp_idx[idx_by_gp_sequential_idx[k]] = v
-        gp_idx, match_idx = zip(*match_idx_by_gp_idx.items())
-        gp_idx = np.array(gp_idx)
-        match_idx = np.array(match_idx)
+        if len(gp_alone_to_diffused_idx0) > 0:
+            gp_idx, match_idx = zip(*match_idx_by_gp_idx.items())
+            gp_idx = np.array(gp_idx)
+            match_idx = np.array(match_idx)
 
-        gp_contig_mappings = gp.get_infered_mappings(
-            gp_to_contig_idx0,
-            match_idx_by_gp_idx,
-            contig_map.get_mappings()
-        )
+            gp_contig_mappings = gp.get_infered_mappings(
+                gp_to_contig_idx0,
+                match_idx_by_gp_idx,
+                contig_map.get_mappings()
+            )
 
-        if sampler._conf.inference.guidepost_xyz_as_design and len(match_idx_by_gp_idx):
-            seq_design[match_idx] = seq_design[gp_idx]
-            if sampler._conf.inference.guidepost_xyz_as_design_bb:
-                xyz_design[match_idx] = xyz_design[gp_idx]
-            else:
-                xyz_design[match_idx, 4:] = xyz_design[gp_idx, 4:]
-                
-        xyz_design = xyz_design[~is_gp]
-        seq_design = seq_design[~is_gp]
-        is_diffused[match_idx] = is_diffused[gp_idx]
-        is_diffused = is_diffused[~is_gp]
-        is_atomized[match_idx] = is_atomized[gp_idx]
-        is_atomized = is_atomized[~is_gp]
+            if sampler._conf.inference.guidepost_xyz_as_design and len(match_idx_by_gp_idx):
+                seq_design[match_idx] = seq_design[gp_idx]
+                if sampler._conf.inference.guidepost_xyz_as_design_bb:
+                    xyz_design[match_idx] = xyz_design[gp_idx]
+                else:
+                    xyz_design[match_idx, 4:] = xyz_design[gp_idx, 4:]
+                    
+            xyz_design = xyz_design[~is_gp]
+            seq_design = seq_design[~is_gp]
+            is_diffused[match_idx] = is_diffused[gp_idx]
+            is_diffused = is_diffused[~is_gp]
+            is_atomized[match_idx] = is_atomized[gp_idx]
+            is_atomized = is_atomized[~is_gp]
 
     # Save outputs
     out_head, out_tail = os.path.split(out_prefix)

@@ -1,0 +1,3 @@
+{
+    "retroaldolase": "inference.input_pdb=ra_5an7_no_cov_ORI_cm1.pdb contigmap.contigs=[\\'10-100,A1051-1051,10-100,A1083-1083,10-100,A1110-1110,10-100,A1180-1180,10-100\\'] contigmap.contig_atoms=\"'{\\'A1051\\':\\'OH,CZ\\',\\'A1083\\':\\'NZ,CE\\',\\'A1110\\':\\'OD1,CG,ND2\\',\\'A1180\\':\\'OH,CZ\\'}'\" inference.ligand=LLK inference.contig_as_guidepost=True contigmap.length=150-150"
+}

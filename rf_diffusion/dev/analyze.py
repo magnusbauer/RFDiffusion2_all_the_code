@@ -59,7 +59,9 @@ def get_source(rundir):
     return os.path.basename(rundir.removesuffix('/').removesuffix('out'))
 
 def read_metrics(df_path, add_contig_rmsd=True):
+    print(f'START: reading metrics from {df_path}')
     df = pd.read_csv(df_path)
+    print(f'END  : reading metrics from {df_path}')
     df['method'] = 'placeholder_method'
     df['rundir'] = os.path.split(df_path)[0]
     df['run'] = df['name'].apply(lambda x: x.split('_')[0])
@@ -288,7 +290,11 @@ def get_mpnn_pdb(row):
             return pdb
     raise Exception(f'could not find mpnn_packed pdb at any of {possible_paths}')
 
-def get_unidealized_pdb(row):
+def get_unidealized_pdb(row, return_design_if_backbone_only=False):
+    if is_rfd(row):
+        assert return_design_if_backbone_only, 'row is from a backbone-only model, so get_unidealized_pdb must be called with return_design_if_backbone_only=True'
+        return os.path.join(row['rundir'], f'{row["name"]}.pdb')
+
     return os.path.join(row['rundir'], 'unidealized', f'{row["name"]}.pdb')
 
 def get_af2(row):
@@ -861,6 +867,13 @@ def get_min_dist_to_het(pdb, chain_i):
     return torch.min(dgram), het_names[hetidx]
     print(f'{torch.min(dgram)} to {het_names[hetidx]}')
 
+def get_xyz_nonhet(pdb, chain_i):
+    feats = utils.process_target(pdb, parse_hetatom=True, center=False)
+    xyz_motif_idx = pdb_to_xyz_idx(pdb, chain_i)
+    motif = feats['xyz_27'][xyz_motif_idx]
+    motif_atms = motif[feats['mask_27'][xyz_motif_idx]]
+    return motif_atms
+
 def get_dist_to_het(pdb, chain_i, ligands=None):
     '''
     Returns [M, L]
@@ -1323,7 +1336,7 @@ def set_remote_cmd(remote_ip):
     return cmd
 
 def clear():
-    cmd.reinitialize('everything')
+    cmd.do('reinitialize everything')
     cmd.delete('all')
     cmd.do(f'cd {REPO_DIR}/pymol_config')
     cmd.do('@./pymolrc')
@@ -1517,6 +1530,14 @@ def get_method(r):
 def get_condition(row, key='name'):
     return re.match('.*cond\d+', row[key])[0]
 
+
+def is_rfd(row):
+    """
+    Returns True if the row comes from a vanilla RFDiffusion model.
+
+    Uses heuristics.
+    """
+    return row.get('inference.ckpt_override_path', '') == '/home/ahern/projects/rf_diffusion/models/theo_pdb/BFF_4.pt'
 
 def parse_rfd_aa_df(df, drop_missing_af2=True):
     try:

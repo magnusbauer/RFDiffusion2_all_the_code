@@ -11,7 +11,7 @@ def slurm_submit(cmd, p='cpu', c=1, mem=2, gres=None, J=None, wait_for=[], hold_
     job_name = J if J else os.environ["USER"]+'_auto_submit'
     log_file = f'%A_%a_{J}.log' if log else '/dev/null'
     # The RAM on this gpu is busted, raises ECC errors on torch.load
-    exclude_gpu = "--exclude=gpu135,gpu111" if gres and gres.startswith('gpu') else ""
+    exclude_gpu = "--exclude=gpu135,gpu111,gpu51,gpu53" if gres and gres.startswith('gpu') else ""
     cmd_sbatch = f'sbatch --wrap "{cmd}" -p {p} -c {c} --mem {mem}g '\
         f'-J {job_name} '\
         f'{f"--gres {gres}" if gres else ""} '\
@@ -32,8 +32,12 @@ def line_count(path):
     with open(path) as fh:
         return len(fh.readlines())
 
-def array_submit(job_list_file, p='gpu', gres='gpu:rtx2080:1', wait_for=None, log=False, in_proc=False, **kwargs):
+def array_submit(job_list_file, p='gpu', gres='gpu:rtx2080:1', wait_for=None, log=False, in_proc=False, already_ran=None, **kwargs):
     print(f'array_submit: in_proc: {in_proc}')
+
+    if already_ran is not None:
+        job_list_file = prune_jobs(job_list_file, already_ran)
+
     job_count = line_count(job_list_file)
     ic(job_count)
     if job_count == 0:
@@ -65,3 +69,31 @@ def array_submit(job_list_file, p='gpu', gres='gpu:rtx2080:1', wait_for=None, lo
         log = log,
         **kwargs
     )
+
+def prune_jobs(
+    job_list_file,
+    already_ran):
+    '''
+    Inputs:
+        job_list_file: path to file containing newline delimited jobs
+        already_ran: dictionary mapping each line in job_list_file
+            to a function which returns True if the expected outputs already exist.
+    Returns:
+        Path to pruned job list.
+    '''
+    job_list_file_pruned = job_list_file + '.pruned'
+    with open(job_list_file) as f:
+        jobs = f.readlines()
+
+    pruned_jobs = []
+    for job in jobs:
+        job = job.strip()
+        print(f'Checking {job=}')
+        if not already_ran[job]():
+            pruned_jobs.append(job)
+    with open(job_list_file_pruned, 'w') as f:
+        f.writelines(j + '\n' for j in pruned_jobs)
+    
+    print(f"Pruned job_list_file: {job_list_file} from {len(jobs)} to {len(pruned_jobs)} jobs")
+    return job_list_file_pruned
+

@@ -34,6 +34,13 @@ from rf_diffusion import loss
 import rf_diffusion.atomization_primitives
 from rf2aa.util import rigid_from_3_points
 
+from Bio.PDB import PDBParser
+from Bio.PDB.SASA import ShrakeRupley
+from Bio import PDB
+
+pdb_parser = PDBParser(PERMISSIVE=0, QUIET=1)
+default_probe_radius=1.4
+
 def main(pdb_names_file, outcsv=None, metric='default'):
     ic(__name__)
     thismodule = sys.modules[__name__]
@@ -44,13 +51,14 @@ def main(pdb_names_file, outcsv=None, metric='default'):
     
     df = get_metrics(pdbs, metric_f)
 
-    print(f'Outputting computed metrics to {outcsv}')
+    print(f'Outputting computed metrics dataframe with shape {df.shape} to {outcsv}')
     os.makedirs(os.path.dirname(outcsv), exist_ok=True)
     df.to_csv(outcsv)
 
 def get_metrics(pdbs, metric):
     records = []
     for pdb in tqdm(pdbs):
+        print(f'Calculating metrics for: {pdb}')
         record = metric(pdb)
         records.append(record)
 
@@ -403,7 +411,7 @@ def guidepost(pdb):
     trb = analyze.get_trb(row)
     config = trb['config']
 
-    if config['inference']['contig_as_guidepost']:
+    if config['inference'].get('contig_as_guidepost', False):
 
         bb_i = np.array(trb['con_hal_idx0'])
         gp_i = np.array(list(trb['motif'].keys()))
@@ -414,13 +422,54 @@ def guidepost(pdb):
         gp_motif = deatomized_xyz[gp_i]
         bb_motif = deatomized_xyz[bb_i]
         ca_dist = np.linalg.norm(gp_motif[:, 1] - bb_motif[:, 1], axis=-1)
+        bb_dist = np.linalg.norm(gp_motif[:, :3].reshape((-1, 3)) - bb_motif[:, :3].reshape((-1, 3)), axis=-1)
     else:
         ca_dist = np.zeros((1,), dtype=float)
+        bb_dist = np.zeros((1,), dtype=float)
     o['ca_dist.max'] = np.max(ca_dist)
     o['ca_dist.min'] = np.min(ca_dist)
     o['ca_dist.mean'] = np.mean(ca_dist)
+    o['ca_dist.rmsd'] = np.mean(ca_dist**2)**0.5
+    o['bb_dist.max'] = np.max(bb_dist)
+    o['bb_dist.min'] = np.min(bb_dist)
+    o['bb_dist.mean'] = np.mean(bb_dist)
+    o['bb_dist.rmsd'] = np.mean(bb_dist**2)**0.5
     o = {f'guidepost.{k}':v for k,v in o.items()}
     o['name'] = row['name']
+    return o
+
+def guidepost_af2_rmsd(pdb):
+    row = analyze.make_row_from_traj(pdb[:-4])
+    o = {}
+    trb = analyze.get_trb(row)
+    config = trb['config']
+
+    af2_bb_rmsd = -1.0
+    if config['inference']['contig_as_guidepost']:
+
+        bb_i = np.array(trb['con_hal_idx0'])
+        gp_i = np.array(list(trb['motif'].keys()))
+
+        af2_pdb = analyze.get_af2(row)
+        af2_indep = aa_model.make_indep(af2_pdb, ligand=None)
+        af2_xyz = af2_indep.xyz
+
+        deatomized_xyz, is_het = get_last_px0(row)
+        het_idx = is_het.nonzero()[0]
+        gp_i = gp_i[~np.isin(gp_i, het_idx)]
+        gp_motif = deatomized_xyz[gp_i]
+        af2_motif = af2_xyz[bb_i]
+        af2_bb_flat = af2_motif[:, :3].reshape((-1, 3))
+        gp_bb_flat = gp_motif[:, :3].reshape((-1, 3))
+        gp_bb_flat = torch.tensor(gp_bb_flat, dtype=torch.float32)
+
+        T = get_aligner(af2_bb_flat, gp_bb_flat)
+        af2_bb_flat_aligned = T(af2_bb_flat)
+        af2_bb_rmsd = rmsd(af2_bb_flat_aligned, gp_bb_flat).item()
+    
+    o['guidepost_af2_rmsd'] = af2_bb_rmsd
+    o['name'] = row['name']
+    o['mpnn_index'] = row['mpnn_index']
     return o
 
 def junction_bond_len(xyz, is_motif, idx):
@@ -529,7 +578,7 @@ def sidechain(pdb, resolve_symmetry=False):
     out['name'] = row['name']
     out['mpnn_index'] = row['mpnn_index']
     ref_pdb = analyze.get_input_pdb(row)
-    unidealized_pdb = analyze.get_unidealized_pdb(row)
+    unidealized_pdb = analyze.get_unidealized_pdb(row, return_design_if_backbone_only=True)
     des_pdb = analyze.get_design_pdb(row)
     packed_pdb = analyze.get_mpnn_pdb(row)
     af2_pdb = analyze.get_af2(row)
@@ -550,6 +599,7 @@ def sidechain(pdb, resolve_symmetry=False):
             warnings.warn(f'{name} pdb: {pdb} for design {des_pdb} does not exist')
             return {}
         # f['name'] = utils.process_target(pdb, parse_hetatom=True, center=False)
+        print(f'parsing {name=} {pdb=}')
         indeps[name] = aa_model.make_indep(pdb, ligand=None if name == 'af2' else ligand)
         if name == 'af2' and resolve_symmetry:
             indep_target = indeps['packed']
@@ -625,23 +675,32 @@ def sidechain(pdb, resolve_symmetry=False):
         residue_subset[ref_residue_id] = motif_atoms
         heavy_motif_atoms_by_subset[f'residue_{ref_residue_id}'] = residue_subset
 
-    for subset_name, subset_heavy_motif_atoms in heavy_motif_atoms_by_subset.items():
-        for source, target in (
-            ('des', 'unideal'),
-            ('packed', 'unideal'),
-            ('af2', 'unideal'),
-            ('af2', 'packed')
-        ):
-            get_motif_allatom = partial(get_motif, ref=False, contig_atoms=subset_heavy_motif_atoms)
-            get_motif_backbone = lambda x: get_backbone(get_motif_allatom(x))
-            motif_source_backbone = xyz(source, get_motif_backbone)
-            motif_target_backbone = xyz(target, get_motif_backbone)
-            motif_source_allatom = xyz(source, get_motif_allatom)
-            motif_target_allatom = xyz(target, get_motif_allatom)
-            T = get_aligner(motif_source_backbone, motif_target_backbone)
-            motif_source_allatom_backbone_aligned = T(motif_source_allatom)
-            out[f'backbone_aligned_allatom_rmsd_{source}_{target}_{subset_name}'] = rmsd(motif_source_allatom_backbone_aligned, motif_target_allatom).item()
-    
+    for align_to_whole_motif in [True, False]:
+        for subset_name, subset_heavy_motif_atoms in heavy_motif_atoms_by_subset.items():
+            for source, target in (
+                ('des', 'unideal'),
+                ('packed', 'unideal'),
+                ('af2', 'unideal'),
+                ('af2', 'packed'),
+                ('af2', 'ref')
+            ):
+                def get_motif_coords(tag):
+                    get_motif_allatom = partial(get_motif, ref=tag=='ref', contig_atoms=subset_heavy_motif_atoms)
+                    get_motif_backbone = lambda x: get_backbone(get_motif_allatom(x))
+                    if align_to_whole_motif:
+                        get_motif_allatom_constellation = partial(get_motif, ref=tag=='ref', contig_atoms=heavy_motif_atoms)
+                        get_motif_backbone = lambda x: get_backbone(get_motif_allatom_constellation(x))
+                    motif_backbone_xyz = xyz(tag, get_motif_backbone)
+                    motif_allatom_xyz = xyz(tag, get_motif_allatom)
+                    return motif_backbone_xyz, motif_allatom_xyz
+
+                motif_source_backbone, motif_source_allatom = get_motif_coords(source)
+                motif_target_backbone, motif_target_allatom = get_motif_coords(target)
+                T = get_aligner(motif_source_backbone, motif_target_backbone)
+                motif_source_allatom_backbone_aligned = T(motif_source_allatom)
+                whole_motif_str = 'constellation_' if align_to_whole_motif else ''
+                out[f'{whole_motif_str}backbone_aligned_allatom_rmsd_{source}_{target}_{subset_name}'] = rmsd(motif_source_allatom_backbone_aligned, motif_target_allatom).item()
+
     return out
 
 
@@ -660,8 +719,23 @@ def get_alternate_xyz(xyz, seq):
     return xyz[torch.arange(xyz.size(0)).unsqueeze(1), alternate_xyz_indexes[seq]]
 
 def get_coords_in_backbone_frame(xyz):
+    # A bug in MPNN has resulted in occasional frames that are linear, this correction prevents resulting
+    # numerical instabilities.
+    xyz = xyz[:]
+    xyz[..., 0, 0] += 1e-6
+
     Rs, Ts = rigid_from_3_points(xyz[...,0,:],xyz[...,1,:],xyz[...,2,:], is_na=False)
     xyz = xyz - Ts[...,None,:]
+    for i,R in enumerate(Rs):
+        try:
+            torch.inverse(R)
+        except Exception as e:
+            ic(
+                i,
+                R,
+                xyz[i, :3]
+            )
+            raise e
     xyz = torch.einsum('...ij,...kj->...ki', torch.inverse(Rs), xyz)
     return xyz
 
@@ -706,6 +780,49 @@ def resolve_symmetry_indeps(source_indep, target_indep, debug_motif=None):
     alt_matchs_ref = torch.isclose(coords_source_alt, coords_source, equal_nan=True).all(dim=-1).all(dim=-1)
     assert (has_alt == ~alt_matchs_ref).all()
     return symmetry_resolved_true_crds
+
+def ligand_sasa(pdb):
+    out = {}
+    row = analyze.make_row_from_traj(pdb[:-4])
+    out['name'] = row['name']
+    out['mpnn_index'] = row['mpnn_index']
+    out['ligand_sasa'] = get_ligand_sasa(row)
+    return out
+
+def retroaldolase_sasa(pdb):
+    out = {}
+    row = analyze.make_row_from_traj(pdb[:-4])
+    out['name'] = row['name']
+    out['mpnn_index'] = row['mpnn_index']
+    out['ligand_sasa'] = get_ligand_sasa(row)
+    out['lysine_sasa'] = get_motif_residue_sasa(row, motif_res=(('A', 1083)))
+    return out
+
+def get_ligand_sasa(row):
+    mpnn_pdb = analyze.get_mpnn_pdb(row)
+    with open(mpnn_pdb) as pdb_file:
+        struct = pdb_parser.get_structure('none', pdb_file)
+        sr = ShrakeRupley(probe_radius=default_probe_radius)
+        sr.compute(struct, level="R")
+    resList = PDB.Selection.unfold_entities(struct, target_level='R')
+    het_res  = [r for r in PDB.Selection.unfold_entities(resList, target_level='R') if not PDB.is_aa(r)]
+    return sum([r.sasa for r in het_res])
+
+def get_motif_residue_sasa(row, motif_res=(('A', 1083))):
+    trb = analyze.get_trb(row)
+
+    motif_i = trb['con_ref_pdb_idx'].index(motif_res)
+    chain, pdb_i = trb['con_hal_pdb_idx'][motif_i]
+
+    mpnn_pdb = analyze.get_mpnn_pdb(row)
+    with open(mpnn_pdb) as pdb_file:
+        struct = pdb_parser.get_structure('none', pdb_file)
+        sr = ShrakeRupley(probe_radius=default_probe_radius)
+        sr.compute(struct, level="R")
+    resList = PDB.Selection.unfold_entities(struct, target_level='R')
+    res_by_chain_i = {(r.full_id[2], r.full_id[3][1]):r for r in resList}
+    res = res_by_chain_i[(chain, pdb_i)]
+    return res.sasa
 
 # For debugging, can be run like:
 # python -m fire /home/ahern/projects/aa/rf_diffusion_flow/rf_diffusion/benchmark/per_sequence_metrics.py single --metric guidepost --pdb=/net/scratch/ahern/se3_diffusion/benchmarks/2023-12-18_20-48-06_cc_sh_schedule_sweep/run_siteD_troh1_cond1_0-atomized-bb-False.pdb
