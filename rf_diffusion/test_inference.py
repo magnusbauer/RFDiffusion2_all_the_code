@@ -104,7 +104,7 @@ def fake_load_model(self):
     self.diffuser = noisers.get(self._conf.diffuser)
     self.model = RFScore(self._conf.rf.model, self.diffuser, self.device)       
 
-def get_rfi(conf):
+def get_rfi(conf, spy_on_call=0):
     run_inference.make_deterministic()    
 
     # Mock the forward pass of the model and the model loader
@@ -114,8 +114,10 @@ def get_rfi(conf):
 
     def side_effect(self, *args, **kwargs):
         ic("mock forward", type(self), side_effect.call_count)
+        if side_effect.call_count == spy_on_call:
+            raise StopForwardCall()
         side_effect.call_count += 1
-        raise StopForwardCall()
+        return fake_rosettafold(*args, **kwargs)
     side_effect.call_count = 0
 
     with fake_loader:
@@ -124,16 +126,48 @@ def get_rfi(conf):
             try:
                 run_inference.main(conf)
             except StopForwardCall:
-                pass
+                mapped_calls = []
+                for args, kwargs in mock_forward.call_args_list:
+                    args = (None,) + args[1:]
+                    argument_binding = func_sig.bind(*args, **kwargs)
+                    argument_map = argument_binding.arguments
+                    argument_map = tensor_util.cpu(argument_map)
+                    mapped_calls.append(argument_map)
+                return mapped_calls
+            else:
+                raise Exception('LegacyRoseTTAFoldModule was called {side_effect.call_count} times, but we are attempting to spy on call {spy_on_call}')
 
-            mapped_calls = []
-            for args, kwargs in mock_forward.call_args_list:
-                args = (None,) + args[1:]
-                argument_binding = func_sig.bind(*args, **kwargs)
-                argument_map = argument_binding.arguments
-                argument_map = tensor_util.cpu(argument_map)
-                mapped_calls.append(argument_map)
-    return mapped_calls
+def fake_rosettafold(*args, **kwargs):
+    '''
+    Mock for LegacyRoseTTAFoldModule.forward
+    '''
+    if 'xyz' in kwargs:
+        xyz = kwargs['xyz']
+    else:
+        xyz = args[4] # [1, L, 36 3]
+    L = xyz.shape[1]
+    px0_xyz = xyz[None,:,:,:3].repeat(40, 1, 1, 1, 1)
+    px0_xyz = torch.normal(0, 1, px0_xyz.shape) + px0_xyz
+    logits = (
+        torch.normal(0, 1, (1, 61, L, L)),
+        torch.normal(0, 1, (1, 61, L, L)),
+        torch.normal(0, 1, (1, 37, L, L)),
+        torch.normal(0, 1, (1, 19, L, L)),
+    )
+    logits_aa = torch.normal(0, 1, (1, 80, L))
+    logits_pae = torch.normal(0, 1, (1, 64, L, L))
+    logits_pde = torch.normal(0, 1, (1, 64, L, L))
+    p_bind = torch.normal(0, 1, (1, 1))
+    alpha_s = torch.normal(0, 1, (40, 1, L, 20, 2))
+    xyz_allatom = torch.normal(0, 1, xyz.shape) + xyz[:]
+    lddt = torch.normal(0, 1, (1, 50, L))
+    xyz_allatom.requires_grad = True
+    ca_y = xyz[None,:,:,1:2, 1]
+    quat = torch.normal(0, 1, (1, 40, L, 4)) + ca_y.repeat(1, 40, 1, 4)
+    quat = quat / quat.norm(dim=-1)[...,None]
+    rfo = aa_model.RFO(logits, logits_aa, logits_pae, logits_pde, p_bind, px0_xyz, alpha_s, xyz_allatom, lddt, None, None, None, quat)
+    rfo = tensor_util.to_ordered_dict(rfo)
+    return rfo.values()
 
 def NA_adaptor(pdb_contents):
     # For NA, can be removed if goldens are rewritten    
