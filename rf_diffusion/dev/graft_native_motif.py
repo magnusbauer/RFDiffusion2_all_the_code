@@ -10,7 +10,6 @@ import protein as sak
 from rf_diffusion.dev import analyze
 import shutil
 import glob
-from icecream import ic
 from tqdm import tqdm
 import fire
 from pdbtools import *
