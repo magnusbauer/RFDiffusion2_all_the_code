@@ -32,6 +32,17 @@ class PDBLoaderDataset(torch.utils.data.Dataset):
         self.conf = conf
 
     def __getitem__(self, idx):
+        '''
+        We wrap getitem_inner here to prevent an internal IndexError from causing
+        a StopIteration which would hide the internal error when iterating over
+        iter(PDBLoaderDataset).
+        '''
+        try:
+            return self.getitem_inner(idx)
+        except IndexError as e:
+            raise Exception(f"Failed to access PDBLoaderDataset[{idx}]") from e
+
+    def getitem_inner(self, idx):
         conf = self.conf
         pdb_fp = conf.inference.input_pdb
 

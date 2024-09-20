@@ -21,4 +21,4 @@ metrics:
     - sidechain_symmetry_resolved
     - ligand_sasa
 
-outdir: /net/scratch/${oc.env:USER}/se3_diffusion/benchmarks/${now:%Y-%m-%d}_${now:%H-%M-%S}_demo_enzymes_only_design
+outdir: /net/scratch/${oc.env:USER}/se3_diffusion/benchmarks/${now:%Y-%m-%d}_${now:%H-%M-%S}_demo_enzymes

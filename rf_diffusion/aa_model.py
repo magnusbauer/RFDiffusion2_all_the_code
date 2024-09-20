@@ -843,6 +843,7 @@ def make_indep(pdb, ligand='', return_metadata=False):
             'covale_bonds': covale_bonds,
             'ligand_names': np.array(ligand_name_arr,  dtype='<U3'),
             'ligand_atom_names': np.array(ligand_atom_names_arr,  dtype='<U4'),
+            'ligand_info': target_feats['info_het'],
         }
         return indep, metadata
     return indep
@@ -959,8 +960,22 @@ class Model:
         # this line looks wrong but it's because inpaint_str is defined backwards. inpaint_str[i] == False means diffuse this residue's structure
         is_res_str_shown_prot = torch.from_numpy(contig_map.inpaint_str)
         is_res_str_shown_sm = torch.ones(n_sm, dtype=bool)
+        assert not (self.conf.inference.flexible_ligand and len(self.conf.inference.partially_fixed_ligand)), 'inference.flexible_ligand and inference.partially_fixed_ligand and mutually exclusive'
         if self.conf.inference.flexible_ligand:
             is_res_str_shown_sm[:] = False
+        if len(self.conf.inference.partially_fixed_ligand) > 0:
+            is_res_str_shown_sm = torch.zeros(n_sm).bool()
+            info_het = metadata['ligand_info']
+            within_sm_index_by_name_atom = {}
+            for i, d in enumerate(info_het):
+                atom_id = d['atom_id'].strip()
+                ligand_name = d['name'].strip()
+                within_sm_index_by_name_atom[(ligand_name, atom_id)] = i
+            for ligand_name, atom_ids in self.conf.inference.partially_fixed_ligand.items():
+                for atom_id in atom_ids:
+                    i = within_sm_index_by_name_atom[(ligand_name, atom_id)]
+                    is_res_str_shown_sm[i] = True
+
         is_res_str_shown = torch.cat((is_res_str_shown_prot, is_res_str_shown_sm))
         is_atom_str_shown = contig_map.atomize_indices2atomname
         inpaint_seq = torch.from_numpy(contig_map.inpaint_seq)

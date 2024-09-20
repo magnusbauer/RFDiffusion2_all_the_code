@@ -63,6 +63,7 @@ inference:
     # We require this to be set, as unless a user is careful this causes undefined behavior.
     sidechain_partial_diffusion: False
   flexible_ligand: False
+  partially_fixed_ligand: {} # fixes these atoms, diffuses the rest. Example usage: {'ABC': ['C01', 'N02'], 'DEF': ['C0','C1','C2']}
   center_motif: True
   classifier_free_guidance_scale: 1
   idealize_sidechain_outputs: False
