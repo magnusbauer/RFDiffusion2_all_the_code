@@ -298,7 +298,7 @@ def get_sweeps(data):
 
     sweeps = {k:v for k,v in uniques.items() if len(v) > 1}
 
-    for k in ['name', 'seed', 'inference.output_prefix', 'pdb_path']:
+    for k in ['name', 'seed', 'inference.output_prefix', 'pdb_path', 'transforms.configs.AddConditionalInputs.p_is_guidepost_example']:
         _ = sweeps.pop(k, None)
 
     return sweeps

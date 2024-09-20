@@ -69,6 +69,7 @@ inference:
   idealize_sidechain_outputs: False
   recenter_xt: False
   update_seq_t: False
+  differential_atomized_decoder_include_sm: True
 
 contigmap:
   contigs: ['20', 'A3-23', '30']

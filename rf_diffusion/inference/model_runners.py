@@ -187,9 +187,9 @@ class Sampler:
         """
         # Create and consume dataset 
         dataset = rf_diffusion.inference.data_loader.InferenceDataset(self._conf, self.diffuser)
-        indep_uncond, self.indep_orig, self.indep_cond, metadata, self.is_diffused, atomizer, contig_map, t_step_input, self.conditions_dict = next(iter(dataset))
+        indep_uncond, self.indep_orig, self.indep_cond, metadata, self.is_diffused, self.atomizer, contig_map, t_step_input, self.conditions_dict = next(iter(dataset))
         indep = self.indep_cond.clone()
-        return indep, contig_map, atomizer, t_step_input
+        return indep, contig_map, self.atomizer, t_step_input
 
     def symmetrise_prev_pred(self, px0, seq_in, alpha):
         """
@@ -420,7 +420,7 @@ class DifferentialAtomizedDecoder(FlowMatching):
             self._conf.diffuser, self._conf.atomized_diffuser_overrides)
         self.atomized_diffuser = noisers.get(atomized_diffuser_conf)
 
-    def sample_step(self, t, indep, rfo, extra):
+    def sample_step(self, t, indep, rfo, extra, features_cache):
         
         # res_atom_by_i = atomize.get_res_atom_name_by_atomized_idx(atomizer)
         atomized_res_idx_from_res = self.atomizer.get_atom_idx_by_res()
@@ -428,7 +428,10 @@ class DifferentialAtomizedDecoder(FlowMatching):
         for v in atomized_res_idx_from_res.values():
             atomized_indices.extend(v)
         
-        trans_grad, rots_grad, px0, model_out = self.get_grads(t, indep, indep, rfo, self.is_diffused)
+        if self._conf.inference.differential_atomized_decoder_include_sm:
+            atomized_indices = indep.is_sm
+        
+        trans_grad, rots_grad, px0, model_out = self.get_grads(t, indep, indep, rfo, self.is_diffused, features_cache)
         trans_dt, rots_dt = self.diffuser.get_dt(t/self._conf.diffuser.T, 1/self._conf.diffuser.T)
 
         ic(
