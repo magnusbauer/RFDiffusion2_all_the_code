@@ -1,0 +1,3 @@
+{
+    "peptide_serine_hydrolase": "inference.input_pdb=peptide_serine_hydrolase_motif_clean_ori-E_5_N.pdb contigmap.contigs=[\\'10-100,A1-1,10-100,B2-2,10-100,C3-3,D4-4,E5-5,10-100\\'] contigmap.contig_atoms=\"'{\\'A1\\':\\'NE2,CD2,CG,ND1,CE1\\',\\'B2\\':\\'OD1,OD2,CG\\',\\'C3\\':\\'N,CA,C\\',\\'D4\\':\\'N,CA,C\\',\\'E5\\':\\'N,OG,CB,CA\\'}'\" inference.ligand=TAR ++inference.partially_fixed_ligand='{TAR:[C242,O243,N249]}' contigmap.length=120-160"
+}

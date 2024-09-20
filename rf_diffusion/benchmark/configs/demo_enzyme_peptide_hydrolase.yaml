@@ -1,0 +1,18 @@
+defaults:
+  - demo_enzymes
+
+sweep:
+  command_args: >
+    --config-name=aa_v2
+    inference.seed_offset=10
+    inference.deterministic=True
+    inference.contig_as_guidepost=False|True
+    diffuser.rots.exp_rate=(5|10)
+    diffuser.T=100
+  num_per_condition: 8
+  benchmark_json: demo_wip.json
+  benchmarks: peptide_serine_hydrolase
+  # benchmarks: enzyme_tip_atoms_position_agnostic_partial_ligand,peptide_serine_hydrolase
+
+stop_step: sweep
+outdir: /net/scratch/${oc.env:USER}/se3_diffusion/benchmarks/${now:%Y-%m-%d}_${now:%H-%M-%S}_demo_v2_peptide_hydrolase_debug
