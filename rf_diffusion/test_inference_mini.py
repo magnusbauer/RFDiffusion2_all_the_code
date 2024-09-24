@@ -15,15 +15,32 @@ import pytest
 
 import hydra
 from icecream import ic
+import torch
 
 import test_utils
 import run_inference
 from functools import partial
 from rf2aa import tensor_util
 from rf_diffusion import inference
+from rf_diffusion import constants
 from rf_diffusion.test_inference import get_rfi, infer, NA_adaptor, construct_conf
 
 ic.configureOutput(includeContext=True)
+torch.set_num_threads(1)
+
+# This is the precision we can expect for input preparation between machines.
+float32_precision = 1e-6
+
+# This is the factor F which acts as a rough upper bound of:
+# |MockDenoise(A) - MockDenoise(B)|_1 <= F|A-B|_1
+# Where MockDenoise is the true denoising process with a mocked rf2aa
+# and |X|_1 is the 1-norm of X.
+mocked_denoise_difference_amplification = 1e2
+
+# This is the factor F which acts as a rough upper bound of:
+# |Denoise(A) - Denoise(B)|_1 <= F|A-B|_1
+# Where |X|_1 is the 1-norm of X.
+rf2aa_difference_amplification = 1e5
 
 REWRITE = False
 class HydraTest(unittest.TestCase):
@@ -36,6 +53,30 @@ class HydraTest(unittest.TestCase):
 
     def tearDown(self):
         hydra.core.global_hydra.GlobalHydra.instance().clear()
+
+torch.use_deterministic_algorithms(True)
+class TestCPUStability(unittest.TestCase):
+    '''
+    This test has no assertions but serves as a demonstration of how
+    float32 floating point arithmetic is not reproducible across CPU hardware.
+    '''
+    def test_sqrt_stable32(self):
+        X = torch.tensor(2.3207054138183594, dtype=torch.float32)
+        Y = X.sqrt()
+        ic(
+            X.dtype,
+            X.item(),
+            Y.item(),
+        )
+
+    def test_sqrt_stable64(self):
+        X = torch.tensor(2.3207054138183594, dtype=torch.float64)
+        Y = X.sqrt()
+        ic(
+            X.dtype,
+            X.item(),
+            Y.item(),
+        )
 
 class TestInferenceOutputPDB(HydraTest):
     @pytest.mark.generates_golden
@@ -54,7 +95,7 @@ class TestInferenceOutputPDB(HydraTest):
         ])
         pdb_contents = inference.utils.parse_pdb(pdb)
         pdb_contents = NA_adaptor(pdb_contents)
-        cmp = partial(tensor_util.cmp, atol=0, rtol=0)
+        cmp = partial(tensor_util.cmp, atol=float32_precision*rf2aa_difference_amplification, rtol=0)
         test_utils.assert_matches_golden(self, test_name, pdb_contents, rewrite=REWRITE, custom_comparator=cmp)
 
     @pytest.mark.generates_golden
@@ -73,7 +114,7 @@ class TestInferenceOutputPDB(HydraTest):
         ])
         pdb_contents = inference.utils.parse_pdb(pdb)
         pdb_contents = NA_adaptor(pdb_contents)
-        cmp = partial(tensor_util.cmp, atol=0, rtol=0)
+        cmp = partial(tensor_util.cmp, atol=float32_precision*rf2aa_difference_amplification, rtol=0)
         test_utils.assert_matches_golden(self, test_name, pdb_contents, rewrite=REWRITE, custom_comparator=cmp)
 
     @pytest.mark.generates_golden
@@ -92,7 +133,7 @@ class TestInferenceOutputPDB(HydraTest):
         ])
         pdb_contents = inference.utils.parse_pdb(pdb)
         pdb_contents = NA_adaptor(pdb_contents)
-        cmp = partial(tensor_util.cmp, atol=0, rtol=0)
+        cmp = partial(tensor_util.cmp, atol=0.2, rtol=0)
         test_utils.assert_matches_golden(self, test_name, pdb_contents, rewrite=REWRITE, custom_comparator=cmp)
 
 
@@ -109,7 +150,7 @@ class TestInferenceNetworkInput(HydraTest):
             '++inference.zero_weights=True',            
         ])
         mapped_calls = get_rfi(conf, 0)
-        cmp = partial(tensor_util.cmp, atol=0, rtol=0)
+        cmp = partial(tensor_util.cmp, atol=float32_precision, rtol=0)
         test_utils.assert_matches_golden(self, test_name, mapped_calls, rewrite=REWRITE, custom_comparator=cmp)
 
     @pytest.mark.generates_golden
@@ -123,7 +164,7 @@ class TestInferenceNetworkInput(HydraTest):
             '++inference.zero_weights=True',            
         ])
         mapped_calls = get_rfi(conf, 1)
-        cmp = partial(tensor_util.cmp, atol=0, rtol=0)
+        cmp = partial(tensor_util.cmp, atol=float32_precision*mocked_denoise_difference_amplification, rtol=0)
         test_utils.assert_matches_golden(self, test_name, mapped_calls, rewrite=REWRITE, custom_comparator=cmp)
 
 
@@ -138,7 +179,7 @@ class TestInferenceNetworkInput(HydraTest):
             '++inference.zero_weights=True',            
         ])
         mapped_calls = get_rfi(conf, 2)
-        cmp = partial(tensor_util.cmp, atol=0, rtol=0)
+        cmp = partial(tensor_util.cmp, atol=float32_precision*mocked_denoise_difference_amplification, rtol=0)
         test_utils.assert_matches_golden(self, test_name, mapped_calls, rewrite=REWRITE, custom_comparator=cmp)
 
 

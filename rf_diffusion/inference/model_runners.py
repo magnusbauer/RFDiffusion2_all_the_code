@@ -454,7 +454,6 @@ class DifferentialAtomizedDecoder(FlowMatching):
     
 
 def sampler_selector(conf: DictConfig):
-    ic(conf.inference.model_runner)
     if conf.inference.model_runner == 'default':
         sampler = Sampler(conf)
     elif conf.inference.model_runner == 'NRBStyleSelfCond':

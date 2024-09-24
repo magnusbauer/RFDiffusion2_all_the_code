@@ -1174,7 +1174,6 @@ class TestInference(unittest.TestCase):
         fake_forward = mock.patch.object(LegacyRoseTTAFoldModule, "forward", autospec=True)
 
         def side_effect(self, *args, **kwargs):
-            ic("mock forward", type(self))
             kwargs['use_checkpoint'] = True # force the use_checkpoint path (typically used in training)
             return fake_forward.temp_original(self, *args, **kwargs)
 
@@ -1198,7 +1197,6 @@ class TestInference(unittest.TestCase):
         fake_forward = mock.patch.object(LegacyRoseTTAFoldModule, "forward", autospec=True)
 
         def side_effect(self, *args, **kwargs):
-            ic("mock forward", type(self), side_effect.call_count)
             side_effect.call_count += 1
             return fake_forward.temp_original(self, *args, **kwargs)
         side_effect.call_count = 0
