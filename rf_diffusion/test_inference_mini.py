@@ -22,7 +22,6 @@ import run_inference
 from functools import partial
 from rf2aa import tensor_util
 from rf_diffusion import inference
-from rf_diffusion import constants
 from rf_diffusion.test_inference import get_rfi, infer, NA_adaptor, construct_conf
 
 ic.configureOutput(includeContext=True)
