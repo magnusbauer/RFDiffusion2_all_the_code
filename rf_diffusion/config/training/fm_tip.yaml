@@ -4,6 +4,19 @@ defaults:
 rundir: /net/scratch/ahern/se3_diffusion/training/fm_tip
 wandb_prefix: 'fm_tip'
 
+upstream_training_transforms:
+  names:
+    - GenerateMasks
+    - PopMask
+  configs:
+    GenerateMasks: {}
+    PopMask: {}
+
+transforms:
+  names:
+    - AddConditionalInputs
+    - Center
+
 dataloader:
   P_IS_GUIDEPOST_EXAMPLE: 0.5
   DATAPKL_AA: aa_dataset_256.pkl
@@ -43,6 +56,7 @@ metrics:
 
 diffuser:
   t_distribution: uniform_t001
+  preserve_motif_sidechains: false
 
 benchmark:
   pipeline_yaml: 'training_benchmarks.yaml'

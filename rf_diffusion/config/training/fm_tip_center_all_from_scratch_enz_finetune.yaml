@@ -1,0 +1,13 @@
+defaults:
+  - fm_tip_center_all_from_scratch_enz
+
+rundir: /net/scratch/ahern/se3_diffusion/training/center_all_from_scratch_enz_finetune
+wandb_prefix: 'center_all_from_scratch_enz_finetune'
+
+pseudobatch: 72
+
+ckpt_load_path: /net/scratch/ahern/se3_diffusion/training/center_all_from_scratch/center_all_from_scratch2024-06-13_05:37:10.807724/rank_0/models/RFD_63.pt
+zero_weights: False
+resume_scheduler: True
+wandb_project: "fancy-pants "
+wandb_dir: "/scratch/${oc.env:USER}"

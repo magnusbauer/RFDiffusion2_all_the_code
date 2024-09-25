@@ -1,0 +1,8 @@
+defaults:
+  - fm_tip_center_all
+
+ckpt_load_path: null
+zero_weights: True
+
+rundir: /net/scratch/ahern/se3_diffusion/training/center_all_from_scratch
+wandb_prefix: 'center_all_from_scratch'

@@ -1,0 +1,28 @@
+defaults:
+  - fm_tip_center_all_from_scratch
+
+rundir: /net/scratch/ahern/se3_diffusion/training/center_all_from_scratch_enz
+wandb_prefix: 'center_all_from_scratch_enz'
+
+prob_self_cond: 0
+sm_loss_weight: 10.0
+inference:
+  str_self_cond: False
+
+
+dataloader:
+  P_IS_GUIDEPOST_EXAMPLE: 0.8
+  DIFF_MASK_PROBS:
+    get_unconditional_diffusion_mask_free_ligand: 0.1
+    get_unconditional_diffusion_mask: 0.0
+    get_unconditional_diffusion_mask_partial_ligand: 0.0
+    get_diffusion_mask_islands_free_ligand: 0.0
+    get_diffusion_mask_islands: 0.0
+    get_diffusion_mask_islands_partial_ligand: 0.0
+    get_tip_mask: 0.7
+    get_tip_mask_unconditional_free_ligand: 0.2
+    get_tip_mask_unconditional_partial_ligand: 0.0
+    get_closest_tip_atoms: 0.0
+    get_closest_tip_atoms_partial_ligand: 0.0
+    get_atomized_islands: 0.0
+    get_entirely_atomized: 0.0
