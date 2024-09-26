@@ -25,6 +25,10 @@ import rf_diffusion.ppi as ppi
 from typing import Literal, Callable
 
 
+import itertools
+import pdb 
+import rf_diffusion.util as rfd_util
+
 import rf_diffusion.nucleic_compatibility_utils as nucl_utils
 
 logger = logging.getLogger(__name__)
@@ -78,9 +82,348 @@ def make_covale_compatible(get_mask):
         return dict(is_motif=is_motif, is_atom_motif=is_atom_motif, **ret)
     return out_get_mask
 
+
+def make_3template_compatible(get_mask, p_show_motif_seq=0.65):
+    """
+    Make three template mask generators compatible with the required 
+    return signature. Also sets some motif residues to have their sequence information
+    removed.
+
+    Parameters: 
+        get_mask (function): mask generator function to be wrapped
+
+        p_mask_motif_seq (float): probability of masking the sequence information of motif residues
+
+    Returns:
+        function: wrapped mask generator function
+
+    """
+
+    @wraps(get_mask)
+    def out_get_mask(indep, atom_mask, *args, **kwargs):
+        ret = get_mask(indep, atom_mask, *args, **kwargs)
+
+        (is_motif_2d, is_motif), is_atom_motif = ret 
+
+        # for CA rfdiffusion, is_masked_seq always starts as ~is_res_str_shown (i.e. ~is_motif)
+        # Then, we mask some of the residues that are motif
+        is_masked_seq   = ~is_motif 
+        orig_dtype      = is_masked_seq.dtype 
+        P               = 1 - p_show_motif_seq
+        is_masked_seq   = rfd_util.mask_sequence_chunks(is_masked_seq.numpy().astype(bool), P)
+        is_masked_seq   = torch.from_numpy(is_masked_seq).to(dtype=orig_dtype)
+
+        # ensure all ligand atoms are not masked 
+        is_masked_seq[indep.is_sm] = False
+        is_res_seq_shown = ~is_masked_seq
+
+        # spoof an empty 'can_be_gp' 
+        can_be_gp = torch.zeros(indep.length()).bool()
+
+        # need to also return 'pop' tensor - remove non-existent ligand atoms
+        #                                    or residues w/ missing N/C
+        pop = rf2aa.util.get_prot_sm_mask(atom_mask, indep.seq)
+
+        return {'is_res_seq_shown'  : is_res_seq_shown, 
+                'is_motif'          : is_motif,
+                'is_motif_2d'       : is_motif_2d,
+                'is_atom_motif'     : is_atom_motif,
+                'can_be_gp'         : can_be_gp,
+                'pop'               : pop}
+    
+    return out_get_mask
+        
+
 #####################################
 # Misc functions for mask generation
 #####################################
+
+def get_unconditional_3template(indep, atom_mask, low_prop, high_prop, broken_prop, **kwargs):
+    """
+    Unconditional protein generation task. Nothing is motif. 
+    """
+    L = indep.length()
+    is_motif = torch.zeros(L).bool()
+    is_motif_2d = is_motif[:, None] * is_motif[None, :]
+
+    return (is_motif_2d, is_motif), None
+
+
+def get_multi_triple_contact_3template(indep,
+                                        atom_mask,
+                                        low_prop,
+                                        high_prop,
+                                        broken_prop,
+                                        max_triples=2,
+                                        **kwargs):
+    """
+    Gets masks for multiple triple contacts in an example. 
+    """
+    assert indep.is_sm.sum() == 0, 'small molecules not yet supported'
+    mask2d, is_motif = _get_multi_triple_contact_3template(indep.xyz, low_prop, high_prop, max_triples=max_triples)
+
+    # spoofing a return of two items: "diffusion_mask, is_atom_motif"
+    return (mask2d, is_motif), None
+
+
+def _get_multi_triple_contact_3template(xyz,
+                                         low_prop,
+                                         high_prop,
+                                         max_triples=2,
+                                         xyz_less_than=6,
+                                         seq_dist_greater_than=10,
+                                         len_low=1,
+                                         len_high=7,
+                                         force_triples=None):
+    """
+    Gets 2d mask + 1d is motif for multiple triple contacts. 
+    """
+
+    contacts = get_contacts(xyz, xyz_less_than, seq_dist_greater_than)
+
+    if not contacts.any():
+        return _get_diffusion_mask_chunked(xyz, low_prop, high_prop, max_motif_chunks=6)
+
+    is_motif_stack = []
+    mask_2d_stack = []
+
+    if force_triples is None:
+        n_triples = random.randint(1, max_triples)
+    else:
+        n_triples = force_triples
+
+    # n_triples = max_triples
+    for i in range(n_triples):
+        indices = find_third_contact(contacts)
+
+        if (indices is None):
+            if i == 0:
+                # we found no triples at all, so just return a simple diffusion mask
+                return _get_diffusion_mask_chunked(xyz, low_prop, high_prop, max_motif_chunks=6)
+            else:
+                # we found i triples but couldn't find i+1 --> regenerate and return the i triples
+                return _get_multi_triple_contact_3template(xyz, low_prop, high_prop, force_triples=i)
+
+        L = xyz.shape[0]
+        # 1d tensor describing which residues are motif
+        tmp_is_motif = sample_around_contact(L, indices, len_low, len_high)
+        # now get the 2d tensor describing which residues can see each other
+        # For these, all motif chunks can see each other
+        tmp_mask_2d = tmp_is_motif[:, None] * tmp_is_motif[None, :]
+
+        is_motif_stack.append(tmp_is_motif)
+        mask_2d_stack.append(tmp_mask_2d)
+
+    is_motif = torch.stack(is_motif_stack, dim=0).bool()
+    mask_2d = torch.stack(mask_2d_stack, dim=0).bool()
+
+    is_motif = torch.any(is_motif, dim=0)
+    mask_2d = torch.any(mask_2d, dim=0)
+
+    return mask_2d, is_motif
+
+
+
+def sample_gaps(n, M):
+    """
+    Samples n chunks that sum to M. 
+
+    Adapts below solution for getting close to uniform distibution of numbers: 
+    https://stackoverflow.com/questions/2640053/getting-n-random-numbers-whose-sum-is-m/2640079#2640079
+    """
+
+    nums = np.random.dirichlet(np.ones(n))*M
+
+    # now round to nearest integer, conserving the total sum
+    rounded = []
+    round_up = True
+    for i in range(len(nums)):
+        if round_up:
+            rounded.append(np.ceil(nums[i]))
+            round_up = False
+        else:
+            rounded.append(np.floor(nums[i]))
+            round_up = True
+
+    # ensure all > 0
+    for i in range(len(rounded)):
+        if rounded[i] < 1:
+            rounded[i] = 1
+
+
+    while sum(rounded) > M:
+        ix = np.random.randint(0, len(rounded))
+        if rounded[ix] < 2: # must be at least 1
+            continue
+        rounded[ix] -= 1
+
+    while sum(rounded) != M:
+        ix = np.random.randint(0, len(rounded))
+        rounded[ix] += 1
+
+    assert all([x >= 1 for x in rounded])
+    return [int(x) for x in rounded]
+
+def get_chunked_mask(xyz, low_prop, high_prop, max_motif_chunks=8):
+    """
+    Produces a mask of discontiguous protein chunks that are revealed. 
+    Also produces a tensor indicating which chunks are given relative geom. info
+
+    Parameters:
+    -----------
+
+    xyz (torch.tensor): (L, 3) tensor of protein coordinates
+
+    low_prop (float): lower bound on proportion of protein that is masked
+
+    high_prop (float): upper bound on proportion of protein that is masked
+
+    """
+    L = xyz.shape[0]
+
+    # decide number of chunks 
+    n_motif_chunks = random.randint(2, max_motif_chunks)
+    # decide what proportion of the protein is masked 
+
+    # prop cannot result in n_unmasked < n_motif_chunks --> clamp high prop
+    max_prop = 1-(n_motif_chunks+1)/L       # add +1 to be safe 
+    high_prop = min(high_prop, max_prop)
+
+    prop = random.uniform(low_prop, high_prop)
+    n_masked   = int(L * prop)
+    n_unmasked = L - n_masked
+
+    # decide the length of each chunk by randomly sampling 
+    # positions to cut a line with n_chunks - 1 cuts
+    cuts    = sorted(random.sample(range(1, n_unmasked), n_motif_chunks - 1))
+    lengths = [cuts[0]] + [cuts[i] - cuts[i-1] for i in range(1, len(cuts))] + [n_unmasked - cuts[-1]]
+    # decide which chunks are given relative geom. info
+    # walk over all unique pairs 
+    motif_pairs = list(itertools.combinations(range(n_motif_chunks), 2))
+    # 33% chance that a pair can see each other
+    pairs_can_see = [random.choice([True, False, False]) for _ in range(len(motif_pairs))]
+
+    # decide location of chunks within the protein
+    # (1) decide order 
+    random.shuffle(lengths)
+
+    # (2) split available space remaining into other chunks between 
+    #     the chunks that have been assigned a length
+    ngap_low  = len(lengths) - 1
+    ngap_high = ngap_low + 1
+    ngap = random.randint(ngap_low, ngap_high)
+
+    if ngap == (ngap_low): # there's no cterm/nterm gaps 
+        Nterm_gap = False
+        Cterm_gap = False
+    elif ngap == (ngap_low + 1): # there's either a cterm or nterm gap
+        Nterm_gap = random.choice([True, False])
+        Cterm_gap = not Nterm_gap
+    else: # there's both a cterm and nterm gap
+        Nterm_gap = True
+        Cterm_gap = True
+
+    gaps = sample_gaps(ngap, n_masked) # gaps between unmasked chunks 
+    random.shuffle(gaps)
+
+
+    chunks = []
+    is_motif = []
+    motif_ids = []
+    cur_motif_id = 0
+
+    if Nterm_gap:
+        chunks.append(gaps.pop())
+        is_motif.append(False)
+        motif_ids.append(-1)
+
+
+    for i in range(len(lengths)):
+        chunks.append(lengths[i])
+        is_motif.append(True)
+        motif_ids.append(cur_motif_id)
+        cur_motif_id += 1
+
+        if len(gaps) > 1:                       # more to spare 
+            chunks.append(gaps.pop())
+            is_motif.append(False)
+            motif_ids.append(-1)
+        elif len(gaps) == 1 and not Cterm_gap:  # only one left, but no Cterm gap
+            chunks.append(gaps.pop())
+            is_motif.append(False)
+            motif_ids.append(-1)
+        else:
+            pass # no more to spare
+
+    if Cterm_gap:
+        assert len(gaps) == 1
+        chunks.append(gaps.pop())
+        is_motif.append(False)
+        motif_ids.append(-1)
+
+
+    assert sum(chunks) == L, f'chunks sum to {sum(chunks)} but should sum to {L}'
+
+    return chunks, is_motif, motif_ids, motif_pairs, pairs_can_see
+
+
+def _get_diffusion_mask_chunked(xyz, prop_low, prop_high, max_motif_chunks=6):
+    """
+    More complicated masking strategy to create discontiguous chunks
+    """
+
+    chunks, chunk_is_motif, motif_ids, ij, ij_can_see = get_chunked_mask(xyz, prop_low, prop_high, max_motif_chunks)
+    chunk_starts = np.cumsum([0] + chunks[:-1])
+    chunk_ends   = np.cumsum(chunks)
+
+    # make 1D array designating which chunks are motif
+    L = xyz.shape[0]
+    mask = torch.zeros(L, L)
+    is_motif = torch.zeros(L)
+    for i in range(len(chunks)):
+        is_motif[chunk_starts[i]:chunk_ends[i]] = chunk_is_motif[i]
+
+
+    # 2D array designating which chunks can see each other
+    for i in range(len(chunks)):
+        for j in range(len(chunks)):
+
+            i_is_motif = chunk_is_motif[i]
+            j_is_motif = chunk_is_motif[j]
+            if (i_is_motif and j_is_motif): # both are motif, so possibly reveal info 
+
+
+                ID_i = motif_ids[i]
+                ID_j = motif_ids[j]
+                assert ID_i != -1 and ID_j != -1, 'both motif but one has no ID'
+
+                # always reveal self vs self 
+                if i == j:
+                    mask[chunk_starts[i]:chunk_ends[i], chunk_starts[j]:chunk_ends[j]] = 1
+
+                else:
+                    # find out of this (i,j) are allowed to see each other
+                    ix = tuple(sorted([ID_i, ID_j]))
+                    can_see = ij_can_see[ij.index(ix)]
+                    if can_see:
+                        mask[chunk_starts[i]:chunk_ends[i], chunk_starts[j]:chunk_ends[j]] = 1
+
+    return mask.bool(), is_motif.bool()
+
+
+def get_diffusion_mask_chunked(indep, atom_mask, low_prop, high_prop, broken_prop, max_motif_chunks=6, **kwargs):
+    # wrapper to accomodate indep/atom mask input 
+    assert indep.is_sm.sum() == 0, 'small molecules not supported currently for this masking'
+    mask2d, is_motif = _get_diffusion_mask_chunked(indep.xyz, low_prop, high_prop, max_motif_chunks)
+
+    # spoofing a return of two items: "diffusion_mask, is_atom_motif"
+    return (mask2d, is_motif), None
+
+# 3 template CA rfdiffusion maskers
+get_diffusion_mask_chunked          = make_3template_compatible(get_diffusion_mask_chunked)
+get_multi_triple_contact_3template  = make_3template_compatible(get_multi_triple_contact_3template)
+get_unconditional_3template         = make_3template_compatible(get_unconditional_3template)
+
 
 def get_masks(L, min_length, max_length, min_flank, max_flank):
     """

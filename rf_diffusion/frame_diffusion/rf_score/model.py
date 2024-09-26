@@ -232,8 +232,6 @@ class RFScore(nn.Module):
         return self.named_parameters().__next__()[1].device
 
     def get_rfo(self, rfi):
-        # ic(rfi.seq, rfi.seq.shape)
-        # raise Exception('stop')
         device = self.device()
         rf2aa.tensor_util.to_device(rfi, device)
         rfi_dict = dataclasses.asdict(rfi)

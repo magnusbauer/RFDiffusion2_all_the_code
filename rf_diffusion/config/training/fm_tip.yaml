@@ -14,8 +14,8 @@ upstream_training_transforms:
 
 transforms:
   names:
-    - Center
     - AddConditionalInputs
+    - Center
 
 dataloader:
   P_IS_GUIDEPOST_EXAMPLE: 0.5
