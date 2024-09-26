@@ -4,16 +4,18 @@ defaults:
 ckpt_load_path: /mnt/home/davidcj/from/rohith/models/rf2a_25c_414_t1d_81_t2d_69.pt 
 
 wandb: false
+num_workers: 0
+extra_tXd: null
 
-extra_tXd_params: {}
+motif_only_2d: true
 
 dataloader: 
   DATAPKL_AA: dataset_diffusion_20230214.pkl
   DATASETS: pdb_aa,compl,sm_complex,sm_compl_covale,metal_compl,sm_compl_asmb,sm_compl_multi
   DATASET_PROB:
-  - 0.6
-  - 0.4
   - 0.0
+  - 0.0
+  - 1.0
   - 0.0
   - 0.0
   - 0.0
@@ -21,7 +23,11 @@ dataloader:
   DIFF_MASK_PROBS:
     get_diffusion_mask_chunked: 0.2
     get_multi_triple_contact_3template: 0.5
-    get_unconditional_3template: 0.3
+    get_unconditional_3template: 0.2999 
+    get_sm_contact_3template: 0.0001
+    get_closest_tip_atoms: 0.0
+    get_unconditional_diffusion_mask: 0.0
+
 
 
 diffuser: 

@@ -138,10 +138,117 @@ def make_3template_compatible(get_mask, p_show_motif_seq=0.65):
 # Misc functions for mask generation
 #####################################
 
+def _get_sm_contact_3template(xyz,
+                              is_sm,
+                              low_prop,
+                              high_prop,
+                              contact_cut=8,
+                              chunk_size_min=1,
+                              chunk_size_max=7,
+                              min_seq_dist=9,
+                              same_chain=None):
+    """
+    Produces mask2d and is_motif for small molecule, possibly with contacting protein chunks
+    """
+
+    assert len(xyz.shape) == 3
+    ca = xyz[~is_sm, 1,:]
+
+    if ca.shape[0] == 0:
+        sm_only = True
+    else:
+        sm_only = False
+
+    sm_xyz  = xyz[is_sm, 1,:]
+
+    dmap = torch.cdist(ca, sm_xyz)
+    dmap = dmap < contact_cut
+    protein_is_contacting = dmap.any(dim=-1) # which CA's are contacting sm 
+    where_is_contacting = protein_is_contacting.nonzero().squeeze()
+
+
+    n_chunk_revealed = random.randint(0,4)
+
+    if (n_chunk_revealed == 0) or (sm_only):
+        is_motif = is_sm.clone()
+        is_motif_2d = is_motif[:, None] * is_motif[None, :]
+        return is_motif_2d, is_motif
+
+    else:
+        is_motif = is_sm.clone()
+        cur_min_seq_dist = min_seq_dist # could possibly increment this if needed 
+
+        for i in range(n_chunk_revealed):
+            chunk_size = torch.randint(chunk_size_min, chunk_size_max, size=(1,)).item()
+
+            if len(where_is_contacting.shape) == 0:
+                # ensures where_is_contacting is a 1d tensor
+                where_is_contacting = where_is_contacting.unsqueeze(0)
+
+            if (where_is_contacting.shape[0] == 0) and (i == 0):
+                # no contacts, so sm is only motif 
+                is_motif = is_sm.clone()
+                is_motif_2d = is_motif[:, None] * is_motif[None, :]
+                return is_motif_2d, is_motif
+
+            p = torch.ones_like(where_is_contacting)/len(where_is_contacting)
+            chosen_idx = p.multinomial(num_samples=1, replacement=False)
+            chosen_idx = chosen_idx.item()
+            chosen_idx = where_is_contacting[chosen_idx]
+
+            # find min and max indices for revealed chunk
+            min_index = max(0, chosen_idx - chunk_size//2)
+            max_index = min(protein_is_contacting.numel(), 1+chosen_idx + chunk_size//2)
+            # reveal chunk 
+            is_motif[min_index:max_index] = True
+
+            # update where_is_contacting
+            start = max(0,min_index-cur_min_seq_dist)
+            end = min(protein_is_contacting.numel(), max_index+cur_min_seq_dist)
+            protein_is_contacting[start:end] = False # remove this option from where_is_contacting 
+
+            where_is_contacting = protein_is_contacting.nonzero().squeeze()
+
+            if protein_is_contacting.sum() == 0:
+                break # can't make any more chunks
+
+
+        is_motif_2d = is_motif[:, None] * is_motif[None, :]
+
+
+        return is_motif_2d, is_motif
+    
+
+def get_sm_contact_mask(indep,
+                        atom_mask,
+                        low_prop,
+                        high_prop,
+                        broken_prop,
+                        **kwargs):
+    """
+    Gets a small molecule contact mask. Either SM alone, SM+1protein chunk, or SM+2protein chunks
+    """
+    if not indep.is_sm.any():
+        print('Must have small molecule for sm_contact_mask')
+        raise InvalidMaskException('Must have small molecule for sm_contact_mask')
+
+    mask2d, is_motif = _get_sm_contact_3template(indep.xyz,
+                                                 indep.is_sm,
+                                                 low_prop,
+                                                 high_prop,
+                                                 same_chain=indep.same_chain)
+
+    return (mask2d, is_motif), None
+
+
 def get_unconditional_3template(indep, atom_mask, low_prop, high_prop, broken_prop, **kwargs):
     """
     Unconditional protein generation task. Nothing is motif. 
     """
+    if indep.is_sm.any():
+        print('SM not supported for unconditional 3template')
+        raise InvalidMaskException('Small molecules not supported for 3template multi-triple contact')
+    
     L = indep.length()
     is_motif = torch.zeros(L).bool()
     is_motif_2d = is_motif[:, None] * is_motif[None, :]
@@ -159,8 +266,13 @@ def get_multi_triple_contact_3template(indep,
     """
     Gets masks for multiple triple contacts in an example. 
     """
-    assert indep.is_sm.sum() == 0, 'small molecules not yet supported'
+    if indep.is_sm.any():
+        print('SM not supported for 3template multi-triple contact')
+        raise InvalidMaskException('Small molecules not supported for 3template multi-triple contact')
+    
     mask2d, is_motif = _get_multi_triple_contact_3template(indep.xyz, low_prop, high_prop, max_triples=max_triples)
+
+    
 
     # spoofing a return of two items: "diffusion_mask, is_atom_motif"
     return (mask2d, is_motif), None
@@ -413,7 +525,10 @@ def _get_diffusion_mask_chunked(xyz, prop_low, prop_high, max_motif_chunks=6):
 
 def get_diffusion_mask_chunked(indep, atom_mask, low_prop, high_prop, broken_prop, max_motif_chunks=6, **kwargs):
     # wrapper to accomodate indep/atom mask input 
-    assert indep.is_sm.sum() == 0, 'small molecules not supported currently for this masking'
+    if indep.is_sm.any():
+        print('SM not supported for chunked diffusion mask')
+        raise InvalidMaskException('Small molecules not supported for 3template multi-triple contact')
+    
     mask2d, is_motif = _get_diffusion_mask_chunked(indep.xyz, low_prop, high_prop, max_motif_chunks)
 
     # spoofing a return of two items: "diffusion_mask, is_atom_motif"
@@ -423,6 +538,7 @@ def get_diffusion_mask_chunked(indep, atom_mask, low_prop, high_prop, broken_pro
 get_diffusion_mask_chunked          = make_3template_compatible(get_diffusion_mask_chunked)
 get_multi_triple_contact_3template  = make_3template_compatible(get_multi_triple_contact_3template)
 get_unconditional_3template         = make_3template_compatible(get_unconditional_3template)
+get_sm_contact_3template            = make_3template_compatible(get_sm_contact_mask)
 
 
 def get_masks(L, min_length, max_length, min_flank, max_flank):
