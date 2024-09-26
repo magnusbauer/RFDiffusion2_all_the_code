@@ -1,0 +1,107 @@
+defaults:
+  - new_base 
+
+ckpt_load_path: /mnt/home/davidcj/from/rohith/models/rf2a_25c_414_t1d_81_t2d_69.pt 
+
+wandb: false
+
+extra_tXd_params: {}
+
+dataloader: 
+  DATAPKL_AA: dataset_diffusion_20230214.pkl
+  DATASETS: pdb_aa,compl,sm_complex,sm_compl_covale,metal_compl,sm_compl_asmb,sm_compl_multi
+  DATASET_PROB:
+  - 0.6
+  - 0.4
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  DIFF_MASK_PROBS:
+    get_diffusion_mask_chunked: 0.2
+    get_multi_triple_contact_3template: 0.5
+    get_unconditional_3template: 0.3
+
+
+diffuser: 
+  T: 200
+  r3: 
+    min_b: 0.01
+    max_b: 0.07
+    coordinate_scaling: 0.25
+
+experiment: 
+  trans_loss_weight: 0.5 
+  rot_loss_weight: 0.0
+  bb_atom_loss_weight: 0.0
+  dist_mat_loss_weight: 0.0
+  c6d_loss_weight: 0.05
+  fm_translation_loss_weight: 0.0
+  fm_rotation_loss_weight: 0.0
+  fm_bb_atom: 0.0
+  fm_dist_mat: 0.0
+  i_fm_translation_loss_weight: 0.0
+  i_fm_rotation_loss_weight: 0.0
+
+  # additional loss terms for ca diffusion 
+  motif_fape_weight: 10
+  nonmotif_fape_weight: 0.0
+  ligand_intra_fape_weight: 10.0
+  prot_lig_inter_fape_weight: 10.0
+  plddt_weight: 0.0
+
+  #  ca rfdiffusion loss fxn hyperparams 
+  norm_fape_prot_motif: 5.0
+  norm_fape_sm: 4.0
+  norm_fape_prot_sm: 10
+  norm_fape_prot_nonmotif: 10
+  d_clamp_fape_prot_motif: 5
+  d_clamp_fape_sm: 4.0
+  d_clamp_fape_prot_sm: 10
+  d_clamp_fape_prot_nonmotif: 10
+
+rf:
+  model: 
+    n_extra_block: 4
+    n_main_block: 32
+    n_ref_block: 4
+    n_finetune_block: 0
+    d_msa: 256
+    d_msa_full: 64
+    d_pair: 192
+    d_templ: 64
+    n_head_msa: 8
+    n_head_pair: 6
+    n_head_templ: 4
+    d_hidden: 32
+    d_hidden_templ: 64
+    p_drop: 0.15
+    use_chiral_l1: true
+    use_lj_l1: true
+    use_atom_frames: true
+    freeze_track_motif: true
+    d_t1d: 81
+    d_t2d: 69
+    SE3_param: 
+      num_layers: 1
+      num_channels: 32
+      num_degrees: 2
+      n_heads: 4
+      div: 4
+      l0_in_features: 64
+      l0_out_features: 64
+      l1_in_features: 3 
+      l1_out_features: 2
+      num_edge_features: 64
+    SE3_ref_param: 
+      num_layers: 2
+      num_channels: 32
+      num_degrees: 2
+      n_heads: 4
+      div: 4
+      l0_in_features: 64
+      l0_out_features: 64
+      l1_in_features: 3
+      l1_out_features: 2
+      num_edge_features: 64
