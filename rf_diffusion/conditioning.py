@@ -13,6 +13,7 @@ import logging
 from icecream import ic
 import copy
 
+import rf_diffusion.util
 from rf_diffusion import aa_model
 from rf_diffusion.aa_model import Indep
 from rf_diffusion.contigs import ContigMap
@@ -80,7 +81,55 @@ class NullTransform:
     """
     def __call__(self, **kwargs):
         return dict(**kwargs)
+    
 
+class ComputeMotifTemplate: 
+    """
+    Takens in an unnoised indep, 1D is_motif mask and 2D is_motif_2d mask and 
+    computes a new template containing motif structure.
+    """
+    def __call__(self, 
+                 indep      : Indep,
+                 masks_1d   : dict,
+                 use_cb     : bool=False,
+                 **kwargs): 
+        
+        """
+        Parameters: 
+            indep (Indep):              The unnoised indep object
+            is_motif (torch.Tensor):    The 1D motif mask
+            is_motif_2d (torch.Tensor): The 2D motif mask
+            use_cb (bool):              Whether to use cb atoms for t2d calculation
+        """
+        is_motif    = masks_1d['input_str_mask'] 
+        is_motif_2d = masks_1d['is_motif_2d']
+
+        indep_unnoised = indep.clone() # unnoised indep object
+
+        motif_xyz_t = indep_unnoised.xyz.clone() # perfect native structure 
+        motif_xyz_t[~is_motif] = float('nan')    # remove non-motif 
+
+        ### t2d ### 
+        t2d_motif, _ = rf_diffusion.util.get_t2d(motif_xyz_t[None], 
+                                                 indep_unnoised.is_sm, 
+                                                 indep_unnoised.atom_frames,  
+                                                 use_cb    = use_cb,
+                                                 mask_t_2d = is_motif_2d[None])
+        
+
+        t2d_out = torch.cat((t2d_motif, is_motif_2d[None,...,None]), dim=-1) # concatenate indicators 
+
+        ### xyz_t ###
+        xyz_t_out = motif_xyz_t[:,1] # CA's of motif residues 
+
+        motif_template = {'t2d': t2d_out, 'xyz_t': xyz_t_out}
+
+        return {'indep'         : indep,
+                'masks_1d'      : masks_1d,
+                'use_cb'        : use_cb,
+                'motif_template': motif_template,
+                **kwargs}
+        
 
 class GenerateMasks:
     """

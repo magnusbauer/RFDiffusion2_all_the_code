@@ -332,7 +332,8 @@ def get_t2d(
         xyz_t: torch.Tensor, 
         is_sm: torch.Tensor, 
         atom_frames: torch.Tensor, 
-        use_cb: bool = False
+        use_cb: bool = False, 
+        mask_t_2d = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
     """
     Computes the t2d features for given backbone (+cb) coordinates.
@@ -365,13 +366,11 @@ def get_t2d(
     # TODO(Look into atom_frames)
     xyz_t_frames = rf2aa.util.xyz_t_to_frame_xyz_sm_mask(xyz_t[None], is_sm, atom_frames[None])
 
-    # NOTE: In the original rf2aa code this mask takes a 1d mask for atom presence/absence.
-    #       In the RF diffusio code, we don't have a 1d mask fo ratoms existing/not existing in the
-    #       structure, since non-existing atoms are 'popped' out of the structure upstream of this
-    #       function. We therefore set this mask to all True indiscriminately.
-    mask_t_2d = torch.ones(1,L,L).bool().to(xyz_t_frames.device)
+    if mask_t_2d is None:
+        mask_t_2d = torch.ones(1,L,L).bool().to(xyz_t_frames.device)
+    else: 
+        pass 
 
-    # Compute t2d from xyz_t_frames
     kinematics_params = copy.deepcopy(rf2aa.kinematics.PARAMS)
     kinematics_params['USE_CB'] = use_cb
     t2d = rf2aa.kinematics.xyz_to_t2d(xyz_t_frames, mask_t_2d[None], params=kinematics_params)

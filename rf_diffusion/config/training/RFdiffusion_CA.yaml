@@ -9,13 +9,34 @@ extra_tXd: null
 
 motif_only_2d: true
 
+pseudobatch: 16 
+model_name: caBFF
+
+upstream_training_transforms: 
+  names: 
+    - GenerateMasks
+    - PopMask
+
+transforms: 
+  names:
+    - ComputeMotifTemplate
+    - Center
+    - AddConditionalInputs
+  
+  configs:
+    ComputeMotifTemplate: {}
+    Center: {}
+    AddConditionalInputs:
+      p_is_guidepost_example: ${dataloader.P_IS_GUIDEPOST_EXAMPLE}
+      guidepost_bonds: ${guidepost_bonds}
+
 dataloader: 
   DATAPKL_AA: dataset_diffusion_20230214.pkl
   DATASETS: pdb_aa,compl,sm_complex,sm_compl_covale,metal_compl,sm_compl_asmb,sm_compl_multi
   DATASET_PROB:
+  - 0.6
   - 0.0
-  - 0.0
-  - 1.0
+  - 0.4
   - 0.0
   - 0.0
   - 0.0
@@ -49,6 +70,9 @@ experiment:
   fm_dist_mat: 0.0
   i_fm_translation_loss_weight: 0.0
   i_fm_rotation_loss_weight: 0.0
+
+  # need to override from base
+  
 
   # additional loss terms for ca diffusion 
   motif_fape_weight: 10

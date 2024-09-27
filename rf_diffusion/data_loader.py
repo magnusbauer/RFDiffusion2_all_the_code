@@ -1936,6 +1936,53 @@ def get_t_training(conf: OmegaConf)-> Tuple[int, float]:
     return t, t_cont
 
 
+def wrap_featurize( indep, 
+                    dataset_conf, 
+                    diffuser, 
+                    extra_tXd, 
+                    t, 
+                    t_cont, 
+                    tXd_kwargs, 
+                    mask_gen_seed, 
+                    is_diffused,
+                    is_masked_seq,
+                    randomize_frames,
+                    eye_frames,
+                    model_adaptor): 
+    """
+    Wrapper to handle extra tXd, prepro, and adding extra templates.
+    """
+
+    # First create the extra t1d/t2d features 
+    indep.extra_t1d, indep.extra_t2d = features.get_extra_tXd(indep, extra_tXd, t_cont=t_cont, **tXd_kwargs)
+
+    # Reseed the RNGs for test stability.
+    run_inference.seed_all(mask_gen_seed) 
+
+    # diffuse the indep
+    indep_t, diffuser_out = aa_model.diffuse(dataset_conf, diffuser, indep, is_diffused, t)
+
+    # Frame corruption
+    if randomize_frames:
+        indep_t.xyz = aa_model.randomly_rotate_frames(indep_t.xyz)
+    elif eye_frames: 
+        indep_t.xyz = aa_model.eye_frames(indep_t.xyz)
+    else: 
+        pass 
+
+    # sequence masking 
+    indep_t = aa_model.mask_seq(indep_t, is_masked_seq) # Changed to new function that allows for multiple polymers
+    
+    # create RosettaFold input features
+    rfi = model_adaptor.prepro(indep_t, t, is_diffused)
+
+
+    # slap those extra templates on there
+    # rfi = slapDatTemplateOnThere(rfi, indep.extra_t1d, indep.extra_t2d)
+
+    return diffuser_out, rfi
+
+
 class DistilledDataset(data.Dataset):
     def __init__(self, dataset, params, diffuser, preprocess_param, conf, homo=None, p_homo_cut=0.5, **kwargs):
         self.diffuser = diffuser
@@ -1944,12 +1991,16 @@ class DistilledDataset(data.Dataset):
         self.preprocess_param = preprocess_param
         self.model_adaptor = aa_model.Model(conf)
 
-        def diffuse(indep, metadata, chosen_dataset, sel_item, task, masks_1d, item_context, mask_gen_seed, is_masked_seq, is_diffused, atomizer, conditions_dict, **kwargs):
+        def diffuse(indep, metadata, chosen_dataset, sel_item, task, masks_1d, item_context, mask_gen_seed, 
+                    is_masked_seq, is_diffused, atomizer, conditions_dict, **kwargs):
             t, t_cont = get_t_training(self.conf)
 
             assert not hasattr(self.conf, 'extra_t1d'), 'extra_t1d has been replaced by extra_tXd'
             assert not hasattr(self.conf, 'extra_t1d_params'), 'extra_t1d has been replaced by extra_tXd'
 
+            
+            # previous version 
+            """
             # ... create extra 1d and 2d track features
             indep.extra_t1d, indep.extra_t2d = features.get_extra_tXd(indep, self.conf.extra_tXd, t_cont=t_cont, **self.conf.extra_tXd_params, **conditions_dict)
 
@@ -1968,6 +2019,22 @@ class DistilledDataset(data.Dataset):
 
             # Featurize indep for the RF inputs
             rfi = self.model_adaptor.prepro(indep_t, t, is_diffused)
+            """
+            featurize_kwargs = {'indep'             : indep, 
+                                'dataset_conf'      : self.conf, 
+                                'diffuser'          : self.diffuser, 
+                                'extra_tXd'         : self.conf.extra_tXd, 
+                                't'                 : t, 
+                                't_cont'            : t_cont, 
+                                'tXd_kwargs'        : {**self.conf.extra_tXd_params, **conditions_dict},
+                                'mask_gen_seed'     : mask_gen_seed, 
+                                'is_diffused'       : is_diffused, 
+                                'is_masked_seq'     : is_masked_seq, 
+                                'randomize_frames'  : self.preprocess_param['randomize_frames'], 
+                                'eye_frames'        : self.preprocess_param.get('eye_frames', False), 
+                                'model_adaptor'     : self.model_adaptor}
+            
+            diffuser_out, rfi = wrap_featurize(**featurize_kwargs)
 
             # Sanity checks
             if torch.sum(~is_diffused) > 0:

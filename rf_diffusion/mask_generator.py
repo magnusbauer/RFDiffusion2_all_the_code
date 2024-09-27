@@ -2092,6 +2092,7 @@ def get_diffusion_mask(
                 # ... add mask name to output dict
                 ret['mask_name'] = get_mask.name
                 return ret
+
             except InvalidMaskException as e:
                 logger.debug(f'Mask {get_mask.name} incompatible with example: {e}')
 
@@ -2401,6 +2402,9 @@ def generate_masks(
         pop = mask_dict.pop('pop')
         can_be_gp = mask_dict.pop('can_be_gp')
         mask_name = mask_dict.pop('mask_name')
+        # may or may not be present
+        is_motif_2d = masks_out.get('is_motif_2d', None)  
+
     elif chosen_dataset == 'complex':
         '''
         Diffusion task for complexes. Default is to diffuse the whole of the complete chain.
@@ -2432,6 +2436,7 @@ def generate_masks(
         'pop': pop,  # whether a token is occupied (i.e. resolved in the structure) 
         'can_be_gp': can_be_gp,  # whether a token can be a gp
         'mask_name': mask_name,  # name of the mask
+        'is_motif_2d': is_motif_2d # whether a pair of tokens is motif pair
     })
 
     return mask_dict
