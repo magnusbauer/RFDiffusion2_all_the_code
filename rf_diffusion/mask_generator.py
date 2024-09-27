@@ -318,7 +318,7 @@ def _get_multi_triple_contact_3template(xyz,
 
         L = xyz.shape[0]
         # 1d tensor describing which residues are motif
-        tmp_is_motif = sample_around_contact(L, indices, len_low, len_high)
+        tmp_is_motif = sample_around_contact(L, indices, len_low, len_high)['is_motif']
         # now get the 2d tensor describing which residues can see each other
         # For these, all motif chunks can see each other
         tmp_mask_2d = tmp_is_motif[:, None] * tmp_is_motif[None, :]

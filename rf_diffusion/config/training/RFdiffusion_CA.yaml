@@ -4,12 +4,16 @@ defaults:
 ckpt_load_path: /mnt/home/davidcj/from/rohith/models/rf2a_25c_414_t1d_81_t2d_69.pt 
 
 wandb: false
+
 num_workers: 0
+
 extra_tXd: null
 
 motif_only_2d: true
 
-pseudobatch: 16 
+resume_scheduler: false 
+
+pseudobatch: 1 
 model_name: caBFF
 
 upstream_training_transforms: 
@@ -44,7 +48,7 @@ dataloader:
   DIFF_MASK_PROBS:
     get_diffusion_mask_chunked: 0.2
     get_multi_triple_contact_3template: 0.5
-    get_unconditional_3template: 0.2999 
+    get_unconditional_3template:  0.2999 
     get_sm_contact_3template: 0.0001
     get_closest_tip_atoms: 0.0
     get_unconditional_diffusion_mask: 0.0

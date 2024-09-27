@@ -107,7 +107,7 @@ class ComputeMotifTemplate:
         indep_unnoised = indep.clone() # unnoised indep object
 
         motif_xyz_t = indep_unnoised.xyz.clone() # perfect native structure 
-        motif_xyz_t[~is_motif] = float('nan')    # remove non-motif 
+        motif_xyz_t[~is_motif] = 0.0             # remove non-motif information 
 
         ### t2d ### 
         t2d_motif, _ = rf_diffusion.util.get_t2d(motif_xyz_t[None], 
@@ -117,12 +117,12 @@ class ComputeMotifTemplate:
                                                  mask_t_2d = is_motif_2d[None])
         
 
-        t2d_out = torch.cat((t2d_motif, is_motif_2d[None,...,None]), dim=-1) # concatenate indicators 
+        # t2d_out = torch.cat((t2d_motif, is_motif_2d[None,...,None]), dim=-1) # concatenate indicators 
 
         ### xyz_t ###
         xyz_t_out = motif_xyz_t[:,1] # CA's of motif residues 
 
-        motif_template = {'t2d': t2d_out, 'xyz_t': xyz_t_out}
+        motif_template = {'t2d': t2d_motif, 'xyz_t': xyz_t_out}
 
         return {'indep'         : indep,
                 'masks_1d'      : masks_1d,

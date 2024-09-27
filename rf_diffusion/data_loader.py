@@ -1878,17 +1878,19 @@ class TransformedDataset(data.Dataset):
         logger.debug(f'Transform root inputs: {set(feats.keys()) if isinstance(feats, dict) else type(feats)}')
 
         # Iterate through all transforms in order and update the features
-        for T in self.transforms:
-            feats_before = set(feats.keys()) if isinstance(feats, dict) else set()
-            feats = T(**feats)
+        with error.context(feats.get('item_context', 'no item context')):
+            for T in self.transforms:
+                feats_before = set(feats.keys()) if isinstance(feats, dict) else set()
+                feats = T(**feats)
+                
+                # Logger information to track changes
+                feats_after = set(feats.keys()) if isinstance(feats, dict) else set()
+                new_feats = feats_after - feats_before
+                removed_feats = feats_before - feats_after
+                logger.debug(f'Transform[{get_class_name(T)}] added: {new_feats}    removed: {removed_feats}')
+            logger.debug(f'Transform root outputs: {set(feats.keys()) if isinstance(feats, dict) else type(feats)}')
+            return feats
 
-            # Logger information to track changes
-            feats_after = set(feats.keys()) if isinstance(feats, dict) else set()
-            new_feats = feats_after - feats_before
-            removed_feats = feats_before - feats_after
-            logger.debug(f'Transform[{get_class_name(T)}] added: {new_feats}    removed: {removed_feats}')
-        logger.debug(f'Transform root outputs: {set(feats.keys()) if isinstance(feats, dict) else type(feats)}')
-        return feats
 
     def get_dataset_bounds_from_index(self, index):
         return self.dataset.get_dataset_bounds_from_index(index)
@@ -1936,6 +1938,104 @@ def get_t_training(conf: OmegaConf)-> Tuple[int, float]:
     return t, t_cont
 
 
+def add_motif_template(rfi: aa_model.RFI, motif_template: dict, masks_1d: dict) -> aa_model.RFI:
+    """
+    Adds on a third template to the RoseTTAFold input features containing 
+    the motif structure. 
+
+    Parameters: 
+        rfi (aa_model.RFI): RoseTTAFold input features
+
+        motif_template (dict): dictionary containing precomputed components of the motif structure. 
+
+    Returns:
+        rfi (aa_model.RFI): RoseTTAFold input features with the motif template added. 
+    """
+    # unpack stuff 
+    t1d     = rfi.t1d 
+    t2d     = rfi.t2d 
+    mask_t  = rfi.mask_t
+    alpha_t = rfi.alpha_t
+    xyz_t   = rfi.xyz_t
+
+    is_motif    = masks_1d['input_str_mask']
+    is_motif_2d = masks_1d['is_motif_2d']
+
+    t2d_motif   = motif_template['t2d']
+    xyz_t_motif = motif_template['xyz_t']
+    assert not (torch.isnan(t2d_motif).any()), 'no NaNs in motif t2d'
+    assert not (torch.isnan(xyz_t_motif).any()), 'no NaNs in motif xyz_t'
+    
+    # control shapes 
+    L = t1d.shape[2] 
+    N_prev = t1d.shape[1]
+    N_new  = N_prev + 1
+
+    assert all(t.shape[2] == L      for t in [t1d, t2d, mask_t, alpha_t, xyz_t])
+    assert all(t.shape[1] == N_prev for t in [t1d, t2d, mask_t, alpha_t, xyz_t])
+
+    ### alpha_t ###
+    ###############
+    # grab the first on and duplicate it N_new times
+    alphas = alpha_t[0,0] # (L, n_alpha)
+    alpha_t_out = torch.cat([alphas[None]]*N_new, dim=0)[None] # (1, N_new, L, n_alpha)
+
+    ### t2d ###
+    ###########
+    t2d_out = torch.zeros((1, N_new, L, L, t2d.shape[-1])).to(t2d.device, t2d.dtype)
+    t2d_out[0,:-1] = t2d[0] # copy the first N_prev templates into the new t2d 
+
+    # add the motif template
+    t2d_out[0,-1] = t2d_motif[0]
+
+    # add in the indicator features--denotes pairs of residues constrained w.r.t each other 
+    blank = torch.ones(L,L)*-1 # (L, L)
+    # first N_prev templates will have -1 in this channel
+    cattable_is_motif_2d = torch.stack([blank]*N_prev + [is_motif_2d.int()], dim=-1).permute(2,0,1) # (L,L,N_new) --> (N_new, L, L)
+    cattable_is_motif_2d = cattable_is_motif_2d[None,...,None] # (1, N_new, L, L, 1)
+
+    # tack this last feature onto the end of t2d 
+    t2d_out = torch.cat([t2d_out, cattable_is_motif_2d], dim=-1)
+
+    ### t1d ###
+    ###########
+    t1d_out = torch.zeros((1, N_new, L, t1d.shape[-1])).to(t1d.device, t1d.dtype)
+    t1d_out[0,:] = t1d[0,0] # copy the first template across new t1d
+
+    # reset the -1 feature for second (Xt) template, as was done in prepro
+    t1d_out[0,1,:,ChemData().NAATOKENS-1] = -1 
+    # reset also for the last (motif) template 
+    t1d_out[0,-1,:,ChemData().NAATOKENS-1] = -1
+
+    # feature for 3rd template - is it motif or not? 
+    cattable_is_motif = torch.tile(is_motif[None,None,:,None], (1, N_new, 1, 1)) # (1, N_new, L, 1)
+    cattable_is_motif_2d.to(device=t1d.device, dtype=t1d.dtype)
+    cattable_is_motif[:,:-1,...] = -1 #first N_prev templates get -1 for the motif feature 
+    t1d_out = torch.cat([t1d_out, cattable_is_motif], dim=-1)
+
+    ### mask_t ### 
+    ##############
+    mask_t_out = torch.ones(1, N_new, L, L).bool().to(mask_t.device)
+    mask_t_out[0,-1] = is_motif_2d 
+
+    ### xyz_t ###
+    #############
+    xyz_t_out = torch.zeros((1, N_new, L, 3)).to(xyz_t.device, xyz_t.dtype)
+    xyz_t_out[0,:-1] = xyz_t[0] # copy the first N_prev templates into the new xyz_t
+    xyz_t_out[0,-1]  = xyz_t_motif
+    
+
+    rfi.t1d = t1d_out
+    rfi.t2d = t2d_out
+    rfi.mask_t = mask_t_out
+    rfi.alpha_t = alpha_t_out
+    rfi.xyz_t = xyz_t_out
+
+    return rfi
+
+
+
+
 def wrap_featurize( indep, 
                     dataset_conf, 
                     diffuser, 
@@ -1948,7 +2048,9 @@ def wrap_featurize( indep,
                     is_masked_seq,
                     randomize_frames,
                     eye_frames,
-                    model_adaptor): 
+                    model_adaptor,
+                    masks_1d,
+                    **kwargs): 
     """
     Wrapper to handle extra tXd, prepro, and adding extra templates.
     """
@@ -1977,8 +2079,9 @@ def wrap_featurize( indep,
     rfi = model_adaptor.prepro(indep_t, t, is_diffused)
 
 
-    # slap those extra templates on there
-    # rfi = slapDatTemplateOnThere(rfi, indep.extra_t1d, indep.extra_t2d)
+    # add the templated motif information/features
+    if kwargs.get('motif_template', None) is not None:
+        rfi = add_motif_template(rfi, kwargs['motif_template'], masks_1d)
 
     return diffuser_out, rfi
 
@@ -2032,7 +2135,9 @@ class DistilledDataset(data.Dataset):
                                 'is_masked_seq'     : is_masked_seq, 
                                 'randomize_frames'  : self.preprocess_param['randomize_frames'], 
                                 'eye_frames'        : self.preprocess_param.get('eye_frames', False), 
-                                'model_adaptor'     : self.model_adaptor}
+                                'model_adaptor'     : self.model_adaptor,
+                                'masks_1d'          : masks_1d,
+                                **kwargs}
             
             diffuser_out, rfi = wrap_featurize(**featurize_kwargs)
 
