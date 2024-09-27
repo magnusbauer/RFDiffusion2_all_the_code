@@ -24,6 +24,18 @@ import nucleic_compatibility_utils as nucl_utils
 from rf_diffusion import run_inference
 from rf_diffusion import mask_generator
 
+######## Group all imported transforms together ###########
+
+from rf_diffusion.conditions.ss_adj.sec_struct_adjacency import LoadTargetSSADJTransform, AutogenerateTargetSSADJTransform, GenerateSSADJTrainingTransform
+
+# "Use" the imports to avoid ruff errors
+LoadTargetSSADJTransform.__class__
+AutogenerateTargetSSADJTransform.__class__
+GenerateSSADJTrainingTransform.__class__
+
+###########################################################
+
+
 logger = logging.getLogger(__name__)
 
 def get_center_of_mass(xyz14, mask):
@@ -599,11 +611,11 @@ class ExpandConditionsDict:
             contig_map (ContigMap): The contig map
         '''
 
-        conditions_dict_contents = [
+        conditions_dict_contents = set([
             # 'is_hotspot', # torch.Tensor[bool]: Which residues are hotspots? (8A cross-chain contacts)
             # 'is_antihotspot', # torch.Tensor[bool]: Which residues are antihotspots? (8A cross-chain no-contacts)
-            # 'ss_adj', # sec_struct_adj.SecStructAdjacency: The secondary structure and block adjacency conditioning
-        ]
+            'ss_adj', # sec_struct_adj.SecStructAdjacency: The secondary structure and block adjacency conditioning
+        ])
 
         post_idx_from_pre_idx, is_atomized = aa_model.generate_pre_to_post_transform_indep_mapping(indep, atomizer, contig_map.gp_to_ptn_idx0)
 
@@ -611,8 +623,11 @@ class ExpandConditionsDict:
         for key in conditions_dict:
             assert key in conditions_dict_contents, f'Please add {key} to ExpandConditionsDict!'
 
-            # if key == 'X':
-            #   new_conditions_dict[key] = conditions_dict[key]
+            if key == 'ss_adj':
+                new_conditions_dict['ss_adj'] = conditions_dict['ss_adj'].expand_for_atomization_and_gp(indep, post_idx_from_pre_idx)
+
+            else:
+                assert False, f'Key {key}: not processed in ExpandConditionsDict'
 
         return kwargs | dict(
             indep=indep,

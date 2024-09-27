@@ -1,0 +1,28 @@
+# Example config for running with ss/adj. Goes well with fm_tip_ss_adj
+defaults:
+  - base
+
+guidepost_bonds: True
+
+inference:
+  align_motif: False
+  str_self_cond: True
+  state_dict_to_use: model_state_dict
+  deterministic: False
+  ckpt_path: /net/scratch/bcov/train_test/fm_tip_ss_adj2024-09-26_22:33:56.541451/rank_0/models/RFD_0.50.pt
+
+diffuser:
+  trans:
+    sample_schedule: linear
+    exp_rate: 1
+
+# see config/inference/base.yaml and then search for scaffoldguided
+
+
+upstream_inference_transforms: # These transforms don't do anything unless specific flags are set
+  names:
+    - AutogenerateTargetSSADJTransform
+    - LoadTargetSSADJTransform
+  configs:
+    AutogenerateTargetSSADJTransform: {}
+    LoadTargetSSADJTransform: {}

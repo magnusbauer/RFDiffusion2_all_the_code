@@ -32,7 +32,8 @@ class ContigMap():
             shuffle=False,
             intersperse='10-100',
             ):
-
+        
+        self.deterministic = True
         if shuffle:
             shuffled_contig_list = np.array(contigs[0].strip().split(','))
             print(f'{length=}')
@@ -41,6 +42,8 @@ class ContigMap():
             is_motif = np.array([e[0].isalpha() for e in shuffled_contig_list])
             motifs = shuffled_contig_list[is_motif]
             np.random.shuffle(motifs)
+            if len(motifs) > 1:
+                self.deterministic = False
             shuffled_contig_list[is_motif] = motifs
             shuffled_contig_list[~is_motif] = intersperse
             contigs = [','.join(shuffled_contig_list)]
@@ -82,7 +85,8 @@ class ContigMap():
                 # Use standard
                 self.contig_atoms={k:v.split(",") for k,v in eval(contig_atoms).items()}
                 self.contig_atoms={k:[e for e in v if e != ''] for k,v in self.contig_atoms.items()}
-            self.sampled_mask,self.contig_length,self.n_inpaint_chains = self.get_sampled_mask()
+            self.sampled_mask,self.contig_length,self.n_inpaint_chains,deterministic = self.get_sampled_mask()
+            self.deterministic = deterministic and self.deterministic
             self.inpaint, self.inpaint_hal, self.atomize_resnum2atomnames = self.expand_sampled_mask()
             self.ref = self.inpaint.copy()
             self.hal = self.inpaint_hal.copy()
@@ -121,6 +125,7 @@ class ContigMap():
         '''
         length_compatible=False
         count = 0
+        deterministic = True
         while not length_compatible:
             inpaint_chains=0
             contig_list = self.contigs[0].strip().split('_')
@@ -142,6 +147,7 @@ class ContigMap():
                     else:
                         if '-' in subcon:
                             length_inpaint=random.randint(int(subcon.split("-")[0]),int(subcon.split("-")[1]))
+                            deterministic = deterministic and int(subcon.split("-")[0]) == int(subcon.split("-")[1])
                             subcon_out.append(f'{length_inpaint}-{length_inpaint}')
                             sampled_mask_length += length_inpaint
                         elif subcon == '0':
@@ -159,7 +165,7 @@ class ContigMap():
             count+=1
             if count == 100000: #contig string incompatible with this length
                 sys.exit("Contig string incompatible with --length range")
-        return sampled_mask, sampled_mask_length, inpaint_chains
+        return sampled_mask, sampled_mask_length, inpaint_chains, deterministic
     
     def seq(self, chain, residue_idx):
         seq_by_chain_resi = dict(zip(self.parsed_pdb['pdb_idx'], self.parsed_pdb['seq']))
@@ -251,6 +257,7 @@ class ContigMap():
             sampled_mask=self.sampled_mask,
             mask_1d=self.mask_1d,
             atomize_indices2atomname=self.atomize_indices2atomname,
+            deterministic=self.deterministic
         )
 
     def res_list_to_mask(self, res_list):

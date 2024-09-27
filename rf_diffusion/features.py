@@ -6,6 +6,7 @@ from collections.abc import Mapping
 import rf_diffusion.conditions.v2 as v2
 from rf_diffusion import aa_model
 from rf_diffusion import structure
+import rf_diffusion.conditions.ss_adj.sec_struct_adjacency as sec_struct_adj
 
 from typing import Union
 from typing import TYPE_CHECKING
@@ -236,8 +237,8 @@ def get_extra_tXd_inference(indep, featurizer_names, params_train, params_infere
     t1d = [torch.zeros((indep.length(),0))]
     t2d = [torch.zeros((indep.length(),indep.length(),0))]
     for name in featurizer_names:
-        assert name in params_train
-        assert name in params_inference
+        assert name in params_train, f'Featurizer: {name} not found in training params'
+        assert name in params_inference, f'Featurizer: {name} not found in inferece params'
         feats = inference_featurizers[name](indep, params_train[name], params_inference[name], cache=features_cache[name], **kwargs)
         assert isinstance(feats, Mapping), 'The get extra_tXd functions now return a dictionary.'
         if 't1d' in feats:
@@ -285,18 +286,6 @@ def get_nucleic_ss_inference(indep, feature_conf, feature_inference_conf, **kwar
     ss_matrix = (2*torch.ones((L,L))).long() # Make a matrix 
     ss_templ_onehot = F.one_hot(ss_matrix, num_classes=3)
     return {'t2d':ss_templ_onehot}
-
-
-featurizers = {
-    'radius_of_gyration': get_radius_of_gyration,
-    'relative_sasa': get_relative_sasa,
-    'radius_of_gyration_v2': v2.get_radius_of_gyration,
-    'relative_sasa_v2': v2.get_relative_sasa,
-    'little_t_embedding': get_little_t_embedding,
-    'sinusoidal_timestep_embedding': get_sinusoidal_timestep_embedding_training,
-    'nucleic_ss' : get_nucleic_ss,
-}
-
 
 def get_ss_comp(indep: Indep, 
                 train_conf: dict, 
@@ -500,8 +489,10 @@ featurizers = {
     'relative_sasa_v2': v2.get_relative_sasa,
     'little_t_embedding': get_little_t_embedding,
     'sinusoidal_timestep_embedding': get_sinusoidal_timestep_embedding_training,
+    'nucleic_ss' : get_nucleic_ss,
     'secondary_structure_composition' : get_ss_comp,
     'nucleic_base_hotspots': get_nucleic_base_hotspots,
+    'ss_adj_cond': sec_struct_adj.get_ss_adj_conditioning,
 }
 
 # Add user specific featurizers to this dictionary for inference
@@ -515,6 +506,7 @@ inference_featurizers = {
     'nucleic_ss' : get_nucleic_ss_inference,
     'secondary_structure_composition' : get_ss_comp_inference,    
     'nucleic_base_hotspots' : get_nucleic_base_hotspots_inference,
+    'ss_adj_cond': sec_struct_adj.get_ss_adj_conditioning_inference,
 }
 
 # Add user specific featurizer initializer functions to this dictionary (optional) for inference

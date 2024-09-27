@@ -6,6 +6,8 @@ from rf_diffusion import conditioning
 from rf_diffusion import guide_posts
 from rf_diffusion.contigs import ContigMap
 import rf_diffusion.inference.centering as centering
+import rf_diffusion.inference.scaffold as scaffold
+import rf_diffusion.conditions.ss_adj.sec_struct_adjacency as sec_struct_adj
 
 import copy
 from omegaconf import OmegaConf
@@ -30,6 +32,9 @@ class PDBLoaderDataset(torch.utils.data.Dataset):
             confs (OmegaConf): Omegaconf for inference time
         """                
         self.conf = conf
+        self.pdb_fp = conf.inference.input_pdb
+        # Create contig map from the conf
+        self.target_feats = iu.process_target(self.pdb_fp, parse_hetatom=False, center=False)
 
     def __getitem__(self, idx):
         '''
@@ -42,22 +47,20 @@ class PDBLoaderDataset(torch.utils.data.Dataset):
         except IndexError as e:
             raise Exception(f"Failed to access PDBLoaderDataset[{idx}]") from e
 
-    def getitem_inner(self, idx):
+    def getitem_inner(self, idx, contig_conf=None):
         conf = self.conf
-        pdb_fp = conf.inference.input_pdb
 
         # Create contig map from the conf
-        target_feats = iu.process_target(pdb_fp, parse_hetatom=False, center=False)
-        L = len(target_feats['pdb_idx'])
-        contig_map = ContigMap(target_feats, **conf.contigmap)                 
+        L = len(self.target_feats['pdb_idx'])
+        contig_map = ContigMap(self.target_feats, **(contig_conf or conf.contigmap))               
 
         # Create the indep from the pdb file along with ligand metadata   
-        indep_orig, metadata = aa_model.make_indep(pdb_fp, 
+        indep_orig, metadata = aa_model.make_indep(self.pdb_fp, 
                                                    conf.inference.ligand, 
                                                    return_metadata=True)
         
         # Calculate centering context and validate
-        origin = centering.extract_centering_origin(indep_orig, pdb_fp, for_partial_diffusion(conf))        
+        origin = centering.extract_centering_origin(indep_orig, self.pdb_fp, for_partial_diffusion(conf))        
 
         # Prepare non atomization contig insertion (pre tranform-indep)
         model_adaptor = aa_model.Model(conf)
@@ -66,6 +69,7 @@ class PDBLoaderDataset(torch.utils.data.Dataset):
         # Validate strategies
         centering.validate_centering_strategy(origin, for_partial_diffusion(conf), conf)    
         guide_posts.validate_guideposting_strategy(conf)
+        sec_struct_adj.validate_ss_adj_strategy(conf)
 
         feats = {'contig_map': contig_map, 'indep': indep, 'metadata': metadata, 
                  'masks_1d': masks_1d, 'L': L, 'conf': conf,
@@ -75,6 +79,30 @@ class PDBLoaderDataset(torch.utils.data.Dataset):
     def __len__(self):
         return 1
 
+
+class ScaffoldPDBLoaderDataset(PDBLoaderDataset):
+    """
+    Makes indeps from PDBs for inference but where the free portion of the contig is loaded as a scaffold
+    """
+    def __init__(self, conf, scaffold_loader):
+        """
+        Args:
+            confs (OmegaConf): Omegaconf for inference time
+            scaffold_loader (ScaffoldLoader): The scaffold loader to use
+        """                
+        super().__init__(conf)
+        self.scaffold_loader = scaffold_loader
+        self.scaffold_loader.set_target_feats(self.target_feats)
+
+    def getitem_inner(self, idx):
+        contig_conf, ss_adj = self.scaffold_loader[idx]
+        feats = super().getitem_inner(idx, contig_conf=contig_conf)
+        feats['conditions_dict']['ss_adj'] = ss_adj
+
+        return feats
+
+    def __len__(self):
+        return len(self.scaffold_loader)
 
 def for_partial_diffusion(conf: OmegaConf):
     return conf.diffuser.partial_T is not None
@@ -121,6 +149,26 @@ def get_t_inference(conf: OmegaConf) -> Tuple[int, float]:
 
     return t_step_input, t_cont
 
+
+def get_pdb_loader(conf):
+    '''
+    Factory method to figure out which base PDB Loader to generate
+
+    Args:
+        conf (OmegaConf): The config
+
+    Returns:
+        loader (torch.utils.data.Dataset): A loader that looks like PDBLoaderDataset
+
+    '''
+
+    # Support for the old Joe + Nate ss/adj files using conf.scaffoldguided
+    if sec_struct_adj.user_wants_ss_adj_scaffold(conf):
+        scaffold_loader = scaffold.FileSSADJScaffoldLoader(conf)
+        return ScaffoldPDBLoaderDataset(conf, scaffold_loader)
+    
+    # Not using scaffolds
+    return PDBLoaderDataset(conf)
 
 class InferenceDataset:
     """
@@ -201,7 +249,7 @@ class InferenceDataset:
             )
 
         # Create dataset from the pdb input and config
-        dataset = PDBLoaderDataset(conf)
+        dataset = get_pdb_loader(conf)
         
         # Curate transforms as in training 
         transforms = []

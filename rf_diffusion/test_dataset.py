@@ -596,6 +596,32 @@ class Dataloader(unittest.TestCase):
         
         test_utils.assert_matches_golden(self, golden_name, indep, rewrite=REWRITE, custom_comparator=self.cmp)
 
+    def test_ss_adj(self):
+        '''
+        The point of this test is to make sure that ss/adj is actually working during training
+        They are stored in extra_t1d[:,-5:] and extra_t2d[:,:,-3:]
+        '''
+        dataset = 'pdb_aa'
+        mask = 'get_unconditional_diffusion_mask'
+        loader_out = self.indep_for_dataset(dataset, mask, overrides=[
+            'transforms.configs.AddConditionalInputs.p_is_guidepost_example=0',
+            'upstream_training_transforms.configs.GenerateSSADJTrainingTransform.p_is_ss_example=1.0',
+            'upstream_training_transforms.configs.GenerateSSADJTrainingTransform.p_is_adj_example=1.0',
+            'upstream_training_transforms.configs.GenerateSSADJTrainingTransform.ss_max_mask=0.2',
+            'upstream_training_transforms.configs.GenerateSSADJTrainingTransform.adj_max_mask=0.2',
+            ], config_name='fm_tip_ss_adj')
+        indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context, conditions_dict = loader_out
+        indep.metadata = None
+
+        golden_name = f'indep_{dataset}-{mask}_ss_adj'
+
+        if self.show_in_pymol:
+            name, names = show.one(indep, None)
+            show.cmd.do('util.cbc')
+            show.diffused(indep, is_diffused, 'true')
+        
+        test_utils.assert_matches_golden(self, golden_name, indep, rewrite=REWRITE, custom_comparator=self.cmp)
+
     def test_atom_order(self):
         '''
         Tests that amino acid atoms from the dataloader are ordered the same way as in rf2aa.chemical.aa2long.

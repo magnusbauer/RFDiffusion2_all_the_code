@@ -267,7 +267,7 @@ def get_bb_pydssp(indep: Indep) -> Tuple[torch.Tensor, torch.Tensor]:
     Returns:
         torch.Tensor: The rearranged data in the format required by PyDSSP. [L, 4, 3]
     """
-    is_prot = (indep.seq <= 20) * ~indep.is_gp * ~indep.is_sm
+    is_prot = (indep.seq <= 21) * ~indep.is_gp * ~indep.is_sm
     # is_prot = nucl_utils.get_resi_type_mask(indep.seq, 'prot') * ~is_gp * ~indep.is_sm
     N_idx = ChemData().aa2long[0].index(" N  ")
     CA_idx = ChemData().aa2long[0].index(" CA ")

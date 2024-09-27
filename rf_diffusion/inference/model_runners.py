@@ -14,7 +14,6 @@ import rf2aa.tensor_util
 import rf_diffusion.aa_model as aa_model
 
 from rf_diffusion.inference import utils as iu
-from rf_diffusion.potentials.manager import PotentialManager
 from rf_diffusion.inference import symmetry
 from hydra.core.hydra_config import HydraConfig
 from rf_diffusion.frame_diffusion.data import all_atom
@@ -164,20 +163,25 @@ class Sampler:
         self.converter = XYZConverter()
         self.chain_idx = None
 
-        self.potential_manager = PotentialManager(self.potential_conf, 
-                                                  self.ppi_conf, 
-                                                  self.diffuser_conf, 
-                                                  self.inf_conf)
+        # self.potential_manager = PotentialManager(self.potential_conf, 
+        #                                           self.ppi_conf, 
+        #                                           self.diffuser_conf, 
+        #                                           self.inf_conf)
         
         # Get recycle schedule    
         recycle_schedule = str(self.inf_conf.recycle_schedule) if self.inf_conf.recycle_schedule is not None else None
         self.recycle_schedule = iu.recycle_schedule(self.diffuser_conf.T, recycle_schedule, self.inf_conf.num_recycles)
+
+        self.dataset = rf_diffusion.inference.data_loader.InferenceDataset(self._conf, self.diffuser)
     
-    def sample_init(self):
+    def sample_init(self, i_des=0):
         """Initial features to start the sampling process.
         
         Modify signature and function body for different initialization
         based on the config.
+
+        Args:
+            i_des (int): Design number
         
         Returns:
             indep (Indep): the holy Indep,
@@ -185,9 +189,7 @@ class Sampler:
             atomizer (Atomizer): the atomizer,
             t_step_input (torch.tensor): the t_step_input
         """
-        # Create and consume dataset 
-        dataset = rf_diffusion.inference.data_loader.InferenceDataset(self._conf, self.diffuser)
-        indep_uncond, self.indep_orig, self.indep_cond, metadata, self.is_diffused, self.atomizer, contig_map, t_step_input, self.conditions_dict = next(iter(dataset))
+        indep_uncond, self.indep_orig, self.indep_cond, metadata, self.is_diffused, self.atomizer, contig_map, t_step_input, self.conditions_dict = self.dataset[i_des % len(self.dataset)]
         indep = self.indep_cond.clone()
         return indep, contig_map, self.atomizer, t_step_input
 
@@ -532,16 +534,14 @@ class FlowMatching_make_conditional(FlowMatching):
 
 class FlowMatching_make_conditional_diffuse_all(FlowMatching_make_conditional):
 
-    def sample_init(self):
-        dataset = rf_diffusion.inference.data_loader.InferenceDataset(self._conf, self.diffuser)
-        indep_uncond, self.indep_orig, self.indep_cond, metadata, self.is_diffused, atomizer, contig_map, t_step_input, self.conditions_dict = next(iter(dataset))
+    def sample_init(self, i_des=0):
+        indep_uncond, self.indep_orig, self.indep_cond, metadata, self.is_diffused, atomizer, contig_map, t_step_input, self.conditions_dict = self.dataset[i_des % len(self.dataset)]
         return indep_uncond, contig_map, atomizer, t_step_input
 
 class FlowMatching_make_conditional_diffuse_all_xt_unfrozen(FlowMatching):
 
-    def sample_init(self):
-        dataset = rf_diffusion.inference.data_loader.InferenceDataset(self._conf, self.diffuser)
-        indep_uncond, self.indep_orig, self.indep_cond, metadata, self.is_diffused, atomizer, contig_map, t_step_input, self.conditions_dict = next(iter(dataset))
+    def sample_init(self, i_des=0):
+        indep_uncond, self.indep_orig, self.indep_cond, metadata, self.is_diffused, atomizer, contig_map, t_step_input, self.conditions_dict = self.dataset[i_des % len(self.dataset)]
         return indep_uncond, contig_map, atomizer, t_step_input
     
     def sample_step(self, t, indep, rfo, extra, features_cache):
@@ -558,9 +558,8 @@ class FlowMatching_make_conditional_diffuse_all_xt_unfrozen(FlowMatching):
 
 class ClassifierFreeGuidance(FlowMatching):
     # WIP
-    def sample_init(self):
-        dataset = rf_diffusion.inference.data_loader.InferenceDataset(self._conf, self.diffuser)
-        indep_uncond, self.indep_orig, self.indep_cond, metadata, self.is_diffused, atomizer, contig_map, t_step_input, self.conditions_dict = next(iter(dataset))
+    def sample_init(self, i_des=0):
+        indep_uncond, self.indep_orig, self.indep_cond, metadata, self.is_diffused, atomizer, contig_map, t_step_input, self.conditions_dict = self.dataset[i_des % len(self.dataset)]
         return indep_uncond, contig_map, atomizer, t_step_input
     
     def get_grads(self, t, indep_in, indep_t, rfo, is_diffused, features_cache):

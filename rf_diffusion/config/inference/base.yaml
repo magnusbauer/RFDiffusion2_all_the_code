@@ -58,6 +58,7 @@ inference:
       rasa: -1
     little_t_embedding: null
     sinusoidal_timestep_embedding: null
+    ss_adj_cond: {}
   safety:
     # Indicates that a user is carefully performing sidechain partial diffusion.
     # We require this to be set, as unless a user is careful this causes undefined behavior.
@@ -175,7 +176,6 @@ denoiser:
 
 ppi:
   hotspot_res: null
-  binderlen: null
 
 potentials:
   guiding_potentials: null 
@@ -214,6 +214,21 @@ extra_tXd_params: {}
 upstream_inference_transforms: # Transforms that are only applied for inference. Likely have similar-but-different training copies
   names: []
   configs: {}
+
+scaffoldguided: # This group of flags is related to the original Joe + Nate diffusion scaffold loader using ss/adj files
+  scaffold_list: null # Optional: Either an actual list ['A', 'B'] or a path to a .txt file that contains scaffold names. A contig for each scaffold may be included after the name
+  scaffold_dir: null # Either this or scaffold_arc must be specified. A path to a dir of _ss.pt and _adj.pt files. Will be ls'd if scaffold_list is null
+  scaffold_arc: null # Either this or scaffold_dir must be specified. A dictionary stored as a .pt file mapping scaffold names to tuple(ss,adj). Use all if scaffold_list is null
+  sampled_insertion: 0 # Up to this many MASK tokens will be injected into every loop/mask segment of your scaffold
+  sampled_N: 0 # Up to this many MASK tokens will be added to the front of your scaffold
+  sampled_C: 0 # Up to this many MASK tokens will be added to the end of your scaffold
+  ss_mask: 0 # Each non-loop/non-mask section will be trimmed by this many AA
+  systematic: False # Should your scaffold_list (or contents of scaffold_dir/scaffold_arc) be traversed in order or randomly without replacement?
+  mask_loops: True # Should loops in your ss file be converted to MASK?
+  not_legacy_adj: False # In Joe + Nate's ss/adj files, loops are set to ADJ_FAR which is unfortunate (when they are truly ADJ_MASK). If you actually want this behavior, set this true
+  target_ss: null # ss file for your target. See new autogenerate_target_ss_adj
+  target_adj: null # adj file for your target. See new autogenerate_target_ss_adj
+  autogenerate_target_ss_adj: False # Autogenerate the ss/adj file for your target. Same as make_secstruc_adj.py output. No slowdown
 
 transforms:
   configs:

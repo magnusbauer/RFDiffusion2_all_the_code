@@ -133,7 +133,7 @@ def sample(sampler):
             log.info(f'(cautious mode) Skipping this design because {out_prefix}.trb already exists.')
             continue
         print(f'making design {i_des} of {des_i_start}:{des_i_end}', flush=True)
-        sampler_out = sample_one(sampler)
+        sampler_out = sample_one(sampler, i_des)
         log.info(f'Finished design in {(time.time()-start_time)/60:.2f} minutes')
         original_conf = copy.deepcopy(sampler._conf)
         confs = expand_config(sampler._conf)
@@ -147,9 +147,9 @@ def sample(sampler):
             save_outputs(sampler, out_prefix_suffixed, *(copy.deepcopy(o) for o in sampler_out))
             sampler._conf = original_conf
 
-def sample_one(sampler, simple_logging=False):
+def sample_one(sampler, i_des=0, simple_logging=False):
     # For intermediate output logging
-    indep, contig_map, atomizer, t_step_input = sampler.sample_init()
+    indep, contig_map, atomizer, t_step_input = sampler.sample_init(i_des)
     log = logging.getLogger(__name__)
 
     traj_stack = defaultdict(list)

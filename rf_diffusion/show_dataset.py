@@ -18,6 +18,7 @@ from rf_diffusion import show
 from rf_diffusion.dev import show_tip_pa
 from rf_diffusion.frame_diffusion.data import se3_diffuser
 from rf_diffusion import aa_model
+from rf_diffusion.conditions.ss_adj.sec_struct_adjacency import SS_HELIX, SS_STRAND, SS_LOOP, SS_SM
 
 import rf_diffusion.dev.show_tip_row
 # from rf_diffusion.dev.show_tip_row import OR, AND, NOT
@@ -137,6 +138,7 @@ def run(conf: DictConfig) -> None:
                 # ic(torch.nonzero(indep.bond_feats == 7))
                 name = f'{xyz_label}_dataset-{chosen_dataset}_mask-{masks_1d["mask_name"]}_gp-{masks_1d["use_guideposts"]}_bonds_{len(bonds)}_{show.get_counter()}'
                 print(name)
+                mask_by_name = {}
                 if conf.show_dataset.show_diffused:
                     show.color_diffused(indep, is_diffused, name=name)
                 if conf.show_dataset.show:
@@ -145,7 +147,6 @@ def run(conf: DictConfig) -> None:
                     show.cmd.color('orange', f'{name} and hetatm and elem C')
 
                     point_types = aa_model.get_point_types(indep, atomizer)
-                    mask_by_name = {}
                     for point_category, point_mask in {
                         'residue': point_types == aa_model.POINT_RESIDUE,
                         'atomized': np.isin(point_types, [aa_model.POINT_ATOMIZED_BACKBONE, aa_model.POINT_ATOMIZED_SIDECHAIN]),
@@ -159,6 +160,20 @@ def run(conf: DictConfig) -> None:
 
                     if conf.show_dataset.show_only_backbone:
                         show.show_backbone_spheres(f'{name} and not hetatm')
+
+                if conf.show_dataset.show_ss_cond:
+                    ss_t1d_offset = conf.show_dataset.ss_t1d_offset
+                    helix = indep.extra_t1d[:,ss_t1d_offset+SS_HELIX].bool()
+                    strand = indep.extra_t1d[:,ss_t1d_offset+SS_STRAND].bool()
+                    loop = indep.extra_t1d[:,ss_t1d_offset+SS_LOOP].bool()
+                    sm = indep.extra_t1d[:,ss_t1d_offset+SS_SM].bool()
+
+                    mask_by_name['ss_helix'] = helix
+                    mask_by_name['ss_strand'] = strand
+                    mask_by_name['ss_loop'] = loop
+                    mask_by_name['ss_sm'] = sm
+
+                if len(mask_by_name) > 0:
 
                     selectors = {}
                     for mask_name, mask in mask_by_name.items():
