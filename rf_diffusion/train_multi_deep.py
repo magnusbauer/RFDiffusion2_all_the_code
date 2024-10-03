@@ -173,6 +173,7 @@ class Trainer():
         self.ang_ref = ChemData().reference_angles
         self.l2a = ChemData().long2alt
         self.allatom_converter = XYZConverter()
+        self.fi_dev = ChemData().frame_indices
 
         self.hbtypes = ChemData().hbtypes
         self.hbbaseatoms = ChemData().hbbaseatoms
@@ -197,10 +198,13 @@ class Trainer():
                   seq_diffusion_mask, seq_t, is_sm, unclamp=False, negative=False,
                   w_dist=1.0, w_aa=1.0, w_str=1.0, w_all=0.5, w_exp=1.0,
                   w_lddt=1.0, w_blen=1.0, w_bang=1.0, w_lj=0.0, w_hb=0.0,
-                  lj_lin=0.75, use_H=False, w_disp=0.0, w_motif_disp=0.0, w_ax_ang=0.0, w_frame_dist=0.0, eps=1e-6, backprop_non_displacement_on_given=False, atomizer=None):
+                  lj_lin=0.75, use_H=False, w_disp=0.0, w_motif_disp=0.0, 
+                  w_ax_ang=0.0, w_frame_dist=0.0, eps=1e-6, 
+                  backprop_non_displacement_on_given=False, atomizer=None,
+                  masks_1d={}, atom_frames=None):
 
         aux_data = {}
-        
+
         device = model_out['rigids'].device
         batch_size, _, num_res, _ = model_out['rigids'].shape
         is_diffused = is_diffused[None].to(device)
@@ -489,6 +493,26 @@ class Trainer():
             loss = (mask_2d*loss).sum() / (mask_2d.sum() + eps)
             loss_dict[f'c6d_{label}'] = loss.clone()
 
+
+        # find out the small molecule lengths 
+        sm_Ls = rf_diffusion.util.get_sm_lengths(indep.is_sm.clone().cpu().detach().numpy(), 
+                                                 indep.same_chain.clone().cpu().detach().numpy())
+        
+
+        # FAPE losses
+        fape_kwargs = {'masks_1d'       : masks_1d,     # dict - masks from mask_generator
+                       'pred_in'        : pred_in,
+                       'indep'          : indep,        # contains true structure and sequence for scoring 
+                       'mask_crds'      : mask_crds,
+                       'fi_dev'         : self.fi_dev,
+                       'atom_frames'    : atom_frames, 
+                       'sm_Ls'          : sm_Ls,  
+                       'conf'           : self.conf,       
+                       'diffusion_mask' : ~masks_1d['was_noised_in_3d']
+                      }   
+        
+        fape_loss_dict = compute_fape_losses(**fape_kwargs)
+
         
         # Average over batches
         for k, loss in loss_dict.items():
@@ -509,6 +533,10 @@ class Trainer():
             aux_data[f'weighted.{k}'] = weighted_loss
 
             tot_loss += weighted_loss
+
+        
+        # add fape losses 
+        # tot_loss = resolve_fape_losses(tot_loss, fape_loss_dict, loss_weights)
         
         return tot_loss, aux_data
 
@@ -784,6 +812,7 @@ class Trainer():
 
         # move some global data to cuda device
         self.ti_dev = self.ti_dev.to(gpu)
+        self.fi_dev = self.fi_dev.to(gpu)
         self.ti_flip = self.ti_flip.to(gpu)
         self.ang_ref = self.ang_ref.to(gpu)
         self.allatom_converter = self.allatom_converter.to(gpu)
@@ -1060,7 +1089,7 @@ class Trainer():
                                 mask_BB, mask_2d, same_chain,
                                 pred_lddts, indep.idx[None], chosen_dataset, chosen_task, is_diffused=is_diffused,
                                 seq_diffusion_mask=seq_diffusion_mask, seq_t=seq_t, xyz_in=xyz_t, is_sm=indep.is_sm, unclamp=unclamp,
-                                negative=negative, t=little_t, atomizer=atomizer)
+                                negative=negative, t=little_t, atomizer=atomizer, masks_1d=masks_1d, atom_frames=rfi.atom_frames)
                         # Force all model parameters to participate in loss. Truly a cursed workaround.
                         loss += 0.0 * (
                             logits_pae.mean() +

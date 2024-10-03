@@ -6,16 +6,319 @@ from opt_einsum import contract as einsum
 
 from rf_diffusion.util import rigid_from_3_points, get_mu_xt_x0
 from rf2aa.kinematics import get_dih
+import rf2aa.util
 from rf2aa.scoring import HbHybType
 from rf_diffusion.diff_util import th_min_angle 
 import rf_diffusion.nucleic_compatibility_utils as nucl_util
 from rf_diffusion.chemical import ChemicalData as ChemData
-
+from rf_diffusion.kinematics import th_kabsch
+from rf2aa.loss.loss import compute_general_FAPE
+import pdb 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from rf_diffusion.aa_model import Indep
     from omegaconf import OmegaConf
 
+from icecream import ic 
+
+def weighted_decay_sum(losses, gamma=0.99):
+    assert len(losses.shape) == 1
+    I = losses.shape[0]
+
+    w_loss = torch.pow(torch.full((I,), gamma, device=losses.device), torch.arange(I, device=losses.device))
+    w_loss = torch.flip(w_loss, (0,))
+    w_loss = w_loss / w_loss.sum()
+
+    tot_loss = (w_loss * losses).sum()
+    return tot_loss
+
+
+def calc_discontiguous_motif_rmsd(pred, true, is_computed):
+    """
+    Computes Kabsh RMSD over each contiguous chunk of residues in <is_computed>. 
+
+    Assumes the islands of True are independent.
+    """
+    assert len(pred.shape) == 5     # (I,B,L,atoms,3)
+    pred = pred[-1,0]               # (L,atoms,3)
+    assert len(true.shape) == 4     # (B,L,atoms,3)
+    true = true[0]                  # (L,atoms,3)
+    chunk_start_stops = torch.where(torch.diff(torch.cat([torch.tensor([0]), is_computed, torch.tensor([0])])))[0].view(-1,2)
+
+    rmsds = []
+
+    for start, stop in chunk_start_stops:
+        cur_pred = pred[start:stop,:3,:]
+        cur_true = true[start:stop,:3,:]
+
+        rms,_,_ = th_kabsch(cur_pred.reshape(-1,3), cur_true.reshape(-1,3))
+        rmsds.append(rms)
+
+    return torch.tensor(rmsds).mean()
+
+
+def calc_discontiguous_motif_rmsd_atoms(pred, true, is_computed, Ls):
+    """
+    Computes Kabsh RMSD over each contiguous chunk of residues in <is_computed>. 
+
+    Assumes the islands of True are independent.
+    """
+    assert all(is_computed), 'Assuming all atomized regions are computed in rmsd calc'
+    assert type(Ls) == list and all([type(a) == int for a in Ls])
+    assert len(pred.shape) == 5     # (I,B,L,atoms,3)
+    pred = pred[-1,0]               # (L,atoms,3)
+    assert len(true.shape) == 4     # (B,L,atoms,3)
+    true = true[0]                  # (L,atoms,3)
+
+
+    cum_Ls = np.cumsum(Ls)
+
+    rmsds = []
+    for i,end in enumerate(cum_Ls):
+        start = cum_Ls[i-1] if i > 0 else 0
+
+        cur_pred = pred[start:end,1]
+        cur_true = true[start:end,1]
+
+        rms,_,_ = th_kabsch(cur_pred, cur_true)
+        rmsds.append(rms)
+
+    return torch.tensor(rmsds).mean()
+
+
+
+def compute_fape_losses(indep           : Indep, 
+                        masks_1d        : dict, 
+                        pred_in         : torch.Tensor,
+                        conf            : OmegaConf,
+                        mask_crds       : torch.Tensor,
+                        fi_dev          : torch.Tensor,
+                        atom_frames     : torch.Tensor,
+                        diffusion_mask  : torch.Tensor,
+                        negative        : bool = False,
+                        sm_Ls           : list = []):
+    """
+    Computes FAPE losses for the example. There are multiple possible contributors: 
+
+    (1) FAPE on protein motif elements  
+    (2) FAPE on protein non-motif elements 
+    (3) FAPE on intra-ligand token pairs
+    (4) FAPE on inter protein-ligand token pairs
+
+    Parameters: 
+        indep (aa_model.Indep): The true structure and sequence. 
+        
+        masks_1d (dict): Masks from mask generator
+
+        pred_in (torch.Tensor): The predicted structure
+
+        loss_weights (dict): Loss weights for the different losses
+
+        conf (OmegaConf): The training config 
+
+        mask_crds (torch.Tensor): Mask denoting which crds exist in the true structure
+
+        fi_dev (torch.Tensor): The frame indices for the atoms
+
+        atom_frames (torch.Tensor): indices of atoms for each atom frame
+
+        diffusion_mask (torch.Tensor): False if token was diffused, True if held fixed at native crds
+
+        negative (bool): whether or not the example was a "negative" ppi example
+
+        sm_Ls (list): List of the lengths of each ligand (# atoms) in the example.
+                      Used for splitting up the RMSD calculations if there are multiple ligands.
+
+    Written by DJ, sourcing compute_general_FAPE and helper functions from Krishna et al.
+    """
+    
+    ## Organize some variables  
+    floss_dict = {} # fape loss dictionary
+    true = indep.xyz
+    
+    if conf.loss.backprop_non_displacement_on_given:
+        pred = pred_in 
+    else: 
+        pred = torch.clone(pred_in)
+        pred[:,:,diffusion_mask] = pred_in[:,:,diffusion_mask].detach()
+
+    I,B,L = pred.shape[:3]
+
+
+    is_sm         = indep.is_sm
+    is_motif      = masks_1d['input_str_mask'].to(device=pred.device)
+    is_prot_motif = is_motif & ~is_sm
+    is_sm_motif   = is_motif & is_sm
+    is_prot_only_non_motif = ~is_motif & ~is_sm
+
+    seq         = indep.seq
+    same_chain  = indep.same_chain[None]
+
+    norm_fape   = conf.experiment.norm_fape
+    clamp_fape  = conf.experiment.d_clamp_fape
+    unclamp     = torch.tensor([False])
+    
+
+    frames, frame_mask = rf2aa.util.get_frames(pred_in[-1,:,...], mask_crds, seq, fi_dev, atom_frames)
+    # update frames and frames_mask to only include BB frames (have to update both for compatibility with compute_general_FAPE)
+    frames_BB = frames.clone()
+    frames_BB[..., 1:, :, :] = 0        # all frames except BB frames are set to zero
+    frame_mask_BB = frame_mask.clone()
+    frame_mask_BB[...,1:] =False
+    frame_mask_BB = frame_mask_BB[None]
+    
+
+    ###################################################
+    ### (1) FAPE on protein motif (non SM) residues ###
+    ###################################################
+    t2d_is_revealed = masks_1d['is_motif_2d']
+    t2d_is_revealed_protein_only = t2d_is_revealed.clone()
+    # mask out all (i,j) pairs where i or j is a small molecule
+    t2d_is_revealed_protein_only[is_sm,:] = False
+    t2d_is_revealed_protein_only[:,is_sm] = False
+
+
+    if is_prot_motif.sum() > 0:
+        had_prot_motif = True
+        tot_motif_fape, _ = calc_str_loss(pred, true[None], t2d_is_revealed_protein_only.to(device=pred.device), same_chain, negative=negative,
+                                            A=norm_fape/2, d_clamp=None if unclamp else clamp_fape/2, gamma=1.0)
+    else:
+        had_prot_motif = False
+        tot_motif_fape = float('nan') 
+
+
+    ######################################
+    ### (2) FAPE on non-motif residues ###
+    ######################################
+    tot_nonmotif_fape, _ = calc_str_loss(pred, true[None], ~t2d_is_revealed.to(device=pred.device), same_chain, negative=negative,
+                                             A=norm_fape, d_clamp=None if unclamp else clamp_fape, gamma=1.0)
+
+
+    #############################
+    ### (3) Ligand Intra FAPE ###
+    #############################
+    dclamp_sm = 4.0
+    Z_sm = 4.0
+    dclamp = clamp_fape
+    Z = norm_fape
+    res_mask = ~((mask_crds[:,:,:3].sum(dim=-1) < 3.0) * ~(rf2aa.util.is_atom(seq)))
+
+    # create 2d masks for intrachain and interchain fape calculations
+    nframes = frame_mask.shape[-1]
+    frame_atom_mask_2d_allatom = torch.einsum('bfn,bra->bfnra', frame_mask_BB, mask_crds).bool() # B, L, nframes, L, natoms
+    frame_atom_mask_2d = frame_atom_mask_2d_allatom[:, :, :, :, :3]
+    frame_atom_mask_2d_intra_allatom = frame_atom_mask_2d_allatom * same_chain[:, :,None, :, None].bool().expand(-1,-1,nframes,-1, ChemData().NTOTAL)
+    frame_atom_mask_2d_intra = frame_atom_mask_2d_intra_allatom[:, :, :, :, :3]
+    different_chain = ~same_chain.bool()
+    frame_atom_mask_2d_inter = frame_atom_mask_2d*different_chain[:, :,None, :, None].expand(-1,-1,nframes,-1, 3)
+
+    # FAPE within ligand
+    sm_res_mask = (rf2aa.util.is_atom(seq)*res_mask).squeeze()
+
+    # DJ - fix masks so invalid sm atoms are not scored 
+    frame_atom_mask_2d_intra[...,sm_res_mask, 0] = False
+    frame_atom_mask_2d_intra[...,sm_res_mask, 2] = False
+    mask_crds[...,sm_res_mask, 0] = False
+    mask_crds[...,sm_res_mask, 2] = False
+
+
+    if rf2aa.util.is_atom(seq).sum() > 0:
+        had_sm = True
+        l_fape_sm_intra, _, _ = compute_general_FAPE(
+                pred[:,sm_res_mask[None],:,:3],
+                true[:,sm_res_mask,:3,:3],
+                atom_mask           = mask_crds[:,sm_res_mask, :3],
+                frames              = frames_BB[:,sm_res_mask],
+                frame_mask          = frame_mask_BB[:,sm_res_mask],
+                frame_atom_mask_2d  = frame_atom_mask_2d_intra[:, sm_res_mask][:, :, :, sm_res_mask],
+                dclamp=dclamp_sm,
+                Z=Z_sm
+            )
+        # l_fape_sm_intra is (N,) shape, need to apply weighted sum
+        l_fape_sm_intra = weighted_decay_sum(l_fape_sm_intra, gamma=0.99) # in ./loss.py 
+
+    else:
+        had_sm = False
+        l_fape_sm_intra = float('nan') # will skip adding later
+    
+    ##########################################################
+    ### (4) FAPE protein --> ligand and ligand --> protein ###
+    ##########################################################
+    if (had_sm and had_prot_motif):
+
+        sm_prot_inter_frame_atom_is_scored = torch.zeros((L, nframes, L, ChemData().NTOTAL), device=pred.device).bool()
+
+        # Cursed scatter of True's into 2D mask
+        score_2d = sm_prot_inter_frame_atom_is_scored
+        a,b,c,d = score_2d.shape
+
+        # SM frames against protin BB atoms 
+        for i in range(a):
+            if is_sm_motif[i]:
+                for k in range(c):
+                    if is_prot_motif[k]:
+                        # set i,0,k,:3 -->True 
+                        score_2d[i,0,k,:3] = True
+
+        # Prot frames against SM atoms (only available atom is first index)
+        for i in range(a):
+            if is_prot_motif[i]:
+                for k in range(c):
+                    if is_sm_motif[k]:
+                        # set i,0,k,1:2 --> True 
+                        score_2d[i,0,k,1:2] = True
+
+
+        l_fape_prot_sm_inter, _, _ = compute_general_FAPE(
+            pred[...,:3,:].squeeze(),
+            true[...,:3,:],
+            atom_mask           = mask_crds[...,:3],
+            frames              = frames_BB,
+            frame_mask          = frame_mask_BB,
+            frame_atom_mask_2d  = sm_prot_inter_frame_atom_is_scored[None,...,:3],
+            dclamp              = dclamp,
+            Z                   = Z)
+
+        l_fape_prot_sm_inter= weighted_decay_sum(l_fape_prot_sm_inter, gamma=0.99) # in ./loss.py
+
+    else:
+        l_fape_prot_sm_inter = float('nan')
+
+
+    # Add to loss dictionary
+    floss_dict['motif_fape']          = tot_motif_fape
+    floss_dict['nonmotif_fape']       = tot_nonmotif_fape
+    floss_dict['ligand_intra_fape']   = l_fape_sm_intra
+    floss_dict['prot_lig_inter_fape'] = l_fape_prot_sm_inter
+
+
+
+    # Report RMSD on the motif chunks that were templated # 
+    motif_rmsd      = calc_discontiguous_motif_rmsd(pred.detach(), true.detach()[None], is_prot_motif.detach().cpu())
+    non_motif_rmsd  = calc_discontiguous_motif_rmsd(pred.detach(), true.detach()[None], is_prot_only_non_motif.detach().cpu())
+
+    if had_sm:
+        ligand_rmsd = calc_discontiguous_motif_rmsd_atoms(pred.detach()[:,:,is_sm],
+                                                            true.detach()[:,is_sm],
+                                                            is_sm[is_sm],
+                                                            sm_Ls)
+    else:                   
+        ligand_rmsd = float('nan')
+                                
+
+    # check if there was just a single ligand atom
+    if rf2aa.util.is_atom(seq).sum() <= 1:
+        ligand_rmsd = float('nan')
+
+
+    # add rmsds
+    floss_dict['motif_rmsd']    = motif_rmsd
+    floss_dict['nonmotif_rmsd'] = non_motif_rmsd
+    floss_dict['ligand_rmsd']   = ligand_rmsd
+
+    return floss_dict
+
+    
 
 # Loss functions for the training
 # 1. BB rmsd loss

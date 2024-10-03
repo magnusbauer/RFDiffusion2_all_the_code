@@ -97,8 +97,7 @@ class ComputeMotifTemplate:
         """
         Parameters: 
             indep (Indep):              The unnoised indep object
-            is_motif (torch.Tensor):    The 1D motif mask
-            is_motif_2d (torch.Tensor): The 2D motif mask
+            masks_1d (dict):            The masks containing 1d and 2d motif info
             use_cb (bool):              Whether to use cb atoms for t2d calculation
         """
         is_motif    = masks_1d['input_str_mask'] 

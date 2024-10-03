@@ -1882,7 +1882,7 @@ class TransformedDataset(data.Dataset):
             for T in self.transforms:
                 feats_before = set(feats.keys()) if isinstance(feats, dict) else set()
                 feats = T(**feats)
-                
+
                 # Logger information to track changes
                 feats_after = set(feats.keys()) if isinstance(feats, dict) else set()
                 new_feats = feats_after - feats_before
@@ -2050,6 +2050,7 @@ def wrap_featurize( indep,
                     eye_frames,
                     model_adaptor,
                     masks_1d,
+                    conf,
                     **kwargs): 
     """
     Wrapper to handle extra tXd, prepro, and adding extra templates.
@@ -2060,6 +2061,11 @@ def wrap_featurize( indep,
 
     # Reseed the RNGs for test stability.
     run_inference.seed_all(mask_gen_seed) 
+
+    if conf.motif_only_2d:
+        is_diffused[:] = True
+
+    masks_1d['was_noised_in_3d'] = is_diffused
 
     # diffuse the indep
     indep_t, diffuser_out = aa_model.diffuse(dataset_conf, diffuser, indep, is_diffused, t)
@@ -2137,13 +2143,15 @@ class DistilledDataset(data.Dataset):
                                 'eye_frames'        : self.preprocess_param.get('eye_frames', False), 
                                 'model_adaptor'     : self.model_adaptor,
                                 'masks_1d'          : masks_1d,
+                                'conf'              : conf,
                                 **kwargs}
             
             diffuser_out, rfi = wrap_featurize(**featurize_kwargs)
 
             # Sanity checks
             if torch.sum(~is_diffused) > 0:
-                assert torch.mean(rfi.xyz[:,~is_diffused,1] - indep.xyz[None,~is_diffused,1]) < 0.001
+                mydiff = torch.mean(rfi.xyz[:,~is_diffused,1] - indep.xyz[None,~is_diffused,1]) 
+                assert mydiff < 0.001, f'xyz diff: {mydiff}'
 
             run_inference.seed_all(mask_gen_seed) # Reseed the RNGs for test stability.
             indep.metadata = metadata

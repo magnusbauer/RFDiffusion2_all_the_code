@@ -16,6 +16,9 @@ resume_scheduler: false
 pseudobatch: 1 
 model_name: caBFF
 
+loss:
+  backprop_non_displacement_on_given: false
+
 upstream_training_transforms: 
   names: 
     - GenerateMasks
@@ -86,14 +89,16 @@ experiment:
   plddt_weight: 0.0
 
   #  ca rfdiffusion loss fxn hyperparams 
-  norm_fape_prot_motif: 5.0
-  norm_fape_sm: 4.0
-  norm_fape_prot_sm: 10
-  norm_fape_prot_nonmotif: 10
-  d_clamp_fape_prot_motif: 5
-  d_clamp_fape_sm: 4.0
-  d_clamp_fape_prot_sm: 10
-  d_clamp_fape_prot_nonmotif: 10
+  # norm_fape_prot_motif: 5.0
+  # norm_fape_sm: 4.0
+  # norm_fape_prot_sm: 10
+  # norm_fape_prot_nonmotif: 10
+  norm_fape: 10
+  # d_clamp_fape_prot_motif: 5
+  # d_clamp_fape_sm: 4.0
+  # d_clamp_fape_prot_sm: 10
+  # d_clamp_fape_prot_nonmotif: 10
+  d_clamp_fape: 10
 
 rf:
   model: 

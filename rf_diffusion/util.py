@@ -8,6 +8,29 @@ from rf_diffusion.scoring import *
 
 import rf2aa.kinematics
 import rf2aa.util
+import networkx as nx 
+
+def any_a_in_b(a: list, b: list): 
+    # check if any element in a is in b
+    return any([x in b for x in a])
+
+def get_sm_lengths(is_sm: np.array, is_same_chain: np.array):
+    """
+    Returns the lengths of the small molecules. 
+
+    WARNING: Might need additional logic for atomized sidechains.  
+    """
+    where_is_sm = np.where(is_sm)[0]
+
+    G = nx.from_numpy_array(is_same_chain)
+
+    # make mask denoting which cliques are SM cliques? 
+    cliques      = nx.find_cliques(G)
+    is_sm_clique = [any_a_in_b(a, where_is_sm) for a in cliques]
+    cliques = [c for c, is_sm in zip(cliques, is_sm_clique) if is_sm]
+
+    return [len(c) for c in cliques]
+    
 
 def generate_Cbeta(N,Ca,C):
     # recreate Cb given N,Ca,C
@@ -50,6 +73,12 @@ def th_dih_v(ab,bc,cd):
 
 def th_dih(a,b,c,d):
     return th_dih_v(a-b,b-c,c-d)
+
+init_N = ChemData().init_N
+init_C = ChemData().init_C
+norm_N = init_N / (torch.norm(init_N, dim=-1, keepdim=True) + 1e-5)
+norm_C = init_C / (torch.norm(init_C, dim=-1, keepdim=True) + 1e-5)
+cos_ideal_NCAC = torch.sum(norm_N*norm_C, dim=-1) # cosine of ideal N-CA-C bond angle
 
 # More complicated version splits error in CA-N and CA-C (giving more accurate CB position)
 # It returns the rigid transformation from local frame to global frame
