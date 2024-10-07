@@ -3,7 +3,7 @@ import random
 import numpy as np
 import rf_diffusion.structure as structure
 from rf2aa.kinematics import generate_Cbeta
-import conditions.ss_adj.sec_struct_adjacency as sec_struct_adjacency
+import rf_diffusion.conditions.ss_adj.sec_struct_adjacency as sec_struct_adjacency
 from rf_diffusion.train_data.exceptions import NextExampleException
 from rf_diffusion import aa_model
 from rf_diffusion import sasa
