@@ -6,12 +6,19 @@ guidepost_bonds: True
 
 inference:
   align_motif: False
-  str_self_cond: True
+  str_self_cond: False
   state_dict_to_use: model_state_dict
   deterministic: False
-  ckpt_path: /net/scratch/ahern/se3_diffusion/training/fm_tip_resume_24/fm_tip_resume_242023-12-03_14:20:34.490797/rank_0/models/RFD_44.pt
+  ckpt_path: /net/scratch/ahern/se3_diffusion/training/center_all_from_scratch_enz_finetune_stage_2a/center_all_from_scratch_enz_finetune_stage_2a2024-07-03_02:34:09.651142/rank_0/models/RFD_140.pt
+  idealize_sidechain_outputs: True
+  write_trb_indep: True
+idealization_metric_n_steps: 50
 
 diffuser:
+  T: 100
   trans:
     sample_schedule: linear
     exp_rate: 1
+  rots:
+    sample_schedule: normed_exp
+    exp_rate: 10
