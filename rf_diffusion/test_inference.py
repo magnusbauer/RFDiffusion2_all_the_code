@@ -622,7 +622,7 @@ class TestRegression(unittest.TestCase):
         ])
         mapped_calls = get_rfi(conf)
         assert mapped_calls[0]['t1d'].shape[-1] == 85, "If this throws, the ss_adj isnt being written to t1d"
-        assert mapped_calls[0]['t2d'].shape[-1] == 71, "If this throws, the ss_adj isnt being written to t2d"
+        assert mapped_calls[0]['t2d'].shape[-1] == 72, "If this throws, the ss_adj isnt being written to t2d"
         cmp = partial(tensor_util.cmp, atol=5e-2, rtol=0)
         test_utils.assert_matches_golden(self, 'rfi_ss_adj_monomer_nonspec_glob', mapped_calls, rewrite=REWRITE, custom_comparator=cmp)
 
@@ -646,7 +646,7 @@ class TestRegression(unittest.TestCase):
         ])
         mapped_calls = get_rfi(conf)
         assert mapped_calls[0]['t1d'].shape[-1] == 85, "If this throws, the ss_adj isnt being written to t1d"
-        assert mapped_calls[0]['t2d'].shape[-1] == 71, "If this throws, the ss_adj isnt being written to t2d"
+        assert mapped_calls[0]['t2d'].shape[-1] == 72, "If this throws, the ss_adj isnt being written to t2d"
         cmp = partial(tensor_util.cmp, atol=5e-2, rtol=0)
         test_utils.assert_matches_golden(self, 'rfi_ss_adj_monomer_motif_graft_arc', mapped_calls, rewrite=REWRITE, custom_comparator=cmp)
 
@@ -671,7 +671,7 @@ class TestRegression(unittest.TestCase):
         ])
         mapped_calls = get_rfi(conf)
         assert mapped_calls[0]['t1d'].shape[-1] == 85, "If this throws, the ss_adj isnt being written to t1d"
-        assert mapped_calls[0]['t2d'].shape[-1] == 71, "If this throws, the ss_adj isnt being written to t2d"
+        assert mapped_calls[0]['t2d'].shape[-1] == 72, "If this throws, the ss_adj isnt being written to t2d"
         cmp = partial(tensor_util.cmp, atol=5e-2, rtol=0)
         test_utils.assert_matches_golden(self, 'rfi_ss_adj_binder_target_full_arc', mapped_calls, rewrite=REWRITE, custom_comparator=cmp)
 
@@ -703,7 +703,7 @@ class TestRegression(unittest.TestCase):
         ])
         mapped_calls = get_rfi(conf)
         assert mapped_calls[0]['t1d'].shape[-1] == 85, "If this throws, the ss_adj isnt being written to t1d"
-        assert mapped_calls[0]['t2d'].shape[-1] == 71, "If this throws, the ss_adj isnt being written to t2d"
+        assert mapped_calls[0]['t2d'].shape[-1] == 72, "If this throws, the ss_adj isnt being written to t2d"
         cmp = partial(tensor_util.cmp, atol=5e-2, rtol=0)
         test_utils.assert_matches_golden(self, 'rfi_ss_adj_binder_and_target_auto_glob', mapped_calls, rewrite=REWRITE, custom_comparator=cmp)
 
@@ -733,7 +733,7 @@ class TestRegression(unittest.TestCase):
         ])
         mapped_calls = get_rfi(conf)
         assert mapped_calls[0]['t1d'].shape[-1] == 85, "If this throws, the ss_adj isnt being written to t1d"
-        assert mapped_calls[0]['t2d'].shape[-1] == 71, "If this throws, the ss_adj isnt being written to t2d"
+        assert mapped_calls[0]['t2d'].shape[-1] == 72, "If this throws, the ss_adj isnt being written to t2d"
         cmp = partial(tensor_util.cmp, atol=5e-2, rtol=0)
         test_utils.assert_matches_golden(self, 'rfi_ss_adj_binder_motif_graft_target_ss_adj', mapped_calls, rewrite=REWRITE, custom_comparator=cmp)
 

@@ -8,7 +8,6 @@ from rf_diffusion import aa_model
 from rf_diffusion import structure
 import rf_diffusion.conditions.ss_adj.sec_struct_adjacency as sec_struct_adj
 
-from typing import Union
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from rf_diffusion.aa_model import Indep        
@@ -112,12 +111,11 @@ def get_little_t_embedding(indep, feature_conf, t_cont: float=None, **kwargs):
     oh = one_hot_bucket(t_cont, boundary_values)[None]
     return {'t1d':oh.tile(indep.length(), 1)}
 
-def get_radius_of_gyration(indep, is_gp=None, radius_of_gyration=None, **kwargs):
-    assert is_gp is not None
+def get_radius_of_gyration(indep, radius_of_gyration=None, **kwargs):
     rog = torch.zeros((indep.length(),))
     rog_std = torch.zeros((indep.length(),))
     is_nucl = nucl_utils.get_resi_type_mask(indep.seq, 'na')
-    is_prot = ~indep.is_sm * ~is_gp * ~is_nucl
+    is_prot = ~indep.is_sm * ~indep.is_gp * ~is_nucl
     indep_prot, _ = aa_model.slice_indep(indep, is_prot)
     rog_prot = torch.full((indep_prot.length(),), -1.0)
     rog_std_prot = torch.full((indep_prot.length(),), -1.0)
@@ -162,14 +160,12 @@ def get_sinusoidal_timestep_embedding(timesteps, embedding_dim, max_positions):
     assert emb.shape == (timesteps.shape[0], embedding_dim)
     return emb
 
-def get_radius_of_gyration_inference(indep, feature_conf, is_gp=None):
-
-    assert is_gp is not None
+def get_radius_of_gyration_inference(indep, feature_conf):
 
     rog = torch.zeros((indep.length(),))
     rog_std = torch.zeros((indep.length(),))
 
-    is_prot = ~indep.is_sm * ~is_gp
+    is_prot = ~indep.is_sm * ~indep.is_gp
     indep_prot, _ = aa_model.slice_indep(indep, is_prot)
     rog_prot = torch.full((indep_prot.length(),), -1.0)
     rog_std_prot = torch.full((indep_prot.length(),), -1.0)
@@ -288,15 +284,13 @@ def get_nucleic_ss_inference(indep, feature_conf, feature_inference_conf, **kwar
     return {'t2d':ss_templ_onehot}
 
 def get_ss_comp(indep: Indep, 
-                train_conf: dict, 
-                is_gp: Union[bool, torch.Tensor] = False, **kwargs):    
+                train_conf: dict, **kwargs):
     """
     Calculate the secondary structure composition of a protein sequence.
 
     Args:
         indep (Indep): The holy indep
         train_conf (dict): A dictionary containing training configurations.
-        is_gp (bool, Tensor[bool]): tensor describing if each residue is guide post or not
         **kwargs: Additional keyword arguments.
 
     Returns:
@@ -305,10 +299,6 @@ def get_ss_comp(indep: Indep,
     WARNING: Not compatible with multiple diffused proteins
     """    
     ss = torch.zeros(indep.length(), 4)
-
-    # Default value for guidepost mask
-    if isinstance(is_gp, bool):
-        is_gp = is_gp * torch.ones(indep.length(), dtype=bool)
 
     # Skip if no protein or no nucleic acid with default zero values
     if sum(nucl_utils.get_resi_type_mask(indep.seq, 'prot_and_mask')) == 0 or \
@@ -321,13 +311,13 @@ def get_ss_comp(indep: Indep,
         if sum(nucl_utils.get_resi_type_mask(indep.seq[chain_mask], 'prot_and_mask')) == 0:
             continue        
         chain_mask = torch.tensor(indep.chain_masks()[0], dtype=bool)  # Convert to torch tensor else bugs
-        indep_slice, _ = aa_model.slice_indep(indep, chain_mask)        
+        indep_slice, _ = aa_model.slice_indep(indep, chain_mask)
         min_prot_size = 8
         if float(torch.rand(1)) < train_conf['p_unconditional'] or sum(chain_mask) <= min_prot_size:
             ss[chain_mask,0] = 1
         else:              
             try:
-                ss_assign = structure.get_dssp(indep_slice, is_gp=is_gp[chain_mask])
+                ss_assign, _ = structure.get_dssp(indep_slice)
                 ss_assign = ss_assign[ss_assign != structure.ELSE]
                 # Calculate ss composition and assign values to the ss matrix  
                 n_loop = sum(ss_assign == structure.LOOP)
@@ -398,8 +388,7 @@ Nucleic acid hotspots
 
 
 def get_nucleic_base_hotspots(indep: Indep, 
-                              train_conf: OmegaConf, 
-                              is_gp: Union[bool, torch.Tensor] = False,                           
+                              train_conf: OmegaConf,
                               **kwargs) -> torch.Tensor:
     """
     Calculates the hotspots for nucleic bases in the given independent variable.
@@ -408,23 +397,20 @@ def get_nucleic_base_hotspots(indep: Indep,
     Args:
         indep (Indep): The independent variable.
         train_conf: The training configuration.
-        is_gp (bool, Tensor): tensor describing if each residue is guide post or not        
         **kwargs: Additional keyword arguments.
 
     Returns:
         torch.Tensor: A tensor representing the hotspots for nucleic bases. [L, 2]
     """    
-    if isinstance(is_gp, bool):
-        is_gp = torch.ones(indep.length(), dtype=bool) * is_gp
     hotspots = torch.zeros(indep.length(), 2)
     if sum(nucl_utils.get_resi_type_mask(indep.seq, 'prot_and_mask')) == 0 or \
        sum(nucl_utils.get_resi_type_mask(indep.seq, 'na')) == 0:
         return hotspots
 
-    contacts_idx, base_contacts_idx = nucl_utils.get_nucl_prot_contacts(indep, dist_thresh=4.5, is_gp=is_gp, ignore_prot_bb=True)
+    contacts_idx, base_contacts_idx = nucl_utils.get_nucl_prot_contacts(indep, dist_thresh=4.5, is_gp=indep.is_gp, ignore_prot_bb=True)
     if len(base_contacts_idx) == 0 or float(torch.rand(1)) < train_conf['p_unconditional']:        
         # Do not sample, but set flag for unconditional generation
-        is_nucl = nucl_utils.get_resi_type_mask(indep.seq, 'na') * ~is_gp * ~indep.is_sm
+        is_nucl = nucl_utils.get_resi_type_mask(indep.seq, 'na') * ~indep.is_gp * ~indep.is_sm
         hotspots[is_nucl, 0] = 1
     else:
         # Sample a random number of base contacts

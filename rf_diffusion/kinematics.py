@@ -351,13 +351,13 @@ def generate_H(N, CA, C):
     # bad_mask == C_N_CA are co-linear
     bad_mask = torch.isnan(C_N_CA_plane_norm[:,0])
     if bad_mask.sum() > 0:
-        C_N_CA_plane_norm[bad_mask] = torch.cross( torch.tensor([[1, 0, 0]]) , CA_from_N_unit[bad_mask], dim=-1 )
+        C_N_CA_plane_norm[bad_mask] = torch.cross( torch.tensor([[1.0, 0.0, 0.0]]) , CA_from_N_unit[bad_mask], dim=-1 )
         C_N_CA_plane_norm[bad_mask] /= torch.linalg.norm(C_N_CA_plane_norm[bad_mask], axis=-1)[:,None]
 
         # super rare, but bad_mask == C_N_CA are co-linear with x-axis
         bad_mask = torch.isnan(C_N_CA_plane_norm[:,0])
         if bad_mask.sum() > 0:
-            C_N_CA_plane_norm[bad_mask] = torch.cross( torch.tensor([[0, 1, 0]]) , CA_from_N_unit[bad_mask], dim=-1 )
+            C_N_CA_plane_norm[bad_mask] = torch.cross( torch.tensor([[0.0, 1.0, 0.0]]) , CA_from_N_unit[bad_mask], dim=-1 )
             C_N_CA_plane_norm[bad_mask] /= torch.linalg.norm(C_N_CA_plane_norm[bad_mask], axis=-1)[:,None]
 
     in_plane_towards_H = torch.cross( C_N_CA_plane_norm, CA_from_N_unit, dim=-1 )

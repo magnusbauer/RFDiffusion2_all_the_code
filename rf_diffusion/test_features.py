@@ -18,7 +18,7 @@ class TestSSComp(unittest.TestCase):
         # Strip H
         torch.all(torch.eq(bb_pydssp[:,:4], torch.Tensor(coord_correct)))
 
-        prot_ss = structure.get_dssp_string( structure.get_dssp(indep) )
+        prot_ss = structure.get_dssp_string( structure.get_dssp(indep)[0] )
         prot_ss_correct = 'LLLLEELLLLHHHHHHHHHHLLLLLEEEEEELLLLLLLEEEEEEELLEEEEEELEELLLLEELLLLLLELLHHHHHHHHHHLLLLLEELLLLELLLLEELLLLLLLELL'
         len(prot_ss) == len(prot_ss_correct)
         prot_ss == prot_ss_correct

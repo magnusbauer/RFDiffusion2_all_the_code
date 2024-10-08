@@ -107,6 +107,7 @@ class Indep:
     same_chain: torch.Tensor
     terminus_type: torch.Tensor
     extra_t1d: torch.Tensor = dataclasses.field(default_factory=lambda: None)
+    extra_t2d: torch.Tensor = dataclasses.field(default_factory=lambda: None)
     is_gp: torch.Tensor = None
 
     def __post_init__(self):
@@ -132,6 +133,7 @@ class Indep:
             copy.deepcopy(self.same_chain.detach()),
             copy.deepcopy(self.terminus_type.detach()),
             copy.deepcopy(self.extra_t1d),
+            None if not hasattr(self, 'extra_t2d') or self.extra_t2d is None else copy.deepcopy(self.extra_t2d), # Only doesn't exist in tests
             None if self.is_gp is None else self.is_gp.detach(), # None only occurs in unit tests
         )
         if hasattr(self, 'origin'):
@@ -139,8 +141,6 @@ class Indep:
                 indep_copy.origin = None
             else:
                 indep_copy.origin = copy.deepcopy(self.origin.detach())
-        if hasattr(self, 'extra_t2d'):
-            indep_copy.extra_t2d = copy.deepcopy(self.extra_t2d.detach())
         return indep_copy
 
     @property

@@ -65,9 +65,22 @@ def assert_matches_golden(t, name, got, rewrite=False, processor_specific=False,
     # want = p.read_text()
     want = read(p)
     if isinstance(got, rf_diffusion.aa_model.Indep):
+
+        # Don't compare new features that the old indeps don't have
+        was_missing = []
+        for could_be_missing in ['extra_t2d']:
+            if not hasattr(want, could_be_missing):
+                setattr(want, could_be_missing, None)
+                was_missing.append(could_be_missing)
+
         # Remove metadata
         want = aa_model.Indep(**dataclasses.asdict(want))
         got = aa_model.Indep(**dataclasses.asdict(got))
+        
+        for key in was_missing:
+            delattr(want, key)
+            delattr(got, key)
+
     if custom_comparator:
         diff = custom_comparator(got, want)
         if not diff:

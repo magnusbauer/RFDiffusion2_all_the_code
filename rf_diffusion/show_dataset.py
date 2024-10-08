@@ -18,7 +18,7 @@ from rf_diffusion import show
 from rf_diffusion.dev import show_tip_pa
 from rf_diffusion.frame_diffusion.data import se3_diffuser
 from rf_diffusion import aa_model
-from rf_diffusion.conditions.ss_adj.sec_struct_adjacency import SS_HELIX, SS_STRAND, SS_LOOP, SS_SM
+from rf_diffusion.conditions.ss_adj.sec_struct_adjacency import SS_HELIX, SS_STRAND, SS_LOOP, SS_SM, ADJ_STRAND_PAIR
 
 import rf_diffusion.dev.show_tip_row
 # from rf_diffusion.dev.show_tip_row import OR, AND, NOT
@@ -172,6 +172,13 @@ def run(conf: DictConfig) -> None:
                     mask_by_name['ss_strand'] = strand
                     mask_by_name['ss_loop'] = loop
                     mask_by_name['ss_sm'] = sm
+
+                if conf.show_dataset.show_adj_strand_pairs:
+                    adj_t2d_offset = conf.show_dataset.adj_t2d_offset
+                    is_pair = indep.extra_t2d[:,:,adj_t2d_offset+ADJ_STRAND_PAIR].bool()
+                    is_pair_1d = is_pair.any(axis=-1)
+
+                    mask_by_name['strand_pair'] = is_pair_1d
 
                 if len(mask_by_name) > 0:
 

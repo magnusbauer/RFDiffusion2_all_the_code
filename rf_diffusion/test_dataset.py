@@ -607,8 +607,10 @@ class Dataloader(unittest.TestCase):
             'transforms.configs.AddConditionalInputs.p_is_guidepost_example=0',
             'upstream_training_transforms.configs.GenerateSSADJTrainingTransform.p_is_ss_example=1.0',
             'upstream_training_transforms.configs.GenerateSSADJTrainingTransform.p_is_adj_example=1.0',
-            'upstream_training_transforms.configs.GenerateSSADJTrainingTransform.ss_max_mask=0.2',
-            'upstream_training_transforms.configs.GenerateSSADJTrainingTransform.adj_max_mask=0.2',
+            'upstream_training_transforms.configs.GenerateSSADJTrainingTransform.ss_max_mask=0.0',
+            'upstream_training_transforms.configs.GenerateSSADJTrainingTransform.adj_max_mask=0.0',
+            'upstream_training_transforms.configs.GenerateSSADJTrainingTransform.p_any_strand_pairs=1.0',
+            'upstream_training_transforms.configs.GenerateSSADJTrainingTransform.adj_strand_pair_max_mask=0.0',
             ], config_name='fm_tip_ss_adj')
         indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context, conditions_dict = loader_out
         indep.metadata = None
@@ -619,7 +621,6 @@ class Dataloader(unittest.TestCase):
             name, names = show.one(indep, None)
             show.cmd.do('util.cbc')
             show.diffused(indep, is_diffused, 'true')
-        
         test_utils.assert_matches_golden(self, golden_name, indep, rewrite=REWRITE, custom_comparator=self.cmp)
 
     def test_atom_order(self):

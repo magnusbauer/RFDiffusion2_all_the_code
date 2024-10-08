@@ -9,7 +9,7 @@ inference:
   str_self_cond: True
   state_dict_to_use: model_state_dict
   deterministic: False
-  ckpt_path: /net/scratch/bcov/train_test/fm_tip_ss_adj2024-09-26_22:33:56.541451/rank_0/models/RFD_0.50.pt
+  ckpt_path: /net/scratch/bcov/train_test/fm_tip_ss_adj2024-10-03_18:52:49.653226/rank_0/models/RFD_0.50.pt  # this model was trained for 4 examples...
 
 diffuser:
   trans:

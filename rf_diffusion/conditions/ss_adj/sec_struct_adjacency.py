@@ -4,6 +4,7 @@ import rf_diffusion.structure as structure
 import rf_diffusion.ppi as ppi
 import random
 import os
+import numpy as np
 
 from rf_diffusion.conditions.util import expand_1d_atomized_ok_gp_not, expand_2d_atomized_ok_gp_not
 
@@ -19,7 +20,8 @@ N_SS = 5
 ADJ_FAR = 0
 ADJ_CLOSE = 1
 ADJ_MASK = 2
-N_ADJ = 3
+ADJ_STRAND_PAIR = 3
+N_ADJ = 4
 
 class SecStructAdjacency:
     '''
@@ -91,7 +93,8 @@ class SecStructAdjacency:
         '''
         self.adj = torch.full((length,length), ADJ_MASK, dtype=int)
 
-    def mask_for_training(self, ss_min_mask=0, ss_max_mask=1.0, adj_min_mask=0, adj_max_mask=1.0):
+    def mask_for_training(self, ss_min_mask=0, ss_max_mask=1.0, adj_min_mask=0, adj_max_mask=1.0,
+                            adj_strand_pair_min_mask=0, adj_strand_pair_max_mask=1.0):
         '''
         Mask out regions of the ss and adj for training
         Chunks of ss near the edges of secondary structural elements are masked
@@ -105,8 +108,10 @@ class SecStructAdjacency:
             adj_max_mask (float): Maximum fraction of adj that will be directly converted to ADJ_MASK
         '''
 
+        new_adj = mask_strand_pairs(self.ss, self.adj, min_mask=adj_strand_pair_min_mask, max_mask=adj_strand_pair_max_mask)
+
         new_ss = mask_ss(self.ss, min_mask=ss_min_mask, max_mask=ss_max_mask)
-        new_adj = mask_adj(self.ss, self.adj, min_mask=adj_min_mask, max_mask=adj_max_mask)
+        new_adj = mask_adj(self.ss, new_adj, min_mask=adj_min_mask, max_mask=adj_max_mask)
         new_adj = mask_adj_from_masked_ss(new_ss, new_adj)
 
         self.ss = new_ss
@@ -133,7 +138,10 @@ class SecStructAdjacency:
         '''
         assert self.adj is not None
 
-        return torch.nn.functional.one_hot(self.adj, num_classes=N_ADJ).float()
+        # ADJ_STRAND_PAIR implies ADJ_CLOSE. This keeps them independent
+        one_hot = torch.nn.functional.one_hot(self.adj, num_classes=N_ADJ)
+        one_hot[:,:,ADJ_CLOSE] |= one_hot[:,:,ADJ_STRAND_PAIR]
+        return one_hot.float()
 
     def merge_other_into_this(self, other_ss_adj, other_overwrite_1d=None, other_overwrite_2d=None):
         '''
@@ -217,9 +225,18 @@ def generate_ss_adj(indep, dist_cutoff=6):
         adj (torch.Tensor[long]): Secondary structure adjacency [L]
     '''
 
-    this_dssp = structure.get_dssp(indep)
+    this_dssp, strand_pairs = structure.get_dssp(indep, compute_pairs=True)
     ss = this_dssp.clone()
     ss[this_dssp == structure.ELSE] = SS_SM
+
+    # New strand pairing feature
+    pair_map = torch.zeros((indep.length(), indep.length()), dtype=bool)
+    for ((a,b),(c,d)) in strand_pairs:
+        a,b = (a,b) if a < b else (b,a)
+        c,d = (c,d) if c < d else (d,c)
+
+        pair_map[a:b+1,c:d+1] = True
+        pair_map[c:d+1,a:b+1] = True
 
     Cb = ppi.Cb_or_atom(indep)
 
@@ -248,11 +265,73 @@ def generate_ss_adj(indep, dist_cutoff=6):
 
             # If any two residues are within dist_cutoff, the entire elements are considered close
             if Cb_close[begin_i:end_i, begin_j:end_j].any():
+
+                store_value = ADJ_CLOSE
+                # ADJ_STRAND_PAIR takes precedence. But ADJ_CLOSE is also stored to extra_t2d
+                if pair_map[begin_i:end_i, begin_j:end_j].any():
+                    store_value = ADJ_STRAND_PAIR
+
                 # Matrix is symmetric
-                block_adj[begin_i:end_i, begin_j:end_j] = ADJ_CLOSE
-                block_adj[begin_j:end_j, begin_i:end_i] = ADJ_CLOSE
+                block_adj[begin_i:end_i, begin_j:end_j] = store_value
+                block_adj[begin_j:end_j, begin_i:end_i] = store_value
 
     return ss, block_adj
+
+def mask_strand_pairs(ss, adj, min_mask=0, max_mask=1.0):
+    '''
+    Randomly mask some proportion of the ADJ_STRAND_PAIR regions back to ADJ_CLOSE
+
+    Args:
+        ss (torch.Tensor[long]): Secondary structure assignment
+        adj (torch.Tensor[long]): Secondary structure adjacency
+        min_mask (float): Minimum fraction of strand pairs that will be converted to ADJ_CLOSE
+        max_mask (float): Maximum fraction of strand pairs that will be converted to ADJ_CLOSE
+
+    Returns:
+        adj (torch.Tensor[long]): Secondary structure adjacency [L]
+    '''
+
+    adj = adj.clone()
+
+    # First we need to find all the strand-pair blocks
+    assert not (ss == SS_MASK).any()
+    segments = ss_to_segments(ss)
+
+    # Enumerate all pairs of segments
+    pairing_blocks = []
+    for i_i_seg in range(len(segments)):
+        i_type, i_start, i_end = segments[i_i_seg]
+        for j_j_seg in range(i_i_seg, len(segments)):
+            j_type, j_start, j_end = segments[j_j_seg]
+
+            is_pairing = (adj[i_start:i_end+1,j_start:j_end+1] == ADJ_STRAND_PAIR).any()
+
+            if is_pairing:
+                assert i_type == SS_STRAND, i_type
+                assert j_type == SS_STRAND, j_type
+                assert i_i_seg != j_j_seg, "It's pairing to itself!"
+                pairing_blocks.append((i_i_seg, j_j_seg))
+
+
+    remove_frac = random.uniform(min_mask, max_mask)
+    n_pairs = len(pairing_blocks)
+    n_remove = int(np.round(remove_frac * n_pairs))
+
+    if n_remove == 0:
+        return adj
+
+    idx_remove = np.random.choice(np.arange(n_pairs), n_remove, replace=False)
+    for idx in idx_remove:
+        i_i_seg, j_j_seg = pairing_blocks[idx]
+        _, i_start, i_end = segments[i_i_seg]
+        _, j_start, j_end = segments[j_j_seg]
+
+        adj[i_start:i_end+1,j_start:j_end+1] = ADJ_CLOSE
+        adj[j_start:j_end+1,i_start:i_end+1] = ADJ_CLOSE
+
+
+    return adj
+
 
 
 def mask_ss(ss, min_mask = 0, max_mask = 1.0):
@@ -621,7 +700,8 @@ class GenerateSSADJTrainingTransform:
 
     Since this overwrites the entire ss_adj
     """    
-    def __init__(self, p_is_ss_example=0, p_is_adj_example=0, ss_min_mask=0, ss_max_mask=1, adj_min_mask=0, adj_max_mask=1):
+    def __init__(self, p_is_ss_example=0, p_is_adj_example=0, ss_min_mask=0, ss_max_mask=1, adj_min_mask=0, adj_max_mask=1,
+                    adj_strand_pair_min_mask=0, adj_strand_pair_max_mask=1, p_any_strand_pairs=0.2):
         """
         Args:
             p_is_ss_example (float): Probability we show any secondary structure at all
@@ -630,6 +710,9 @@ class GenerateSSADJTrainingTransform:
             ss_max_mask (float): Maximum fraction of ss that will be converted to SS_MASK
             adj_min_mask (float): Minimum fraction of adj that will be directly converted to ADJ_MASK
             adj_max_mask (float): Maximum fraction of adj that will be directly converted to ADJ_MASK
+            adj_strand_pair_min_mask (float): Minimum fraction of strand pairs that will be converted to ADJ_CLOSE
+            adj_strand_pair_max_mask (float): Maximum fraction of strand pairs that will be converted to ADJ_CLOSE
+            p_any_strand_pairs (float): Probability that any strand pairs are shown at all
         """
 
         self.p_is_ss_example = p_is_ss_example
@@ -638,6 +721,9 @@ class GenerateSSADJTrainingTransform:
         self.ss_max_mask = ss_max_mask
         self.adj_min_mask = adj_min_mask
         self.adj_max_mask = adj_max_mask
+        self.p_any_strand_pairs = p_any_strand_pairs
+        self.adj_strand_pair_min_mask = adj_strand_pair_min_mask
+        self.adj_strand_pair_max_mask = adj_strand_pair_max_mask
 
 
     def __call__(self, indep, conditions_dict, **kwargs):
@@ -657,8 +743,15 @@ class GenerateSSADJTrainingTransform:
         if use_ss or use_adj:
             ss_adj = SecStructAdjacency(indep=indep)
 
+            pair_min = self.adj_strand_pair_min_mask
+            pair_max = self.adj_strand_pair_max_mask
+            if torch.rand(1) > self.p_any_strand_pairs:
+                pair_min = 1
+                pair_max = 1
+
             ss_adj.mask_for_training(ss_min_mask=self.ss_min_mask, ss_max_mask=self.ss_max_mask, 
-                                                        adj_min_mask=self.adj_min_mask, adj_max_mask=self.adj_max_mask)
+                                    adj_min_mask=self.adj_min_mask, adj_max_mask=self.adj_max_mask,
+                                    adj_strand_pair_min_mask=pair_min, adj_strand_pair_max_mask=pair_max)
 
             if not use_ss:
                 ss_adj.reset_ss(indep.length())

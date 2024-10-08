@@ -5,12 +5,12 @@ defaults:
 rundir: /net/scratch/bcov/train_test
 wandb_prefix: 'fm_tip_ss_adj'
 
-ckpt_load_path: rf2a_25c_reshaped_t1d-119_t2d-71.pt
+ckpt_load_path: rf2a_25c_reshaped_t1d-119_t2d-72.pt
 
 # Reshape an old weights file to make ^^ that
 #ckpt_load_path: /home/bcov/sc/flow/binder_dev/rf_diffusion/models/rf2a_25c_414_t1d-114.pt
 #reshape:
-#    output_path: rf2a_25c_reshaped_t1d-119_t2d-71.pt
+#    output_path: rf2a_25c_reshaped_t1d-119_t2d-72.pt
 
 
 upstream_training_transforms:
@@ -28,6 +28,9 @@ upstream_training_transforms:
       ss_max_mask: 1.0
       adj_min_mask: 0.0
       adj_max_mask: 1.0
+      p_any_strand_pairs: 0.2
+      adj_strand_pair_min_mask: 0.0
+      adj_strand_pair_max_mask: 1.0
 
 transforms:
   names:
@@ -99,9 +102,11 @@ rf:
     enable_same_chain: True
     refiner_topk: 128
     d_t1d: 119  # 114 + N_SS(5)
-    d_t2d: 71   # 68 + N_AD(3)
+    d_t2d: 72   # 68 + N_ADJ(4)
 
 show_dataset:
     show: True
     show_ss_cond: True # Show the secondary structure conditioning that has been applied
     ss_t1d_offset: -5 # Offset into t1d for the first (SS_HELIX) of the ss conditioning channels. Supports negative indexing
+    show_adj_strand_pairs: True #  # Show secondary structural elements involved in strand pairing (ADJ_STRAND_PAIR)
+    adj_t2d_offset: -4 # Offset into t2d for the first (ADJ_FAR) of the adj conditioning channels. Supports negative indexing

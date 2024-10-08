@@ -52,7 +52,8 @@ def get_hbond_map(
     coord: torch.Tensor,
     cutoff: float=DEFAULT_CUTOFF,
     margin: float=DEFAULT_MARGIN,
-    return_e: bool=False
+    return_e: bool=False,
+    final_cut: float=0.00001
     ) -> torch.Tensor:
     """
     Calculate the hydrogen bond map based on the given coordinates.
@@ -62,6 +63,7 @@ def get_hbond_map(
         cutoff (float, optional): The cutoff distance for hydrogen bond interactions.
         margin (float, optional): The margin value for the hydrogen bond map.
         return_e (bool, optional): Whether to return the electrostatic interaction energy.
+        final_cut (float, optional): bcov added this. Some very "not-hbonds" were getting counted
 
     Returns:
         torch.Tensor: The hydrogen bond map
@@ -98,18 +100,20 @@ def get_hbond_map(
     hbond_map = hbond_map * repeat(local_mask.to(hbond_map.device), 'l1 l2 -> b l1 l2', b=b)
     # return h-bond map
     hbond_map = hbond_map.squeeze(0) if len(org_shape)==3 else hbond_map
-    return hbond_map
+    return hbond_map > final_cut
 
 
-def assign_torch(coord: torch.Tensor) -> torch.Tensor:
+def assign_torch(coord: torch.Tensor, compute_pairs: bool=True) -> Tuple[torch.Tensor, List[Tuple[Tuple[int]]]]:
     """
     Assigns secondary structure elements (SSEs) to a given coordinate tensor.
 
     Args:
         coord (torch.Tensor): The input coordinate tensor.
+        compute_pairs (bool): Also compute strand pairs and correctly identify beta bulges
 
     Returns:
         torch.Tensor: The tensor representing the assigned SSEs.
+        List[Tuple[Tuple[int]]]]: Strand pairs ((i_start,i_last),(j_start,j_last)). i_start < j_start
 
     """
     # check input
@@ -132,7 +136,7 @@ def assign_torch(coord: torch.Tensor) -> torch.Tensor:
     helix3 = h3 + torch.roll(h3, 1, 1) + torch.roll(h3, 2, 1)
     helix5 = h5 + torch.roll(h5, 1, 1) + torch.roll(h5, 2, 1) + torch.roll(h5, 3, 1) + torch.roll(h5, 4, 1)
     # identify bridge
-    unfoldmap = hbmap.unfold(-2, 3, 1).unfold(-2, 3, 1) > 0.
+    unfoldmap = hbmap.unfold(-2, 3, 1).unfold(-2, 3, 1) > 0
     unfoldmap_rev = unfoldmap.transpose(-4,-3)
     p_bridge = (unfoldmap[:,:,:,0,1] * unfoldmap_rev[:,:,:,1,2]) + (unfoldmap_rev[:,:,:,0,1] * unfoldmap[:,:,:,1,2])
     p_bridge = torch.nn.functional.pad(p_bridge, [1,1,1,1])
@@ -140,13 +144,144 @@ def assign_torch(coord: torch.Tensor) -> torch.Tensor:
     a_bridge = torch.nn.functional.pad(a_bridge, [1,1,1,1])
     # ladder
     ladder = (p_bridge + a_bridge).sum(-1) > 0
+
+    if compute_pairs:
+        ladder, pairs = do_compute_pairs(p_bridge, a_bridge)
+    else:
+        pairs = []
+
     # H, E, L of C3
     helix = (helix3 + helix4 + helix5) > 0
     strand = ladder
     loop = (~helix * ~strand)
     onehot = torch.stack([helix, strand, loop], dim=-1) # modified from pydssp
     onehot = onehot.squeeze(0) if len(org_shape)==3 else onehot
-    return onehot
+    return onehot, pairs
+
+
+def flip_a_pair(a_pair, L):
+    '''
+    Flip an anti-parallel pair back into the real numbering scheme
+
+    Args:
+        a_pair (tuple[tuple[int]]): The pair where the second part is inverted
+        L (int): Length of protein
+
+    Returns:
+        pair (tuple[tuple[int]]): The pair with the secondar part inverted
+    '''
+    ((a, b), (c, d)) = a_pair
+    c = L-1 - c
+    d = L-1 - d
+    p1 = (a, b) if a < b else (b, a)
+    p2 = (d, c) if c < d else (c, d) # pair 2 is reversed because anti-parallel
+
+    return (p1, p2) if p1[0] < p2[0] else (p2, p1)
+
+def do_compute_pairs(p_bridge, a_bridge):
+    '''
+    Compute strand pairing from p_bridge and a_bridge
+
+    Args:
+        p_bridge (torch.Tensor[bool]): H-bond map for the parallel direction [1, L, L]
+        a_bridge (torch.Tensor[bool]): H-bond map for the anti-parallel direction [1, L, L]
+
+    Returns:
+        ladder (torch.Tensor[bool]): The new strand assignment
+        pairs (List[Tuple[Tuple[int]]]]): Strand pairs ((i_start,i_last),(j_start,j_last)). i_start < j_start
+    '''
+
+    assert p_bridge.shape[0] == 1, "This doesn't have to be this way but this code never sees batch > 1"
+    L = p_bridge.shape[1]
+
+    p_pairs, p_in_pair = find_parallel_pairs(p_bridge[0])
+
+    # You have to flip the j dimension for antiparallel
+    r_a_pairs, r_a_in_pair = find_parallel_pairs(torch.flip(a_bridge[0], [1]), antiparallel=True)
+    a_pairs = [flip_a_pair(pair, L) for pair in r_a_pairs]
+    a_in_pair = torch.flip(r_a_in_pair, [1])
+
+    pairs = list(set(p_pairs) | set(a_pairs))
+    ladder = (p_in_pair | a_in_pair).any(axis=-1)[None]
+
+    return ladder, pairs
+
+
+def find_parallel_pairs(p_bridge, small_gap=1, big_gap=4, antiparallel=False):
+    '''
+    Find strand pairs using the dssp rules
+    The rules (at least according to rosetta) are that both strands are allowed to have gaps (bulges) in
+      their pairing, and if a gap exists, one side may have up to 4 skipped residues and the other max 1
+
+    Inputs:
+        p_bridge (torch.Tensor[bool]): Whether or not these strands are making a parallel beta-strand connection [L,L]
+        small_gap (int): Max gap on the small side. Don't change this
+        big_gap (int): Max gap on the big side. Don't change this
+        antiparallel (bool): We are working with the antiparallel side and j has been flipped
+
+    Returns:
+        pairs (list[tuple[tuple[int]]]): The strand pairs found ((i_start,i_last),(j_start,j_last)). i_start < j_start
+        in_pair (torch.Tensor[bool]): Whether or not this residue is part of a strand pair [L,L]
+    '''
+    L = p_bridge.shape[0]
+    pairs = []
+    in_pair = torch.zeros(p_bridge.shape, dtype=bool)
+
+    for base_i in range(L):
+        for base_j in range(L):
+            if in_pair[base_i, base_j]:
+                continue
+
+            if p_bridge[base_i, base_j]:
+
+                i = base_i
+                j = base_j
+                valid_extension = True
+
+                while valid_extension:
+                    valid_extension = False
+
+                    # one can have a gap of size big_gap but the other gap must be <= small_gap
+
+                    nextt = torch.where(p_bridge[i:i+big_gap+2,j:j+big_gap+2])
+
+                    # next[:,0] is just this bridge
+                    # next[:,1] will be the lowest i index then against the lowest j index
+                    if len(nextt[0]) > 1:
+                        next_bridge_i = nextt[0][1] + i
+                        next_bridge_j = nextt[1][1] + j
+
+                        gap_i = next_bridge_i - i - 1
+                        gap_j = next_bridge_j - j - 1
+
+                        valid_extension = (gap_i <= small_gap and gap_j <= big_gap) or (gap_i <= big_gap and gap_j <= small_gap)
+
+                        if antiparallel and valid_extension:
+                            # in antiparallel, i must be less than real-j otherwise hairpins can be turned into single strands pairing with themselves
+                            valid_extension = next_bridge_i < L-1-next_bridge_j
+
+                        if valid_extension:
+                            i = next_bridge_i
+                            j = next_bridge_j
+
+                pairs.append(((int(base_i), int(i)), (int(base_j), int(j))))
+                assert i >= base_i
+                assert j >= base_j
+                in_pair[base_i:i+1,base_j:j+1] = True
+                if antiparallel:
+                    # You have to reflect over the line y = L-1 - x
+                    new_base_i = L-1 - j
+                    new_i = L-1 - base_j
+                    new_base_j = L-1 - i
+                    new_j = L-1 - base_i
+                    in_pair[new_base_i:new_i+1,new_base_j:new_j+1] = True
+                else:
+                    in_pair[base_j:j+1,base_i:i+1] = True
+
+    assert in_pair[p_bridge].all()
+
+    return pairs, in_pair
+
 
 
 def read_pdbtext_with_checking(pdbstring: str):
@@ -193,18 +328,22 @@ def read_pdbtext_with_checking(pdbstring: str):
 
 def assign(
     coord: Union[torch.Tensor, np.ndarray],
-    out_type: Literal['onehot', 'index', 'c3'] = 'index'
-    ) -> torch.Tensor:
+    out_type: Literal['onehot', 'index', 'c3'] = 'index',
+    compute_pairs: bool=True
+    ) -> Tuple[torch.Tensor, List[Tuple[Tuple[int]]]]:
     """
     Assigns secondary structure labels to a given set of coordinates.
+
 
     Args:
         coord (Union[torch.Tensor, np.ndarray]): The input coordinates.
         out_type (Literal['onehot', 'index', 'c3'], optional): The type of output to return. 
             Defaults to 'c3'.
+        compute_pairs (bool): Also compute strand pairs and correctly identify beta bulges
 
     Returns:
         np.ndarray: The assigned secondary structure labels.
+        List[Tuple[Tuple[int]]]]: Strand pairs ((i_start,i_last),(j_start,j_last)). i_start < j_start
 
     Raises:
         AssertionError: If the input type is not torch.Tensor or np.ndarray.
@@ -213,17 +352,17 @@ def assign(
     assert type(coord) in [torch.Tensor, np.ndarray], "Input type must be torch.Tensor or np.ndarray"
     assert out_type in ['onehot', 'index', 'c3'], "Output type must be 'onehot', 'index', or 'c3'"
     # main calculation
-    onehot = assign_torch(coord)
+    onehot, pairs = assign_torch(coord, compute_pairs=compute_pairs)
     # output one-hot
     if out_type == 'onehot':
-        return onehot
+        return onehot, pairs
     # output index
     index = torch.argmax(onehot.to(torch.long), dim=-1)
     if out_type == 'index':
-        return index
+        return index, pairs
     # output c3
     c3 = C3_ALPHABET[index.cpu().numpy()]
-    return c3
+    return c3, pairs
 
 def read_pdbtext_no_checking(pdbstring: str):
     """
@@ -297,11 +436,11 @@ def get_dssp_string(dssp_output: torch.Tensor) -> str:
     return ''.join(C3_ALPHABET[dssp_output])
 
 
-def get_dssp(indep: Indep) -> torch.Tensor:
+def get_dssp(indep: Indep, compute_pairs: bool=True) -> Tuple[torch.Tensor, List[Tuple[Tuple[int]]]]:
     '''
     Get the DSSP assignemt of indep using PyDSSP.
 
-    Note! PyDSSP labels beta bulges as loops!
+    Note! PyDSSP labels beta bulges as loops unless compute_pairs is True
 
     structure.HELIX = 0
     structure.STRAND = 1
@@ -310,6 +449,7 @@ def get_dssp(indep: Indep) -> torch.Tensor:
 
     Args:
         indep (Indep): The input object containing the data.
+        compute_pairs (bool): Also compute strand pairs and correctly identify beta bulges
 
     Returns:
         torch.Tensor: The DSSP assignment [L]
@@ -318,9 +458,14 @@ def get_dssp(indep: Indep) -> torch.Tensor:
 
     bb_pydssp, is_prot = get_bb_pydssp( indep )
     dssp = torch.full((indep.length(),), ELSE, dtype=int)
-    dssp[is_prot] = assign(bb_pydssp, out_type='index')
+    dssp[is_prot], pairs = assign(bb_pydssp, out_type='index', compute_pairs=compute_pairs)
 
-    return dssp
+    # Re-index the pairs onto the full indep
+    if not is_prot.all() and len(pairs) > 0:
+        wh = torch.where(is_prot)[0]
+        pairs = [((wh[a],wh[b]),(wh[c],wh[d])) for ((a,b),(c,d)) in pairs]
+
+    return dssp, pairs
 
 
 

@@ -258,7 +258,7 @@ def training_extract_ppi_motifs(indep, is_target, max_frac_ppi_motifs=0.8, max_p
     is_binder = ~is_target
 
     Cb = Cb_or_atom(indep)
-    full_dssp = structure.get_dssp(indep)
+    full_dssp, _ = structure.get_dssp(indep)
 
     binder_Cb = Cb[is_binder]
     target_Cb = Cb[is_target]
