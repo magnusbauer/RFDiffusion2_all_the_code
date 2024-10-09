@@ -50,7 +50,7 @@ def make_covale_compatible(get_mask):
         covalently_modified_res_motif = set(motif_idx).intersection(set(covale_res_i))
         for res_i in covalently_modified_res_motif:
             seq_token = indep.seq[res_i]
-            atom_names = ChemData().aa2long[seq_token][:ChemData().NHEAVYPROT]
+            atom_names = ChemData().aa2long[seq_token][:ChemData().NHEAVY]
             atom_names = [a if a is None else a.strip() for a in atom_names]
             atom_names = np.array(atom_names, dtype=np.str_)
             n_atoms_expected = (atom_names != 'None').sum()
@@ -1322,9 +1322,9 @@ def motif_shows_seq(get_mask):
     return out_get_mask
 
 
-def _PPI_fully_diffused(indep, *args, **kwargs):
+def _PPI_fully_diffused(indep, *args, only_first_chain_ppi_binders=False, **kwargs):
 
-    is_target = ppi.decide_target(indep)
+    is_target = ppi.decide_target(indep, use_first_chain=only_first_chain_ppi_binders)
     if is_target is None:
         raise InvalidMaskException('_PPI_fully_diffused requires a binder/target pair.')
 
@@ -1333,9 +1333,9 @@ def _PPI_fully_diffused(indep, *args, **kwargs):
 
     return dict(is_motif=is_motif, is_target=is_target, can_be_gp=can_be_gp)
 
-def _PPI_interface_motif_scaffolding(indep, *args, max_frac_ppi_motifs=0.8, max_ppi_motif_trim_frac=0.4, **kwargs):
+def _PPI_interface_motif_scaffolding(indep, *args, only_first_chain_ppi_binders=False, max_frac_ppi_motifs=0.8, max_ppi_motif_trim_frac=0.4, **kwargs):
 
-    is_target = ppi.decide_target(indep)
+    is_target = ppi.decide_target(indep, use_first_chain=only_first_chain_ppi_binders)
     if is_target is None:
         raise InvalidMaskException('_PPI_interface_motif_scaffolding requires a binder/target pair.')
     is_ppi_motif = ppi.training_extract_ppi_motifs(indep, is_target, max_frac_ppi_motifs, max_ppi_motif_trim_frac)
@@ -1344,9 +1344,9 @@ def _PPI_interface_motif_scaffolding(indep, *args, max_frac_ppi_motifs=0.8, max_
 
     return dict(is_motif=is_motif, is_target=is_target, can_be_gp=is_ppi_motif)
 
-def _PPI_random_motif_scaffolding(indep, *args, max_frac_ppi_motifs=0.8, max_ppi_motif_trim_frac=0.4, **kwargs):
+def _PPI_random_motif_scaffolding(indep, *args, only_first_chain_ppi_binders=False, max_frac_ppi_motifs=0.8, max_ppi_motif_trim_frac=0.4, **kwargs):
 
-    is_target = ppi.decide_target(indep)
+    is_target = ppi.decide_target(indep, use_first_chain=only_first_chain_ppi_binders)
     if is_target is None:
         raise InvalidMaskException('_PPI_random_motif_scaffolding requires a binder/target pair.')
     is_ppi_motif = ppi.training_extract_ppi_motifs(indep, is_target, max_frac_ppi_motifs, max_ppi_motif_trim_frac, dist=10000)

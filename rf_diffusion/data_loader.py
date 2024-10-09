@@ -37,6 +37,8 @@ from rf_diffusion import error
 from rf_diffusion import features
 from rf_diffusion import distributions
 from rf_diffusion import conditioning
+from rf_diffusion.train_data.exceptions import NextExampleException
+from rf_diffusion.train_data import fast_filters
 
 from typing import Tuple
 from omegaconf import OmegaConf
@@ -1569,6 +1571,10 @@ class DistilledDatasetUnnoised(data.Dataset):
         self.conf = conf
         self.model_adaptor = aa_model.Model(conf)
         self.last_idx = None
+
+        self.dataset_param_overrides = self.conf.dataloader.get('dataset_param_overrides', {})
+        self.fast_filters = self.conf.dataloader.get('fast_filters', {})
+
         def fallback_out():
             spoof = fallback_spoof
             sel_item = spoof['sel_item']
@@ -1603,6 +1609,14 @@ class DistilledDatasetUnnoised(data.Dataset):
             counter += n_ids
         return d
 
+    def get_dataset_bounds_from_index(self, index):
+        '''
+        Return the bounds of the dataset specified by this index.
+        i.e. if index 100 corresponds to pdb_aa and pdb_aa spans from 0-3000, return 0-3001
+        '''
+        dataset, _ = self.dataset_index_from_index(index)
+        return self.range_by_dataset_name()[dataset]
+
     def getitem_unsafe(self, index):
         # This function is run when items are loaded in pytorch dataloaders
         mask_gen_seed = np.random.randint(0, 99999999)
@@ -1620,6 +1634,13 @@ class DistilledDatasetUnnoised(data.Dataset):
             sel_item = rf2aa.data.data_loader.sample_item_sm_compl(dataset_config.dic, ID)
         else:
             sel_item = rf2aa.data.data_loader.sample_item(dataset_config.dic, ID)
+
+        # Run fast filters to allow for rapid rejection of example via NextExampleException
+        if chosen_dataset in self.fast_filters:
+            names = self.fast_filters[chosen_dataset].names
+            configs = self.fast_filters[chosen_dataset].configs
+            for name in names:
+                getattr(fast_filters, name)(sel_item=sel_item, **configs[name])
 
         # use fixbb settings for MSA generation if not sequence to structure task  
         fixbb = task != "seq2str"
@@ -1643,6 +1664,12 @@ class DistilledDatasetUnnoised(data.Dataset):
             'sel_item': sel_item,
             'task': task,
             'mask_gen_seed': mask_gen_seed}, indent=4)
+
+        # Allow datasets to specifically override params
+        params = copy.deepcopy(self.params)
+        if chosen_dataset in self.dataset_param_overrides:
+            for key, value in self.dataset_param_overrides[chosen_dataset].items():
+                params[key] = value
         
         with error.context(item_context):
             if chosen_dataset == 'cn':
@@ -1657,17 +1684,17 @@ class DistilledDatasetUnnoised(data.Dataset):
             elif chosen_dataset == 'compl':
                 chosen_loader = dataset_config.task_loaders[task]
                 out = chosen_loader(sel_item, 
-                    {**rf2aa.data.compose_dataset.default_dataloader_params, **self.params}, fixbb=fixbb)
+                    {**rf2aa.data.compose_dataset.default_dataloader_params, **params}, fixbb=fixbb)
             elif chosen_dataset in ['na_compl']:
                 # Note, fixbb not available for rf2aa data loaders
                 chosen_loader = dataset_config.task_loaders[task]
                 out = chosen_loader(sel_item, 
-                    {**rf2aa.data.compose_dataset.default_dataloader_params, **self.params}, native_NA_frac=0.0, fixbb=fixbb)                    
+                    {**rf2aa.data.compose_dataset.default_dataloader_params, **params}, native_NA_frac=0.0, fixbb=fixbb)
             elif chosen_dataset in ['rna', 'dna']:
                 # Note, fixbb not available for rf2aa data loaders
                 chosen_loader = dataset_config.task_loaders[task]
                 out = chosen_loader(sel_item, 
-                    {**rf2aa.data.compose_dataset.default_dataloader_params, **self.params}, fixbb=fixbb)                  
+                    {**rf2aa.data.compose_dataset.default_dataloader_params, **params}, fixbb=fixbb)
             elif chosen_dataset == 'pdb' or chosen_dataset == 'pdb_aa':
                 chosen_loader = dataset_config.task_loaders[task]
                 # if p_unclamp > self.unclamp_cut:
@@ -1675,14 +1702,14 @@ class DistilledDatasetUnnoised(data.Dataset):
                 # else:
                 #     out = chosen_loader(sel_item[0], self.params, self.homo, unclamp=False, p_homo_cut=self.p_homo_cut)
                 out = chosen_loader(sel_item, 
-                    {**rf2aa.data.compose_dataset.default_dataloader_params, **self.params}, self.homo, p_homo_cut=-1.0,fixbb=fixbb)
+                    {**rf2aa.data.compose_dataset.default_dataloader_params, **params}, self.homo, p_homo_cut=-1.0,fixbb=fixbb)
             elif chosen_dataset == 'fb':
                 # print('Chose fb')
                 chosen_loader = self.fb_loaders[task]
                 if p_unclamp > self.unclamp_cut:
-                    out = chosen_loader(sel_item, self.params, unclamp=True, fixbb=fixbb)
+                    out = chosen_loader(sel_item, params, unclamp=True, fixbb=fixbb)
                 else:
-                    out = chosen_loader(sel_item, self.params, unclamp=False,fixbb=fixbb)
+                    out = chosen_loader(sel_item, params, unclamp=False,fixbb=fixbb)
             elif chosen_dataset in {'sm_complex', 'sm_compl_covale', 'sm_compl_asmb', 'sm_compl_multi', 'metal_compl'}:
                 num_protein_chains = None
                 num_ligand_chains = None
@@ -1691,7 +1718,7 @@ class DistilledDatasetUnnoised(data.Dataset):
                     num_ligand_chains = 1
                 out = dataset_config.task_loaders(
                     sel_item,
-                    {**rf2aa.data.compose_dataset.default_dataloader_params, **self.params, "P_ATOMIZE_MODRES": -1},
+                    {**rf2aa.data.compose_dataset.default_dataloader_params, **params, "P_ATOMIZE_MODRES": -1},
                     num_protein_chains=num_protein_chains, num_ligand_chains=num_ligand_chains,
                     fixbb=fixbb,
                 )
@@ -1796,6 +1823,9 @@ class TransformedDataset(data.Dataset):
             logger.debug(f'Transform[{get_class_name(T)}] added: {new_feats}    removed: {removed_feats}')
         logger.debug(f'Transform root outputs: {set(feats.keys()) if isinstance(feats, dict) else type(feats)}')
         return feats
+
+    def get_dataset_bounds_from_index(self, index):
+        return self.dataset.get_dataset_bounds_from_index(index)
 
     def __len__(self):
         return len(self.dataset)
@@ -1912,10 +1942,50 @@ class DistilledDataset(data.Dataset):
             feature_tuple_from_feature_dict
         ])
         self.dataset = TransformedDataset(dataset, transforms)
+
+    def get_dataset_bounds_from_index(self, index):
+        return self.dataset.get_dataset_bounds_from_index(index)
     
     def __getitem__(self, i):
         return self.dataset[i]
     
+    def __len__(self):
+        return len(self.dataset)
+
+class DatasetWithNextExampleRetry(data.Dataset):
+    '''
+    A dataset that allows one to throw NextExampleException in order to retry the train loader with a different example
+
+    Only currently supports retrying the same dataset, but ideally it would retry the same mask again too if thrown from a mask
+    '''
+
+    def __init__(self,
+                 dataset,
+                 max_retries=200):
+        self.dataset = dataset
+        self.max_retries = max_retries
+
+    def __getitem__(self, index):
+        try:
+            return self.dataset[index]
+        except NextExampleException as e:
+            if e.get_message():
+                print(e.get_message())
+
+        rng = random.Random(index) # Seed once with the index to prevent unlucky short random seed loops
+        lb, ub = self.dataset.get_dataset_bounds_from_index(index)
+
+        for attempt in range(self.max_retries):
+            next_index = rng.randint(lb, ub-1)
+            try:
+                return self.dataset[next_index]
+            except NextExampleException as e:
+                if e.get_message():
+                    print(e.get_message())
+
+        print(f"WARNING: dataset.__getitem__[{index}] raised NextExampleException {self.max_retries} times! Aborting DatasetWithNextExampleRetry")
+        assert False
+
     def __len__(self):
         return len(self.dataset)
 
@@ -2060,6 +2130,8 @@ def get_dataset_and_sampler(dataset_configs, dataset_options, dataset_prob, conf
         conf=conf,
         homo=homo
     )
+
+    dataset = DatasetWithNextExampleRetry(dataset)
 
     sampler = DistributedWeightedSampler(
         dataset_configs=dataset_configs,

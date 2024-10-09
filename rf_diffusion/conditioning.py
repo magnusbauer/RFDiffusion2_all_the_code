@@ -27,11 +27,15 @@ from rf_diffusion import mask_generator
 ######## Group all imported transforms together ###########
 
 from rf_diffusion.conditions.ss_adj.sec_struct_adjacency import LoadTargetSSADJTransform, AutogenerateTargetSSADJTransform, GenerateSSADJTrainingTransform
+from rf_diffusion.ppi import PPITrimTailsChain0ComplexTransform, PPIRejectUnfoldedInterfacesTransform, PPIJoeNateDatasetRadialCropTransform
 
 # "Use" the imports to avoid ruff errors
 LoadTargetSSADJTransform.__class__
 AutogenerateTargetSSADJTransform.__class__
 GenerateSSADJTrainingTransform.__class__
+PPITrimTailsChain0ComplexTransform.__class__
+PPIRejectUnfoldedInterfacesTransform.__class__
+PPIJoeNateDatasetRadialCropTransform.__class__
 
 ###########################################################
 
