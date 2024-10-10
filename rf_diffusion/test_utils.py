@@ -14,7 +14,7 @@ from omegaconf import DictConfig, OmegaConf
 from rf2aa import tensor_util
 from rf_diffusion.data_loader import (
     default_dataset_configs,
-    DistilledDataset, DistributedWeightedSampler
+    DistilledDataset, DistributedWeightedSampler, DatasetWithNextExampleRetry
 )
 from torch.utils import data
 from rf_diffusion.frame_diffusion.data import se3_diffuser
@@ -323,6 +323,8 @@ def get_dataloader(conf: DictConfig, epoch=0) -> None:
     train_set = DistilledDataset(dataset_configs,
                                     conf.dataloader, diffuser,
                                     conf.preprocess, conf, homo)
+
+    train_set = DatasetWithNextExampleRetry(train_set)
     
     train_sampler = DistributedWeightedSampler(dataset_configs,
                                                 dataset_options=conf.dataloader['DATASETS'],

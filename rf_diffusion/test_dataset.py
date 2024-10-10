@@ -501,6 +501,53 @@ class Dataloader(unittest.TestCase):
         
         test_utils.assert_matches_golden(self, golden_name, indep, rewrite=REWRITE, custom_comparator=self.cmp)
 
+    def test_PPI_hotspots_full_stack(self):
+        '''
+        This tests the full-stack of stuff for PPI training.
+        Very, very much a regression test. This test cycles through like 30 dataloader examples before picking one
+        '''
+        dataset = 'compl'
+        mask = 'get_PPI_random_motif_no_crop'
+        loader_out = self.indep_for_dataset(dataset, mask, overrides=[
+            '+extra_tXd=["ppi_hotspots_antihotspots"]',
+            '+extra_tXd_params.ppi_hotspots_antihotspots={}',
+            '++transforms.names=["AddConditionalInputs","ExpandConditionsDict"]',
+            '++transforms.configs.AddConditionalInputs.p_is_guidepost_example=0',
+            '++transforms.configs.ExpandConditionsDict={}',
+            '++upstream_training_transforms.names=["PPITrimTailsChain0ComplexTransform","PPIRejectUnfoldedInterfacesTransform","PPIJoeNateDatasetRadialCropTransform","GenerateMasks","PopMask","FindHotspotsTrainingTransform"]',
+            '++upstream_training_transforms.configs.PPITrimTailsChain0ComplexTransform={}',
+            '++upstream_training_transforms.configs.PPIRejectUnfoldedInterfacesTransform.binder_fbscn_cut=0.30',
+            '++upstream_training_transforms.configs.PPIJoeNateDatasetRadialCropTransform={}',
+            '++upstream_training_transforms.configs.GenerateMasks={}',
+            '++upstream_training_transforms.configs.PopMask={}',
+            '++upstream_training_transforms.configs.FindHotspotsTrainingTransform.p_is_hotspot_example=1.0',
+            '++upstream_training_transforms.configs.FindHotspotsTrainingTransform.p_is_antihotspot_example=1.0',
+            '++upstream_training_transforms.configs.FindHotspotsTrainingTransform.max_hotspot_frac=1.0',
+            '++upstream_training_transforms.configs.FindHotspotsTrainingTransform.max_antihotspot_frac=1.0',
+            '+dataloader.fast_filters.compl.names=["reject_chain0_longer_than"]',
+            '+dataloader.fast_filters.compl.configs.reject_chain0_longer_than.max_length=170',
+            '+dataloader.fast_filters.compl.configs.reject_chain0_longer_than.verbose=True',
+            '+dataloader.dataset_param_overrides.compl.CROP=600',
+            '++dataloader.CROP=190',
+            '++dataloader.mask.only_first_chain_ppi_binders=True'
+            ])
+        indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context, conditions_dict = loader_out
+        indep.metadata = None
+
+        golden_name = f'indep_{dataset}-{mask}_hotspots'
+
+        if self.show_in_pymol:
+            name, names = show.one(indep, None)
+            show.cmd.do('util.cbc')
+            show.diffused(indep, is_diffused, 'true')
+
+            hotspots = '+'.join(str(int(x)) for x in indep.idx[indep.extra_t1d[:,-4].bool()])
+            antihotspots = '+'.join(str(int(x)) for x in indep.idx[indep.extra_t1d[:,-2].bool()])
+            print('hotspots:', hotspots)
+            print('antihotspots:', antihotspots)
+
+        test_utils.assert_matches_golden(self, golden_name, indep, rewrite=REWRITE, custom_comparator=self.cmp)
+
     def test_get_diffusion_mask_islands_w_tip_w_seq_islands(self):
         '''
         This test tests two things:

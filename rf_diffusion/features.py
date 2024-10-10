@@ -7,6 +7,7 @@ import rf_diffusion.conditions.v2 as v2
 from rf_diffusion import aa_model
 from rf_diffusion import structure
 import rf_diffusion.conditions.ss_adj.sec_struct_adjacency as sec_struct_adj
+from rf_diffusion import ppi
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
@@ -479,6 +480,7 @@ featurizers = {
     'secondary_structure_composition' : get_ss_comp,
     'nucleic_base_hotspots': get_nucleic_base_hotspots,
     'ss_adj_cond': sec_struct_adj.get_ss_adj_conditioning,
+    'ppi_hotspots_antihotspots': ppi.get_hotspots_antihotspots_conditioning
 }
 
 # Add user specific featurizers to this dictionary for inference
@@ -493,6 +495,7 @@ inference_featurizers = {
     'secondary_structure_composition' : get_ss_comp_inference,    
     'nucleic_base_hotspots' : get_nucleic_base_hotspots_inference,
     'ss_adj_cond': sec_struct_adj.get_ss_adj_conditioning_inference,
+    'ppi_hotspots_antihotspots': ppi.get_hotspots_antihotspots_conditioning_inference
 }
 
 # Add user specific featurizer initializer functions to this dictionary (optional) for inference

@@ -251,8 +251,10 @@ show_dataset:
     show_only_backbone: False
     show_ss_cond: False # Show the secondary structure conditioning that has been applied
     ss_t1d_offset: -1 # Offset into t1d for the first (SS_HELIX) of the ss conditioning channels. Supports negative indexing
-    show_adj_strand_pairs: True # Show secondary structural elements involved in strand pairing (ADJ_STRAND_PAIR)
-    adj_t2d_offset: -4 # Offset into t2d for the first (ADJ_FAR) of the adj conditioning channels. Supports negative indexing
+    show_adj_strand_pairs: False # Show secondary structural elements involved in strand pairing (ADJ_STRAND_PAIR)
+    adj_t2d_offset: -1 # Offset into t2d for the first (ADJ_FAR) of the adj conditioning channels. Supports negative indexing
+    show_hotspots: False # Show positions that have been marked as hotspots
+    hotspot_t1d_offset: -1 # Offset into t1d for the hotspot conditioning. Supports negative indexing which is likely the way to find it
 
 reshape:
   output_path: null

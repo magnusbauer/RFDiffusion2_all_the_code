@@ -1,0 +1,54 @@
+# Example config for running ppi examples
+defaults:
+  - base
+
+guidepost_bonds: True
+
+inference:
+  align_motif: False
+  str_self_cond: True
+  state_dict_to_use: model_state_dict
+  deterministic: False
+  ckpt_path: /mnt/net/scratch/bcov/train_test/ppi2024-10-10_20:16:24.033429/rank_0/models/RFD_7.pt  # this model was trained for 200 examples...
+  model_runner: NRBStyleSelfCond
+
+contigmap:
+  has_termini: [True,True] # This may not always be accurate but it doesn't do much and it's better if we don't throw an error by default
+
+diffuser:
+  trans:
+    sample_schedule: linear
+    exp_rate: 1
+  rots:
+    exp_rate: 40 # Contentious value. Woody would say use 10 but 40 gives a 4x AF2 boost so...
+  independently_center_diffuseds: True # Without this there's about a 1A gitter by default
+
+# see config/inference/base.yaml and then search for ppi
+# You'll probably want at least ppi.hotspot_res
+
+# see config/inference/base.yaml and then search for scaffoldguided
+
+
+upstream_inference_transforms: # These transforms don't do anything unless specific flags are set
+  names:
+    - HotspotAntihotspotResInferenceTransform
+    - ExposedTerminusTransform
+    - AutogenerateTargetSSADJTransform
+    - LoadTargetSSADJTransform
+    - RenumberCroppedInput
+  configs:
+    HotspotAntihotspotResInferenceTransform: {}
+    ExposedTerminusTransform: {}
+    AutogenerateTargetSSADJTransform: {}
+    LoadTargetSSADJTransform: {}
+    RenumberCroppedInput:
+      enabled: True
+
+
+transforms:
+  configs:
+    CenterPostTransform:
+      jitter: 0
+      center_type: target_hotspot
+
+

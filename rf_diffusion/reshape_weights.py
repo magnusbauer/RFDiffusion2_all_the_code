@@ -1,3 +1,4 @@
+#!/usr/bin/env -S /bin/sh -c '"$(dirname "$0")/exec/rf_diffusion_aa_shebang.sh" "$0" "$@"'
 import os
 
 from icecream import ic

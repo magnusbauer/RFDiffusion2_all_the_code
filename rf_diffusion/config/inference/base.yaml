@@ -6,7 +6,6 @@ inference:
   design_startnum: 0
   seed_offset: 0
   ckpt_path: /net/scratch/ahern/se3_diffusion/training/fm_tip_resume_24/fm_tip_resume_242023-12-03_14:20:34.490797/rank_0/models/RFD_44.pt
-  ppi_design: False
   autogenerate_contigs: False
   symmetry: null
   recenter: True
@@ -59,6 +58,7 @@ inference:
     little_t_embedding: null
     sinusoidal_timestep_embedding: null
     ss_adj_cond: {}
+    ppi_hotspots_antihotspots: {}
   safety:
     # Indicates that a user is carefully performing sidechain partial diffusion.
     # We require this to be set, as unless a user is careful this causes undefined behavior.
@@ -153,12 +153,13 @@ model:
   main_block: null
 
 diffuser:
-  T: 200
+  T: 50
   partial_T: null    
   aa_decode_steps: 40
   so3:
     use_cached_score: false
   preserve_motif_sidechains: false
+  independently_center_diffuseds: False # Center both is_diffused and ~is_diffused noise independently after calling diffuse
 
 seq_diffuser:
   s_b0: null
@@ -175,7 +176,10 @@ denoiser:
   center: False
 
 ppi:
-  hotspot_res: null
+  hotspot_res: null # Which residues on the target should we be within 7A (CB-dist) of? (B10,B15,B20-25)
+  antihotspot_res: null # Which residues on the target should we be at least 10A away from?
+  exposed_N_terminus: 0 # How many N-terminus residues of the first chain should be at least 10A away from every other chain?
+  exposed_C_terminus: 0 # How many C-terminus residues of the first chain should be at least 10A away from every other chain?
 
 potentials:
   guiding_potentials: null 

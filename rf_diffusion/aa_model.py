@@ -1763,6 +1763,14 @@ def diffuse_then_add_conditional(conf, diffuser, indep, is_diffused, t):
     # Make the unconditional indep    
     indep_uncond, diffuser_out = diffuse(conf, diffuser, indep, torch.ones_like(is_diffused).bool(), t)
 
+    # In cases with large ~is_diffused. The is_diffused cloud can be rather off-origin
+    if conf.diffuser.independently_center_diffuseds:
+        if is_diffused.sum() > 0:
+            indep_uncond.xyz[is_diffused] -= indep_uncond.xyz[is_diffused,1].mean(axis=0)[None,None,:]
+        if (~is_diffused).sum() > 0:
+            indep_uncond.xyz[~is_diffused] -= indep_uncond.xyz[~is_diffused,1].mean(axis=0)[None,None,:]
+
+
     # Make the conditional portion
     indep = copy.deepcopy(indep)
     indep = add_fake_peptide_frame(indep)

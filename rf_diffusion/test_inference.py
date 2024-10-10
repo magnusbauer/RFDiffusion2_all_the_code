@@ -738,6 +738,53 @@ class TestRegression(unittest.TestCase):
         test_utils.assert_matches_golden(self, 'rfi_ss_adj_binder_motif_graft_target_ss_adj', mapped_calls, rewrite=REWRITE, custom_comparator=cmp)
 
 
+
+    @pytest.mark.generates_golden
+    def test_inference_rfi_ppi_hotspots_antihotspots(self):
+        # Tests ppi hotspots, antihotspots, ExposedTerminusTransform, and RenumberCroppedInput
+        run_inference.make_deterministic()
+        conf = construct_conf([
+            'diffuser.T=1',
+            'inference.num_designs=1',
+            'inference.input_pdb=test_data/two_chain.pdb',
+            'contigmap.contigs=["30-30,0_B121-130"]',
+            'inference.output_prefix=tmp/test_ppi_hotspots',
+            '++inference.zero_weights=True',
+            'contigmap.has_termini=[True,True]',
+            '+extra_tXd=["ppi_hotspots_antihotspots"]',
+            '+extra_tXd_params.ppi_hotspots_antihotspots={}',
+            '++diffuser.independently_center_diffuseds=True',
+
+            '++upstream_inference_transforms.names=[HotspotAntihotspotResInferenceTransform,ExposedTerminusTransform,RenumberCroppedInput]',
+            '++upstream_inference_transforms.configs.HotspotAntihotspotResInferenceTransform={}',
+            '++upstream_inference_transforms.configs.ExposedTerminusTransform={}',
+            '++upstream_inference_transforms.configs.RenumberCroppedInput={}',
+
+            '++transforms.names=["AddConditionalInputs","CenterPostTransform","ExpandConditionsDict"]',
+            '++transforms.configs.AddConditionalInputs.p_is_guidepost_example=0',
+            '++transforms.configs.ExpandConditionsDict={}',
+            '++transforms.configs.CenterPostTransform.center_type=target_hotspot',
+
+            '++ppi.hotspot_res="B122,B128"',
+            '++ppi.antihotspot_res="B123,B129"',
+            '++ppi.exposed_N_terminus=5',
+            '++ppi.exposed_C_terminus=6',
+        ])
+        mapped_calls = get_rfi(conf)
+        assert mapped_calls[0]['t1d'].shape[-1] == 84, "If this throws, the hotspots arent being written to t1d"
+
+        hotspots = mapped_calls[0]['t1d'][0,0,:,-4]
+        antihotspots = mapped_calls[0]['t1d'][0,0,:,-2]
+
+        assert (torch.where(hotspots)[0] == torch.tensor([31,37])).all()
+        assert (torch.where(antihotspots)[0] == torch.tensor([0,1,2,3,4,24,25,26,27,28,29,32,38])).all()
+
+
+        cmp = partial(tensor_util.cmp, atol=5e-2, rtol=0)
+        test_utils.assert_matches_golden(self, 'rfi_ppi_hotspots_antihotspots', mapped_calls, rewrite=REWRITE, custom_comparator=cmp)
+
+
+
 class TestWriteTrajs(unittest.TestCase):
 
     T=2

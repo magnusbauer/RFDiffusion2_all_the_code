@@ -23,11 +23,14 @@ import nucleic_compatibility_utils as nucl_utils
 
 from rf_diffusion import run_inference
 from rf_diffusion import mask_generator
+from rf_diffusion import ppi
+from rf_diffusion.conditions.util import expand_1d_atomized_ok_gp_not
 
 ######## Group all imported transforms together ###########
 
 from rf_diffusion.conditions.ss_adj.sec_struct_adjacency import LoadTargetSSADJTransform, AutogenerateTargetSSADJTransform, GenerateSSADJTrainingTransform
-from rf_diffusion.ppi import PPITrimTailsChain0ComplexTransform, PPIRejectUnfoldedInterfacesTransform, PPIJoeNateDatasetRadialCropTransform
+from rf_diffusion.ppi import (PPITrimTailsChain0ComplexTransform, PPIRejectUnfoldedInterfacesTransform, PPIJoeNateDatasetRadialCropTransform,
+                                    FindHotspotsTrainingTransform, HotspotAntihotspotResInferenceTransform, ExposedTerminusTransform, RenumberCroppedInput)
 
 # "Use" the imports to avoid ruff errors
 LoadTargetSSADJTransform.__class__
@@ -36,6 +39,10 @@ GenerateSSADJTrainingTransform.__class__
 PPITrimTailsChain0ComplexTransform.__class__
 PPIRejectUnfoldedInterfacesTransform.__class__
 PPIJoeNateDatasetRadialCropTransform.__class__
+FindHotspotsTrainingTransform.__class__
+HotspotAntihotspotResInferenceTransform.__class__
+ExposedTerminusTransform.__class__
+RenumberCroppedInput.__class__
 
 ###########################################################
 
@@ -486,21 +493,28 @@ class CenterPostTransform:
         of the training data if there are not many examples since data leak occurs under this training 
         regime. This is because the model can memorize the exact placement of the ligands and fixed motifs
 
+        Center_types:
+            is_diffused: Center on CoM of is_diffused
+            is_not_diffused: Center on CoM of ~is_diffused
+            all: Center on CoM of indep
+            target_hotspot: PPI inference side of 'all'. Binder CoM is taken to be CoM of the hotspot CBs
+
         Args:
             jitter (float): The expected average distance between the center point and the origin
             jitter_clip (float): The maximum amount of distance between the center point and origin. Set this depending on
                 the size of jitter, possibly 3 * jitter
-            center_type (str): The mode of centering. Can be 'is_diffused' or 'is_not_diffused'
+            center_type (str): The mode of centering
         """
 
         self.jitter = jitter
         self.jitter_clip = jitter_clip
         self.center_type = center_type
-        assert center_type in ['is_diffused', 'is_not_diffused', 'all'], "must use 'is_diffused' or 'is_not_diffused' for center_type"
+        assert center_type in ['is_diffused', 'is_not_diffused', 'all', 'target_hotspot'], "must use 'is_diffused' or 'is_not_diffused' for center_type"
 
     def __call__(self,
                      indep: Indep, 
                      is_diffused: torch.Tensor,
+                     conditions_dict: dict,
                      origin: torch.Tensor = None,
                      **kwargs) -> dict:
         """
@@ -511,6 +525,7 @@ class CenterPostTransform:
             for_partial_diffusion (bool): whether the model is for partial diffusion
             is_diffused (torch.Tensor): the diffused residues as a boolean mask
             origin (torch.Tensor): the origin to center around. If None, the center of mass is calculated
+            coditions_dict (dict): The conditions dict
         """
         # if not ((origin is not None) and (self.center_type == 'is_diffused')):
         if origin is None:
@@ -527,9 +542,13 @@ class CenterPostTransform:
                     center_of_mass_mask[is_diffused,1] = True  
             elif self.center_type == 'all':
                 center_of_mass_mask[:, 1] = True
+            elif self.center_type == 'target_hotspot':
+                # We are emulating center_type: all except the entire mass of the binder is at the CoM of the hotspot CBs
+                origin = ppi.get_origin_target_hotspot(indep, conditions_dict, is_diffused)
 
             # Calculate center of mass
-            origin = get_center_of_mass(indep.xyz, center_of_mass_mask)
+            if origin is None:
+                origin = get_center_of_mass(indep.xyz, center_of_mass_mask)
 
         # Calculate jitter amount and add to the origin
         if self.jitter > 0:
@@ -545,6 +564,7 @@ class CenterPostTransform:
         return kwargs | dict(
             indep=indep,
             is_diffused=is_diffused,
+            conditions_dict=conditions_dict
         )
 
 
@@ -616,8 +636,10 @@ class ExpandConditionsDict:
         '''
 
         conditions_dict_contents = set([
-            # 'is_hotspot', # torch.Tensor[bool]: Which residues are hotspots? (8A cross-chain contacts)
-            # 'is_antihotspot', # torch.Tensor[bool]: Which residues are antihotspots? (8A cross-chain no-contacts)
+            'is_hotspot', # torch.Tensor[bool]: Which residues are hotspots? (7A cross-chain contacts)
+            'hotspot_values', # torch.Tensor[float]: An alternative to is_hotspot where you can stick a value in it (like num 10a neighbors)
+            'is_antihotspot', # torch.Tensor[bool]: Which residues are antihotspots? (10A cross-chain no-contacts)
+            'antihotspot_values', # torch.Tensor[float]: An alternative to is_hotspot where you can stick a value in it (like dist from diffused)
             'ss_adj', # sec_struct_adj.SecStructAdjacency: The secondary structure and block adjacency conditioning
         ])
 
@@ -629,6 +651,18 @@ class ExpandConditionsDict:
 
             if key == 'ss_adj':
                 new_conditions_dict['ss_adj'] = conditions_dict['ss_adj'].expand_for_atomization_and_gp(indep, post_idx_from_pre_idx)
+
+            elif key == 'is_hotspot':
+                new_conditions_dict['is_hotspot'] = expand_1d_atomized_ok_gp_not(indep, conditions_dict['is_hotspot'], post_idx_from_pre_idx, False, 'is_hotspot')
+
+            elif key == 'hotspot_values':
+                new_conditions_dict['hotspot_values'] = expand_1d_atomized_ok_gp_not(indep, conditions_dict['hotspot_values'], post_idx_from_pre_idx, 0, 'hotspot_values')
+
+            elif key == 'is_antihotspot':
+                new_conditions_dict['is_antihotspot'] = expand_1d_atomized_ok_gp_not(indep, conditions_dict['is_antihotspot'], post_idx_from_pre_idx, False, 'is_antihotspot')
+
+            elif key == 'antihotspot_values':
+                new_conditions_dict['antihotspot_values'] = expand_1d_atomized_ok_gp_not(indep, conditions_dict['antihotspot_values'], post_idx_from_pre_idx, 0, 'antihotspot_values')
 
             else:
                 assert False, f'Key {key}: not processed in ExpandConditionsDict'

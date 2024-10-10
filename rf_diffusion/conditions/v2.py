@@ -9,9 +9,9 @@ import torch.nn.functional as F
 import numpy as np
 
 def get_relative_sasa(indep, conf=None, **kwargs):
-    rasa = sasa.get_relative_sasa(indep)
-    if torch.rand(1) < 0.5:
+    if 1 - torch.rand(1) > conf.get('prob', 0.5): # 1 - for test consistency
         return {'t1d':torch.zeros((indep.length(), conf.n_bins + 1))}
+    rasa = sasa.get_relative_sasa(indep)
     is_feature_applicable = indep.is_sm
     one_hot = one_hot_buckets(rasa, conf.low, conf.high, conf.n_bins)
     one_hot[~is_feature_applicable] = 0
@@ -24,7 +24,7 @@ def radius_of_gyration_xyz(xyz):
     return torch.sqrt( torch.sum(torch.square(dist)) / L)
 
 def get_radius_of_gyration(indep, conf=None, **kwargs):
-    if torch.rand(1) < 0.5:
+    if 1 - torch.rand(1) > conf.get('prob', 0.5): # 1 - for test consistency
         return {'t1d':torch.zeros((indep.length(), conf.n_bins + 1))}
     rog = torch.zeros((indep.length(),))
     is_nucl = nucl_utils.get_resi_type_mask(indep.seq, 'na')

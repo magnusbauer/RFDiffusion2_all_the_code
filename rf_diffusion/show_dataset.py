@@ -1,3 +1,4 @@
+#!/usr/bin/env -S /bin/sh -c '"$(dirname "$0")/exec/rf_diffusion_aa_shebang.sh" "$0" "$@"'
 '''Shows the dataset used for training.  Uses a training config
 
 Example usage: python show_dataset.py --config-name=prod_1024 zero_weights=True debug=True wandb=False show_dataset.n=5 
@@ -179,6 +180,14 @@ def run(conf: DictConfig) -> None:
                     is_pair_1d = is_pair.any(axis=-1)
 
                     mask_by_name['strand_pair'] = is_pair_1d
+
+                if conf.show_dataset.show_hotspots:
+                    hotspot_t1d_offset = conf.show_dataset.hotspot_t1d_offset
+                    hotspots = indep.extra_t1d[:,hotspot_t1d_offset].bool() | (indep.extra_t1d[:,hotspot_t1d_offset+1] != 0)
+                    antihotspots = indep.extra_t1d[:,hotspot_t1d_offset+2].bool() | (indep.extra_t1d[:,hotspot_t1d_offset+3] != 0)
+
+                    mask_by_name['hotspots'] = hotspots
+                    mask_by_name['antihotspots'] = antihotspots
 
                 if len(mask_by_name) > 0:
 

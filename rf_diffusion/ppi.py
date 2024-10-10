@@ -6,24 +6,32 @@ from rf2aa.kinematics import generate_Cbeta
 import conditions.ss_adj.sec_struct_adjacency as sec_struct_adjacency
 from rf_diffusion.train_data.exceptions import NextExampleException
 from rf_diffusion import aa_model
+from rf_diffusion import sasa
 
-def Cb_or_atom(indep):
+def Cb_or_atom(indep, xyz=None):
     '''
     Generates the virtual CB atom for protein residues and returns atom for small molecule atoms
 
     Args:
-        indep (indep): indep
+        indep (indep): indep or None
+        xyz (torch.Tensor[float]): xyz if indep is None. Assumes no small molecules
 
     Returns:
         Cb (torch.Tensor): The xyz of virtual Cb atom for protein atoms and atom for small molecule atoms [L,3] 
     '''
-    N = indep.xyz[~indep.is_sm,0]
-    Ca = indep.xyz[~indep.is_sm,1]
-    C = indep.xyz[~indep.is_sm,2]
+    if xyz is None:
+        xyz = indep.xyz
+        is_sm = indep.is_sm
+    else:
+        assert indep is None, 'If you are going to specify xyz, indep must be None'
+        is_sm = torch.zeros(xyz.shape[0], dtype=bool)
+    N = xyz[~is_sm,0]
+    Ca = xyz[~is_sm,1]
+    C = xyz[~is_sm,2]
 
     # small molecules will use atom 1 for neighbor calculations
-    Cb = indep.xyz[:,1].clone()
-    Cb[~indep.is_sm] = generate_Cbeta(N,Ca,C)
+    Cb = xyz[:,1].clone()
+    Cb[~is_sm] = generate_Cbeta(N,Ca,C)
     return Cb
 
 def torch_rand_choice_noreplace(arr, n):
@@ -64,18 +72,15 @@ def downsample_bool_mask(mask, n_to_keep=None, max_frac_to_keep=None):
 
     return mask_out
 
-def find_hotspots_antihotspots(indep, max_hotspot_frac, max_antihotspot_frac, dist_cutoff=10, return_all=False, only_of_first_chain=False):
+def find_hotspots_antihotspots(indep, dist_cutoff=10, only_of_first_chain=False):
     '''
-    Finds all possible hotspots and antihotspots for training and then downsamples to a smaller number.
+    Finds all possible hotspots and antihotspots for training
         A hotspot is any motif residue within 10A (CB-dist) of a residue on a different chain.
         An antihotspot is same the criteria but greater than 10A from all residues.
 
     Args:
         indep (Indep): An indep
-        max_hotspot_frac (float): What fraction of hotspots found should be returned
-        max_antihotspot_frac (float): What fraction of antihotspots found should be returned
         dist_cutoff (float): What is the distance cutoff for hotspots (you can't change this without retraining)
-        return_all (bool): If true, return allhotspots
         only_of_first_chain (bool): If true, hotspots will only be considered if the first chain is near them
 
     Returns:
@@ -120,13 +125,7 @@ def find_hotspots_antihotspots(indep, max_hotspot_frac, max_antihotspot_frac, di
 
         is_hotspot_full = new_is_hotspot_full
 
-    if return_all:
-        return is_hotspot_full, is_antihotspot_full
-
-    is_hotspot = downsample_bool_mask(is_hotspot_full, max_frac_to_keep=max_hotspot_frac)
-    is_antihotspot = downsample_bool_mask(is_antihotspot_full, max_frac_to_keep=max_antihotspot_frac)
-
-    return is_hotspot, is_antihotspot
+    return is_hotspot_full, is_antihotspot_full
 
 
 def radial_crop(indep, is_diffused, is_hotspot, is_target, distance=25):
@@ -438,7 +437,7 @@ class PPITrimTailsChain0ComplexTransform:
         # Find sidechain neighbors and hotspots
         sc_neigh = sidechain_neighbors(Ca[is_binder], Cb[is_binder], Ca[is_binder])
 
-        is_hotspots_both, _ = find_hotspots_antihotspots(indep, 1, 1 ,return_all=True, only_of_first_chain=False)
+        is_hotspots_both, _ = find_hotspots_antihotspots(indep, only_of_first_chain=False)
         hotspot_on_binder = is_hotspots_both & is_binder
         if hotspot_on_binder.sum() == 0:
             raise NextExampleException("PPITrimTailsChain0ComplexTransform: Chains aren't touching?")
@@ -590,7 +589,7 @@ class PPIRejectUnfoldedInterfacesTransform:
         # Get sidechain neighbors and hotspots
         sc_neigh = sidechain_neighbors(Ca[is_binder], Cb[is_binder], Ca[is_binder])
 
-        is_hotspots_both, _ = find_hotspots_antihotspots(indep, 1, 1, return_all=True, only_of_first_chain=False)
+        is_hotspots_both, _ = find_hotspots_antihotspots(indep, only_of_first_chain=False)
         hotspot_on_binder = is_hotspots_both & is_binder
         if hotspot_on_binder.sum() == 0:
             raise NextExampleException("PPIRejectUnfoldedInterfacesTransform: Chains aren't touching?")
@@ -656,7 +655,7 @@ class PPIJoeNateDatasetRadialCropTransform:
 
 
         # Find hotspots
-        is_hotspots_both, _ = find_hotspots_antihotspots(indep, 1, 1 ,return_all=True, only_of_first_chain=False)
+        is_hotspots_both, _ = find_hotspots_antihotspots(indep, only_of_first_chain=False)
         hotspot_on_binder = is_hotspots_both & is_binder
         if hotspot_on_binder.sum() == 0:
             raise NextExampleException("PPIJoeNateDatasetRadialCropTransform: Chains aren't touching?")
@@ -691,3 +690,574 @@ class PPIJoeNateDatasetRadialCropTransform:
             **kwargs
             )
 
+
+class ExposedTerminusTransform:
+    def __call__(self, conf, indep, conditions_dict, **kwargs):
+        '''
+        Use ppi.exposed_N_terminus and ppi.exposed_N_terminus to mark the termini of the binder as antihotspots (so they'll repel the target)
+
+        Args:
+            indep (Indep): Indep
+            conf (OmegaConf): The config
+            conditions_dict (dict): The inference conditions
+
+        Returns:
+            Return signature is the same as call signature but conditions_dict['is_antihotspot'] has been updated
+        '''
+
+        if conf.ppi.exposed_N_terminus > 0 or conf.ppi.exposed_C_terminus > 0:
+            chain_masks = indep.chain_masks()
+            binder_mask = chain_masks[0]
+            wh_binder_mask = torch.tensor(np.where(binder_mask)[0])
+
+            if 'is_antihotspot' not in conditions_dict:
+                conditions_dict['is_antihotspot'] = torch.zeros(indep.length(), dtype=bool)
+
+            if conf.ppi.exposed_N_terminus > 0:
+                to_expose = wh_binder_mask[:conf.ppi.exposed_N_terminus]
+                conditions_dict['is_antihotspot'][to_expose] = True
+
+            if conf.ppi.exposed_C_terminus > 0:
+                to_expose = wh_binder_mask[-conf.ppi.exposed_C_terminus:]
+                conditions_dict['is_antihotspot'][to_expose] = True
+
+
+        return kwargs | dict(
+            indep=indep,
+            conf=conf,
+            conditions_dict=conditions_dict,
+            )
+
+
+
+class HotspotAntihotspotResInferenceTransform:
+
+    def __call__(self, conf, indep, conditions_dict, contig_map, **kwargs):
+        '''
+        Apply ppi.hotspot_res and ppi.antihotspot_res to conditions_dict[{'is_hotspot', 'hotspot_value', 'is_antihotspot', 'antihotspot_value}']
+
+        Uses:
+            conf.ppi.hotspot_res
+            conf.ppi.hotspot_res_values
+            conf.ppi.antihotspot_res
+            conf.ppi.antihotspot_values
+
+        Args:
+            indep (Indep): Indep
+            conf (OmegaConf): The config
+            contig_map (ContigMap): The contig map
+            conditions_dict (dict): The inference conditions
+
+        Returns:
+            Return signature is the same as call signature
+        '''
+
+        if bool(conf.ppi.hotspot_res):
+            assert isinstance(conf.ppi.hotspot_res, str), f'ppi.hotspot_res must be a string! You passed "{conf.ppi.hotspot_res}"'
+            hotspot_mask = contig_map.res_list_to_mask(conf.ppi.hotspot_res)
+
+            if 'is_hotspot' in conditions_dict:
+                conditions_dict['is_hotspot'] |= hotspot_mask
+            else:
+                conditions_dict['is_hotspot'] = hotspot_mask
+
+        # conditions_dict['hotspot_value'] coming soon!
+
+        if bool(conf.ppi.antihotspot_res):
+            assert isinstance(conf.ppi.antihotspot_res, str), f'ppi.antihotspot_res must be a string! You passed "{conf.ppi.antihotspot_res}"'
+            antihotspot_mask = contig_map.res_list_to_mask(conf.ppi.antihotspot_res)
+            if 'is_antihotspot' not in conditions_dict:
+                conditions_dict['is_antihotspot'] = antihotspot_mask
+            else:
+                conditions_dict['is_antihotspot'] |= antihotspot_mask
+
+        # conditions_dict['antihotspot_value'] coming soon!
+
+
+        return kwargs | dict(
+            indep=indep,
+            conf=conf,
+            contig_map=contig_map,
+            conditions_dict=conditions_dict,
+            )
+
+
+
+def filter_hotspots_by_sasa(indep, is_hotspot, sasa_cut=30, probe_radius=2.8, only_hotspots_of_first_chain=True):
+    '''
+    Filter hotspots such that they have some exposed area to solvent
+
+    If only_hotspots_of_first_chain is true. The target as a whole is used for SASA calcs
+    If only_hotspots_of_first_chain is false. Each chain individually is used for SASA calcs
+
+    Args:
+        is_hotspot (torch.Tensor[bool]): The current bool mask of hotspots [L]
+        indep (indep): The indep
+        sasa_cut (float): The amount of solvent accessible surface area a residue needs in A^2
+        probe_radius (float): The radius of the sasa probe. Default at 2.8 to avoid accidental pockets
+        only_hotspots_of_first_chain (bool): Implies everything but chain 0 is the target
+
+    Returns:
+        is_hotspot (torch.Tensor[bool]): The original hotspot mask but where they all have enough sasa
+    '''
+    # Copy inputs
+    is_hotspot = is_hotspot.clone().bool()
+
+    if only_hotspots_of_first_chain:
+        # Assume everything but chain 0 is the target
+        binder_mask = torch.tensor(indep.chain_masks()[0])
+        target_mask = ~binder_mask
+        target_indep, _ = aa_model.slice_indep(indep, target_mask, break_chirals=True)
+
+        # Get the SASA of the target alone
+        per_res_sasa = torch.zeros(indep.length())
+        per_res_sasa[target_mask] = sasa.get_indep_sasa_per_res(target_indep, probe_radius=probe_radius)
+
+    else:
+        # Do each chain individually
+        per_res_sasa = torch.zeros(indep.length())
+        for chain_mask in indep.chain_masks():
+            chain_mask = torch.tensor(chain_mask)
+
+            # Get just this chain
+            chain_indep, _ =  aa_model.slice_indep(indep, chain_mask, break_chirals=True)
+
+            # Get the SASA of just this chain
+            per_res_sasa[chain_mask] = sasa.get_indep_sasa_per_res(chain_indep, probe_radius=probe_radius)
+
+    # Mask it out
+    enough_sasa_for_hotspot = per_res_sasa > sasa_cut
+    is_hotspot &= enough_sasa_for_hotspot
+
+    return is_hotspot
+
+def hotspot_downsample_n_closest_to_one(indep, is_hotspot, n):
+    '''
+    Find the n closest hotspot residues to a randomly chosen on and return that mask
+
+    Args:
+        indep (Indep): Indep
+        is_hotspot (torch.Tensor[boo]): The incoming hotspot mask
+        n (int): How many hotspots to keep
+
+    Returns:
+        is_hotspot (torch.Tensor[bool]): The new hotspots
+    '''
+    wh_hotspot = torch.where(is_hotspot)[0]
+
+    # Pick the center of the cluster
+    central = torch_rand_choice_noreplace(wh_hotspot, 1)[0]
+
+    # Find distance to central residue
+    Cb = Cb_or_atom(indep)
+    hotspot_cb = Cb[wh_hotspot]
+    center_cb = Cb[central]
+
+    d2_center = torch.sum( torch.square( hotspot_cb - center_cb), axis=-1 )
+
+    # Only keep n closest
+    n_keep = min(n, len(wh_hotspot))
+
+    _, keep_idx = torch.topk(d2_center, n_keep, largest=False)
+
+    keep_hotspot = wh_hotspot[keep_idx]
+
+    # Mark new hotspots
+    is_hotspot[:] = False
+    is_hotspot[keep_hotspot] = True
+
+    return is_hotspot
+
+
+def hotspot_downsample(indep, is_hotspot, method, max_hotspot_frac):
+    '''
+    Perform hotspot downsampling such that all hotspots are not always shown
+
+    In all cases, the number of hotspots that remain is somewhere betweeen 0 and is_hotspot.sum() * max_hotspot_frac
+
+    Methods:
+        random - Pay no attention to the spatial locations of the hotspots
+        speckle_or_region - Of the hotspots to remove, first remove half randomly. Then the other half either randomly again or
+                                        keep only those closest to a randomly chosen hotspot
+
+    Args:
+        indep (indep): Indep
+        is_hotspot (torch.Tensor[bool]): The incoming hotspot mask [L]
+        method (str): Which method do you want to use?
+        max_hotspot_frac (float): The maximum fraction of hotspots that could remain
+
+    Returns:
+        is_hotspot (torch.Tensor[bool]): The new hotspots
+    '''
+
+    if is_hotspot.sum() <= 1:
+        return is_hotspot
+
+    if method == 'random':
+        is_hotspot = downsample_bool_mask(is_hotspot, max_frac_to_keep=max_hotspot_frac)
+
+    elif method == 'speckle_or_region':
+        # Perform half the reduction by speckling. The other half by either another speckle or closest to res
+
+        n_total = is_hotspot.sum()
+        n_keep = random.randint(1, int(torch.ceil( n_total * max_hotspot_frac )))
+
+        n_reduce = n_total - n_keep
+
+        speckle_reduce = int(n_reduce / 2)
+
+        if speckle_reduce > 0:
+            is_hotspot = downsample_bool_mask(is_hotspot, n_to_keep=is_hotspot.sum() - speckle_reduce)
+
+        if torch.rand(1) < 0.5:
+            # speckle
+            is_hotspot = downsample_bool_mask(is_hotspot, n_to_keep=n_keep)
+        else:
+            # region
+            is_hotspot = hotspot_downsample_n_closest_to_one(indep, is_hotspot, n_keep)
+
+    else:
+        assert False, f'Unknown downsample method: {method}'
+
+    return is_hotspot
+
+
+
+def get_hotspot_values(indep, is_hotspot, hotspot_values_mean, max_10a_neighbors=12):
+    '''
+    Instead of just being a boolean. Hotspot values allows you to specify a float for each hotspot
+
+    Methods:
+        boolean -- Just 0 or 1
+        tenA_neighbors -- The number of 10A neighbors that the hotspots has / max_10a_neighbors
+
+    Args:
+        indep (indep): Indep
+        is_hotspot (torch.Tensor[bool]): The incoming hotspot mask [L]
+        hotspot_values_mean (str): What method is used to select the hotspot values
+        max_10a_neighbors (int): The value above which the tenA_neighbors method returns 1
+
+    Returns:
+        hotspot_values (torch.Tensor[float]): The value of each hotspot
+    '''
+
+    if hotspot_values_mean == 'boolean':
+        return is_hotspot.float()
+    elif hotspot_values_mean == 'tenA_neighbors':
+
+        # Get all by all CA distance map
+        Ca = indep.xyz[:,1]
+        all_by_dist2 = torch.sum( torch.square( Ca[:,None] - Ca[None,:] ), axis=-1)
+
+        # All by all bool map of if they're close
+        all_by_close = all_by_dist2 < 10**2
+
+        # Find neighbors of all residues. A little wasteful but this probably isn't the slow step
+        num_neighbors = torch.zeros(indep.length())
+        for chain_mask in indep.chain_masks():
+            chain_mask = torch.tensor(chain_mask)
+
+            # Count the number of residues on other chains that are close to this chain
+            not_chain_mask = ~chain_mask
+            num_neighbors[chain_mask] = all_by_close[chain_mask][:,not_chain_mask].sum(axis=-1)
+
+        # Random +- 1 to avoid exactness
+        num_neighbors += torch.rand(len(num_neighbors)) * 2 - 1
+        num_neighbors = torch.clip(num_neighbors, 0, max_10a_neighbors)
+
+        # Store them 0-1
+        hotspot_values = torch.zeros(indep.length())
+        hotspot_values[is_hotspot] = num_neighbors[is_hotspot] / max_10a_neighbors
+
+        return hotspot_values
+    else:
+        assert False, f'Unknown hotspot_values_mean: {hotspot_values_mean}'
+
+
+class FindHotspotsTrainingTransform:
+    """
+    Transform that loads conditions_dict with is_hotspot and is_antihotspot for training
+    """
+    def __init__(self, p_is_hotspot_example=0, p_is_antihotspot_example=0, max_hotspot_frac=0.2, max_antihotspot_frac=0.05, only_hotspots_of_first_chain=True,
+            hotspot_distance=7, antihotspot_distance=10, hotspot_downsample_method='speckle_or_region', hotspot_sasa_cut=30, hotspot_values_mean=False):
+        """
+        Args:
+            p_is_hotspot_example (float): Probability we show any hotspots at all
+            p_is_antihotspot_example (float): Probability we show any antihotspots at all
+            max_hotspot_frac (float): Maximum fraction of all possible hotspot residues that are shown
+            max_antihotspot_frac (float): Maximum fraction of all possible antihotspot residues that are shown
+            only_hotspots_of_first_chain (bool): Use the standard definition of hotspots where they are only chain 0's contacts elswehere
+            hotspot_distance (float): How close must the CB be to each other to count as a hotspot?
+            antihotspot_distance (float): How far away must a CB be from the binder to be called an antihotspot?
+            hotspot_sasa_cut (float): How much solvent accessible surface area must a residue have to be called a hotspot?
+            hotspot_downsample_method (str): How should the hotspots be downsample? ['random', 'speckle_or_region']
+            hotspot_values_mean (str or False): Do hotspot values exist and if so what do they mean? [False, 'boolean', 'tenA_neighbors']
+        """
+
+        self.p_is_hotspot_example = p_is_hotspot_example
+        self.p_is_antihotspot_example = p_is_antihotspot_example
+        self.max_hotspot_frac = max_hotspot_frac
+        self.max_antihotspot_frac = max_antihotspot_frac
+        self.only_hotspots_of_first_chain = only_hotspots_of_first_chain
+        self.hotspot_distance = hotspot_distance
+        self.antihotspot_distance = antihotspot_distance
+        self.hotspot_sasa_cut = hotspot_sasa_cut
+        self.hotspot_downsample_method = hotspot_downsample_method
+        self.hotspot_values_mean = hotspot_values_mean
+
+        assert self.hotspot_downsample_method in ['random', 'speckle_or_region']
+        if self.hotspot_values_mean:
+            assert self.hotspot_values_mean in ['boolean', 'tenA_neighbors']
+
+
+    def __call__(self, indep, conditions_dict, **kwargs):
+        '''
+        Args:
+            indep (indep): indep
+            conditions_dict (dict): The conditions_dict for training
+
+        Returns:
+            conditions_dict['is_hotspot'] (torch.Tensor[bool]): A subset of the true hotspot residues
+            conditions_dict['hotspot_values'] (torch.Tensor[float]): An alternative to hotspots using float values to denote something
+            conditions_dict['is_antihotspot'] (torch.Tensor[bool]): A subset of the true antihotspot residues
+            conditions_dict['antihotspot_values'] (torch.Tensor[float]): An alternative to antihotspots using float values to denote something
+        '''
+
+        use_hotspot = (torch.rand(1) < self.p_is_hotspot_example).item()
+        use_antihotspot = (torch.rand(1) < self.p_is_antihotspot_example).item()
+        use_hotspot_values = use_hotspot and bool(self.hotspot_values_mean)
+
+        if use_hotspot or use_antihotspot:
+            is_hotspot_full, _ = find_hotspots_antihotspots(indep, only_of_first_chain=self.only_hotspots_of_first_chain,
+                                                                                                            dist_cutoff=self.hotspot_distance )
+            _, is_antihotspot_full = find_hotspots_antihotspots(indep, dist_cutoff=self.antihotspot_distance )
+
+            is_antihotspot = downsample_bool_mask(is_antihotspot_full, max_frac_to_keep=self.max_antihotspot_frac)
+
+            is_hotspot = is_hotspot_full.clone()
+
+            # Downsample hotspots by SASA
+            if is_hotspot.sum() > 0 and self.hotspot_sasa_cut > 0:
+
+                is_hotspot = filter_hotspots_by_sasa(indep, is_hotspot, sasa_cut=self.hotspot_sasa_cut,
+                                                                                    only_hotspots_of_first_chain=self.only_hotspots_of_first_chain)
+
+            # Downsample hotspots by random method
+            if is_hotspot.sum() > 0:
+
+                if self.hotspot_downsample_method != 'random':
+                    assert self.only_hotspots_of_first_chain, "You'll have to make your own downsample method if you don't like random."
+
+                is_hotspot = hotspot_downsample(indep, is_hotspot, self.hotspot_downsample_method, self.max_hotspot_frac)
+
+            if use_hotspot_values and is_hotspot.sum() > 0:
+                is_hotspot_values = get_hotspot_values(indep, is_hotspot, self.hotspot_values_mean)
+            else:
+                is_hotspot_values = is_hotspot.float()
+
+
+            if use_hotspot:
+
+                # Hotspots are stored to either is_hotspot or hotspot value and we're deciding where each should go
+                stores_to_values = torch.zeros(len(is_hotspot), dtype=bool)
+                if use_hotspot_values:
+                    # 50% of the time it's pegged at all-shown or none-shown. Else its between the two
+                    values_prob = torch.clip((torch.rand(1) * 2) - 0.5, 0, 1) # clip the range [-0.5, 1.5] to [0, 1]
+                    stores_to_values = torch.rand(len(is_hotspot)) <= values_prob
+
+                assert 'is_hotspot' not in conditions_dict, 'FindHotspotsTrainingTransform must create hotspot info'
+                assert 'hotspot_values' not in conditions_dict, 'FindHotspotsTrainingTransform must create hotspot info'
+
+                # Initialize the vectors then store the values to them
+                conditions_dict['is_hotspot'] = torch.zeros(len(is_hotspot), dtype=bool)
+                conditions_dict['is_hotspot'][~stores_to_values] = is_hotspot[~stores_to_values]
+
+                conditions_dict['hotspot_values'] = torch.zeros(len(is_hotspot))
+                conditions_dict['hotspot_values'][stores_to_values] = is_hotspot_values[stores_to_values]
+
+                if not use_hotspot_values:
+                    assert (conditions_dict['hotspot_values'] == 0).all()
+
+            if use_antihotspot:
+                if 'is_antihotspot' in conditions_dict:
+                    conditions_dict['is_antihotspot'] |= is_antihotspot
+                else:
+                    conditions_dict['is_antihotspot'] = is_antihotspot
+
+        return kwargs | dict(
+            indep=indep,
+            conditions_dict=conditions_dict
+        )
+
+
+def get_hotspots_antihotspots_conditioning_inference(indep, feature_conf, feature_inference_conf, **kwargs):
+    '''
+    See get_hotspots_antihotspots_conditioning()
+    '''
+    return get_hotspots_antihotspots_conditioning(indep, feature_conf, **kwargs)
+
+
+def get_hotspots_antihotspots_conditioning(indep, feature_conf, is_hotspot=None, hotspot_values=None, is_antihotspot=None, antihotspot_values=None, **kwargs):
+    '''
+    Generates the hotspot and antihotspot features for training and inference
+
+    Args:
+        indep (Indep): indep
+        feature_conf (OmegaConf): The configuration for this feature
+        is_hotspot (torch.Tensor[bool] or None): Boolean mask denoting which residues are hotspots from conditions_dict [L]
+        hotspot_values (torch.Tensor[float] or None): Float mask alternative to is_hotspot from conditions_dict [L]
+        is_antihotspot (torch.Tensor[bool] or None): Boolean mask denoting which residues are antihotspots from conditions_dict [L]
+        antihotspot_values (torch.Tensor[float] or None): Float mask alternative to is_antihotspot from conditions_dict [L]
+
+    Returns:
+        dict:
+            t1d (torch.Tensor[bool]): is_hotspot, hotspot_values, is_antihotspot, antihotspot_values [L,4]
+    '''
+
+    if is_hotspot is None:
+        is_hotspot = torch.zeros(indep.length(), dtype=bool)
+    if hotspot_values is None:
+        hotspot_values = torch.zeros(indep.length())
+    if is_antihotspot is None:
+        is_antihotspot = torch.zeros(indep.length(), dtype=bool)
+    if antihotspot_values is None:
+        antihotspot_values = torch.zeros(indep.length())
+
+
+    assert len(is_hotspot) == indep.length(), 'is_hotspot vector does not match indep.length(). Is ExpandConditionsDict in conf.transforms?'
+    assert len(hotspot_values) == indep.length(), 'hotspot_values vector does not match indep.length(). Is ExpandConditionsDict in conf.transforms?'
+    assert len(is_antihotspot) == indep.length(), 'is_antihotspot vector does not match indep.length(). Is ExpandConditionsDict in conf.transforms?'
+    assert len(antihotspot_values) == indep.length(), 'antihotspot_values vector does not match indep.length(). Is ExpandConditionsDict in conf.transforms?'
+
+
+    ret_stack = [is_hotspot.float(), hotspot_values.float(), is_antihotspot.float(), antihotspot_values.float()]
+
+    return {'t1d':torch.stack(ret_stack, axis=-1)}
+
+
+
+class RenumberCroppedInput:
+    """
+    Adjust indep.idx for input pdbs that have been cropped and numbered 1-N
+
+    Guesses how many residues should go in the gap using angstroms_per_aa
+    """
+    def __init__(self, enabled=True, angstroms_per_aa=4, verbose=True):
+        '''
+        Args:
+            enable (bool): Whether or not this should run
+            angstroms_per_aa (float): How many A do we assume each AA takes up
+            verbose (bool): Print something when insertions happen
+        '''
+
+        self.enabled = enabled
+        self.angstroms_per_aa = angstroms_per_aa
+        self.verbose = verbose
+
+
+    def __call__(self, indep, contig_map, **kwargs):
+
+        if self.enabled:
+
+            assert not indep.is_sm.any(), "bcov isn't sure that inference.renumber_cropped_input works with small molecules. Let's test it together"
+
+            # Accumulator variable for where we are inserting
+            insert_n_after_res = torch.zeros(indep.length(), dtype=int)
+
+            # Get the backbone
+            Ns = indep.xyz[:,0]
+            Cas = indep.xyz[:,1]
+            Cs = indep.xyz[:,2]
+
+            assert len(contig_map.ref) == indep.length()
+            had_input_coords = torch.tensor([x != ('_', '_') for x in contig_map.ref])
+
+            for chain_mask in indep.chain_masks():
+                chain_mask = torch.tensor(chain_mask)
+
+                # Idk what to do with small molecules for now
+                chain_mask[indep.is_sm] = False
+                chain_mask[~had_input_coords] = False
+
+                if chain_mask.sum() <= 1:
+                    continue
+
+                wh_chain_mask = torch.where(chain_mask)[0]
+
+                chain_Ns = Ns[chain_mask]
+                chain_Cas = Cas[chain_mask]
+                chain_Cs = Cs[chain_mask]
+
+                chain_idxs = indep.idx[chain_mask]
+
+                # d_idx is how many idx until the residue after this one
+                d_idx = chain_idxs[1:] - chain_idxs[:-1]
+
+                # C_N_dist is how far the next N is from this C
+                C_N_dist = torch.linalg.norm( chain_Ns[1:] - chain_Cs[:-1], axis=-1)
+
+                C_N_too_far = C_N_dist > 3
+
+                Ca_Ca_dist = torch.linalg.norm( chain_Cas[:-1] - chain_Cas[1:], axis=-1)
+
+                # if the C_N distance is bad
+                # 3.1A insert 1
+                # 3.9A insert 1
+                # 4.1A insert 2
+
+                missing_n_res = torch.ceil(Ca_Ca_dist / self.angstroms_per_aa).long()
+
+                wh_insert = wh_chain_mask[:-1][C_N_too_far & (d_idx == 1)]
+
+                insert_n_after_res[wh_insert] = missing_n_res[C_N_too_far]
+
+                if self.verbose:
+                    for idx, n in zip(wh_insert, missing_n_res[C_N_too_far]):
+                        print(f'RenumberCroppedInput: Inserting {n} res after {contig_map.ref[idx]}')
+
+            indep.idx[1:] += torch.cumsum( insert_n_after_res[:-1], 0 )
+
+
+        return kwargs | dict(
+            indep=indep,
+            contig_map=contig_map
+        )
+
+
+def get_origin_target_hotspot(indep, conditions_dict, is_diffused):
+    '''
+    A function to emulate center_type: all for PPI.
+
+    Assigns the CoM of the binder to the CoM of the hotspots and calculates the CoM of the system from that
+
+    Args:
+        indep (indep): indep
+        conditions_dict (dict): The conditions dict
+
+    Returns:
+        origin (torch.Tensor[float]): The specified origin [3]
+    '''
+
+
+    assert 'is_hotspot' in conditions_dict or 'hotspot_values' in conditions_dict, 'You must use ppi.hotspot_res or ppi.hotspot_res_values to use center_type: target-hotspot'
+    is_hotspot = torch.zeros(indep.length(), dtype=bool)
+
+    if 'is_hotspot' in conditions_dict:
+        is_hotspot |= conditions_dict['is_hotspot']
+    if 'hotspot_values' in conditions_dict:
+        is_hotspot |= conditions_dict['hotspot_values'] != 0
+
+    assert is_hotspot.sum() > 0, 'You must use ppi.hotspot_res or ppi.hotspot_res_values to use center_type: target-hotspot'
+
+    # use CB for hotspots to get it a little closer to the CoM of the theoretical binder
+    Cb = Cb_or_atom(indep)
+    hotspot_com = Cb[is_hotspot].mean(axis=0)
+    target_com = indep.xyz[~is_diffused,1].mean(axis=0)
+
+    # Calculate CoM by using the relative weights of the two proteins
+    target_size = (~is_diffused).sum()
+    binder_size = is_diffused.sum()
+
+    origin = (hotspot_com * binder_size + target_com * target_size) / (target_size + binder_size)
+
+    return origin

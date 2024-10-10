@@ -2,7 +2,13 @@
 defaults:
   - fm
 
-ckpt_load_path: /home/bcov/sc/flow/binder_dev/rf_diffusion/models/rf2a_25c_414_t1d-114.pt
+
+ckpt_load_path: rf2a_25c_reshaped_t1d-123_t2d-72.pt
+
+# Reshape an old weights file to make ^^ that
+# ckpt_load_path: /home/bcov/sc/flow/binder_dev/rf_diffusion/models/rf2a_25c_414_t1d-114.pt
+# reshape:
+#    output_path: rf2a_25c_reshaped_t1d-123_t2d-72.pt
 
 rundir: /net/scratch/bcov/train_test
 wandb_prefix: 'ppi'
@@ -14,6 +20,8 @@ upstream_training_transforms:
     - PPIJoeNateDatasetRadialCropTransform
     - GenerateMasks
     - PopMask
+    - FindHotspotsTrainingTransform
+    - GenerateSSADJTrainingTransform
   configs:
     PPITrimTailsChain0ComplexTransform:
       operate_on_datasets: ['compl', 'metal_compl', 'sm_compl_asmb', 'sm_compl_multi']
@@ -25,13 +33,34 @@ upstream_training_transforms:
       verbose: True
     PPIRejectUnfoldedInterfacesTransform:
       operate_on_datasets: ${upstream_training_transforms.configs.PPITrimTailsChain0ComplexTransform.operate_on_datasets}
-      binder_fbscn_cut: 0 #0.12
-      binder_fbscn_at_interface_cut: 0 #0.13
+      binder_fbscn_cut: 0.12
+      binder_fbscn_at_interface_cut: 0.13
     PPIJoeNateDatasetRadialCropTransform:
       operate_on_datasets: ${upstream_training_transforms.configs.PPITrimTailsChain0ComplexTransform.operate_on_datasets}
       CROP: ${dataloader.CROP}
     GenerateMasks: {}
     PopMask: {}
+    FindHotspotsTrainingTransform:
+      p_is_hotspot_example: 0.9
+      p_is_antihotspot_example: 0.1
+      max_hotspot_frac: 0.2
+      max_antihotspot_frac: 0.05
+      only_hotspots_of_first_chain: True
+      hotspot_distance: 7
+      antihotspot_distance: 10
+      hotspot_downsample_method: speckle_or_region
+      hotspot_sasa_cut: 30
+      hotspot_values_mean: False
+    GenerateSSADJTrainingTransform:
+      p_is_ss_example: 0.2
+      p_is_adj_example: 0.2
+      ss_min_mask: 0.0
+      ss_max_mask: 1.0
+      adj_min_mask: 0.0
+      adj_max_mask: 1.0
+      p_any_strand_pairs: 0.2
+      adj_strand_pair_min_mask: 0.0
+      adj_strand_pair_max_mask: 1.0
 
 transforms:
   names:
@@ -108,6 +137,27 @@ dataloader:
 
   mask:
     only_first_chain_ppi_binders: True
+    ppi_radial_crop_low: 10       # PPI radial crop distance from hotspots lowerbound
+    ppi_radial_crop_high: 25      # PPI radial crop distance from hotspots upperbound
+    ppi_planar_crop_low: 10       # PPI planar crop distance from hotspots lowerbound
+    ppi_planar_crop_high: 25      # PPI planar crop distance from hotspots upperbound
+    max_frac_ppi_motifs: 0.8      # PPI maximum fraction of motifs kept in motif masks
+    max_ppi_motif_trim_frac: 0.4  # PPI maximum fraction of a single motif that is removed when trimming motifs
+
+extra_tXd:
+  - radius_of_gyration_v2
+  - relative_sasa_v2
+  - sinusoidal_timestep_embedding
+  - ppi_hotspots_antihotspots
+  - ss_adj_cond
+
+extra_tXd_params:
+  radius_of_gyration_v2:
+    prob: 0.0
+  relative_sasa_v2:
+    prob: 0.0
+  ppi_hotspots_antihotspots: {}
+  ss_adj_cond: {}
 
 
 diffuser:
@@ -125,3 +175,15 @@ rf:
     recycling_type: all
     enable_same_chain: True
     refiner_topk: 128
+    d_t1d: 123 # 114 + hotspots(4) + N_SS(5)
+    d_t2d: 72 # 68 + N_ADJ(4)
+
+
+show_dataset:
+    show: True
+    show_ss_cond: False # Show the secondary structure conditioning that has been applied
+    ss_t1d_offset: -5 # Offset into t1d for the first (SS_HELIX) of the ss conditioning channels. Supports negative indexing
+    show_adj_strand_pairs: False #  # Show secondary structural elements involved in strand pairing (ADJ_STRAND_PAIR)
+    adj_t2d_offset: -4 # Offset into t2d for the first (ADJ_FAR) of the adj conditioning channels. Supports negative indexing
+    show_hotspots: True # Show positions that have been marked as hotspots
+    hotspot_t1d_offset: -9 # Offset into t1d for the hotspot conditioning. Supports negative indexing which is likely the way to find it

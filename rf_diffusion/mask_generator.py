@@ -1371,7 +1371,7 @@ def _PPI_radial_crop(get_mask):
     def out_get_mask(indep, *args, ppi_radial_crop_low=10, ppi_radial_crop_high=25, **kwargs):
         ret = get_mask(indep, *args, **kwargs)
         is_motif, is_target = ret.pop('is_motif'), ret.pop('is_target')
-        is_hotspot, is_antihotspot = ppi.find_hotspots_antihotspots(indep, 1, 1, return_all=True)
+        is_hotspot, is_antihotspot = ppi.find_hotspots_antihotspots(indep)
         pop = ppi.radial_crop(indep, ~is_motif, is_hotspot, is_target, distance=random.uniform(ppi_radial_crop_low,ppi_radial_crop_high))
         return dict(is_motif=is_motif, is_atom_motif=None, pop=pop, **ret)
     return out_get_mask
@@ -1382,7 +1382,7 @@ def _PPI_planar_crop(get_mask):
     def out_get_mask(indep, *args, ppi_planar_crop_low=10, ppi_planar_crop_high=25, **kwargs):
         ret = get_mask(indep, *args, **kwargs)
         is_motif, is_target = ret.pop('is_motif'), ret.pop('is_target')
-        is_hotspot, is_antihotspot = ppi.find_hotspots_antihotspots(indep, 1, 1, return_all=True)
+        is_hotspot, is_antihotspot = ppi.find_hotspots_antihotspots(indep)
         pop = ppi.planar_crop(indep, ~is_motif, is_hotspot, is_target, distance=random.uniform(ppi_planar_crop_low,ppi_planar_crop_high))
         return dict(is_motif=is_motif, is_atom_motif=None, pop=pop, **ret)
     return out_get_mask

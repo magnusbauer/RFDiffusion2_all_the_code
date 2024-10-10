@@ -2067,10 +2067,6 @@ class DistributedWeightedSampler(data.Sampler):
             else:
                 self.dataset_dict[dset] = num_example_per_epoch - sum([val for k, val in self.dataset_dict.items()])
 
-        # Temporary until implemented
-        if self.dataset_dict.get('compl', 0) > 0:
-            print("WARNING: In this branch, the hotspot reside feature has been removed, and you're training on complexes. Be warned")
-
         self.total_size = num_example_per_epoch
         self.num_samples = self.total_size // self.num_replicas
         self.rank = rank
