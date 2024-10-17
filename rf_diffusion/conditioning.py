@@ -35,6 +35,7 @@ from datahub.transforms.base import Compose
 from rf_diffusion.conditions.ss_adj.sec_struct_adjacency import LoadTargetSSADJTransform, AutogenerateTargetSSADJTransform, GenerateSSADJTrainingTransform  # noqa: F401
 from rf_diffusion.ppi import (PPITrimTailsChain0ComplexTransform, PPIRejectUnfoldedInterfacesTransform, PPIJoeNateDatasetRadialCropTransform,  # noqa: F401
                                     FindHotspotsTrainingTransform, HotspotAntihotspotResInferenceTransform, ExposedTerminusTransform, RenumberCroppedInput)
+from rf_diffusion.conditions.ideal_ss import AddIdealSSTrainingTransform, AddIdealSSInferenceTransform  # noqa: F401
 
 ###########################################################
 
@@ -690,6 +691,10 @@ class ExpandConditionsDict:
             'is_antihotspot', # torch.Tensor[bool]: Which residues are antihotspots? (10A cross-chain no-contacts)
             'antihotspot_values', # torch.Tensor[float]: An alternative to is_hotspot where you can stick a value in it (like dist from diffused)
             'ss_adj', # sec_struct_adj.SecStructAdjacency: The secondary structure and block adjacency conditioning
+            'ideal_ss', # torch.Tensor[float]: A number 0 to 1 describing how ideal this piece of secondary structure is
+            'avg_scn', # torch.Tensor[float]: A number 0 to 1 describing the sidechain neighbors of this piece of protein
+            'loop_frac', # torch.Tensor[float]: A number 0 to 1 describing fraction of this chain that is loop by dssp
+            'topo_spec', # torch.Tensor[float]: A class label of which of the topo_spec_choices this chain fits into (int but allows nan)
         ])
 
         post_idx_from_pre_idx, is_atomized = aa_model.generate_pre_to_post_transform_indep_mapping(indep, atomizer, contig_map.gp_to_ptn_idx0)
