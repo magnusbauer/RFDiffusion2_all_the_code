@@ -1,0 +1,61 @@
+# The base yaml for doing protein protein interface models
+defaults:
+  - ppi
+
+
+#ckpt_load_path: models/rf2a_25c_reshaped_t1d-123_t2d-72.pt
+ckpt_load_path: /net/scratch/bcov/sc/flow/rf_diffusion_repo/rf_diffusion/training/ppi_masked_seq2024-10-14_23:38:23.142564/rank_0/models/RFD_9.pt
+resume: True
+resume_scheduler: True
+
+
+# Reshape an old weights file to make ^^ that
+# ckpt_load_path: /home/bcov/sc/flow/binder_dev/rf_diffusion/models/rf2a_25c_414_t1d-114.pt
+# reshape:
+#    output_path: rf2a_25c_reshaped_t1d-123_t2d-72.pt
+
+rundir: /net/scratch/bcov/sc/flow/rf_diffusion_repo/rf_diffusion/training
+wandb_prefix: 'ppi_masked_seq'
+
+dataloader:
+  P_IS_GUIDEPOST_EXAMPLE: 0.0
+  DATAPKL_AA: aa_dataset_256.pkl
+  DATASETS: pdb_aa,compl,sm_complex,sm_compl_covale,metal_compl,sm_compl_asmb,sm_compl_multi
+  DATASET_PROB:
+  - 0.1
+  - 0.6
+  - 0.06
+  - 0.02
+  - 0.02
+  - 0.1
+  - 0.1
+  DIFF_MASK_PROBS:
+    get_unconditional_diffusion_mask_free_ligand: 0.002
+    get_unconditional_diffusion_mask: 0.00075
+    get_unconditional_diffusion_mask_partial_ligand: 0.00075
+    get_diffusion_mask_islands_free_ligand: 0.0005
+    get_diffusion_mask_islands: 0.0005
+    get_diffusion_mask_islands_partial_ligand: 0.0005
+    get_tip_mask: 0.0
+    get_tip_mask_unconditional_free_ligand: 0.0
+    get_tip_mask_unconditional_partial_ligand: 0.0
+
+    get_diffusion_mask_islands_w_seq_islands: 0.004
+
+    get_closest_tip_atoms: 0.0
+    get_closest_tip_atoms_partial_ligand: 0.0
+    get_atomized_islands: 0.0
+    get_entirely_atomized: 0.0
+
+    get_PPI_fully_diffused_no_crop_w_binder_seqshown_islands: 2
+    get_PPI_fully_diffused_no_crop_w_target_seqhidden_islands: 2
+    get_PPI_fully_diffused_no_crop: 1
+    get_PPI_fully_diffused_radial_crop: 1
+    get_PPI_fully_diffused_planar_crop: 1
+    get_PPI_interface_motif_no_crop: 0.3
+    get_PPI_interface_motif_radial_crop: 0.3
+    get_PPI_interface_motif_planar_crop: 0.3
+    get_PPI_random_motif_no_crop: 0.1
+    get_PPI_random_motif_radial_crop: 0.1
+    get_PPI_random_motif_planar_crop: 0.1
+

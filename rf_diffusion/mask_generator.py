@@ -1484,6 +1484,12 @@ get_diffusion_mask_islands_w_tip_w_seq_islands = add_seq_islands(get_diffusion_m
 get_PPI_fully_diffused_no_crop_w_binder_seqshown_islands = add_seq_islands(get_PPI_fully_diffused_no_crop, mode='is_diffused', p_islands_means_shown=1)
 get_PPI_fully_diffused_no_crop_w_target_seqhidden_islands = add_seq_islands(get_PPI_fully_diffused_no_crop, mode='is_motif', p_islands_means_shown=0)
 
+get_PPI_fully_diffused_no_crop_w_binder_w_tip_seqshown_islands = add_seq_islands(get_PPI_fully_diffused_no_crop_w_tip, mode='is_diffused', p_islands_means_shown=1)
+get_PPI_fully_diffused_no_crop_w_target_w_tip_seqhidden_islands = add_seq_islands(get_PPI_fully_diffused_no_crop_w_tip, mode='is_motif', p_islands_means_shown=0)
+
+
+
+
 # NA specific mask generators, may generalize to other systems, but not guaranteed currently
 get_na_contacting_atomized_islands = no_pop(make_covale_compatible(make_atomized_complete(
         partial(_get_prot_diffusion_mask_islands_from_na_contacts, n_islands_max=3, search_radius_min=1e-2, search_radius_max=10, max_resi_atomize=8))))

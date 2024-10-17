@@ -680,27 +680,28 @@ class Trainer():
             checkpoint = self.load_ckpt(gpu)
             self.rundir = checkpoint['rundir']
             wandb_name = checkpoint['wandb_group']
-            resume = 'must'
-            api = wandb.Api()
-            name=f'{wandb_name}_rank_{rank}'
-            runs = list(api.runs(
-                    path=f'{entity}/{self.conf.wandb_project}',
-                    filters={"display_name": {"$eq": name}}
-                ))
-            if len(runs) == 1:
-                id = runs[0].id
-            elif len(runs) == 0:
-                assert self.conf.allow_more_gpus_on_resume
-                # Check that at least rank 0 exists
-                rank_0_name = f'{wandb_name}_rank_0'
+            if WANDB:
+                resume = 'must'
+                api = wandb.Api()
+                name=f'{wandb_name}_rank_{rank}'
                 runs = list(api.runs(
                         path=f'{entity}/{self.conf.wandb_project}',
-                        filters={"display_name": {"$eq": rank_0_name}}
+                        filters={"display_name": {"$eq": name}}
                     ))
-                assert len(runs) == 1, f'resume=True and allow_more_gpus_on_resume=True, but {len(runs)} != 1 matching {rank_0_name} found: {[r.display_name for r in runs]}'
-                resume = 'allow'
-            else:
-                raise Exception(f'resume=True, but {len(runs)} matching {name} found: {[r.display_name for r in runs]}')
+                if len(runs) == 1:
+                    id = runs[0].id
+                elif len(runs) == 0:
+                    assert self.conf.allow_more_gpus_on_resume
+                    # Check that at least rank 0 exists
+                    rank_0_name = f'{wandb_name}_rank_0'
+                    runs = list(api.runs(
+                            path=f'{entity}/{self.conf.wandb_project}',
+                            filters={"display_name": {"$eq": rank_0_name}}
+                        ))
+                    assert len(runs) == 1, f'resume=True and allow_more_gpus_on_resume=True, but {len(runs)} != 1 matching {rank_0_name} found: {[r.display_name for r in runs]}'
+                    resume = 'allow'
+                else:
+                    raise Exception(f'resume=True, but {len(runs)} matching {name} found: {[r.display_name for r in runs]}')
 
         if WANDB:
             print(f'initializing wandb on rank {rank}')

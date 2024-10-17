@@ -3,14 +3,17 @@ defaults:
   - fm
 
 
-ckpt_load_path: rf2a_25c_reshaped_t1d-123_t2d-72.pt
+#ckpt_load_path: models/rf2a_25c_reshaped_t1d-123_t2d-72.pt
+ckpt_load_path: /net/scratch/bcov/sc/flow/rf_diffusion_repo/rf_diffusion/training/ppi2024-10-10_22:02:39.395715/rank_0/models/RFD_3.pt
+resume: True
+resume_scheduler: True
 
 # Reshape an old weights file to make ^^ that
 # ckpt_load_path: /home/bcov/sc/flow/binder_dev/rf_diffusion/models/rf2a_25c_414_t1d-114.pt
 # reshape:
 #    output_path: rf2a_25c_reshaped_t1d-123_t2d-72.pt
 
-rundir: /net/scratch/bcov/train_test
+rundir: /net/scratch/bcov/sc/flow/rf_diffusion_repo/rf_diffusion/training
 wandb_prefix: 'ppi'
 
 upstream_training_transforms:
@@ -67,6 +70,7 @@ transforms:
     - AddConditionalInputs
     - ExpandConditionsDict
     - CenterPostTransform
+    - RejectOutOfMemoryHazards
 
   configs:
     AddConditionalInputs:
@@ -77,6 +81,8 @@ transforms:
       jitter: 5.0
       jitter_clip: 20.0
       center_type: 'all'
+    RejectOutOfMemoryHazards:
+      max_size: 364
 
 dataloader:
   P_IS_GUIDEPOST_EXAMPLE: 0.0
