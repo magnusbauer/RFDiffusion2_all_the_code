@@ -49,6 +49,7 @@ from rf_diffusion.idealize import idealize_pose
 import rf_diffusion.features as features
 from rf_diffusion.import_pyrosetta import prepare_pyrosetta
 from rf_diffusion import silent_files
+import rf_diffusion.inference.utils as iu
 import tqdm
 import rf_diffusion.atomization_primitives
 ic.configureOutput(includeContext=True)
@@ -247,6 +248,7 @@ def sample_one(sampler, i_des=0, simple_logging=False):
     extra = {
         'rfo_uncond': None,
         'rfo_cond': None,
+        'n_steps': None
     }
 
     # Initialize featurizers
@@ -254,18 +256,27 @@ def sample_one(sampler, i_des=0, simple_logging=False):
     features_cache = features.init_tXd_inference(indep, extra_tXd_names, sampler._conf.extra_tXd_params, sampler._conf.inference.conditions)
 
     ts = torch.arange(int(t_step_input), sampler.inf_conf.final_step-1, -1)
+    n_steps = torch.ones(len(ts), dtype=int)
+    partially_diffuse_before = torch.zeros(len(ts), dtype=bool)
+    if sampler._conf.inference.custom_t_range:
+        ts, n_steps, partially_diffuse_before = iu.get_custom_t_range(sampler._conf)
 
     # Loop over number of reverse diffusion time steps.
-    for t in tqdm.tqdm(ts):
+    for it, t in tqdm.tqdm(list(enumerate(ts))):
         sampler._log.info(f'Denoising {t=}')
         if simple_logging:
             e = '.'
             if t%10 == 0:
                 e = t
             print(f'{e}', end='')
+        if partially_diffuse_before[it]:
+            indep.xyz[:,:3] = rfo.xyz[-1, 0, :]
+            indep.xyz = indep.xyz.to('cpu')
+            indep, _ = aa_model.diffuse(sampler._conf, sampler.diffuser, indep, sampler.is_diffused, int(t))
         if sampler._conf.preprocess.randomize_frames:
             print('randomizing frames')
             indep.xyz = aa_model.randomly_rotate_frames(indep.xyz)
+        extra['n_steps'] = n_steps[it]
         px0, x_t, seq_t, rfo, extra = sampler.sample_step(
             t, indep, rfo, extra, features_cache)
         # assert_that(indep.xyz.shape).is_equal_to(x_t.shape)

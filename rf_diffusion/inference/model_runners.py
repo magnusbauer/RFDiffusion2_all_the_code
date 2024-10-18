@@ -277,17 +277,23 @@ class NRBStyleSelfCond(Sampler):
         px0 = px0.cpu()
 
         # ic(self._conf.denoiser.noise_scale, do_self_cond)
-        rigids_t = self.diffuser.reverse(
-            rigid_t=rigids_t,
-            rot_score=rot_score,
-            trans_score=trans_score,
-            diffuse_mask=du.move_to_np(self.is_diffused.float()[None,...]),
-            t=t/self._conf.diffuser.T,
-            dt=1/self._conf.diffuser.T,
-            center=self._conf.denoiser.center,
-            noise_scale=self._conf.denoiser.noise_scale,
-            rigid_pred=rigid_pred,
-        )
+        n_steps = 1
+        if 'n_steps' in extra and extra['n_steps'] is not None:
+            n_steps = extra['n_steps']
+        # This isn't exactly an elegant way to take multiple steps but diffuser.reverse can be very non-linear depending on the diffuser settings
+        for step in range(n_steps):
+            step_t = t + n_steps - 1 - step
+            rigids_t = self.diffuser.reverse(
+                rigid_t=rigids_t,
+                rot_score=rot_score,
+                trans_score=trans_score,
+                diffuse_mask=du.move_to_np(self.is_diffused.float()[None,...]),
+                t=step_t/self._conf.diffuser.T,
+                dt=1/self._conf.diffuser.T,
+                center=self._conf.denoiser.center,
+                noise_scale=self._conf.denoiser.noise_scale,
+                rigid_pred=rigid_pred,
+            )
         # x_t_1 = all_atom.atom37_from_rigid(rigids_t)
         # x_t_1 = x_t_1[0,:,:14]
         # # Replace the xyzs of the motif

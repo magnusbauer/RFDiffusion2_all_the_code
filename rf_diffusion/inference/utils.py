@@ -813,3 +813,64 @@ def assemble_config_from_chk(conf: DictConfig):
     # TODO change this so we don't have to load the model twice
     pass
 
+
+def get_custom_t_range(conf):
+    '''
+    Parser for inference.custom_t_range
+    Example: [50,49,48,-40,30,-40,30,20,10,1]
+
+    Positive values mean diffuse like normal
+    Positive values with gaps will reusing the same pX0
+    Negative values mean partially diffuse pX0 to the t step
+
+    Args:
+        conf (OmegaConf): conf
+
+    '''
+    assert conf.inference.model_runner == 'NRBStyleSelfCond', 'Only the NRBStyleSelfCond model_runner supports inference.custom_t_range!'
+
+    ts = []
+    n_steps = []
+    partially_diffuse_before = []
+    last_t = None
+    for t in conf.inference.custom_t_range:
+        assert abs(t) >= conf.inference.final_step, ("inference.custom_t_range can't have values smaller than "
+                                                                f"inference.final_step: {abs(t)} < {conf.inference.final_step}")
+        assert abs(t) <= conf.diffuser.T, ("inference.custom_t_range can't have values larger than "
+                                                                f"diffuser.T: {abs(t)} < {conf.diffuser.T}")
+
+        if last_t is None:
+            # First step
+            assert t > 0, f'inference.custom_t_range: If you want to start off with partial diffusion you should instead specify {diffuser.partial_T}'
+            ts.append(t)
+            n_steps.append(1)
+            partially_diffuse_before.append(False)
+        else:
+            if t < 0:
+                # Diffuse to a new t
+                ts.append(-t)
+                n_steps.append(1)
+                partially_diffuse_before.append(True)
+            else:
+                abs_last_t = abs(last_t)
+                if abs_last_t - t == 1:
+                    # Normal single step
+                    ts.append(t)
+                    n_steps.append(1)
+                    partially_diffuse_before.append(False)
+                else:
+                    # Forward many steps without calling rf2 again
+                    assert t < abs_last_t
+                    ts.append(t)
+                    n_steps.append(abs_last_t - t)
+                    partially_diffuse_before.append(False)
+
+        last_t = t
+
+    ts = torch.tensor(ts)
+    n_steps = torch.tensor(n_steps)
+    partially_diffuse_before = torch.tensor(partially_diffuse_before)
+
+    assert ts[-1] == conf.inference.final_step, (f'The final element of inference.custom_t_range must be inference.final_step. {ts[-1]} != {conf.inference.final_step}')
+
+    return ts, n_steps, partially_diffuse_before
