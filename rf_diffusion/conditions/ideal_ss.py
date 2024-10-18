@@ -716,7 +716,7 @@ class AddIdealSSTrainingTransform:
         # Are we going to do topo spec?
         if torch.rand(1) < self.p_topo_spec:
 
-            assert self.topo_spec_choices is not None and len(self.topo_spec_choices) > 0:
+            assert self.topo_spec_choices is not None and len(self.topo_spec_choices) > 0
 
             topo_spec = assign_topo_spec(indep, self.topo_spec_choices, min_helix_length=self.topo_spec_min_helix_length)
             topo_spec = maybe_chain_mask(topo_spec, indep, self.p_chain_mask)
@@ -918,7 +918,7 @@ def get_ideal_ss_conditioning(indep, feature_conf, ideal_ss=None, avg_scn=None, 
 
         extra_t1d = torch.cat((extra_t1d, one_hot_topo_spec))
 
-    return {'t1d':, extra_t1d}
+    return {'t1d':extra_t1d}
 
 
 

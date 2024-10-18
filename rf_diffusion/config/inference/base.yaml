@@ -15,11 +15,14 @@ inference:
   recycle_schedule: null
   softmax_T: 1e-5
   output_prefix: samples/design
+  silent_out: False # Write silent files instead of pdbs. Doesn't support small molecules (yet). No trb unles write_trb=FORCE
+  silent_folder_sep: '_-_' # How folders are denoted in silent_file tags. Set to False, null, or '' to disable adding fodler to name
   write_trajectory: False # Boolean. Should the /traj/ video pdb file be generated? Takes up a lot of space in production
   write_trajectory_only_t: [] # list(int). Only write trajectory for these given t steps. Example: [50,40,30,20]
   write_trb: True # Boolean. Should the .trb file be written?
   write_trb_indep: False # Boolean. Should the indep be written to the .trb? Adds about 200KB to trb
   write_trb_trajectory: False # Boolean. Should the trajectory be written to the .trb? Adds about 10MB to trb
+  write_extra_ts: [] # list[int]. Save the indep from additional t steps (besides the usual final_step)
   scaffold_guided: False
   model_runner: NRBStyleSelfCond
   cautious: True
@@ -30,6 +33,7 @@ inference:
   use_jw_selfcond: False
   symmetric_self_cond: True
   final_step: 1
+  custom_t_range: null # list[int]. Only calculate pX0 at t steps given in this list. Negative numbers can be used to partially diffuse to new ts [50,25,-40,25,1]
   feed_true_xt: False
   deterministic: False
   zero_weights: False
@@ -243,3 +247,5 @@ transforms:
       p_is_guidepost_example: ${inference.contig_as_guidepost}
       guidepost_bonds: ${guidepost_bonds}
     ExpandConditionsDict: {}
+
+pyrosetta_flags: "-mute all -beta_nov16"

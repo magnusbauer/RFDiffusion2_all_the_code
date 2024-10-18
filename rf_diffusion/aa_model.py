@@ -648,9 +648,19 @@ def get_atom_uid(a):
     return (res_idx, atom_name)
 
 
-def parse_ligand(pdb, ligand):
-    with open(pdb, 'r') as fh:
-        stream = [l for l in fh if "HETATM" in l or "CONECT" in l]
+def parse_ligand(pdb, ligand, pdb_stream=None):
+    '''
+    Parse a ligand from a pdb file
+
+    Args:
+        pdb (str or None): Path to pdb file
+        ligand (str): The ligand to parse
+        pdb_stream (list[str] or None): If present the pdb will not be read and this will be assumed to be its contents
+    '''
+    if pdb_stream is None:
+        with open(pdb, 'r') as fh:
+            pdb_stream = fh.read_lines()
+    stream = [l for l in pdb_stream if "HETATM" in l or "CONECT" in l]
     if ligand == UNIQUE_LIGAND:
         raise NotImplementedError
 
@@ -685,15 +695,16 @@ def get_atom_mask(pdb):
     mask_prot[:,ChemData().NHEAVY:] = False
     return mask_prot
 
-def make_indep(pdb, ligand='', return_metadata=False):
+def make_indep(pdb, ligand='', return_metadata=False, pdb_stream=None):
     """
     Creates an Indep from a pdb file for use in inference, or file rewriting.
     NOTE: this function does not center anything, which means coordiantes can be large
 
     Args:
-        pdb (str): Path to pdb file
+        pdb (str or None): Path to pdb file
         ligand (str): Ligand names to include in Indep separated by commas (',')
         return_metadata (bool): whether or not to return metadata
+        pdb_stream (list[str] or None): If present the pdb will not be read and this will be assumed to be its contents
     """
     # self.target_feats = iu.process_target(self.inf_conf.input_pdb, parse_hetatom=True, center=False)
     # init_protein_tmpl=False, init_ligand_tmpl=False, init_protein_xyz=False, init_ligand_xyz=False,
@@ -703,8 +714,10 @@ def make_indep(pdb, ligand='', return_metadata=False):
 
     # xyz_prot, mask_prot, idx_prot, seq_prot = parsers.parse_pdb(pdb, seq=True, parse_hetatom=True)
 
-    with open(pdb, 'r') as fh:
-        stream = fh.readlines()
+    if pdb_stream is None:
+        with open(pdb, 'r') as fh:
+            pdb_stream = fh.readlines()
+    stream = pdb_stream
 
     ligands = []
     if ligand:
@@ -765,7 +778,7 @@ def make_indep(pdb, ligand='', return_metadata=False):
         sm_atom_names_stack = []
         # covale_bonds_stack = []
         for ligand in ligands:
-            o = parse_ligand(pdb, ligand)
+            o = parse_ligand(pdb, ligand, pdb_stream=pdb_stream)
             xyz_sm, seq_sm, atom_frames, chirals, bond_feats, atom_names = o
 
             chirals[:, :-1] += sum(Ls)
@@ -1342,13 +1355,33 @@ def pad_dim(x, dim, new_l, value=0):
     padding = padding[::-1]
     return F.pad(x, pad=tuple(padding), value=value)
 
-def write_traj(path, xyz_stack, seq, bond_feats, natoms=23, **kwargs):
-    xyz23 = pad_dim(xyz_stack, 2, natoms)
+def write_traj(path, xyz_stack, seq, bond_feats, **kwargs):
+    '''
+    Write a trajectory to pdb
+
+    Args:
+        path (str or None): The place to write (or None if you don't want to write)
+        xyz_stack (torch.Tensor[float]): The xyz of the indep to write [B,L,?,3]
+        seq (torch.Tensor[float]): The sequence of the indep to write [L]
+        bond_feats (torch.Tensor[float,float] or None): The bond_feats of the indep [L,L]
+        **kwargs: Additional args for write_file.write_pdb_file
+
+    Returns:
+        pdb_stream (list[str]): The contents of the pdb file
+    '''
+    xyz23 = pad_dim(xyz_stack, 2, ChemData().NHEAVY)
     if bond_feats is not None:
         bond_feats = bond_feats[None]
-    with open(path, 'w') as fh:
-        for i, xyz in enumerate(xyz23):
-            write_file.writepdb_file(fh, xyz, seq, bond_feats=bond_feats, modelnum=i, **kwargs)
+    fh = io.StringIO()
+    for i, xyz in enumerate(xyz23):
+        write_file.writepdb_file(fh, xyz, seq, bond_feats=bond_feats, modelnum=i, **kwargs)
+
+    if path is not None:
+        with open(path, 'w') as f:
+            f.write(fh.getvalue())
+
+    fh.seek(0)
+    return fh.readlines()
 
 def minifier(argument_map):
     argument_map['out_9'] = None
@@ -2772,14 +2805,26 @@ def without_H(atom_elem_by_lig):
         out[lig] = [(atom_name, element) for atom_name, element in atom_names if element != 'H']
     return out
 
-def rename_ligand_atoms(ref_fn, out_fn):
-    """Copies names of ligand residue and ligand heavy atoms from input pdb
-    into output (design) pdb."""
+def rename_ligand_atoms(ref_fn, out_fn, pdb_stream=None):
+    '''
+    Copies names of ligand residue and ligand heavy atoms from input pdb
+    into output (design) pdb.
+
+    Args:
+        ref_fn (str): The file to grab names from
+        out_fn (str or None): The file to modify, None if you don't want to write
+        pdb_stream (list[str]): If present, assume this is the contents of out_fn
+
+    Returns:
+        pdb_stream (list[str]): The modified pdb data
+    '''
 
     ref_atom_names_by_lig = hetatm_names(ref_fn)
     ref_atom_names_by_lig = without_H(ref_atom_names_by_lig)
-    with open(out_fn) as f:
-        lines = [line.strip() for line in f.readlines()]
+    if pdb_stream is None:
+        with open(out_fn) as f:
+            pdb_stream = f.readlines()
+    lines = [line.strip() for line in pdb_stream]
 
     lines2 = []
     ligand_counters = defaultdict(lambda: 0)
@@ -2798,9 +2843,12 @@ def rename_ligand_atoms(ref_fn, out_fn):
             ligand_counters = defaultdict(lambda: 0)
         lines2.append(line)
 
-    with open(out_fn,'w') as f:
-        for line in lines2:
-            print(line, file=f)
+    if out_fn is not None:
+        with open(out_fn,'w') as f:
+            for line in lines2:
+                print(line, file=f)
+
+    return [line + '\n' for line in lines2]
 
 def randomly_rotate_frames(xyz):
     L, _, _ = xyz.shape

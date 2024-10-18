@@ -35,6 +35,7 @@ from rf_diffusion import aa_model
 from rf_diffusion import atomize
 from rf_diffusion.data_loader import get_fallback_dataset_and_dataloader
 from rf_diffusion.benchmark.util.hydra_utils import construct_conf
+from rf_diffusion.import_pyrosetta import prepare_pyrosetta
 import rf_diffusion
 PKG_DIR = rf_diffusion.__path__[0]
 REPO_DIR = os.path.dirname(PKG_DIR)
@@ -1316,6 +1317,7 @@ def run(conf: DictConfig) -> None:
 
     if 'custom_chemical_config' in conf:
         reinitialize_chemical_data(**conf.custom_chemical_config) 
+    prepare_pyrosetta(conf)
         
     train = make_trainer(conf=conf)
     train.run_model_training(torch.cuda.device_count())

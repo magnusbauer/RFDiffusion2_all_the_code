@@ -273,3 +273,5 @@ fm: null
 wandb_project: "fancy-pants "
 allow_more_gpus_on_resume: False
 wandb_dir: "./wandb"
+
+pyrosetta_flags: "-mute all -beta_nov16"

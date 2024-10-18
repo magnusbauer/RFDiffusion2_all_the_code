@@ -567,9 +567,12 @@ def get_infered_mappings(motif_by_gp: dict, infered_by_gp: dict, original_mappin
     gp_by_motif = invert(motif_by_gp)
     con_hal_idx0 = []
     for i in original_mappings['con_hal_idx0']:
-       gp_i = gp_by_motif[i]
-       infered_i = infered_by_gp[gp_i]
-       con_hal_idx0.append(infered_i)
+        if i in gp_by_motif:
+            gp_i = gp_by_motif[i]
+            infered_i = infered_by_gp[gp_i]
+        else:
+            infered_i = i
+        con_hal_idx0.append(infered_i)
     con_hal_idx0 = np.array(con_hal_idx0)
     
     con_hal_pdb_idx = [('A', i+1) for i in con_hal_idx0]  # Assumes we diffused one chain.

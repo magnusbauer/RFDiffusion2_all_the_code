@@ -245,3 +245,5 @@ transforms:
       p_is_guidepost_example: ${....dataloader.P_IS_GUIDEPOST_EXAMPLE}
       guidepost_bonds: ${....guidepost_bonds}
     ExpandConditionsDict: {}
+
+pyrosetta_flags: "-mute all -beta_nov16"

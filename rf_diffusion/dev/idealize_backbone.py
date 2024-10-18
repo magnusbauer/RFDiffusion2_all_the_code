@@ -8,6 +8,7 @@ import fire
 from rf_diffusion import aa_model
 import torch
 import rf2aa.util
+import io
 
 
 tmp_dir = '/tmp'
@@ -36,12 +37,26 @@ def backbone_ideality_gap(xyz_stack, xyz_stack_ideal):
     )
     return ideality_gap
 
-def rewrite(path, outpath):
-    with open(path, 'r') as fh:
-        stream = [l for l in fh if "HETATM" in l or "CONECT" in l]
+def rewrite(path, outpath, pdb_stream=None):
+    '''
+    Rewrite an indep idealizing its backbone
+
+    Args:
+        path (str): The path to read from
+        outpath (str or None): The path to write to if not None
+        pdb_stream (list[str] or None): If present, this will be assumed to be the contents of path (which will not be read)
+
+    Returns:
+        new_pdb_stream (list[str] or None): The modified pdb stream
+    '''
+    if pdb_stream is None:
+        with open(path, 'r') as fh:
+            pdb_stream = fh.readlines()
+
+    stream = [l for l in pdb_stream if "HETATM" in l or "CONECT" in l]
 
     ligands = aa_model.get_ligands(stream)
-    indep, metadata = aa_model.make_indep(path, ','.join(ligands), return_metadata=True)
+    indep, metadata = aa_model.make_indep(path, ','.join(ligands), return_metadata=True, pdb_stream=pdb_stream)
     is_protein = rf2aa.util.is_protein(indep.seq)
     xyz = indep.xyz[is_protein]
     idx = indep.idx[is_protein]
@@ -50,7 +65,19 @@ def rewrite(path, outpath):
     xyz = rf2aa.util.idealize_reference_frame(ala_seq[None], xyz[None])[0]
     xyz_ideal = get_o(xyz, idx)
     indep.xyz[is_protein, :4] = xyz_ideal
-    indep.write_pdb(outpath, ligand_name_arr=metadata['ligand_names'])
+
+    # Write the indep to a buffer
+    fh = io.StringIO()
+    indep.write_pdb_file(fh, ligand_name_arr=metadata['ligand_names'])
+
+    # Write the indep to disk if desired
+    if outpath is not None:
+        with open(outpath, 'w') as f:
+            f.write(fh.getvalue())
+
+    # Return modified pdb_stream
+    fh.seek(0)
+    return fh.readlines()
 
 def get_o(xyz, idx):
     '''

@@ -47,7 +47,9 @@ from rf_diffusion import atomize
 from rf_diffusion.dev import idealize_backbone
 from rf_diffusion.idealize import idealize_pose
 import rf_diffusion.features as features
-from tqdm import trange
+from rf_diffusion.import_pyrosetta import prepare_pyrosetta
+from rf_diffusion import silent_files
+import tqdm
 import rf_diffusion.atomization_primitives
 ic.configureOutput(includeContext=True)
 
@@ -77,6 +79,7 @@ def get_seeds():
 def main(conf: HydraConfig) -> None:
     if 'custom_chemical_config' in conf:
         reinitialize_chemical_data(**conf.custom_chemical_config)
+    prepare_pyrosetta(conf)
         
     sampler = get_sampler(conf)
     sample(sampler)
@@ -115,24 +118,106 @@ def expand_config(conf):
     return confs
 
 
-def sample(sampler):
+def sampler_i_des_bounds(sampler):
+    '''
+    Get i_des_start and i_des_end for a given sampler
 
+    Args:
+        sampler (Sampler): sampler
+
+    Returns:
+        i_des_start (int): The first i_des to sample
+        i_des_end (int): One past the last i_des to sample
+    '''
+    i_des_start = sampler._conf.inference.design_startnum
+    i_des_end = i_des_start + sampler.inf_conf.num_designs
+    return i_des_start, i_des_end
+
+def sampler_out_prefix(sampler, i_des=0):
+    '''
+    Get the output prefix for a sampler run
+
+    Args:
+        sampler (Sampler): sampler
+        i_des (int): Which design
+
+    Returns:
+        run_prefix (str): A prefix that is general for all outputs from this run
+        individual_prefix (str): A prefix for this individual i_des
+    '''
+    run_prefix = sampler.inf_conf.output_prefix
+    individual_prefix = f'{run_prefix}_{i_des}'
+
+    return run_prefix, individual_prefix
+
+def load_checkpoint_done(sampler):
+    '''
+    Load a dict of which designs have already been finished
+
+    Args:
+        sampler (Sampler): sampler
+
+    Returns:
+        checkpoint_set (set[str,str]): A list of all of the individual prefixes that have already run and a message as to why they are done
+    '''
+    run_prefix, _ = sampler_out_prefix(sampler)
+
+    if sampler._conf.inference.silent_out:
+        # Someday this might switch to using a .silent.idx file
+        checkpoint_done = silent_files.load_silent_checkpoint(run_prefix)
+    else:
+        # Run glob exactly once since it's not good for the file system
+        files = glob.glob(run_prefix + '*')
+
+        # Loop through what the names will be and look for the outputs
+        checkpoint_done = dict()
+        i_des_start, i_des_end = sampler_i_des_bounds(sampler)
+        for i_des in range(i_des_start, i_des_end):
+            _, individual_prefix = sampler_out_prefix(sampler, i_des=i_des)
+
+            # Check for 4 output patterns that might exist
+            for pattern in ['[.]trb', '-.*[.]trb', '[.]pdb', '-.*[.]pdb']:
+                re_comp = re.compile(individual_prefix + pattern)
+
+                for file in files:
+                    match = re_comp.match(file)
+                    if match:
+                        message = f'{match.group(0)} already exists.'
+                        checkpoint_done[individual_prefix] = message
+
+    return checkpoint_done
+
+def checkpoint_i_des(sampler, i_des):
+    '''
+    Note that a design has finished
+
+    Args:
+        sampler (Sampler): sampler
+        i_des (int): Number of design
+    '''
+    run_prefix, individual_prefix = sampler_out_prefix(sampler, i_des)
+    if sampler._conf.inference.silent_out:
+        silent_files.silent_checkpoint_design(run_prefix, individual_prefix)
+
+def sample(sampler):
     log = logging.getLogger(__name__)
-    des_i_start = sampler._conf.inference.design_startnum
-    des_i_end = des_i_start + sampler.inf_conf.num_designs
-    for i_des in range(sampler._conf.inference.design_startnum, sampler._conf.inference.design_startnum + sampler.inf_conf.num_designs):
+
+    # Load a dictionary of finished designs with their finished messages
+    checkpoint_done = load_checkpoint_done(sampler)
+
+    # Sample each of the designs
+    i_des_start, i_des_end = sampler_i_des_bounds(sampler)
+    for i_des in range(i_des_start, i_des_end):
         if sampler._conf.inference.deterministic:
             seed_all(i_des + sampler._conf.inference.seed_offset)
 
         start_time = time.time()
-        out_prefix = f'{sampler.inf_conf.output_prefix}_{i_des}'
-        sampler.output_prefix = out_prefix
+        _, out_prefix = sampler_out_prefix(sampler, i_des=i_des)
         log.info(f'Making design {out_prefix}')
-        existing_outputs = glob.glob(out_prefix + '.trb') + glob.glob(out_prefix + '-*.trb')
-        if sampler.inf_conf.cautious and len(existing_outputs):
-            log.info(f'(cautious mode) Skipping this design because {out_prefix}.trb already exists.')
-            continue
-        print(f'making design {i_des} of {des_i_start}:{des_i_end}', flush=True)
+        if sampler.inf_conf.cautious and out_prefix in checkpoint_done:
+             log.info(f'(cautious mode) Skipping this design because {checkpoint_done[out_prefix]}')
+             continue
+        print(f'making design {i_des} of {i_des_start}:{i_des_end}', flush=True)
         sampler_out = sample_one(sampler, i_des)
         log.info(f'Finished design in {(time.time()-start_time)/60:.2f} minutes')
         original_conf = copy.deepcopy(sampler._conf)
@@ -146,6 +231,7 @@ def sample(sampler):
             # TODO: See what is being altered here, so we don't have to copy sampler_out
             save_outputs(sampler, out_prefix_suffixed, *(copy.deepcopy(o) for o in sampler_out))
             sampler._conf = original_conf
+        checkpoint_i_des(sampler, i_des)
 
 def sample_one(sampler, i_des=0, simple_logging=False):
     # For intermediate output logging
@@ -167,8 +253,10 @@ def sample_one(sampler, i_des=0, simple_logging=False):
     extra_tXd_names = getattr(sampler._conf, 'extra_tXd', [])
     features_cache = features.init_tXd_inference(indep, extra_tXd_names, sampler._conf.extra_tXd_params, sampler._conf.inference.conditions)
 
+    ts = torch.arange(int(t_step_input), sampler.inf_conf.final_step-1, -1)
+
     # Loop over number of reverse diffusion time steps.
-    for t in trange(int(t_step_input), sampler.inf_conf.final_step-1, -1):
+    for t in tqdm.tqdm(ts):
         sampler._log.info(f'Denoising {t=}')
         if simple_logging:
             e = '.'
@@ -297,7 +385,7 @@ def sample_one(sampler, i_des=0, simple_logging=False):
                 xyz_stack_new.append(indep_deatomized.xyz)
             traj_stack[k] = torch.stack(xyz_stack_new)
 
-    return indep, contig_map, atomizer, t_step_input, denoised_xyz_stack, px0_xyz_stack, seq_stack, is_diffused, raw, traj_stack
+    return indep, contig_map, atomizer, t_step_input, denoised_xyz_stack, px0_xyz_stack, seq_stack, is_diffused, raw, traj_stack, ts
 
 def add_implicit_side_chain_atoms(seq, act_on_residue, xyz, xyz_with_sc):
     '''
@@ -363,8 +451,12 @@ def deatomize_sampler_outputs(atomizer, indep, px0_xyz_stack, denoised_xyz_stack
     return indep_deatomized, px0_xyz_stack_new, denoised_xyz_stack_new, seq_stack_new
 
 
-def save_outputs(sampler, out_prefix, indep, contig_map, atomizer, t_step_input, denoised_xyz_stack, px0_xyz_stack, seq_stack, is_diffused, raw, traj_stack):
+def save_outputs(sampler, out_prefix, indep, contig_map, atomizer, t_step_input, denoised_xyz_stack, px0_xyz_stack, seq_stack, is_diffused_in, raw, traj_stack, ts):
     log = logging.getLogger(__name__)
+
+    # Make the output folder
+    out_head, out_tail = os.path.split(out_prefix)
+    os.makedirs(out_head, exist_ok=True)
 
     final_seq = seq_stack[-1]
 
@@ -380,83 +472,111 @@ def save_outputs(sampler, out_prefix, indep, contig_map, atomizer, t_step_input,
 
     # replace mask and unknown tokens in the final seq with alanine
     final_seq = torch.where((final_seq == 20) | (final_seq==21), 0, final_seq)
-    seq_design = final_seq.clone()
-    # ic(seq_design)
-    xyz_design = px0_xyz_stack[0].clone()
-    gp_contig_mappings = {}
-    is_atomized = torch.zeros(indep.length()).bool()
-    if atomizer is not None:
-        is_atomized = copy.deepcopy(atomizer.residue_to_atomize)
-    # If using guideposts, infer their placement from the final pX0 prediction.
-    if sampler._conf.inference.contig_as_guidepost:
-        gp_to_contig_idx0 = contig_map.gp_to_ptn_idx0  # map from gp_idx0 to the ptn_idx0 in the contig string.
-        is_gp = torch.zeros_like(indep.seq, dtype=bool)
-        is_gp[list(gp_to_contig_idx0.keys())] = True
-
-        # Infer which diffused residues ended up on top of the guide post residues
-        diffused_xyz = denoised_xyz_stack[0, ~is_gp * ~indep.is_sm]
-        gp_alone_xyz = denoised_xyz_stack[0, is_gp]
-        idx_by_gp_sequential_idx = torch.nonzero(is_gp)[:,0].numpy()
-        gp_alone_to_diffused_idx0 = gp.greedy_guide_post_correspondence(diffused_xyz, gp_alone_xyz)
-        match_idx_by_gp_idx = {}
-        for k, v in gp_alone_to_diffused_idx0.items():
-            match_idx_by_gp_idx[idx_by_gp_sequential_idx[k]] = v
-        if len(gp_alone_to_diffused_idx0) > 0:
-            gp_idx, match_idx = zip(*match_idx_by_gp_idx.items())
-            gp_idx = np.array(gp_idx)
-            match_idx = np.array(match_idx)
-
-            gp_contig_mappings = gp.get_infered_mappings(
-                gp_to_contig_idx0,
-                match_idx_by_gp_idx,
-                contig_map.get_mappings()
-            )
-
-            if sampler._conf.inference.guidepost_xyz_as_design and len(match_idx_by_gp_idx):
-                seq_design[match_idx] = seq_design[gp_idx]
-                if sampler._conf.inference.guidepost_xyz_as_design_bb:
-                    xyz_design[match_idx] = xyz_design[gp_idx]
-                else:
-                    xyz_design[match_idx, 4:] = xyz_design[gp_idx, 4:]
-                    
-            xyz_design = xyz_design[~is_gp]
-            seq_design = seq_design[~is_gp]
-            is_diffused[match_idx] = is_diffused[gp_idx]
-            is_diffused = is_diffused[~is_gp]
-            is_atomized[match_idx] = is_atomized[gp_idx]
-            is_atomized = is_atomized[~is_gp]
-
-    # Save outputs
-    out_head, out_tail = os.path.split(out_prefix)
-    unidealized_dir = os.path.join(out_head, 'unidealized')
-    os.makedirs(out_head, exist_ok=True)
-    os.makedirs(unidealized_dir, exist_ok=True)
 
     # determine lengths of protein and ligand for correct chain labeling in output pdb
-    chain_Ls = rf2aa.util.Ls_from_same_chain_2d(indep.same_chain)
+    chain_Ls = rf2aa.util.Ls_from_same_chain_2d(indep.same_chain[~indep.is_gp][:,~indep.is_gp])
+
+    write_ts = []
+    for extra_t in sampler._conf.inference.write_extra_ts:
+        assert extra_t in ts, f'inference.write_extra_ts: t:{t} was not part of the ts: {ts}'
+        write_ts.append(extra_t)
+    write_ts.append(None) # Make sure the default is last so that the variables all end up correct after the loop
+
+    for write_t in write_ts:
+
+        t_suffix = '' if write_t is None else f'_t{write_t}'
+        stack_idx = 0 if write_t is None else list(ts).index(write_t)
+        # ic(seq_design)
+        xyz_design = px0_xyz_stack[stack_idx].clone()
+        seq_design = final_seq.clone()
+        gp_contig_mappings = {}
+        is_atomized = torch.zeros(indep.length()).bool()
+        is_diffused = is_diffused_in.clone()
+        if atomizer is not None:
+            is_atomized = copy.deepcopy(atomizer.residue_to_atomize)
+        # If using guideposts, infer their placement from the final pX0 prediction.
+        if sampler._conf.inference.contig_as_guidepost:
+            gp_to_contig_idx0 = contig_map.gp_to_ptn_idx0  # map from gp_idx0 to the ptn_idx0 in the contig string.
+
+            # Infer which diffused residues ended up on top of the guide post residues
+            could_be_gp_corr = is_diffused_in & ~indep.is_sm
+            could_be_gp_corr_idx = torch.nonzero(could_be_gp_corr)[:,0].numpy()
+            diffused_xyz = denoised_xyz_stack[stack_idx, could_be_gp_corr]
+            gp_alone_xyz = denoised_xyz_stack[stack_idx, indep.is_gp]
+            idx_by_gp_sequential_idx = torch.nonzero(indep.is_gp)[:,0].numpy()
+            gp_alone_to_diffused_idx0 = gp.greedy_guide_post_correspondence(diffused_xyz, gp_alone_xyz)
+            match_idx_by_gp_idx = {}
+            for k, v in gp_alone_to_diffused_idx0.items():
+                match_idx_by_gp_idx[idx_by_gp_sequential_idx[k]] = could_be_gp_corr_idx[v]
+            if len(gp_alone_to_diffused_idx0) > 0:
+                gp_idx, match_idx = zip(*match_idx_by_gp_idx.items())
+                gp_idx = np.array(gp_idx)
+                match_idx = np.array(match_idx)
+
+                gp_contig_mappings = gp.get_infered_mappings(
+                    gp_to_contig_idx0,
+                    match_idx_by_gp_idx,
+                    contig_map.get_mappings()
+                )
+
+                if sampler._conf.inference.guidepost_xyz_as_design and len(match_idx_by_gp_idx):
+                    seq_design[match_idx] = seq_design[gp_idx]
+                    if sampler._conf.inference.guidepost_xyz_as_design_bb:
+                        xyz_design[match_idx] = xyz_design[gp_idx]
+                    else:
+                        xyz_design[match_idx, 4:] = xyz_design[gp_idx, 4:]
+
+                xyz_design = xyz_design[~indep.is_gp]
+                seq_design = seq_design[~indep.is_gp]
+                is_diffused[match_idx] = is_diffused[gp_idx]
+                is_diffused = is_diffused[~indep.is_gp]
+                is_atomized[match_idx] = is_atomized[gp_idx]
+                is_atomized = is_atomized[~indep.is_gp]
+
+
+        # Save idealized pX0 last step
+        xyz_design_idealized = xyz_design.clone()[None]
+
+        idealization_rmsd = float('nan')
+        if sampler._conf.inference.idealize_sidechain_outputs:
+            log.info('Idealizing atomized sidechains for pX0 of the last step...')
+            # Only idealize residues that are atomized.
+            xyz_design_idealized[0, is_atomized], idealization_rmsd, _, _ = idealize_pose(
+                xyz_design[None, is_atomized],
+                seq_design[None, is_atomized]
+            )
+
+        # Create pdb, idealize the backbone, and rename ligand atoms
+        idealized_pdb_stream = aa_model.write_traj(None, xyz_design_idealized, seq_design, indep.bond_feats, ligand_name_arr=contig_map.ligand_names, chain_Ls=chain_Ls, idx_pdb=indep.idx)
+        idealized_pdb_stream = idealize_backbone.rewrite(None, None, pdb_stream=idealized_pdb_stream)
+        idealized_pdb_stream = aa_model.rename_ligand_atoms(sampler._conf.inference.input_pdb, None, pdb_stream=idealized_pdb_stream)
+
+        if sampler._conf.inference.silent_out:
+            # Tag starts out the same as the pdb name as usual
+            tag = out_tail + t_suffix
+
+            # But then we add in the folder path so that people can cat everything together and not have duplicate names
+            if bool(sampler._conf.inference.silent_folder_sep):
+                tag = os.path.join(out_head, tag).replace('/', sampler._conf.inference.silent_folder_sep)
+
+            run_prefix, _ = sampler_out_prefix(sampler)
+            silent_name = run_prefix + '_out.silent'
+            silent_files.add_pdb_stream_to_silent(silent_name, tag, idealized_pdb_stream)
+            des_path = f'{silent_name}:{tag}'
+        else:
+            # Write pdb to disk
+            out_idealized = f'{out_prefix}{t_suffix}.pdb'
+            des_path = os.path.abspath(out_idealized)
+            with open(des_path, 'w') as fh:
+                fh.write(''.join(idealized_pdb_stream))
 
     # pX0 last step
-    out_unidealized = os.path.join(unidealized_dir, f'{out_tail}.pdb')
-    aa_model.write_traj(out_unidealized, xyz_design[None,...], seq_design, indep.bond_feats, ligand_name_arr=contig_map.ligand_names, chain_Ls=chain_Ls, idx_pdb=indep.idx)
-
-    # Save idealized pX0 last step
-    out_idealized = f'{out_prefix}.pdb'
-    xyz_design_idealized = xyz_design.clone()[None]
-
-    idealization_rmsd = float('nan')
-    if sampler._conf.inference.idealize_sidechain_outputs:
-        log.info('Idealizing atomized sidechains for pX0 of the last step...')
-        # Only idealize residues that are atomized.
-        xyz_design_idealized[0, is_atomized], idealization_rmsd, _, _ = idealize_pose(
-            xyz_design[None, is_atomized],
-            seq_design[None, is_atomized]
-        )
-
-    aa_model.write_traj(out_idealized, xyz_design_idealized, seq_design, indep.bond_feats, ligand_name_arr=contig_map.ligand_names, chain_Ls=chain_Ls, idx_pdb=indep.idx)
-    # Rewrite the output to disc, twice... This needs to get cleaned up some day
-    idealize_backbone.rewrite(out_idealized, out_idealized)
-    des_path = os.path.abspath(out_idealized)
-    aa_model.rename_ligand_atoms(sampler._conf.inference.input_pdb, des_path)
+    write_unidealized = not sampler._conf.inference.silent_out
+    if write_unidealized:
+        unidealized_dir = os.path.join(out_head, 'unidealized')
+        os.makedirs(unidealized_dir, exist_ok=True)
+        out_unidealized = os.path.join(unidealized_dir, f'{out_tail}.pdb')
+        aa_model.write_traj(out_unidealized, xyz_design[None,...], seq_design, indep.bond_feats, ligand_name_arr=contig_map.ligand_names, chain_Ls=chain_Ls, idx_pdb=indep.idx)
 
     # Setup stack_mask for writing smaller trajectories
     t_int = np.arange(int(t_step_input), sampler.inf_conf.final_step-1, -1)[::-1]
@@ -493,7 +613,8 @@ def save_outputs(sampler, out_prefix, indep, contig_map, atomizer, t_step_input,
 
     # run metadata
     sampler._conf.inference.input_pdb = os.path.abspath(sampler._conf.inference.input_pdb)
-    if sampler._conf.inference.write_trb:
+    write_trb = (sampler._conf.inference.write_trb and not sampler._conf.inference.silent_out) or str(sampler._conf.inference.write_trb) == 'FORCE'
+    if write_trb:
         trb = dict(
             config = OmegaConf.to_container(sampler._conf, resolve=True),
             device = torch.cuda.get_device_name(torch.cuda.current_device()) if torch.cuda.is_available() else 'CPU',
