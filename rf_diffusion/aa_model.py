@@ -3026,6 +3026,21 @@ def randomly_rotate_frames(xyz):
     rotated += frame_origins
     return rotated
 
+def eye_frames(xyz):
+    """
+    replaces frames in xyz with identity frames, this version simply using chemical.INIT_CRDS as frame.
+    """
+    L, _, _ = xyz.shape
+
+    T = xyz[:,1,:] # CA coords
+
+    init = ChemData().INIT_CRDS[:3] # (3,3)
+    init = init[None].expand(L,3,3) # (L,3,3), replaces N,CA,C such that frame is identity
+
+    xyz[:,:3,:] = init + T[:,None,:].expand(L,3,3)
+
+    return xyz
+
 
 def functionalize(func):
     @wraps(func)

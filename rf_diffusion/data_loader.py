@@ -21,7 +21,7 @@ import rf2aa.util
 import rf2aa.tensor_util
 import rf2aa.kinematics
 from rf_diffusion.chemical import ChemicalData as ChemData
-
+import pdb 
 # for diffusion training
 from icecream import ic
 import pickle
@@ -1962,7 +1962,17 @@ def add_motif_template(rfi: aa_model.RFI, motif_template: dict, masks_1d: dict) 
     is_motif_2d = masks_1d['is_motif_2d']
 
     t2d_motif   = motif_template['t2d']
-    xyz_t_motif = motif_template['xyz_t']
+    xyz_t_motif = motif_template['xyz_t'] 
+    """
+    NOTE: Need to slice in noised crds into motif template xyz for two reasons: 
+    1. Although it is seemingly arbitrary, this enables us to match the golden 
+       xyz_t_motif from OG CA RFdiffusion branch.
+    2. Need to do it HERE specifically because ComputeTemplateMotif Transform is 
+       called upstream of DistilledDataset.diffuse transform, and thus doesn't 
+       have access to the noised crds when motif template is computed. 
+    """
+    xyz_t_motif[~is_motif] = xyz_t[0,0][~is_motif] # xyz_t_motif is (L,3)
+
     assert not (torch.isnan(t2d_motif).any()), 'no NaNs in motif t2d'
     assert not (torch.isnan(xyz_t_motif).any()), 'no NaNs in motif xyz_t'
     
@@ -2009,7 +2019,7 @@ def add_motif_template(rfi: aa_model.RFI, motif_template: dict, masks_1d: dict) 
 
     # feature for 3rd template - is it motif or not? 
     cattable_is_motif = torch.tile(is_motif[None,None,:,None], (1, N_new, 1, 1)) # (1, N_new, L, 1)
-    cattable_is_motif_2d.to(device=t1d.device, dtype=t1d.dtype)
+    cattable_is_motif = cattable_is_motif.to(device=t1d.device, dtype=t1d.dtype)
     cattable_is_motif[:,:-1,...] = -1 #first N_prev templates get -1 for the motif feature 
     t1d_out = torch.cat([t1d_out, cattable_is_motif], dim=-1)
 
@@ -2061,7 +2071,7 @@ def wrap_featurize( indep,
 
     # Reseed the RNGs for test stability.
     run_inference.seed_all(mask_gen_seed) 
-
+    
     if conf.motif_only_2d:
         is_diffused[:] = True
 
@@ -2084,7 +2094,6 @@ def wrap_featurize( indep,
     # create RosettaFold input features
     rfi = model_adaptor.prepro(indep_t, t, is_diffused)
 
-
     # add the templated motif information/features
     if kwargs.get('motif_template', None) is not None:
         rfi = add_motif_template(rfi, kwargs['motif_template'], masks_1d)
@@ -2099,6 +2108,7 @@ class DistilledDataset(data.Dataset):
         self.conf = conf
         self.preprocess_param = preprocess_param
         self.model_adaptor = aa_model.Model(conf)
+
 
         def diffuse(indep, metadata, chosen_dataset, sel_item, task, masks_1d, item_context, mask_gen_seed, 
                     is_masked_seq, is_diffused, atomizer, conditions_dict, **kwargs):
@@ -2146,13 +2156,13 @@ class DistilledDataset(data.Dataset):
                                 'conf'              : conf,
                                 **kwargs}
             
+
             diffuser_out, rfi = wrap_featurize(**featurize_kwargs)
 
             # Sanity checks
             if torch.sum(~is_diffused) > 0:
                 mydiff = torch.mean(rfi.xyz[:,~is_diffused,1] - indep.xyz[None,~is_diffused,1]) 
                 assert mydiff < 0.001, f'xyz diff: {mydiff}'
-
             run_inference.seed_all(mask_gen_seed) # Reseed the RNGs for test stability.
             indep.metadata = metadata
             return dict(

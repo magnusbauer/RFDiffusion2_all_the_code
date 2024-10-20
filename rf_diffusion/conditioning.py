@@ -12,7 +12,7 @@ import torch
 import logging
 from icecream import ic
 import copy
-
+import pdb 
 import rf_diffusion.util
 from rf_diffusion import aa_model
 from rf_diffusion.aa_model import Indep
@@ -525,6 +525,7 @@ class Center:
         motif_atom_name_by_res_idx |= is_atom_str_shown
         is_motif14 = aa_model.make_is_motif14(indep.seq, motif_atom_name_by_res_idx)
         center_of_mass_mask = is_motif14
+
         if not center_of_mass_mask.any():
             # Unconditional case
             center_of_mass_mask[:, 1] = True
@@ -707,6 +708,7 @@ class AddConditionalInputs:
         #  This may for instance happen when there are covalent modifications on residues that are not part 
         #  of the guideposts, because a covalently modified residue is always atomized, but not necessarily motif.
         aa_model.assert_valid_seq_mask(indep, is_masked_seq)
+
         
         return kwargs | dict(
             indep=indep,

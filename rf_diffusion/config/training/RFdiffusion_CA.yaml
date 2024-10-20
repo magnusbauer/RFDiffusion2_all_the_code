@@ -1,3 +1,5 @@
+# Config file for training CA RFdiffusion from Lauko, et al., 2024 
+
 defaults:
   - new_base 
 
@@ -15,6 +17,9 @@ resume_scheduler: false
 
 pseudobatch: 1 
 model_name: caBFF
+
+preprocess: 
+  eye_frames: true
 
 loss:
   backprop_non_displacement_on_given: false
@@ -60,10 +65,19 @@ dataloader:
 
 diffuser: 
   T: 200
+  
   r3: 
     min_b: 0.01
     max_b: 0.07
     coordinate_scaling: 0.25
+    T: ${..T}
+    schedule_kwargs: {}
+    var_scale: 1.0
+    noise_scale: 1.0  
+
+  step_back_via_noiser: true
+    
+
 
 experiment: 
   trans_loss_weight: 0.5 
@@ -89,15 +103,7 @@ experiment:
   plddt_weight: 0.0
 
   #  ca rfdiffusion loss fxn hyperparams 
-  # norm_fape_prot_motif: 5.0
-  # norm_fape_sm: 4.0
-  # norm_fape_prot_sm: 10
-  # norm_fape_prot_nonmotif: 10
   norm_fape: 10
-  # d_clamp_fape_prot_motif: 5
-  # d_clamp_fape_sm: 4.0
-  # d_clamp_fape_prot_sm: 10
-  # d_clamp_fape_prot_nonmotif: 10
   d_clamp_fape: 10
 
 rf:

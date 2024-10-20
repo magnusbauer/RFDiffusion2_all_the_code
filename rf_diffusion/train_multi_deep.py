@@ -498,20 +498,21 @@ class Trainer():
         sm_Ls = rf_diffusion.util.get_sm_lengths(indep.is_sm.clone().cpu().detach().numpy(), 
                                                  indep.same_chain.clone().cpu().detach().numpy())
         
-
-        # FAPE losses
-        fape_kwargs = {'masks_1d'       : masks_1d,     # dict - masks from mask_generator
-                       'pred_in'        : pred_in,
-                       'indep'          : indep,        # contains true structure and sequence for scoring 
-                       'mask_crds'      : mask_crds,
-                       'fi_dev'         : self.fi_dev,
-                       'atom_frames'    : atom_frames, 
-                       'sm_Ls'          : sm_Ls,  
-                       'conf'           : self.conf,       
-                       'diffusion_mask' : ~masks_1d['was_noised_in_3d']
+        
+        if self.conf.loss.use_fapes:
+            # FAPE losses
+            fape_kwargs = { 'masks_1d'       : masks_1d,     # dict - masks from mask_generator
+                            'pred_in'        : pred_in,
+                            'indep'          : indep,        # contains true structure and sequence for scoring 
+                            'mask_crds'      : mask_crds,
+                            'fi_dev'         : self.fi_dev,
+                            'atom_frames'    : atom_frames, 
+                            'sm_Ls'          : sm_Ls,  
+                            'conf'           : self.conf,       
+                            'diffusion_mask' : ~masks_1d['was_noised_in_3d']
                       }   
         
-        fape_loss_dict = compute_fape_losses(**fape_kwargs)
+            fape_loss_dict = compute_fape_losses(**fape_kwargs)
 
         
         # Average over batches

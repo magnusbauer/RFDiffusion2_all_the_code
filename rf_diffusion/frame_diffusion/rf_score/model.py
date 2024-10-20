@@ -9,6 +9,7 @@ from rf_diffusion.frame_diffusion.data import all_atom
 import rf2aa.util
 from dataclasses import dataclass
 import dataclasses
+import pdb 
 
 import rf2aa.model.RoseTTAFoldModel
 from rf2aa.chemical import ChemicalData as ChemData
@@ -68,7 +69,7 @@ rf_conf.preprocess.sidechain_input = False
 rf_conf.preprocess.d_t1d = 99999
 rf_conf.inference.contig_as_guidepost = True
 
-aa_model_converter = rf_diffusion.aa_model.Model(rf_conf)
+# aa_model_converter = rf_diffusion.aa_model.Model(rf_conf)
 
 from dataclasses import fields
 
@@ -270,6 +271,7 @@ class RFScore(nn.Module):
 
         B, I, L, _  = rfo.quat.shape
 
+        # rigids from predictions of X0
         curr_rigids = rigids_from_rfo(rfo, rigids_t.get_rots(), stopgrad_rotations=self.stopgrad_rotations)
 
         trans_score = None
@@ -314,22 +316,31 @@ def rigids_from_rfo(rfo, rots_t, stopgrad_rotations):
     )
     return curr_rigids
 
+
 def calc_score(curr_rigids, init_rigids, diffuser, t):
+    """
+    Parameters: 
+        curr_rigids (ru.Rigid): Actual or predicted time=0 rigids 
+        init_rigids (ru.Rigid): Rigids at the current time=t
+        diffuser    (frame_diffusion.data diffuser class): Diffuser 
+        t           (float): Current time
+    """
     device = curr_rigids.device
     B, I, L = curr_rigids.shape
     rot_score = torch.zeros((B,I,L,3)).to(device)
     trans_score = torch.zeros((B,I,L,3)).to(device)
+    
     for i in range(I):
         rigid_block = curr_rigids[:,i]
         rot_score[:,i] = diffuser.calc_rot_score(
-            init_rigids.get_rots(),
-            rigid_block.get_rots(),
+            init_rigids.get_rots(),  # rots_t
+            rigid_block.get_rots(),  # rots_0
             t
         )
 
         trans_score[:,i] = diffuser.calc_trans_score(
-            init_rigids.get_trans(),
-            rigid_block.get_trans(),
+            init_rigids.get_trans(),  # trans_t
+            rigid_block.get_trans(),  # trans_0
             t,
             use_torch=True,
         )
