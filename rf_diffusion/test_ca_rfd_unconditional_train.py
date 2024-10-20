@@ -35,7 +35,7 @@ def get_ca_config(overrides=[]):
     """
     hydra.core.global_hydra.GlobalHydra().clear()
     initialize(config_path="config/training")
-    conf = compose(config_name='test_rfd_ca.yaml', overrides=overrides, return_hydra_config=True)
+    conf = compose(config_name='test_ca_rfd_unconditional_train.yaml', overrides=overrides, return_hydra_config=True)
     return conf
 
 def rfold_side_effect(*args, **kwargs): 
