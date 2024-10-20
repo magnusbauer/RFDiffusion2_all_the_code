@@ -247,7 +247,7 @@ class WrappedEuclideanDiffuser(EuclideanDiffuser, r3_diffuser.R3Diffuser):
                             'beta_schedule'       : self.beta_schedule,       # from super 
                             'alphabar_schedule'   : self.alphabar_schedule,   # from super
                             'noise_scale'         : self.noise_scale}
-        torch.manual_seed(0)
+
         x_t_minus_1, _ = get_next_ca(**next_ca_kwargs)
 
         return x_t_minus_1[:,1,:]

@@ -145,10 +145,11 @@ class TestFeaturization(unittest.TestCase):
         """
         Load all goldens here.
         """
+        # RFIs 
         cls.rfi_77_golden = pickle.load(open('./goldens/ca_rfd_golden_rfi_t_dict.pkl', 'rb'))
         cls.rfi_78_golden = pickle.load(open('./goldens/ca_rfd_golden_rfi_tp1_dict.pkl', 'rb'))
     
-
+        # diffusion stuff 
         cls.golden_xyz_into_diffuse     = torch.load('./goldens/ca_rfd_diffuse_xyz_in.pt',       weights_only=True)
         cls.golden_indep_diffused_78    = torch.load('./goldens/ca_rfd_indep_diffused_78.pt',    weights_only=True)
         cls.golden_indep_diffused_77    = torch.load('./goldens/ca_rfd_indep_diffused_77.pt',    weights_only=True)
@@ -313,7 +314,7 @@ class TestFeaturization(unittest.TestCase):
 
 
     def test_t2d_motif_only(self): 
-        want = self.rfi_78_golden['t2d'][0,2] # motif template only.. 
+        want = self.rfi_78_golden['t2d'][0,2] # motif template only
         got = self.kall.kwargs['t2d'][0,2]
         torch.testing.assert_close(got, want)
 
