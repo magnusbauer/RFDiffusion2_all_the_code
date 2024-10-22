@@ -136,6 +136,7 @@ def create_masks(
     # Show all atoms for residues which have an atom motif
     is_atom_seq_shown = {res_i: [e for e in ChemData().aa2long[atomizer.deatomized_state[res_i].aa][:ChemData().NHEAVYPROT] if e is not None]
                             for res_i in is_atom_str_shown.keys()}
+    
     return create_masks_str_seq(atomizer, is_res_str_shown, is_res_seq_shown, is_atom_str_shown, is_atom_seq_shown)
 
 def create_masks_str_seq(

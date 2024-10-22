@@ -350,7 +350,7 @@ def get_t2d(xyz_t, is_sm, atom_frames, use_cb=False):
     # mask_t_2d = mask_t_2d.float() * same_chain.float()[None] # (ignore inter-chain region)
     # TODO(Look into atom_frames)
     xyz_t_frames = rf2aa.util.xyz_t_to_frame_xyz_sm_mask(xyz_t[None], is_sm, atom_frames[None])
-    mask_t_2d = torch.ones(1,L,L).bool().to(xyz_t_frames.device)
+    mask_t_2d = torch.ones(1,L,L).bool().to(xyz_t_frames.device)  # Q(Woody): Why is this set to all `True` indiscriminately?
     kinematics_params = copy.deepcopy(rf2aa.kinematics.PARAMS)
     kinematics_params['USE_CB'] = use_cb
     t2d = rf2aa.kinematics.xyz_to_t2d(xyz_t_frames, mask_t_2d[None], params=kinematics_params)
