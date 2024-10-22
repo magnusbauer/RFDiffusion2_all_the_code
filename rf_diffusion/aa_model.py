@@ -1,3 +1,4 @@
+from __future__ import annotations
 import logging
 import torch
 import contextlib
@@ -2488,7 +2489,16 @@ def make_guideposts(indep: Indep, is_motif: torch.Tensor):
     indep_cat.bond_feats[is_inter_gp * ~has_sm] = GP_BOND  # [L+n_gp, L+n_gp] (int) <-- set guidepost bonds to GP_BOND (7)
     return indep_cat, gp_to_ptn_idx0
 
-def transform_indep(indep, is_res_str_shown, is_res_seq_shown, is_atom_str_shown, can_be_gp, use_guideposts, guidepost_bonds=True, metadata=None):
+def transform_indep(
+        indep: Indep,
+        is_res_str_shown: torch.Tensor,
+        is_res_seq_shown: torch.Tensor,
+        is_atom_str_shown: dict[int, list[str]],
+        can_be_gp: torch.Tensor,
+        use_guideposts: bool,
+        guidepost_bonds: bool = True,
+        metadata: dict | None = None
+    ) -> tuple[Indep, torch.Tensor, torch.Tensor, AtomizeResidues | None, dict[int, int]]:
     '''
     Add guidepost residues (duplicates of residues set to be guideposted), atomize residues, and prepare is_diffused and is_seq_diffused
 
@@ -2579,7 +2589,7 @@ def transform_indep(indep, is_res_str_shown, is_res_seq_shown, is_atom_str_shown
 
     if len(metadata['covale_bonds']):
         # ... ensure that we atomize, if we have residues covalently bonded to a small molecule
-        assert use_atomize
+        assert use_atomize, "Atomization is required for covalent bonds to small molecules"
 
     if use_atomize:
         is_covale_ligand = indep.type() == TYPE_ATOMIZED_COV

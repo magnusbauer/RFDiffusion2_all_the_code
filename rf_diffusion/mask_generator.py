@@ -1519,7 +1519,7 @@ def get_diffusion_mask(
         ):
     """Sample a `motif` mask for training diffusion models."""
 
-    mask_probs = list(diff_mask_probs.items())  # list of (masking_function, probability) tuples
+    mask_probs = list(diff_mask_probs.items())  # list of (masking_function, probability) tuples
     logger.debug(f'{mask_probs=}')
     logger.debug(f'{[(m.name, p) for m,p in mask_probs]=}')
 
