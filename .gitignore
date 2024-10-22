@@ -5,8 +5,13 @@
 /rf_diffusion/tmp
 /sublime_build.log
 *.sublime-workspace
-/*.pdb
+*.pdb
 /rf_diffusion/*.pdb
 /rf_diffusion/samples/
 /doc/build
 /doc/source/api
+.vscode
+.env
+*.pt
+*.pkl
+*.ipynb
