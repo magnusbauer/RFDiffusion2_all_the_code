@@ -12,6 +12,7 @@ num_workers: 0
 extra_tXd: null
 
 motif_only_2d: true
+omit_frame_permutations: true
 
 resume_scheduler: false 
 
@@ -20,6 +21,7 @@ model_name: caBFF
 
 preprocess: 
   eye_frames: true
+  use_cb_to_get_pair_dist: false
 
 loss:
   backprop_non_displacement_on_given: false
@@ -31,13 +33,16 @@ upstream_training_transforms:
 
 transforms: 
   names:
+    - OmitFramePermutations
     - ComputeMotifTemplate
-    - Center
+    - CenterOnCA # since we are doing motif_only_2d, center on all
     - AddConditionalInputs
   
   configs:
+    OmitFramePermutations: {}
     ComputeMotifTemplate: {}
     Center: {}
+    CenterOnCA: {}
     AddConditionalInputs:
       p_is_guidepost_example: ${dataloader.P_IS_GUIDEPOST_EXAMPLE}
       guidepost_bonds: ${guidepost_bonds}
@@ -57,7 +62,7 @@ dataloader:
     get_diffusion_mask_chunked: 0.2
     get_multi_triple_contact_3template: 0.5
     get_unconditional_3template:  0.2999 
-    get_sm_contact_3template: 0.0001
+    get_sm_contact_3template: 0.0001      
     get_closest_tip_atoms: 0.0
     get_unconditional_diffusion_mask: 0.0
 

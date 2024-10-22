@@ -2087,13 +2087,11 @@ def wrap_featurize( indep,
         indep_t.xyz = aa_model.eye_frames(indep_t.xyz)
     else: 
         pass 
-
     # sequence masking 
     indep_t = aa_model.mask_seq(indep_t, is_masked_seq) # Changed to new function that allows for multiple polymers
-    
+
     # create RosettaFold input features
     rfi = model_adaptor.prepro(indep_t, t, is_diffused)
-
     # add the templated motif information/features
     if kwargs.get('motif_template', None) is not None:
         rfi = add_motif_template(rfi, kwargs['motif_template'], masks_1d)
@@ -2139,6 +2137,7 @@ class DistilledDataset(data.Dataset):
             # Featurize indep for the RF inputs
             rfi = self.model_adaptor.prepro(indep_t, t, is_diffused)
             """
+            assert not kwargs.get('t', False), 't should not be passed in kwargs'
             featurize_kwargs = {'indep'             : indep, 
                                 'dataset_conf'      : self.conf, 
                                 'diffuser'          : self.diffuser, 
@@ -2156,7 +2155,7 @@ class DistilledDataset(data.Dataset):
                                 'conf'              : conf,
                                 **kwargs}
             
-
+            
             diffuser_out, rfi = wrap_featurize(**featurize_kwargs)
 
             # Sanity checks

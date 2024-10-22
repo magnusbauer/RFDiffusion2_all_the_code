@@ -170,6 +170,8 @@ class Indep:
         if skipped:     print(spacer)
         print('='*23, flush=True)
 
+        self.frames_omit_permutation = False
+
     def clone(self):
         '''
         Make of copy of the object. Needed because 
@@ -196,7 +198,15 @@ class Indep:
         if hasattr(self, 'origin'):
             indep_copy.origin = _deepcopy_detached(self.origin)
 
+        if hasattr(self, 'extra_t2d'):
+            indep_copy.extra_t2d = copy.deepcopy(self.extra_t2d.detach())
+
+        indep_copy.frames_omit_permutation = self.frames_omit_permutation
         return indep_copy
+
+    def __deepcopy__(self, memo): 
+
+        return self.clone()
 
     @property
     def device(self):
@@ -217,7 +227,11 @@ class Indep:
 
         # Get the implied atom_frames
         sm_seq = self.seq[is_sm].cpu()
-        atom_frames = rf2aa.util.get_atom_frames(sm_seq, G, omit_permutation=False)
+        atom_frames = rf2aa.util.get_atom_frames(
+            sm_seq, 
+            G, 
+            omit_permutation=self.frames_omit_permutation
+            )
 
         # If atom_frames is empty, make it the "right" size
         if atom_frames.numel() == 0:
@@ -1932,6 +1946,7 @@ def diffuse(conf, diffuser, indep, is_diffused, t):
     """
     
     indep = copy.deepcopy(indep)
+    
     indep.xyz = add_fake_frame_legs(indep.xyz, indep.is_sm)
     rigids_0 = du.rigid_frames_from_atom_14(indep.xyz)  # [L, 23, 3] # not 14?
     diffuser_out = diffuser.forward_marginal(

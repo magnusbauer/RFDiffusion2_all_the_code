@@ -23,6 +23,7 @@ transforms:
     ExpandConditionsDict: {}
 
 motif_only_2d: false
+omit_frame_permutations: false
 
 loss:
   backprop_non_displacement_on_given: false

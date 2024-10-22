@@ -83,6 +83,18 @@ class NullTransform:
         return dict(**kwargs)
     
 
+class OmitFramePermutations: 
+    """
+    Set indep instance property to use omit_frame_permutations=True.
+    """
+    def __call__(self, indep: Indep, **kwargs):
+        indep.frames_omit_permutation = True
+        return dict(
+            indep=indep,
+            **kwargs
+        )
+    
+
 class ComputeMotifTemplate: 
     """
     Takens in an unnoised indep, 1D is_motif mask and 2D is_motif_2d mask and 
@@ -103,15 +115,13 @@ class ComputeMotifTemplate:
         is_motif    = masks_1d['input_str_mask'] 
         is_motif_2d = masks_1d['is_motif_2d']
 
-        indep_unnoised = indep.clone() # unnoised indep object
-
-        motif_xyz_t = indep_unnoised.xyz.clone() # perfect native structure 
+        motif_xyz_t = indep.xyz.clone() # perfect native structure 
         motif_xyz_t[~is_motif] = 0.0             # remove non-motif information 
 
         ### t2d ### 
         t2d_motif, _ = rf_diffusion.util.get_t2d(motif_xyz_t[None], 
-                                                 indep_unnoised.is_sm, 
-                                                 indep_unnoised.atom_frames,  
+                                                 indep.is_sm, 
+                                                 indep.atom_frames,  
                                                  use_cb    = use_cb,
                                                  mask_t_2d = is_motif_2d[None])
         
@@ -503,6 +513,15 @@ class RejectOutOfMemoryHazards:
             indep=indep,
             **kwargs
         )
+    
+    
+class CenterOnCA():
+    """
+    Centers on CAs + ligand atoms, irrespective of the motif.
+    """
+    def __call__(self, indep: Indep, **kwargs):
+        indep.xyz -= indep.xyz[:,1].mean(dim=0)
+        return {'indep': indep, **kwargs}
 
 
 class Center:

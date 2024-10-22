@@ -55,14 +55,9 @@ def diffuse_side_effect(*args, **kwargs):
     """
     Catch inputs/outputs of aa_model.diffuse
     """
-    assert args[4] == 77 
-    # the difference in implementation requires me to add 1 to t here. 
-    # Old code grabbed diffusion output at [t+1, t]
-    # New code gets diffusion output at [t, t-1]
-    new_args = list(args)
-    new_args[4] = 78
+    assert args[4] == 78 
 
-    diffuse_return = diffuse_saved(*new_args, **kwargs)
+    diffuse_return = diffuse_saved(*args, **kwargs)
     PATCH_SAVE_DICT['diffuse_return'] = diffuse_return
     PATCH_SAVE_DICT['diffuse_input_args'] = args # (conf, diffuser, indep, is_diffused, t)
     return diffuse_return
@@ -96,8 +91,9 @@ def wrap_feat_side_effect(**kwargs):
     """
     t = kwargs['t']
     t_cont = kwargs['t_cont']
-    assert math.isclose(t_cont, 78./200)
-    assert t == 78
+    assert math.isclose(t_cont, 77./200)
+    assert t == 77
+    kwargs['t'] = 78
 
     diffuser_out, rfi = wrap_featurize_saved(**kwargs)
     return diffuser_out, rfi
@@ -109,7 +105,7 @@ class TestFeaturization(unittest.TestCase):
     Tests for featurization of inputs. Written by DJ
     """
     @classmethod
-    @mock.patch('data_loader.wrap_featurize', side_effect=wrap_feat_side_effect)
+    @mock.patch('rf_diffusion.data_loader.wrap_featurize', side_effect=wrap_feat_side_effect)
     @mock.patch.object(LegacyRoseTTAFoldModule, 'forward', side_effect=rfold_side_effect)
     @mock.patch('rf_diffusion.aa_model.diffuse', side_effect=diffuse_side_effect)
     @mock.patch('rf_diffusion.frame_diffusion.data.legacy_diffuser.get_next_ca', side_effect=get_next_ca_side_effect)
@@ -299,17 +295,6 @@ class TestFeaturization(unittest.TestCase):
     def test_t1d(self):
         want = self.rfi_78_golden['t1d']
         got = self.kall.kwargs['t1d']
-        """
-        NOTE: OG CA RFdiffusion code incorrectly has the same timestep encoding for the 
-              RFI at time t+1 and the RFI at time t (they both have timestep t encoded). 
-
-              To both fix this in the merged code and make test pass, add 0.05 to 
-              the timestep encoding for RFI at time t=77 from OG code.
-
-              Note also that it's only for the first template, because first template is
-              the only one which gets a timestep encoding.
-        """
-        want[0,0,:,-2] += 0.005
         torch.testing.assert_close(got, want)
 
 
