@@ -116,6 +116,9 @@ def assign_torch(coord: torch.Tensor, compute_pairs: bool=True) -> Tuple[torch.T
         List[Tuple[Tuple[int]]]]: Strand pairs ((i_start,i_last),(j_start,j_last)). i_start < j_start
 
     """
+    if len(coord) == 0:
+        return torch.zeros((0, 3), dtype=int), []
+
     # check input
     coord, org_shape = _check_input(coord)
     # get hydrogen bond map

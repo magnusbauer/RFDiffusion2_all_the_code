@@ -718,6 +718,18 @@ class ExpandConditionsDict:
             elif key == 'antihotspot_values':
                 new_conditions_dict['antihotspot_values'] = expand_1d_atomized_ok_gp_not(indep, conditions_dict['antihotspot_values'], post_idx_from_pre_idx, 0, 'antihotspot_values')
 
+            elif key == 'ideal_ss':
+                new_conditions_dict['ideal_ss'] = expand_1d_atomized_ok_gp_not(indep, conditions_dict['ideal_ss'], post_idx_from_pre_idx, np.nan, 'ideal_ss')
+
+            elif key == 'avg_scn':
+                new_conditions_dict['avg_scn'] = expand_1d_atomized_ok_gp_not(indep, conditions_dict['avg_scn'], post_idx_from_pre_idx, np.nan, 'avg_scn')
+
+            elif key == 'loop_frac':
+                new_conditions_dict['loop_frac'] = expand_1d_atomized_ok_gp_not(indep, conditions_dict['loop_frac'], post_idx_from_pre_idx, np.nan, 'loop_frac')
+
+            elif key == 'topo_spec':
+                new_conditions_dict['topo_spec'] = expand_1d_atomized_ok_gp_not(indep, conditions_dict['topo_spec'], post_idx_from_pre_idx, np.nan, 'topo_spec')
+
             else:
                 assert False, f'Key {key}: not processed in ExpandConditionsDict'
 

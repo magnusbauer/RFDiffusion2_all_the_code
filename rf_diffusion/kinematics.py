@@ -334,6 +334,8 @@ def generate_H(N, CA, C):
     Returns:
         H (torch.Tensor): The location of the H atom
     '''
+    if len(N) == 0:
+        return N.clone()
 
     first_C = torch.zeros((1, 3), dtype=C.dtype)
     C_w_extra = torch.cat((first_C, C))

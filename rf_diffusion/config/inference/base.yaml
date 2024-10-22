@@ -63,6 +63,7 @@ inference:
     sinusoidal_timestep_embedding: null
     ss_adj_cond: {}
     ppi_hotspots_antihotspots: {}
+    ideal_ss_cond: {}
   safety:
     # Indicates that a user is carefully performing sidechain partial diffusion.
     # We require this to be set, as unless a user is careful this causes undefined behavior.
@@ -184,6 +185,14 @@ ppi:
   antihotspot_res: null # Which residues on the target should we be at least 10A away from?
   exposed_N_terminus: 0 # How many N-terminus residues of the first chain should be at least 10A away from every other chain?
   exposed_C_terminus: 0 # How many C-terminus residues of the first chain should be at least 10A away from every other chain?
+
+ideal_ss: # These all require AddIdealSS transforms for training and inference
+  ideal_value: null # A number 0-1 that describes how ideal of a protein you want
+  ideal_std: 0.2 # Std of noise added to ideal_value. Usually trained at 0.2
+  avg_scn: null # Average sidechain neighbors that you want your design to have
+  scn_std: 0 # Std of noise added to avg scn. Usually trained at either 0.3 if exactly specified or 0 if avg given
+  loop_frac: null # Fraction 0-1 of your design that you want to be a loop
+  topo_spec: null # A dictionary of topologies and their probabilities. ELSE and None refer to "topo outside of choices" and "unspecified" {'HHH':0.5, 'ELSE':0.5}
 
 potentials:
   guiding_potentials: null 

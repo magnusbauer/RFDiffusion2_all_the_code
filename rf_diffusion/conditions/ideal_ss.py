@@ -7,6 +7,8 @@ from rf_diffusion import ppi
 from rf_diffusion import aa_model
 from rf_diffusion.conditions.ss_adj import sec_struct_adjacency as sec_struct_adj
 
+from collections.abc import Mapping
+
 
 
 def my_pca(x):
@@ -26,8 +28,9 @@ def my_pca(x):
     z = x - torch.mean(x, axis=0) # center
     square_m = torch.matmul(z.T, z)
     (evals, evecs) = torch.linalg.eig(square_m)  # 'right-hand'
-    assert torch.allclose(evecs.imag, torch.tensor(0, dtype=z.dtype)), 'Imaginary result. What does this mean?'
-    trans_x = torch.matmul(z, evecs.real)
+    trans_x = torch.matmul(torch.complex(z, torch.tensor(0, dtype=z.dtype)), evecs)
+    assert torch.allclose(trans_x.imag, torch.tensor(0, dtype=z.dtype), atol=1e-4), f'Imaginary result. What does this mean? {trans_x}'
+    trans_x = trans_x.real
     prin_comp = evecs.real.T  # principal components are eigenvecs T
     v = torch.var(trans_x, axis=0)  # col sample var
     sv = torch.sum(v)
@@ -506,7 +509,7 @@ def assign_topo_spec(indep, topo_spec_choices, min_helix_length=8):
         topo_string = ''
         assign_else = False
         for (typ, start, end) in new_segments:
-            if typ not in 'HE':
+            if str(typ) not in 'HE':
                 continue
             length = end - start + 1
             if typ == 'H' and length < min_helix_length:
@@ -606,7 +609,7 @@ def add_gaussian_noise(arr, std, clip_low=None, clip_high=None):
     valid_mask = ~torch.isnan(arr)
     valid_arr = arr[valid_mask]
 
-    values = torch.normal(torch.zeros(len(arr)), std)
+    values = torch.normal(torch.zeros(len(valid_arr)), std)
 
     new_arr = torch.clip( valid_arr + values, clip_low, clip_high )
 
@@ -634,7 +637,7 @@ class AddIdealSSTrainingTransform:
             p_ideal_speckle (float): Probability that we randomly hide some fraction of the ideal_ss condition
             ideal_smooth_window (float): Rolling mean window size to smooth ideal_ss
             ideal_gaussian_std (float): Gaussian std for adding noise to ideal_ss
-            scn_max_value (float): The value below which we call sidechain neighbors 0
+            scn_min_value (float): The value below which we call sidechain neighbors 0
             scn_max_value (float): The value beyond which we call sidechain neighbors 1
             scn_per_res (bool): If showing scn, 50% of the time store the exact values
             scn_smooth_window (int): If storing scn per res, smooth with this rolling window size
@@ -646,14 +649,18 @@ class AddIdealSSTrainingTransform:
         self.p_ideal_ss = p_ideal_ss
         self.p_loop_frac = p_loop_frac
         self.p_avg_scn = p_avg_scn
+        self.p_topo_spec = p_topo_spec
         self.p_chain_mask = p_chain_mask
         self.p_ideal_speckle = p_ideal_speckle
         self.ideal_smooth_window = ideal_smooth_window
         self.ideal_gaussian_std = ideal_gaussian_std
+        self.scn_min_value = scn_min_value
         self.scn_max_value = scn_max_value
         self.scn_per_res = scn_per_res
         self.scn_smooth_window = scn_smooth_window
         self.scn_gaussian_std = scn_gaussian_std
+        self.topo_spec_choices = topo_spec_choices
+        self.topo_spec_min_helix_length = topo_spec_min_helix_length
 
 
     def __call__(self, indep, conditions_dict, **kwargs):
@@ -670,7 +677,7 @@ class AddIdealSSTrainingTransform:
         # Are we going to do sidechain neighbors
         if torch.rand(1) < self.p_avg_scn:
 
-            scn_range = self.scn_max_value - scn_min_value
+            scn_range = self.scn_max_value - self.scn_min_value
 
             # If we're doing scn_per_res there's a 50% chance we either do it per res or by chain
             if self.scn_per_res and torch.rand(1) < 0.5:
@@ -770,15 +777,25 @@ class AddIdealSSInferenceTransform:
             value = conf.ideal_ss.avg_scn
             std = conf.ideal_ss.scn_std
 
+            min_value = conf.upstream_training_transforms.configs.AddIdealSSTrainingTransform.scn_min_value
+            max_value = conf.upstream_training_transforms.configs.AddIdealSSTrainingTransform.scn_max_value
+
+            assert value <= max_value, (f'ideal_ss.avg_scn error: You specified {value} but the model was trained such'
+                f' that anything above {max_value} was clipped to {max_value}. Please instead specify {max_value}')
+            assert value >= min_value, (f'ideal_ss.avg_scn error: You specified {value} but the model was trained such'
+                f' that anything below {min_value} was clipped to {min_value}. Please instead specify {min_value}')
+
             avg_scn = torch.full((indep.length(),), value)
             if std > 0:
-                ideal_ss = add_gaussian_noise(avg_scn, std, 0, 1)
+                avg_scn = add_gaussian_noise(avg_scn, std, min_value, max_value)
+
+            avg_scn_0_1 = (avg_scn - min_value) / (max_value - min_value)
 
             if self.only_first_chain:
-                avg_scn[ ~torch.tensor(indep.chain_masks()[0]) ] = np.nan
+                avg_scn_0_1[ ~torch.tensor(indep.chain_masks()[0]) ] = np.nan
 
-            avg_scn[indep.is_sm] = np.nan
-            conditions_dict['avg_scn'] = avg_scn
+            avg_scn_0_1[indep.is_sm] = np.nan
+            conditions_dict['avg_scn'] = avg_scn_0_1
 
         # Has the user specified the loop_frac flag?
         if conf.ideal_ss.loop_frac is not None:
@@ -814,7 +831,7 @@ class AddIdealSSInferenceTransform:
             # Convert to numeric topologies
             topo_spec_keys = []
             topo_spec_probs = []
-            for key, prob in list(conf.ideal_ss.topo_spec):
+            for key, prob in conf.ideal_ss.topo_spec.items():
                 assert key in topo_choices, (f'ideal_ss.topo_spec error: This model was not trained to recognize {key}. Your choices are: {topo_choices}')
                 topo_spec_keys.append(topo_choices.index(key))
                 topo_spec_probs.append(prob)
@@ -916,7 +933,7 @@ def get_ideal_ss_conditioning(indep, feature_conf, ideal_ss=None, avg_scn=None, 
         topo_spec[topo_spec_nan] = N_topos
         one_hot_topo_spec = torch.nn.functional.one_hot(topo_spec.long(), num_classes=N_topos+1).float()[:,:N_topos]
 
-        extra_t1d = torch.cat((extra_t1d, one_hot_topo_spec))
+        extra_t1d = torch.cat((extra_t1d, one_hot_topo_spec), axis=-1)
 
     return {'t1d':extra_t1d}
 

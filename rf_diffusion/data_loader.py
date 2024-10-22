@@ -1801,9 +1801,6 @@ class DistilledDatasetUnnoised(data.Dataset):
 
                 indep, atom_mask, metadata = aa_model.deatomize_covales(indep, atom_mask)
 
-                ic(indep.xyz.shape)
-                ic(atom_mask.shape)
-
                 return {
                     'indep': indep,
                     'atom_mask': atom_mask,

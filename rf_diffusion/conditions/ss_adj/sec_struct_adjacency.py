@@ -362,7 +362,7 @@ def mask_ss(ss, min_mask = 0, max_mask = 1.0):
     # Randomly try to mask around the transitons of ss until we've either masked enough or tried 100 times
     while len(ss[ss == SS_MASK])/len(ss) < mask_prop and stuck_counter < 100:
         width = random.randint(1,9)
-        start = random.choice(transitions)
+        start = random.choice(list(transitions))
         offset = random.randint(-8,1)
         try:
 
