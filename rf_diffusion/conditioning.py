@@ -19,7 +19,7 @@ from rf_diffusion.contigs import ContigMap
 from rf2aa.chemical import ChemicalData as ChemData
 
 from typing import Union
-import nucleic_compatibility_utils as nucl_utils
+from rf_diffusion import nucleic_compatibility_utils as nucl_utils
 
 from rf_diffusion import run_inference
 from rf_diffusion import mask_generator
@@ -28,24 +28,13 @@ from rf_diffusion.conditions.util import expand_1d_atomized_ok_gp_not
 
 ######## Group all imported transforms together ###########
 
-from rf_diffusion.conditions.ss_adj.sec_struct_adjacency import LoadTargetSSADJTransform, AutogenerateTargetSSADJTransform, GenerateSSADJTrainingTransform
-from rf_diffusion.ppi import (PPITrimTailsChain0ComplexTransform, PPIRejectUnfoldedInterfacesTransform, PPIJoeNateDatasetRadialCropTransform,
+from rf_diffusion.conditions.ss_adj.sec_struct_adjacency import LoadTargetSSADJTransform, AutogenerateTargetSSADJTransform, GenerateSSADJTrainingTransform  # noqa: F401
+from rf_diffusion.ppi import (PPITrimTailsChain0ComplexTransform, PPIRejectUnfoldedInterfacesTransform, PPIJoeNateDatasetRadialCropTransform,  # noqa: F401
                                     FindHotspotsTrainingTransform, HotspotAntihotspotResInferenceTransform, ExposedTerminusTransform, RenumberCroppedInput)
-
-# "Use" the imports to avoid ruff errors
-LoadTargetSSADJTransform.__class__
-AutogenerateTargetSSADJTransform.__class__
-GenerateSSADJTrainingTransform.__class__
-PPITrimTailsChain0ComplexTransform.__class__
-PPIRejectUnfoldedInterfacesTransform.__class__
-PPIJoeNateDatasetRadialCropTransform.__class__
-FindHotspotsTrainingTransform.__class__
-HotspotAntihotspotResInferenceTransform.__class__
-ExposedTerminusTransform.__class__
-RenumberCroppedInput.__class__
 
 ###########################################################
 
+from rf_diffusion import util
 
 logger = logging.getLogger(__name__)
 
@@ -106,9 +95,19 @@ class GenerateMasks:
                  **kwargs):
         # Mask the independent inputs.
         run_inference.seed_all(mask_gen_seed) # Reseed the RNGs for test stability.
-        masks_1d = mask_generator.generate_masks(indep, task, params, chosen_dataset, None, atom_mask=atom_mask[:, :ChemData().NHEAVY], metadata=metadata)
+        masks_1d = mask_generator.generate_masks(
+            indep=indep, 
+            task=task, 
+            loader_params=params, 
+            chosen_dataset=chosen_dataset, 
+            full_chain=None, 
+            atom_mask=atom_mask[:, :ChemData().NHEAVY], 
+            metadata=metadata  # holds e.g. `covale_bonds`
+        )
         # Pop masks_1d if exists since it is being overwritten
-        if 'masks_1d' in kwargs: kwargs.pop('masks_1d')
+        if 'masks_1d' in kwargs: 
+            logger.warning('`masks_1d` is being overwritten by GenerateMasks. Was: %s', kwargs['masks_1d'])
+            kwargs.pop('masks_1d')
 
         return dict(
             indep=indep,
@@ -522,7 +521,6 @@ class CenterPostTransform:
 
         Args:
             indep (Indep): the holy Indep
-            for_partial_diffusion (bool): whether the model is for partial diffusion
             is_diffused (torch.Tensor): the diffused residues as a boolean mask
             origin (torch.Tensor): the origin to center around. If None, the center of mass is calculated
             coditions_dict (dict): The conditions dict
@@ -560,7 +558,7 @@ class CenterPostTransform:
                 
         # Perform centering
         indep.xyz = indep.xyz - origin[None, None, :]
-        
+
         return kwargs | dict(
             indep=indep,
             is_diffused=is_diffused,
@@ -594,7 +592,7 @@ class AddConditionalInputs:
 
         masks_1d['is_masked_seq']=is_masked_seq
         # The previous code here was wrong. All is_gp are not necessarily contiguously at the end.
-        #  Atomized residues come after gp residues (and aren't necessarily gp themselves)
+        #  Atomized residues come after gp residues (and aren't necessarily gp themselves)  # <--- Q(Woody): Is that still the case?
         #     is_gp = torch.full((indep.length(),), False)
         #     if use_guideposts:
         #         # HACK: gp indices may be lost during atomization, so we assume they are at the end of the protein.

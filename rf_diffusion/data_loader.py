@@ -301,7 +301,7 @@ def MSAFeaturize_fixbb(msa, params, L_s=[]):
     
     Seed MSA features:
         - aatype of seed sequence (20 regular aa + 1 gap/unknown + 1 mask). In inpainting task, masked sequence is set to 22nd plane (i.e. mask token)
-        - profile of clustered sequences (22) (just single sequence copied again here)
+        - profile of clustered sequences (22) (just single sequence copied again)
         - insertion statistics (2) (set to 0 here)
         - N-term or C-term? (2). This is used as normal for inpainting, if training on complexes.
     extra sequence features:
@@ -1743,7 +1743,7 @@ class DistilledDatasetUnnoised(data.Dataset):
                 # prot, _ = show.one(aa_model.slice_indep(indep, ~indep.is_sm)[0], None, 'prot')
                 # het, _ = show.one(aa_model.slice_indep(indep, indep.is_sm)[0], None, 'het')
 
-                pop = aa_model.is_occupied(indep, atom_mask)
+                pop = aa_model.is_occupied(indep, atom_mask)  # pop = True iff residue with N CA C present or atom with coords
                 # For now, do not pop unoccupied small molecule atoms, exit instead, as popping them can lose covale information.
                 unoccupied_sm = (~pop) * indep.is_sm
                 if unoccupied_sm.any():
@@ -1808,7 +1808,8 @@ class TransformedDataset(data.Dataset):
         
     def __getitem__(self, index: int):
         # Entry point for dataset iteration
-        feats = self.dataset[index]
+        # --> Q(Woody): atom mask and indep can go out of sync?
+        feats = self.dataset[index]  # feats has {'indep', 'atom_mask', 'metadata', 'chosen_dataset', 'sel_item', 'task', 'item_context', 'mask_gen_seed', 'params', 'conditions_dict'}
         logger.debug(f'Transform root inputs: {set(feats.keys()) if isinstance(feats, dict) else type(feats)}')
 
         # Iterate through all transforms in order and update the features
@@ -1891,6 +1892,8 @@ class DistilledDataset(data.Dataset):
 
             assert not hasattr(self.conf, 'extra_t1d'), 'extra_t1d has been replaced by extra_tXd'
             assert not hasattr(self.conf, 'extra_t1d_params'), 'extra_t1d has been replaced by extra_tXd'
+
+            # ... create extra 1d and 2d track features
             indep.extra_t1d, indep.extra_t2d = features.get_extra_tXd(indep, self.conf.extra_tXd, t_cont=t_cont, **self.conf.extra_tXd_params, **conditions_dict)
 
             run_inference.seed_all(mask_gen_seed) # Reseed the RNGs for test stability.
@@ -1900,8 +1903,12 @@ class DistilledDataset(data.Dataset):
             # Compute all strictly dependent model inputs from the independent inputs.
             if self.preprocess_param['randomize_frames']:
                 print('randomizing frames')
-                indep_t.xyz = aa_model.randomly_rotate_frames(indep_t.xyz)
+                indep_t.xyz = aa_model.randomly_rotate_frames(indep_t.xyz)  # TODO: Q(Woody) Make sure only the diffused frames are randomized?
+
+            # ... mask the sequence
             indep_t = aa_model.mask_seq(indep_t, is_masked_seq) # Changed to new function that allows for multiple polymers
+
+            # Featurize indep for the RF inputs
             rfi = self.model_adaptor.prepro(indep_t, t, is_diffused)
 
             # Sanity checks
@@ -1922,7 +1929,8 @@ class DistilledDataset(data.Dataset):
                 masks_1d=masks_1d,
                 diffuser_out=diffuser_out,
                 item_context=item_context,
-                conditions_dict=conditions_dict)
+                conditions_dict=conditions_dict
+            )
 
         transforms = []
         # Add training only transforms

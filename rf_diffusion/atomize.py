@@ -126,13 +126,20 @@ def atom_indices(atomizer, res_mask, atom_names_by_res, allow_missing_residue=Fa
     assert set(res_i).isdisjoint(set(atom_i))
     return res_i + atom_i
 
-def create_masks(atomizer, is_res_str_shown, is_res_seq_shown, is_atom_str_shown):
+def create_masks(
+        atomizer, 
+        is_res_str_shown: torch.Tensor,  # e.g. [True, False, True, ...], shape [L]
+        is_res_seq_shown: torch.Tensor,  # e.g. [True, False, True, ...], shape [L]
+        is_atom_str_shown: dict[int, list[str]]  # e.g. {23: [" N " , " CA "], ...}
+) -> tuple[torch.Tensor, torch.Tensor]:
 
+    # Show all atoms for residues which have an atom motif
     is_atom_seq_shown = {res_i: [e for e in ChemData().aa2long[atomizer.deatomized_state[res_i].aa][:ChemData().NHEAVYPROT] if e is not None]
                             for res_i in is_atom_str_shown.keys()}
     return create_masks_str_seq(atomizer, is_res_str_shown, is_res_seq_shown, is_atom_str_shown, is_atom_seq_shown)
 
-def create_masks_str_seq(atomizer, is_res_str_shown, is_res_seq_shown, is_atom_str_shown, is_atom_seq_shown):
+def create_masks_str_seq(
+        atomizer, is_res_str_shown, is_res_seq_shown, is_atom_str_shown, is_atom_seq_shown) -> tuple[torch.Tensor, torch.Tensor]:
     L = len(atomizer.atomized_state)
     str_shown_indices = atom_indices(atomizer, is_res_str_shown, is_atom_str_shown, allow_missing_residue=True)
     seq_shown_indices = atom_indices(atomizer, is_res_seq_shown, is_atom_seq_shown, allow_missing_residue=True)
@@ -143,17 +150,29 @@ def create_masks_str_seq(atomizer, is_res_str_shown, is_res_seq_shown, is_atom_s
 
     return is_diffused, is_masked_seq
 
-def atomize_and_mask(indep, is_res_str_shown, is_res_seq_shown, is_atom_str_shown):
-    '''
-    Params:
-        is_atom_str_shown: map from 0-indexed residues to motif atom names:
+def atomize_and_mask(
+        indep: aa_model.Indep, 
+        is_res_str_shown: torch.Tensor, 
+        is_res_seq_shown: torch.Tensor, 
+        is_atom_str_shown: dict[int, list[str]]
+    ) -> tuple[aa_model.Indep, torch.Tensor, torch.Tensor, aa_model.AtomizeResidues]:
+    """
+    Atomizes and masks residues in a protein structure.
+
+    Args:
+        indep (aa_model.Indep): The input protein structure.
+        is_res_str_shown (torch.Tensor): Boolean mask indicating which residues have their structure shown.
+        is_res_seq_shown (torch.Tensor): Boolean mask indicating which residues have their sequence shown.
+        is_atom_str_shown (dict): Dictionary mapping residue indices to lists of atom names to be shown.
             Example: {0: ['OD1', 'CB'], 4: ['CA']}
-        indep: aa_model.Indep
+
     Returns:
-        atomized_indep
-        is_diffused
-        is_masked_seq
-    '''
+        tuple:
+            - atomized_indep (aa_model.Indep): The atomized protein structure.
+            - is_diffused (torch.Tensor): Boolean mask indicating which atoms are diffused.
+            - is_masked_seq (torch.Tensor): Boolean mask indicating which atoms have masked sequences.
+            - atomizer (aa_model.AtomizeResidues): The atomizer object used for atomization.
+    """
     assertpy.assert_that(len(is_res_str_shown)).is_equal_to(indep.length())
     is_atomized = torch.zeros(indep.length()).bool()
     for k in is_atom_str_shown.keys():

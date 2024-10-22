@@ -243,6 +243,12 @@ class Indep:
         return o
     
     def type(self):
+        """Returns the type of each residue/atom in the indep.
+        -1: unassigned
+        0: protein
+        1: ligand
+        2: atomized covalent
+        """
         chains = self.chains()
         chains_with_prot = np.unique(chains[~self.is_sm])
         is_on_same_chain_as_prot = torch.tensor(np.isin(chains, chains_with_prot))
@@ -1018,29 +1024,32 @@ class Model:
         return o, masks_1d
 
 
-    def prepro(self, indep, t, is_diffused):
+    def prepro(self, indep: Indep, t: float, is_diffused: torch.Tensor) -> RFI:
         """
         Function to prepare inputs to diffusion model
 
-            seq (L,22) one-hot sequence
-
-            msa_masked (1,1,L,48)
-
-            msa_full (1,1,L,25)
-
-            xyz_t (L,14,3) template crds (diffused)
-
-            t1d (1,L,28) this is the t1d before tacking on the chi angles:
-                - seq + unknown/mask (21)
-                - global timestep (1-t/T if not motif else 1) (1)
-                - contacting residues: for ppi. Target residues in contact with biner (1)
-                - chi_angle timestep (1)
-                - ss (H, E, L, MASK) (4)
-
-            t2d (1, L, L, 45)
-                - last plane is block adjacency
+        Parameters: 
+            - indep (aa_model.Indep): Indep dataclass
+            - t (float): current timestep 
+            - is_diffused (torch.Tensor): mask of which atoms are diffused 
+            - indep_unnoised (optional, aa_model.Indep): Indep with native structure info, before diffusion
+                                             but after insert contig etc. 
+        Returns:
+            - rfi (aa_model.RFI): RFI dataclass with features ready for input to model
+                - seq (L,22) one-hot sequence
+                - msa_masked (1,1,L,48)
+                - msa_full (1,1,L,25)
+                - xyz_t (L,14,3) template crds (diffused)
+                - t1d (1,L,28) this is the t1d before tacking on the chi angles:
+                    - seq + unknown/mask (21)
+                    - global timestep (1-t/T if not motif else 1) (1)
+                    - contacting residues: for ppi. Target residues in contact with biner (1)
+                    - chi_angle timestep (1)
+                    - ss (H, E, L, MASK) (4)
+                - t2d (1, L, L, 45)
+                    - last plane is block adjacency
         """
-        xyz_t = indep.xyz
+        xyz_t = indep.xyz  # [L, N_ATOMS_PER_TOKEN, 3] here (although only N CA C CB are used?)
         seq_one_hot = torch.nn.functional.one_hot(
                 indep.seq, num_classes=self.NTOKENS).float()
         L = seq_one_hot.shape[0]
@@ -1245,6 +1254,7 @@ class Model:
         # )
 
         # xyz = torch.nan_to_num(xyz)
+        # ... perform `nan_to_num` style replacement for the hydrogens (which follow the heavy atoms here)
         xyz[0, is_diffused*~indep.is_sm,3:] = torch.nan
         xyz[0, indep.is_sm,ChemData().NHEAVYPROT:] = 0
         xyz[0, is_protein_motif, ChemData().NHEAVYPROT:] = 0
@@ -1403,7 +1413,7 @@ def adaptor_fix_bb_indep(out):
 
     indep = Indep(
         rf2aa.tensor_util.assert_squeeze(seq), # [L]
-        true_crds[:,:ChemData().NHEAVY], # [L, N_HEAVY, 3]
+        true_crds[:,:ChemData().NHEAVY], # [L, N_HEAVY, 3]  # N_HEAVY = 23
         idx_pdb,
 
         # SM specific
@@ -1623,11 +1633,13 @@ def slice_indep(indep, pop, break_chirals=False):
     pop_mask(indep, pop, break_chirals=break_chirals)
     return indep, cross_bonds
  
-def cat_indeps(indeps, same_chain):
+def cat_indeps(indeps: list[Indep], same_chain: torch.Tensor):
+    """Concatenate a list of indeps, not assuming any cross-indep bonds."""
     indep = Indep(None, None, None, None, None, None, None, None)
     indep.seq = torch.cat([i.seq for i in indeps])
     indep.xyz = torch.cat([i.xyz for i in indeps])
     indep.idx = torch.cat([i.idx for i in indeps])
+    # ... assume no cross-indep bonds (i.e. bond_feats is block diagonal)
     indep.bond_feats = torch.block_diag(*(i.bond_feats for i in indeps))
     indep.same_chain = same_chain
     indep.terminus_type = torch.cat([i.terminus_type for i in indeps])
@@ -1683,9 +1695,10 @@ def diffuse(conf, diffuser, indep, is_diffused, t):
     """
     conf.diffuser.preserve_motif_sidechains, when set to true, diffusion and frames addition are only performed on positions that are set to diffuse via the is_diffused boolean mask 
     """
+    
     indep = copy.deepcopy(indep)
     indep.xyz = add_fake_frame_legs(indep.xyz, indep.is_sm)
-    rigids_0 = du.rigid_frames_from_atom_14(indep.xyz)
+    rigids_0 = du.rigid_frames_from_atom_14(indep.xyz)  # [L, 23, 3] # not 14?
     diffuser_out = diffuser.forward_marginal(
         rigids_0,
         t=t/conf.diffuser.T,
@@ -1702,7 +1715,7 @@ def diffuse(conf, diffuser, indep, is_diffused, t):
         indep.xyz = indep.xyz[:, :ChemData().NTOTAL]
     else:
         # In this case, all motif atoms are replaced with idealized frames from rigids
-        indep.xyz = xT[:,:ChemData().NTOTAL] #[:,:ChemData().NHEAVY]
+        indep.xyz = xT[:,:ChemData().NTOTAL] #[:,:ChemData().NHEAVY]  # < Q(Woody): this goes from atom37 to 36? looks like not a problem for now since we only use N CA C CB?
     return indep, diffuser_out
 
 
@@ -2391,28 +2404,46 @@ def choose_contiguous_atom_motif(bond_feats_atomize):
 
 GP_BOND = 7
 BACKBONE_BOND = 5
-def make_guideposts(indep, is_motif):
+def make_guideposts(indep: Indep, is_motif: torch.Tensor):
+    """
+    Add guidepost residues (duplicates of residues set to be guideposted), atomize residues, and prepare is_diffused and is_seq_diffused
+
+    Inputs:
+        indep (Indep): indep
+        is_motif (torch.Tensor[bool]): Is the backbone of this residue/atom shown during diffusion? [L]
+
+    Returns:
+        indep (Indep): The indep but with guidepost residues added and residues atomized [new_L] = [L + n_gp]
+    """
+    # If there is no motif, return the indep unchanged
     if is_motif.sum() == 0:
         return indep, {}
-    pre_gp_len = indep.length()
-    n_motif = is_motif.sum()
-    chains = indep.chains()
-    motif_chains = indep.chains()[is_motif]
-    indep_motif, cross_bonds = slice_indep(indep, is_motif)
+    
+    # Else, prepare the guideposts
+    pre_gp_len = indep.length()  # L
+    n_motif = is_motif.sum()  # n_gp
+    chains = indep.chains()  # e.g. ['A', 'A', 'B', 'B', ...]
+    motif_chains = indep.chains()[is_motif]  # e.g. ['A', 'B', ...]
+    indep_motif, cross_bonds = slice_indep(indep, is_motif) # cross_bonds: [n_gp, L-n_gp] (int - 5 = covalent bond)
+
     # Break peptide bonds
-    indep_motif.bond_feats *= (indep_motif.bond_feats != BACKBONE_BOND)
+    indep_motif.bond_feats *= (indep_motif.bond_feats != BACKBONE_BOND) # [n_gp, n_gp] (int)
     gp_i = range(pre_gp_len, pre_gp_len + n_motif)
+    
+    # Position all guidepost atoms/residues on their individual chain, and on a different chain to the original indep
     CHAIN_GAP = 33
     indep_motif.idx = torch.arange(n_motif) * CHAIN_GAP + CHAIN_GAP + indep.idx.max()
     indep_motif.is_gp[:] = True
+
+    # Concatenate the original indep with the guideposts
     indep_cat = cat_indeps_separate_chains((indep, indep_motif))
     chains_cat =  np.concatenate((chains, motif_chains))
     indep_cat.same_chain = same_chain_from_chain_letters(chains_cat)
-    gp_to_ptn_idx0 = dict(zip(gp_i, is_motif.nonzero()[:,0].tolist()))
+    gp_to_ptn_idx0 = dict(zip(gp_i, is_motif.nonzero()[:,0].tolist()))  # dict[guidepost_idx, original_idx]
 
-    is_inter_gp = indep_cat.is_gp[None, :] != indep_cat.is_gp[:, None]
-    has_sm = indep_cat.is_sm[None, :] + indep_cat.is_sm[:, None]
-    indep_cat.bond_feats[is_inter_gp * ~has_sm] = GP_BOND
+    is_inter_gp = indep_cat.is_gp[None, :] != indep_cat.is_gp[:, None]  # [L+n_gp, L+n_gp] (bool)
+    has_sm = indep_cat.is_sm[None, :] + indep_cat.is_sm[:, None]  # [L+n_gp, L+n_gp] (bool)
+    indep_cat.bond_feats[is_inter_gp * ~has_sm] = GP_BOND  # [L+n_gp, L+n_gp] (int) <-- set guidepost bonds to GP_BOND (7)
     return indep_cat, gp_to_ptn_idx0
 
 def transform_indep(indep, is_res_str_shown, is_res_seq_shown, is_atom_str_shown, can_be_gp, use_guideposts, guidepost_bonds=True, metadata=None):
@@ -2434,19 +2465,20 @@ def transform_indep(indep, is_res_str_shown, is_res_seq_shown, is_atom_str_shown
         is_atom_str_shown (dict[int,list[str]]): Should this residue be atomized? dict(key=residue_idx, value=list(atom_name1, atom_name2, ...))
         can_be_gp (torch.Tensor[bool]): Is this residue elgible to be a guidepost? [L]
         use_guideposts (bool): Should motif residues (any residue or atom with str_shown) be duplicated into a guidepost residue?
-        guidepost_bonds (bool): bcov honestly doesn't know
+        guidepost_bonds (bool): Whether to also guidepost the bonds (i.e. in the RF2AA bond matrix feats), using the special GP_BOND value (7)
         metadata (dict): Extra data about indep ligands
 
     Returns:
-        indep (Indep): The indep but with guidepost residues added and residues atomized [new_L]
+        indep (Indep): The indep but with guidepost residues added and residues atomized [new_L] = [L + n_gp]
         is_diffused (torch.Tensor[bool]): Which residues will have their xyz noised and denoised [new_L]
         is_masked_seq (torch.Tensor[bool]): Which residues will have their residue type set to mask [new_L]
         atomizer (Atomizer or None): The atomizer used to atomize the indep
         gp_to_ptn_idx0 (dict[int,int] or None): Lookup original motif residue from guidepost residue dict(key=guidepost_residue_idx, value=original_residue_idx)
     '''
     indep = copy.deepcopy(indep)
-    is_res_str_shown = is_res_str_shown.clone()
-    is_res_seq_shown = is_res_seq_shown.clone()
+    # is_atom_str_shown: dict[int, list[str]], e.g. {97: [' N  ', ' CA ', ' C  ', ' CB '], 58: [' CD1', ' CG ', ' CB ', ' CD2'], 56: [' CA ', ' N  ', ' C  ', ' CB '], 127: [' N  '], 135: [' NH1'], 94: [' CD2', ' CG '], 161: [' NZ ', ' CE ', ' CD ']}
+    is_res_str_shown = is_res_str_shown.clone()  # e.g. tensor([False, False, True, False, ...]), shape [L]
+    is_res_seq_shown = is_res_seq_shown.clone()  # e.g. tensor([False, False, True, False, ...]), shape [L]
     use_atomize = is_atom_str_shown is not None
 
     atomizer = None
@@ -2464,16 +2496,16 @@ def transform_indep(indep, is_res_str_shown, is_res_seq_shown, is_atom_str_shown
     if use_guideposts:
         # All motif residues are turned into guideposts (for now...)
         mask_gp = is_res_str_shown.clone()
-        mask_gp[indep.is_sm] = False
+        mask_gp[indep.is_sm] = False  # Small molecules can never be guideposts
         if use_atomize:
-            atomized_residues = list(is_atom_str_shown.keys())
-            mask_gp[atomized_residues] = True
+            atomized_residues = list(is_atom_str_shown.keys())  # e.g. [97, 58, 56, ...]
+            mask_gp[atomized_residues] = True  # show sequence of atomized residues
         mask_gp &= can_be_gp
 
         assert not (mask_gp & ~is_res_seq_shown).any(), "If a residue is set to be a guidepost, it's sequence must be shown."
 
 
-        # Actually add guideposts to indep
+        # Actually add guideposts to indep ( [L] -> [L + n_gp], guideposts are added at end, each on its own chain )
         indep, gp_to_ptn_idx0 = make_guideposts(indep, mask_gp)
         n_gp = len(gp_to_ptn_idx0)
 
@@ -2504,7 +2536,9 @@ def transform_indep(indep, is_res_str_shown, is_res_seq_shown, is_atom_str_shown
                 metadata['covale_bonds'][i] = ((res_i, atom_name), b, t)
 
     if len(metadata['covale_bonds']):
+        # ... ensure that we atomize, if we have residues covalently bonded to a small molecule
         assert use_atomize
+
     if use_atomize:
         is_covale_ligand = indep.type() == TYPE_ATOMIZED_COV
         is_ligand = indep.is_sm
@@ -2521,6 +2555,7 @@ def transform_indep(indep, is_res_str_shown, is_res_seq_shown, is_atom_str_shown
         assertpy.assert_that(indep.is_sm.sum()).is_equal_to(indep.atom_frames.shape[0])
         ligand_idx = atomize.atomized_indices_res(atomizer, is_ligand)
         covale_ligand_idx = atomize.atomized_indices_res(atomizer, is_covale_ligand)
+        
         if use_guideposts:
             is_inter_gp = indep.is_gp[None, :] != indep.is_gp[:, None]
             is_inter_gp[ligand_idx] = False
@@ -2540,7 +2575,9 @@ def transform_indep(indep, is_res_str_shown, is_res_seq_shown, is_atom_str_shown
         is_covale[idx0] = True
     
     if not guidepost_bonds:
-        indep.bond_feats = indep.bond_feats * ~(indep.bond_feats == GP_BOND)
+        # ... if false, remove guidepost bonds
+        is_gp_bond = indep.bond_feats == GP_BOND  # [L+n_gp, L+n_gp] (bool)
+        indep.bond_feats = indep.bond_feats * ~is_gp_bond  # [L+n_gp, L+n_gp] (int) <-- set guidepost bonds to 0 (non-bond)
     
     # Add back in bond feats
     atom_names_by_res = OrderedDict()

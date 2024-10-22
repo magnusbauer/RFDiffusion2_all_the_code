@@ -1,3 +1,4 @@
+from __future__ import annotations
 import random
 import logging
 import sys
@@ -21,6 +22,7 @@ from rf_diffusion.chemical import ChemicalData as ChemData
 from rf_diffusion import error
 from rf_diffusion import tip_atoms
 import rf_diffusion.ppi as ppi
+from typing import Literal, Callable
 
 
 import rf_diffusion.nucleic_compatibility_utils as nucl_utils
@@ -382,6 +384,35 @@ def _get_tip_mask(indep, atom_mask, *args,
                   unconditional=False,
                   can_be_tip=None,
                    **kwargs):
+    """
+    Generate a tip atom `motif` for protein residues.
+
+    This function selects residues for atomization and creates a mask specifying which atoms
+    should be included in the motif for the case of atomized motifs.
+
+    Args:
+        indep: An object representing the independent variables of the structure.
+        atom_mask (torch.Tensor): A mask indicating which atoms are present in each residue, [L, N_heavy(23)].
+        *args: ignored
+        n_atomize_min (int): Minimum number of residues to atomize. Default: 1.
+        n_atomize_max (int): Maximum number of residues to atomize. Default: 8.
+        p_tip (float): Probability of selecting the tip atom as the seed atom. Default: 0.8.
+        bond_inclusion_p (float): Probability of including an additional bond in the motif. Default: 0.5.
+            The `n_bonds` hop-distance around the seed atom that are included in the atom motif fragment 
+            is sampled from a geometric distribution with parameter `1-bond_inclusion_p`.
+        unconditional (bool): If True, generate an unconditional mask (empty atom list for each residue). Default: False.
+        can_be_tip (torch.Tensor, optional): Boolean mask indicating which residues can be selected for tip atom masking.
+        **kwargs: ignored
+
+    Returns:
+        dict: A dictionary containing:
+            - 'is_motif' (torch.Tensor): Boolean tensor indicating motif tokens.
+            - 'is_atom_motif' (dict): Dictionary mapping residue indices to lists of atom names in the motif.
+
+    Notes:
+        - If no valid residues are found for atomization, it falls back to unconditional generation.
+        - The function selects between tip atom conditioning and general atom conditioning based on `p_tip`.
+    """ 
     # assert not indep.is_sm.any()
     is_valid_for_atomization = indep.has_heavy_atoms_and_seq(atom_mask)
     if can_be_tip is not None:
@@ -397,18 +428,26 @@ def _get_tip_mask(indep, atom_mask, *args,
     n_atomize = random.randint(n_atomize_min, min(n_atomize_max, n_valid_targets))
     atomize_i = np.random.choice(valid_idx, n_atomize, replace=False)
 
-    is_atom_motif = {}
+    is_atom_motif = {}  # dict of (res_idx, [atom_names]) where atom_names is list of atom names constituting the motif
     for i in atomize_i:
         if unconditional:
             atom_names = []
         else:
             if np.random.rand() < p_tip:
+                # ... tip atom conditioning: choose seed atom as the furthest from 
+                #     the backbone oxygen
                 seed_atom = tip_atoms.choose_furthest_from_oxygen(indep.seq[i])
             else:
+                # ... general atom conditioning: choose random seed atom
                 n_atoms = atom_mask[i].sum()
                 seed_atom = np.random.choice(np.arange(n_atoms), 1)[0]
+            
+            # sample bonded fragment to show as motif from geom. distribution
             n_bonds = np.random.geometric(p=1-bond_inclusion_p) - 1
+
+            # get atom names within n_bonds which will constitute the motif
             atom_names = get_atom_names_within_n_bonds(indep.seq[i], seed_atom, n_bonds)
+
         assertpy.assert_that(atom_names).does_not_contain(None)
         is_atom_motif[i] = atom_names
 
@@ -1467,12 +1506,20 @@ sm_mask_fallback = {
     get_closest_tip_atoms: get_tip_gaussian_mask,
     get_closest_tip_atoms_partial_ligand: get_tip_gaussian_mask_partial_ligand,
 }
+"""Defines a dict of fallback masking functions to use when no atomized bits (sm) are present."""
 
 def get_diffusion_mask(
-        indep, atom_mask, low_prop, high_prop, broken_prop,
-        diff_mask_probs, **kwargs):
+        indep, 
+        atom_mask: torch.Tensor, 
+        low_prop: float, 
+        high_prop: float, 
+        broken_prop: float,
+        diff_mask_probs: dict[Callable, float],  # dict of (masking_function, probability) tuples
+        **kwargs
+        ):
+    """Sample a `motif` mask for training diffusion models."""
 
-    mask_probs = list(diff_mask_probs.items())
+    mask_probs = list(diff_mask_probs.items())  # list of (masking_function, probability) tuples
     logger.debug(f'{mask_probs=}')
     logger.debug(f'{[(m.name, p) for m,p in mask_probs]=}')
 
@@ -1480,12 +1527,13 @@ def get_diffusion_mask(
     #   Incompatible masks are removed for the next iteration
     for attempt in range(len(mask_probs)):
 
-        props = np.array([p for _, p in mask_probs])
-        if props.sum() == 0:
+        probs = np.array([p for _, p in mask_probs])
+        if probs.sum() == 0:
             raise Exception('No valid mask found. Remaining probabilities sum to 0.')
-        props /= props.sum()
+        probs /= probs.sum()
 
-        i_mask = np.random.choice(np.arange(len(props)), p=props)
+        # Sample a masking function
+        i_mask = np.random.choice(np.arange(len(probs)), p=probs)
         get_mask, _ = mask_probs.pop(i_mask)
 
         # Use fallback mask if no small molecule present.
@@ -1734,7 +1782,15 @@ def get_nearby_contigs(indep, atom_mask, low_prop, high_prop, broken_prop):
 # Main mask generator function
 #####################################
 
-def generate_masks(indep, task, loader_params, chosen_dataset, full_chain=None, atom_mask=None, metadata=None): #full_chain is for complexes, to signify which chain is complete
+def generate_masks(
+        indep,
+        task: Literal['seq2str', 'diff', 'hal', 'hal_ar', 'str2seq', 'str2seq_full'],
+        loader_params: dict,
+        chosen_dataset: Literal['complex', 'negative', 'pdb_aa', 'compl', 'sm_compl', 'sm_complex'],
+        full_chain: tuple[int, int] | None = None,
+        atom_mask=None,
+        metadata=None
+    ) -> dict: #full_chain is for complexes, to signify which chain is complete
     '''
     Slimmed down function that outputs 1D masks for inputs and loss calculations.
     Input masks are defined as True=(unmasked)/False=masked (except for input_t1dconf, which is a scalar value, and seq2str_mask which is the msa mask for the seq2str task)
@@ -1756,9 +1812,9 @@ def generate_masks(indep, task, loader_params, chosen_dataset, full_chain=None, 
     L = indep.length()
     mask_name = None
 
-    input_seq_mask = torch.ones(L).bool()
-    input_str_mask = torch.ones(L).bool()
-    can_be_gp = torch.ones(L).bool()
+    input_seq_mask = torch.ones(L).bool()  # by default, all positions "shown"
+    input_str_mask = torch.ones(L).bool()  # by default, all positions "shown"
+    can_be_gp = torch.ones(L).bool()  # by default, all positions "can_be_gp"
     input_floating_mask = -1
     loss_seq_mask = torch.ones(L).bool()
     loss_str_mask = torch.ones(L).bool()
@@ -1797,12 +1853,12 @@ def generate_masks(indep, task, loader_params, chosen_dataset, full_chain=None, 
     
         (diffusion_mask, is_res_seq_shown, is_atom_motif, pop, can_be_gp), mask_name = get_diffusion_mask(
             indep,
-            atom_mask,
-            low_prop=loader_params['MASK_MIN_PROPORTION'],
-            high_prop=loader_params['MASK_MAX_PROPORTION'],
-            broken_prop=loader_params['MASK_BROKEN_PROPORTION'],
-            crop=loader_params['CROP']-20, # -20 for buffer.
-            diff_mask_probs=mask_probs,
+            atom_mask,  # [L, N_heavy(23)]
+            low_prop=loader_params['MASK_MIN_PROPORTION'],  # e.g. 0.2
+            high_prop=loader_params['MASK_MAX_PROPORTION'], # e.g. 1.0
+            broken_prop=loader_params['MASK_BROKEN_PROPORTION'], # e.g. 0.5
+            crop=loader_params['CROP']-20, # crop size of original loader, -20 for buffer. Q(Woody): Does anything bad happen if we exceed the crop size?
+            diff_mask_probs=mask_probs, # dict of (masking_function, probability) tuples
             show_tip=loader_params.get('show_tip', False),
             **loader_params.mask,
             ) 
@@ -1823,7 +1879,7 @@ def generate_masks(indep, task, loader_params, chosen_dataset, full_chain=None, 
         
         input_str_mask = torch.clone(full_chain)
         input_seq_mask = torch.clone(input_str_mask)
-        can_be_gp = input_str_mask.clone()
+        can_be_gp = input_str_mask.clone()  # by default, all positions for which structure is shown `can_be_gp`
 
     elif task == 'hal' and chosen_dataset != 'complex':
         '''
@@ -2021,17 +2077,17 @@ def generate_masks(indep, task, loader_params, chosen_dataset, full_chain=None, 
     logger.info(f'Mask selection: Task = {task}, dataset = {chosen_dataset}, mask = {mask_name}')
 
     mask_dict = {
-                'input_str_mask':input_str_mask,
-                'input_seq_mask':input_seq_mask,
-                'is_atom_motif': is_atom_motif or {},
-                'pop': pop,
-                'can_be_gp': can_be_gp,
-                'mask_name': mask_name
+                'input_str_mask':input_str_mask,  # whether a token's structure is shown
+                'input_seq_mask':input_seq_mask,  # whether a token's sequence is shown
+                'is_atom_motif': is_atom_motif or {},  # whether and which specific atoms in a token are shown as motif (will require atomization later)
+                'pop': pop,  # whether a token is occupied (i.e. resolved in the structure) 
+                'can_be_gp': can_be_gp,  # whether a token can be a gp
+                'mask_name': mask_name  # name of the mask
                 }
     
     return mask_dict
 
-def maybe_item(i):
+def maybe_item(i: torch.Tensor | int | float) -> int | float:
     if hasattr(i, 'item'):
         return i.item()
     return i
