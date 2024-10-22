@@ -624,8 +624,8 @@ class AddIdealSSTrainingTransform:
     '''
 
     def __init__(self, p_ideal_ss=0, p_loop_frac=0, p_avg_scn=0.0, p_topo_spec=0.0, p_chain_mask=0.5, p_ideal_speckle=0.2,
-            ideal_smooth_window=9, ideal_gaussian_std=0.2, scn_min_value=1.5, scn_max_value=2.5, scn_per_res=True, scn_smooth_window=9, scn_gaussian_std=0.3,
-            topo_spec_choices=['HH', 'HHH', 'HHHH', 'HHHHH'], topo_spec_min_helix_length=8):
+            ideal_smooth_window=9, ideal_gaussian_std=0.2, scn_min_value=None, scn_max_value=None, scn_per_res=True, scn_smooth_window=9, scn_gaussian_std=0.3,
+            topo_spec_choices=None, topo_spec_min_helix_length=8):
         '''
         
         Args:
@@ -645,6 +645,13 @@ class AddIdealSSTrainingTransform:
             topo_spec_choices (list[str]): The choices for topology in topo spec
             topo_spec_min_helix_length (int): If a helix exists in the structure with length less than this, then immeidately assign ELSE
         '''
+
+        if p_avg_scn > 0:
+            assert scn_min_value is not None, 'upstream_training_transforms.configs.AddIdealSSTrainingTransform.scn_min_value must be specified in yaml. A good choice is: 1.5'
+            assert scn_max_value is not None, 'upstream_training_transforms.configs.AddIdealSSTrainingTransform.scn_max_value must be specified in yaml. A good choice is: 2.5'
+
+        if p_topo_spec > 0:
+            assert topo_spec_choices is not None, "upstream_training_transforms.configs.AddIdealSSTrainingTransform.topo_spec_choices must be specified in yaml. A good choice is: [HH, 'HHH', 'HHHH', 'HHHHH']"
 
         self.p_ideal_ss = p_ideal_ss
         self.p_loop_frac = p_loop_frac
@@ -753,8 +760,11 @@ class AddIdealSSInferenceTransform:
 
     def __call__(self, indep, conditions_dict, conf, **kwargs):
 
+        assert 'AddIdealSSTrainingTransform' in conf.upstream_training_transforms.names, 'Model not set up for ideal_ss'
+
         # Has the user specified the ideal_ss flag?
         if conf.ideal_ss.ideal_value is not None:
+            assert conf.upstream_training_transforms.configs.AddIdealSSTrainingTransform.get('p_ideal_ss', 0) > 0, 'Model not trained for ideal_ss.ideal_value'
 
             # Fill in the ideal_ss tensor
             value = conf.ideal_ss.ideal_value
@@ -772,6 +782,7 @@ class AddIdealSSInferenceTransform:
 
         # Has the user specified the avg_scn flag?
         if conf.ideal_ss.avg_scn is not None:
+            assert conf.upstream_training_transforms.configs.AddIdealSSTrainingTransform.get('p_avg_scn', 0) > 0, 'Model not trained for ideal_ss.avg_scn'
 
             # Fill in the avg scn tensor
             value = conf.ideal_ss.avg_scn
@@ -799,6 +810,7 @@ class AddIdealSSInferenceTransform:
 
         # Has the user specified the loop_frac flag?
         if conf.ideal_ss.loop_frac is not None:
+            assert conf.upstream_training_transforms.configs.AddIdealSSTrainingTransform.get('p_loop_frac', 0) > 0, 'Model not trained for ideal_ss.loop_frac'
 
             # Fill in the loop_frac tensor
             value = conf.ideal_ss.loop_frac
@@ -813,6 +825,7 @@ class AddIdealSSInferenceTransform:
 
 
         if conf.ideal_ss.topo_spec is not None:
+            assert conf.upstream_training_transforms.configs.AddIdealSSTrainingTransform.get('p_topo_spec', 0) > 0, 'Model not trained for ideal_ss.topo_spec'
 
             # First we have to convert whatever the user passed into a usble format
             assert isinstance(conf.ideal_ss.topo_spec, Mapping), ('ideal_ss.topo_spec should be a dictionary. Instead it was '

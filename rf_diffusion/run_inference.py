@@ -462,6 +462,64 @@ def deatomize_sampler_outputs(atomizer, indep, px0_xyz_stack, denoised_xyz_stack
     return indep_deatomized, px0_xyz_stack_new, denoised_xyz_stack_new, seq_stack_new
 
 
+def match_guideposts_and_generate_mappings(indep, is_diffused, contig_map, denoised_xyz):
+    '''
+    Determine which diffused residues map to the guidepost residues
+        Return those paired lists as well as extra contig keys
+
+    Args:
+        indep (indep): Indep with guidepost residues
+        is_diffused (torch.Tensor[bool]): Which residues are diffused [L]
+        contig_map (ContigMap): The contig map
+        denoised_xyz (torch.Tensor[float]): The xyz coordinates to do the matching on
+
+    Returns:
+        match_idx (np.array[int]): The idx of the residue on indep that was closest to the guidepost
+        gp_idx (np.array[int]): The idx of the guidepost residue
+        gp_contig_mappings (dict): Overwrites for some contig_map fields that need to change because of the guideposting
+    '''
+
+    # Only diffused residues that aren't small molecules are elgible to be guidepost residues
+    could_be_gp_corr = is_diffused & ~indep.is_sm
+
+    # Make where masks for our subsetted arrays
+    could_be_gp_corr_idx = torch.nonzero(could_be_gp_corr)[:,0].numpy()
+    idx_by_gp_sequential_idx = torch.nonzero(indep.is_gp)[:,0].numpy()
+
+    # Generate xyz arrays to match
+    diffused_xyz = denoised_xyz[could_be_gp_corr]
+    gp_alone_xyz = denoised_xyz[indep.is_gp]
+
+    # Do the matching
+    gp_alone_to_diffused_idx0 = gp.greedy_guide_post_correspondence(diffused_xyz, gp_alone_xyz)
+
+    # Translate the local-indexing of the matched dictionary to global indexing
+    match_idx_by_gp_idx = {}
+    for k, v in gp_alone_to_diffused_idx0.items():
+        match_idx_by_gp_idx[idx_by_gp_sequential_idx[k]] = could_be_gp_corr_idx[v]
+
+    # If there were any guidepost residues...
+    if len(gp_alone_to_diffused_idx0) > 0:
+
+        # Turn the dictionary into lists
+        gp_idx, match_idx = zip(*match_idx_by_gp_idx.items())
+        gp_idx = np.array(gp_idx)
+        match_idx = np.array(match_idx)
+
+        # Generate the contig_map overrides
+        gp_contig_mappings = gp.get_infered_mappings(
+            contig_map.gp_to_ptn_idx0,
+            match_idx_by_gp_idx,
+            contig_map.get_mappings()
+        )
+    else:
+        gp_idx = np.array([], dtype=int)
+        match_idx = np.array([], dtype=int)
+        gp_contig_mappings = {}
+
+    return match_idx, gp_idx, gp_contig_mappings
+
+
 def save_outputs(sampler, out_prefix, indep, contig_map, atomizer, t_step_input, denoised_xyz_stack, px0_xyz_stack, seq_stack, is_diffused_in, raw, traj_stack, ts):
     log = logging.getLogger(__name__)
 
@@ -487,6 +545,7 @@ def save_outputs(sampler, out_prefix, indep, contig_map, atomizer, t_step_input,
     # determine lengths of protein and ligand for correct chain labeling in output pdb
     chain_Ls = rf2aa.util.Ls_from_same_chain_2d(indep.same_chain[~indep.is_gp][:,~indep.is_gp])
 
+    # Figure out which timesteps we are going to output
     write_ts = []
     for extra_t in sampler._conf.inference.write_extra_ts:
         assert extra_t in ts, f'inference.write_extra_ts: t:{t} was not part of the ts: {ts}'
@@ -498,6 +557,8 @@ def save_outputs(sampler, out_prefix, indep, contig_map, atomizer, t_step_input,
         t_suffix = '' if write_t is None else f'_t{write_t}'
         stack_idx = 0 if write_t is None else list(ts).index(write_t)
         # ic(seq_design)
+
+        # Make copies of sampler outputs for final modifications
         xyz_design = px0_xyz_stack[stack_idx].clone()
         seq_design = final_seq.clone()
         gp_contig_mappings = {}
@@ -505,44 +566,28 @@ def save_outputs(sampler, out_prefix, indep, contig_map, atomizer, t_step_input,
         is_diffused = is_diffused_in.clone()
         if atomizer is not None:
             is_atomized = copy.deepcopy(atomizer.residue_to_atomize)
+
         # If using guideposts, infer their placement from the final pX0 prediction.
         if sampler._conf.inference.contig_as_guidepost:
-            gp_to_contig_idx0 = contig_map.gp_to_ptn_idx0  # map from gp_idx0 to the ptn_idx0 in the contig string.
+            # Use final denoised_xyz for inference unless we aren't at final_step
+            match_xyz = denoised_xyz_stack[stack_idx] if write_t is None else px0_xyz_stack[stack_idx]
+            match_idx, gp_idx, gp_contig_mappings = match_guideposts_and_generate_mappings(indep, is_diffused, contig_map, match_xyz)
 
-            # Infer which diffused residues ended up on top of the guide post residues
-            could_be_gp_corr = is_diffused_in & ~indep.is_sm
-            could_be_gp_corr_idx = torch.nonzero(could_be_gp_corr)[:,0].numpy()
-            diffused_xyz = denoised_xyz_stack[stack_idx, could_be_gp_corr]
-            gp_alone_xyz = denoised_xyz_stack[stack_idx, indep.is_gp]
-            idx_by_gp_sequential_idx = torch.nonzero(indep.is_gp)[:,0].numpy()
-            gp_alone_to_diffused_idx0 = gp.greedy_guide_post_correspondence(diffused_xyz, gp_alone_xyz)
-            match_idx_by_gp_idx = {}
-            for k, v in gp_alone_to_diffused_idx0.items():
-                match_idx_by_gp_idx[idx_by_gp_sequential_idx[k]] = could_be_gp_corr_idx[v]
-            if len(gp_alone_to_diffused_idx0) > 0:
-                gp_idx, match_idx = zip(*match_idx_by_gp_idx.items())
-                gp_idx = np.array(gp_idx)
-                match_idx = np.array(match_idx)
+            # Copy guidepost sequence and idx to output if desired
+            if sampler._conf.inference.guidepost_xyz_as_design:
+                seq_design[match_idx] = seq_design[gp_idx]
+                if sampler._conf.inference.guidepost_xyz_as_design_bb:
+                    xyz_design[match_idx] = xyz_design[gp_idx]
+                else:
+                    xyz_design[match_idx, 4:] = xyz_design[gp_idx, 4:]
 
-                gp_contig_mappings = gp.get_infered_mappings(
-                    gp_to_contig_idx0,
-                    match_idx_by_gp_idx,
-                    contig_map.get_mappings()
-                )
-
-                if sampler._conf.inference.guidepost_xyz_as_design and len(match_idx_by_gp_idx):
-                    seq_design[match_idx] = seq_design[gp_idx]
-                    if sampler._conf.inference.guidepost_xyz_as_design_bb:
-                        xyz_design[match_idx] = xyz_design[gp_idx]
-                    else:
-                        xyz_design[match_idx, 4:] = xyz_design[gp_idx, 4:]
-
-                xyz_design = xyz_design[~indep.is_gp]
-                seq_design = seq_design[~indep.is_gp]
-                is_diffused[match_idx] = is_diffused[gp_idx]
-                is_diffused = is_diffused[~indep.is_gp]
-                is_atomized[match_idx] = is_atomized[gp_idx]
-                is_atomized = is_atomized[~indep.is_gp]
+            # Drop guidepost residues from output and transfer arrays
+            xyz_design = xyz_design[~indep.is_gp]
+            seq_design = seq_design[~indep.is_gp]
+            is_diffused[match_idx] = is_diffused[gp_idx]
+            is_diffused = is_diffused[~indep.is_gp]
+            is_atomized[match_idx] = is_atomized[gp_idx]
+            is_atomized = is_atomized[~indep.is_gp]
 
 
         # Save idealized pX0 last step

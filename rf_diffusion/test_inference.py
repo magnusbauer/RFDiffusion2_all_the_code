@@ -784,6 +784,76 @@ class TestRegression(unittest.TestCase):
         test_utils.assert_matches_golden(self, 'rfi_ppi_hotspots_antihotspots', mapped_calls, rewrite=REWRITE, custom_comparator=cmp)
 
 
+    @pytest.mark.generates_golden
+    def test_inference_rfi_ideal_ss(self):
+        # Tests ppi hotspots, antihotspots, ExposedTerminusTransform, and RenumberCroppedInput
+        run_inference.make_deterministic()
+        conf = construct_conf([
+            'diffuser.T=1',
+            'inference.num_designs=1',
+            'inference.input_pdb=test_data/two_chain.pdb',
+            'contigmap.contigs=["30-30,0_B121-130"]',
+            'inference.output_prefix=tmp/test_ideal_ss',
+            '++inference.zero_weights=True',
+            'contigmap.has_termini=[True,True]',
+            '+extra_tXd=["ideal_ss_cond"]',
+            "+extra_tXd_params.ideal_ss_cond.topo_spec_choices=['HH','HHH','HHHH','HHHHH']",
+
+            '++upstream_training_transforms.names=[AddIdealSSTrainingTransform]',
+            '++upstream_training_transforms.configs.AddIdealSSTrainingTransform.p_ideal_ss=1',
+            '++upstream_training_transforms.configs.AddIdealSSTrainingTransform.p_loop_frac=True',
+            '++upstream_training_transforms.configs.AddIdealSSTrainingTransform.p_avg_scn=True',
+            '++upstream_training_transforms.configs.AddIdealSSTrainingTransform.p_topo_spec=True',
+            '++upstream_training_transforms.configs.AddIdealSSTrainingTransform.scn_min_value=1.5',
+            '++upstream_training_transforms.configs.AddIdealSSTrainingTransform.scn_max_value=2.5',
+            "++upstream_training_transforms.configs.AddIdealSSTrainingTransform.topo_spec_choices=['HH','HHH','HHHH','HHHHH']",
+
+            '++upstream_inference_transforms.names=[AddIdealSSInferenceTransform]',
+            '++upstream_inference_transforms.configs.AddIdealSSInferenceTransform.only_first_chain=True',
+
+            '++transforms.names=["AddConditionalInputs","CenterPostTransform","ExpandConditionsDict"]',
+            '++transforms.configs.AddConditionalInputs.p_is_guidepost_example=0',
+            '++transforms.configs.ExpandConditionsDict={}',
+            '++transforms.configs.CenterPostTransform.center_type=is_not_diffused',
+
+            '++ideal_ss.ideal_value=0.9',
+            '++ideal_ss.ideal_std=0.01',
+            '++ideal_ss.avg_scn=1.5',
+            '++ideal_ss.scn_std=0.01',
+            '++ideal_ss.loop_frac=0.15',
+            '++ideal_ss.topo_spec={HHH:1}',
+        ])
+        mapped_calls = get_rfi(conf)
+        print(mapped_calls[0]['t1d'].shape[-1])
+        assert mapped_calls[0]['t1d'].shape[-1] == 91, "If this throws, the ideal_ss isn't being written to t1d"
+
+        chain_A_size = 30
+        ideal_ss_mask = mapped_calls[0]['t1d'][0,0,:,-11]
+        ideal_ss = mapped_calls[0]['t1d'][0,0,:,-10]
+        avg_scn_mask = mapped_calls[0]['t1d'][0,0,:,-9]
+        avg_scn = mapped_calls[0]['t1d'][0,0,:,-8]
+        loop_frac_mask = mapped_calls[0]['t1d'][0,0,:,-7]
+        loop_frac = mapped_calls[0]['t1d'][0,0,:,-6]
+        is_3h = mapped_calls[0]['t1d'][0,0,:,-5+1]
+
+        assert ideal_ss_mask[:chain_A_size].all()
+        assert not ideal_ss_mask[chain_A_size:].any()
+        assert avg_scn_mask[:chain_A_size].all()
+        assert not avg_scn_mask[chain_A_size:].any()
+        assert loop_frac_mask[:chain_A_size].all()
+        assert not loop_frac_mask[chain_A_size:].any()
+        assert is_3h[:chain_A_size].all()
+        assert not is_3h[chain_A_size:].any()
+
+        assert ideal_ss[:chain_A_size].mean() > 0.8 and ideal_ss[:chain_A_size].max() <= 1
+        assert avg_scn[:chain_A_size].mean() < 0.2 and avg_scn[:chain_A_size].min() >= 0
+        assert torch.allclose(loop_frac[:chain_A_size], torch.tensor(0.15))
+
+
+        cmp = partial(tensor_util.cmp, atol=5e-2, rtol=0)
+        test_utils.assert_matches_golden(self, 'rfi_ideal_ss', mapped_calls, rewrite=False, custom_comparator=cmp)
+
+
 
 class TestWriteTrajs(unittest.TestCase):
 

@@ -1,10 +1,14 @@
+import os
+import io
+from rf_diffusion.chemical import ChemicalData as ChemData
+from rf_diffusion import aa_model
+from rf_diffusion import write_file
 from rf_diffusion.import_pyrosetta import pyrosetta as pyro
 from rf_diffusion.import_pyrosetta import rosetta as ros
 
-import os
-from rf_diffusion.chemical import ChemicalData as ChemData
+import rf2aa.util
 
-def add_indep_to_silent(silent_path, tag, indep, scores, **kwargs):
+def add_indep_to_silent(silent_path, tag, indep, scores={}, **kwargs):
     '''
     Add this indep to a silent file
 
@@ -16,7 +20,8 @@ def add_indep_to_silent(silent_path, tag, indep, scores, **kwargs):
         **kwargs: Additional args to be passed to write_file.writepdb_file
     '''
 
-    add_xyz_to_silent(silent_path, tag, indep.xyz, indep.seq, indep.bond_feats, scores=scores, **kwargs)
+    chain_Ls = rf2aa.util.Ls_from_same_chain_2d(indep.same_chain)
+    add_xyz_to_silent(silent_path, tag, indep.xyz, indep.seq, indep.bond_feats, idx_pdb=indep.idx, chain_Ls=chain_Ls, scores=scores, **kwargs)
 
 
 def add_xyz_to_silent(silent_path, tag, xyz, seq, bond_feats, scores={}, **kwargs):
@@ -121,4 +126,32 @@ def silent_checkpoint_design(run_prefix, individual_prefix):
     checkpoint_name = run_prefix + '_ckpt'
     with open(checkpoint_name, 'a') as f:
         f.write(individual_prefix + '\n')
+
+
+def read_pose_from_silent(silent_path, tag, sfd=None):
+    '''
+    Get a pose from a silent file by tag
+
+    Note! This function reads the entire silent file if sfd=None. If you're going to read more than one structure
+       consider caching the sfd that is returned
+
+    Args:
+        silent_path (str): Path to silent file
+        tag (str): Tag from silent file
+        sfd (pyrosetta.rosetta.core.io.silent.SilentFileData or None): A previously opened sfd
+
+    Returns:
+        pose (pyrosetta.rosetta.core.pose.Pose): The structure
+        sfd (pyrosetta.rosetta.core.io.silent.SilentFileData): The SilentFileData that you could reuse
+    '''
+    if sfd is None:
+        sfd = ros().core.io.silent.SilentFileData(ros().core.io.silent.SilentFileOptions())
+        sfd.read_file(silent_path)
+
+    assert tag in list(sfd.tags()), f'Tag: {tag} not found in silent file: {silent_path}'
+
+    pose = pyro().Pose()
+    sfd.get_structure(tag).fill_pose(pose)
+
+    return pose, sfd
 

@@ -548,6 +548,66 @@ class Dataloader(unittest.TestCase):
 
         test_utils.assert_matches_golden(self, golden_name, indep, rewrite=REWRITE, custom_comparator=self.cmp)
 
+
+    def test_ideal_ss(self):
+        '''
+        This tests the ideal_ss training code
+        '''
+        dataset = 'compl'
+        mask = 'get_PPI_random_motif_no_crop'
+        loader_out = self.indep_for_dataset(dataset, mask, overrides=[
+            '+extra_tXd=["ideal_ss_cond"]',
+            "+extra_tXd_params.ideal_ss_cond.topo_spec_choices=['HH','HHH','HHHH','HHHHH']",
+            '++transforms.names=["AddConditionalInputs","ExpandConditionsDict"]',
+            '++transforms.configs.AddConditionalInputs.p_is_guidepost_example=0',
+            '++transforms.configs.ExpandConditionsDict={}',
+            '++upstream_training_transforms.names=["GenerateMasks","PopMask","AddIdealSSTrainingTransform"]',
+            '++upstream_training_transforms.configs.AddIdealSSTrainingTransform.p_ideal_ss=1',
+            '++upstream_training_transforms.configs.AddIdealSSTrainingTransform.p_loop_frac=1',
+            '++upstream_training_transforms.configs.AddIdealSSTrainingTransform.p_avg_scn=1',
+            '++upstream_training_transforms.configs.AddIdealSSTrainingTransform.p_topo_spec=1',
+            '++upstream_training_transforms.configs.AddIdealSSTrainingTransform.p_chain_mask=0',
+            '++upstream_training_transforms.configs.AddIdealSSTrainingTransform.p_ideal_speckle=0',
+            '++upstream_training_transforms.configs.AddIdealSSTrainingTransform.ideal_smooth_window=9',
+            '++upstream_training_transforms.configs.AddIdealSSTrainingTransform.ideal_gaussian_std=0.3',
+            '++upstream_training_transforms.configs.AddIdealSSTrainingTransform.scn_min_value=1.5',
+            '++upstream_training_transforms.configs.AddIdealSSTrainingTransform.scn_max_value=2.5',
+            '++upstream_training_transforms.configs.AddIdealSSTrainingTransform.scn_per_res=True',
+            '++upstream_training_transforms.configs.AddIdealSSTrainingTransform.scn_smooth_window=9',
+            '++upstream_training_transforms.configs.AddIdealSSTrainingTransform.scn_gaussian_std=0.3',
+            "+upstream_training_transforms.configs.AddIdealSSTrainingTransform.topo_spec_choices=['HH','HHH','HHHH','HHHHH']",
+            '++upstream_training_transforms.configs.AddIdealSSTrainingTransform.topo_spec_min_helix_length=8',
+            '++dataloader.mask.only_first_chain_ppi_binders=True'
+            ])
+        indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context, conditions_dict = loader_out
+        indep.metadata = None
+
+
+        chain_A_size = len(indep.chain_masks()[0])
+        ideal_ss_mask = indep.extra_t1d[:,-11]
+        ideal_ss = indep.extra_t1d[:,-10]
+        avg_scn_mask = indep.extra_t1d[:,-9]
+        avg_scn = indep.extra_t1d[:,-8]
+        loop_frac_mask = indep.extra_t1d[:,-7]
+        loop_frac = indep.extra_t1d[:,-6]
+
+        assert ideal_ss_mask[:chain_A_size].all()
+        assert not ideal_ss_mask[chain_A_size:].any()
+        assert avg_scn_mask[:chain_A_size].all()
+        assert not avg_scn_mask[chain_A_size:].any()
+        assert loop_frac_mask[:chain_A_size].all()
+        assert not loop_frac_mask[chain_A_size:].any()
+
+        golden_name = f'indep_{dataset}-{mask}_ideal_ss'
+
+        if self.show_in_pymol:
+            name, names = show.one(indep, None)
+            show.cmd.do('util.cbc')
+            show.diffused(indep, is_diffused, 'true')
+
+
+        test_utils.assert_matches_golden(self, golden_name, indep, rewrite=True, custom_comparator=self.cmp)
+
     def test_get_diffusion_mask_islands_w_tip_w_seq_islands(self):
         '''
         This test tests two things:
