@@ -16,7 +16,7 @@ from rf2aa.model.RoseTTAFoldModel import LegacyRoseTTAFoldModule
 import rf_diffusion.frame_diffusion
 from rf_diffusion import data_loader
 import train_multi_deep
-
+import rf2aa 
 import rf_diffusion.aa_model
 
 from functools import partial 
@@ -44,6 +44,8 @@ def rfold_side_effect(*args, **kwargs):
 
 
 # Save the original functions for later in use mock side effect to avoid recursive calls 
+get_ang_saved = rf2aa.kinematics.get_ang
+get_dih_saved = rf2aa.kinematics.get_dih
 wrap_featurize_saved = data_loader.wrap_featurize
 get_mu_xt_x0_saved = rf_diffusion.frame_diffusion.data.legacy_diffuser.get_mu_xt_x0
 get_next_ca_saved = rf_diffusion.frame_diffusion.data.legacy_diffuser.get_next_ca
@@ -98,6 +100,16 @@ def wrap_feat_side_effect(**kwargs):
     diffuser_out, rfi = wrap_featurize_saved(**kwargs)
     return diffuser_out, rfi
 
+
+def get_ang_side_effect(*args, **kwargs):
+    kwargs['eps'] = 1e-6
+    return get_ang_saved(*args, **kwargs)
+
+
+def get_dih_side_effect(*args, **kwargs):
+    kwargs['eps'] = 1e-6
+    return get_dih_saved(*args, **kwargs)
+
      
 
 class TestFeaturization(unittest.TestCase): 
@@ -105,12 +117,14 @@ class TestFeaturization(unittest.TestCase):
     Tests for featurization of inputs. Written by DJ
     """
     @classmethod
-    @mock.patch('rf_diffusion.data_loader.wrap_featurize', side_effect=wrap_feat_side_effect)
-    @mock.patch.object(LegacyRoseTTAFoldModule, 'forward', side_effect=rfold_side_effect)
-    @mock.patch('rf_diffusion.aa_model.diffuse', side_effect=diffuse_side_effect)
-    @mock.patch('rf_diffusion.frame_diffusion.data.legacy_diffuser.get_next_ca', side_effect=get_next_ca_side_effect)
-    @mock.patch('rf_diffusion.frame_diffusion.data.legacy_diffuser.get_mu_xt_x0', side_effect=get_mu_xt_x0_side_effect)
-    def setUpClass(cls, mock_get_mu_xt_x0, mock_get_next_ca, mock_diffuse, mock_rfold_fwd, mock_wrap_featurize): 
+    @mock.patch('rf2aa.kinematics.get_dih',                                         side_effect=get_dih_side_effect)
+    @mock.patch('rf2aa.kinematics.get_ang',                                         side_effect=get_ang_side_effect)
+    @mock.patch('rf_diffusion.data_loader.wrap_featurize',                          side_effect=wrap_feat_side_effect)
+    @mock.patch.object(LegacyRoseTTAFoldModule, 'forward',                          side_effect=rfold_side_effect)
+    @mock.patch('rf_diffusion.aa_model.diffuse',                                    side_effect=diffuse_side_effect)
+    @mock.patch('rf_diffusion.frame_diffusion.data.legacy_diffuser.get_next_ca',    side_effect=get_next_ca_side_effect)
+    @mock.patch('rf_diffusion.frame_diffusion.data.legacy_diffuser.get_mu_xt_x0',   side_effect=get_mu_xt_x0_side_effect)
+    def setUpClass(cls, mock_get_mu_xt_x0, mock_get_next_ca, mock_diffuse, mock_rfold_fwd, mock_wrap_featurize, mock_get_ang, mock_get_dih): 
         """
         Runs fake model training all the way until the first forward call.
         Analyzes inputs to the forward call and other side effects.
@@ -302,6 +316,13 @@ class TestFeaturization(unittest.TestCase):
         want = self.rfi_78_golden['t2d'][0,2] # motif template only
         got = self.kall.kwargs['t2d'][0,2]
         torch.testing.assert_close(got, want)
+
+
+    def test_t2d(self): 
+        # whole t2d
+        want = self.rfi_78_golden['t2d']
+        got = self.kall.kwargs['t2d']
+        torch.testing.assert_close(got, want, atol=3e-5, rtol=0.0007)
 
 
     def test_xyz_t(self):
