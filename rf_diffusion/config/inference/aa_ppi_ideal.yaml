@@ -1,0 +1,22 @@
+# Example config for running ppi examples with ideal_ss
+defaults:
+  - aa_ppi
+
+inference:
+  ckpt_path: /net/scratch/bcov/sc/flow/rf_diffusion_repo/rf_diffusion/training/ppi_masked_seq_ideal2024-10-22_08:28:47.978264/rank_0/models/RFD_1.pt
+
+upstream_inference_transforms: # These transforms don't do anything unless specific flags are set
+  names:
+    - HotspotAntihotspotResInferenceTransform
+    - ExposedTerminusTransform
+    - AutogenerateTargetSSADJTransform
+    - LoadTargetSSADJTransform
+    - RenumberCroppedInput
+    - AddIdealSSInferenceTransform
+  configs:
+    AddIdealSSInferenceTransform:
+      only_first_chain: True
+
+
+
+
