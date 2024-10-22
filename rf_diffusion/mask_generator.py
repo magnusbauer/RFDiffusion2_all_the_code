@@ -1514,10 +1514,38 @@ def get_diffusion_mask(
         low_prop: float, 
         high_prop: float, 
         broken_prop: float,
-        diff_mask_probs: dict[Callable, float],  # dict of (masking_function, probability) tuples
+        diff_mask_probs: dict[Callable, float],  # dict of (masking_function, probability) tuples
         **kwargs
-        ):
-    """Sample a `motif` mask for training diffusion models."""
+        ) -> dict:
+    """
+    Sample a `motif` mask for training diffusion models.
+
+    This function selects a masking function based on provided probabilities and applies it to generate a mask.
+    If a selected mask is incompatible with the input, it tries other masks until a valid one is found.
+
+    Args:
+        indep: Independent variable containing structural information.
+        atom_mask (torch.Tensor): Mask indicating which atoms to consider.
+        low_prop (float): Lower bound for the proportion of the structure to mask.
+        high_prop (float): Upper bound for the proportion of the structure to mask.
+        broken_prop (float): Probability of generating a broken (non-contiguous) mask.
+        diff_mask_probs (dict[Callable, float]): Dictionary mapping masking functions to their selection probabilities.
+        **kwargs: Additional keyword arguments to pass to the masking function.
+
+    Returns:
+        dict: A dictionary containing the generated mask and associated information. Keys that are 
+            always present include:
+            - 'is_motif' (torch.Tensor): Boolean tensor indicating the motif region. [L]
+            - 'is_res_seq_shown' (torch.Tensor): Boolean tensor indicating which residue sequences are shown. [L]
+            - 'is_atom_motif' (dict[int, list]): Dictionary indicating atomized motif regions. The key
+                is the residue index, the value is the list of atom names that are part of the motif.
+            - 'pop' (torch.Tensor): Mask of which atoms are resolved. [L]
+            - 'can_be_gp' (torch.Tensor): Boolean tensor indicating which tokens can serve as guide-posts. [L]
+            - 'mask_name': Name of the masking function used.
+
+    Raises:
+        Exception: If no valid mask can be generated after trying all available masking functions.
+    """
 
     mask_probs = list(diff_mask_probs.items())  # list of (masking_function, probability) tuples
     logger.debug(f'{mask_probs=}')
@@ -1552,8 +1580,9 @@ def get_diffusion_mask(
                 for key in required_keys:
                     assert key in ret, f'Mask: {get_mask.name} failed to return "{key}"'
 
-                # Return as a tuple
-                return (ret['is_motif'], ret['is_res_seq_shown'], ret['is_atom_motif'], ret['pop'], ret['can_be_gp']), get_mask.name
+                # ... add mask name to output dict
+                ret['mask_name'] = get_mask.name
+                return ret
             except InvalidMaskException as e:
                 logger.debug(f'Mask {get_mask.name} incompatible with example: {e}')
 
@@ -1810,16 +1839,22 @@ def generate_masks(
     '''
 
     L = indep.length()
-    mask_name = None
 
+    # Initialize output variables
+    mask_dict = {}
+    # ... special variables that will be overwritten in `mask_dict` at the end
+    mask_name = None
     input_seq_mask = torch.ones(L).bool()  # by default, all positions "shown"
     input_str_mask = torch.ones(L).bool()  # by default, all positions "shown"
+    is_atom_motif = None
     can_be_gp = torch.ones(L).bool()  # by default, all positions "can_be_gp"
+    # ... other variables <-- Q(Woody): These seem to be never returned? Are they still needed?
     input_floating_mask = -1
     loss_seq_mask = torch.ones(L).bool()
     loss_str_mask = torch.ones(L).bool()
     loss_str_mask_2d = torch.ones(L,L).bool()
-    is_atom_motif = None
+
+    # ... task specific processing
     if task == 'seq2str':
         '''
         Classic structure prediction task.
@@ -1851,7 +1886,7 @@ def generate_masks(
         # Plumbing hack
         indep.metadata = metadata
     
-        (diffusion_mask, is_res_seq_shown, is_atom_motif, pop, can_be_gp), mask_name = get_diffusion_mask(
+        mask_dict = get_diffusion_mask(
             indep,
             atom_mask,  # [L, N_heavy(23)]
             low_prop=loader_params['MASK_MIN_PROPORTION'],  # e.g. 0.2
@@ -1862,13 +1897,18 @@ def generate_masks(
             show_tip=loader_params.get('show_tip', False),
             **loader_params.mask,
             ) 
-        # ic(is_atom_motif, torch.nonzero(diffusion_mask), diffusion_mask.sum())
-        input_str_mask = diffusion_mask.clone()
-        input_seq_mask = is_res_seq_shown.clone()
-        # t1dconf scaling will be taken care of by diffuser, so just leave those at 1 here 
+        
+        # Unpack required items in mask dict (Needed for now for compatibility with old code) 
+        # TODO:(smathis) Possibly deprecate this
+        input_str_mask = mask_dict.pop('is_motif')
+        input_seq_mask = mask_dict.pop('is_res_seq_shown')
+        is_atom_motif = mask_dict.pop('is_atom_motif')
+        pop = mask_dict.pop('pop')
+        can_be_gp = mask_dict.pop('can_be_gp')
+        mask_name = mask_dict.pop('mask_name')
 
         ## loss masks 
-        loss_seq_mask[diffusion_mask] = False  # Dont score where diffusion mask is True (i.e., where things are not diffused)
+        loss_seq_mask[input_str_mask] = False  # Dont score where diffusion mask is True (i.e., where things are not diffused)
 
     elif task == 'diff' and chosen_dataset == 'complex':
         '''
@@ -1929,7 +1969,7 @@ def generate_masks(
         input_str_mask[splice[0]-flank_width:splice[1]+flank_width] = False
         input_str_mask[splice[0]-1] = True #give structure of two flanking residues
         input_str_mask[splice[1]] = True
-        can_be_gp = input_str_mas.clone()
+        can_be_gp = input_str_mask.clone()
 
         input_floating_mask = torch.ones(L).bool()
         input_floating_mask[splice[0]-1] = False #immediate two flanking residues are set to false/floating
@@ -2067,24 +2107,28 @@ def generate_masks(
  
     else:
         sys.exit(f'Masks cannot be generated for the {task} task!')
+
+    # ... task specific sanity checks
     if task != 'seq2str':
        assert torch.sum(~input_seq_mask) > 0, f'Task = {task}, dataset = {chosen_dataset}, full chain = {full_chain}'
 
-    # Make dictionary keys integers, not torch scalars.
-    if is_atom_motif:
-        is_atom_motif = {maybe_item(res_i):v for res_i, v in is_atom_motif.items()}
-
+    # ... log task, dataset & mask selection
     logger.info(f'Mask selection: Task = {task}, dataset = {chosen_dataset}, mask = {mask_name}')
 
-    mask_dict = {
-                'input_str_mask':input_str_mask,  # whether a token's structure is shown
-                'input_seq_mask':input_seq_mask,  # whether a token's sequence is shown
-                'is_atom_motif': is_atom_motif or {},  # whether and which specific atoms in a token are shown as motif (will require atomization later)
-                'pop': pop,  # whether a token is occupied (i.e. resolved in the structure) 
-                'can_be_gp': can_be_gp,  # whether a token can be a gp
-                'mask_name': mask_name  # name of the mask
-                }
-    
+    # ... final processing of output mask_dict
+    # ... make dictionary keys integers, not torch scalars.
+    if is_atom_motif:
+        is_atom_motif = {maybe_item(res_idx): atom_name_list for res_idx, atom_name_list in is_atom_motif.items()}
+    # ... update specialised keys
+    mask_dict.update({
+        'input_str_mask': input_str_mask,  # whether a token's structure is shown
+        'input_seq_mask': input_seq_mask,  # whether a token's sequence is shown
+        'is_atom_motif': is_atom_motif or {},  # whether and which specific atoms in a token are shown as motif (will require atomization later)
+        'pop': pop,  # whether a token is occupied (i.e. resolved in the structure) 
+        'can_be_gp': can_be_gp,  # whether a token can be a gp
+        'mask_name': mask_name,  # name of the mask
+    })
+
     return mask_dict
 
 def maybe_item(i: torch.Tensor | int | float) -> int | float:
