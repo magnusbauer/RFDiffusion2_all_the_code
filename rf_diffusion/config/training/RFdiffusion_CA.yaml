@@ -21,7 +21,7 @@ model_name: caBFF
 
 preprocess: 
   eye_frames: true
-  use_cb_to_get_pair_dist: false
+  use_cb_to_get_pair_dist: true
 
 loss:
   backprop_non_displacement_on_given: false
@@ -40,7 +40,8 @@ transforms:
   
   configs:
     OmitFramePermutations: {}
-    ComputeMotifTemplate: {}
+    ComputeMotifTemplate:
+      use_cb: true
     Center: {}
     CenterOnCA: {}
     AddConditionalInputs:

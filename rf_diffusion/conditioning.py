@@ -100,10 +100,12 @@ class ComputeMotifTemplate:
     Takens in an unnoised indep, 1D is_motif mask and 2D is_motif_2d mask and 
     computes a new template containing motif structure.
     """
+    def __init__(self, use_cb: bool):
+        self.use_cb = use_cb
+
     def __call__(self, 
                  indep      : Indep,
                  masks_1d   : dict,
-                 use_cb     : bool=False,
                  **kwargs): 
         
         """
@@ -122,7 +124,7 @@ class ComputeMotifTemplate:
         t2d_motif, _ = rf_diffusion.util.get_t2d(motif_xyz_t[None], 
                                                  indep.is_sm, 
                                                  indep.atom_frames,  
-                                                 use_cb    = use_cb,
+                                                 use_cb    = self.use_cb,
                                                  mask_t_2d = is_motif_2d[None])
         
 
@@ -135,7 +137,6 @@ class ComputeMotifTemplate:
 
         return {'indep'         : indep,
                 'masks_1d'      : masks_1d,
-                'use_cb'        : use_cb,
                 'motif_template': motif_template,
                 **kwargs}
         
