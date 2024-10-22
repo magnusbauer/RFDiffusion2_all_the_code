@@ -1051,85 +1051,107 @@ class Model:
         """
         xyz_t = indep.xyz  # [L, N_ATOMS_PER_TOKEN, 3] here (although only N CA C CB are used?)
         seq_one_hot = torch.nn.functional.one_hot(
-                indep.seq, num_classes=self.NTOKENS).float()
-        L = seq_one_hot.shape[0]
+                indep.seq, 
+                num_classes=self.NTOKENS
+        ).float()  # <-- used to fabricate fake MSAs
+        
+        # Set basic RF2AA input shape variables
+        B = 1  # batch size (always 1 here as not used in diffusion)
+        R = 1  # number of recycles (always 1 here as not used in diffusion)
+        T = 1  # number of templates (0=X_t, 1=self-conditioning, 2=2d-conditioning)
+        L = seq_one_hot.shape[0]  # number of tokens (residues + atoms)
+        N_ATOMS_PER_TOKEN = ChemData().NTOTAL  # number of atoms per token 
+        N_AA_TOKENS = ChemData().NAATOKENS  # number of AA tokens
+        N_TERMINUS = 2  # number of terminus channels
+        N_INDEL = 1  # number of indel channels
 
+        ##########################################
+        ## Create standard RF2AA input features ##
+        ##########################################
 
-        '''
-        msa_full:   NSEQ,NINDEL,NTERMINUS,
-        msa_masked: NSEQ,NSEQ,NINDEL,NINDEL,NTERMINUS
-        '''
-        NTERMINUS = 2
-        NINDEL = 1
         ### msa_masked ###
         ##################
-        msa_masked = torch.zeros((1,1,L,2*ChemData().NAATOKENS+NINDEL*2+NTERMINUS))
+        # `msa_masked` has channels: N_AA_TOKENS, N_AA_TOKENS, N_INDEL, N_INDEL, N_TERMINUS
+        msa_masked = torch.zeros((B,R,L,2*N_AA_TOKENS + 2*N_INDEL + N_TERMINUS))
 
-        msa_masked[:,:,:,:ChemData().NAATOKENS] = seq_one_hot[None, None]
-        msa_masked[:,:,:,ChemData().NAATOKENS:2*ChemData().NAATOKENS] = seq_one_hot[None, None]
-        MSAMASKED_N_TERM = 2*ChemData().NAATOKENS + 2*NINDEL
-        MSAMASKED_C_TERM = 2*ChemData().NAATOKENS + 2*NINDEL + 1
+        msa_masked[..., :N_AA_TOKENS] = seq_one_hot[None, None]
+        msa_masked[..., N_AA_TOKENS:2*N_AA_TOKENS] = seq_one_hot[None, None]
+
         if self.conf.preprocess.annotate_termini:
-            msa_masked[:,:,:,MSAMASKED_N_TERM] = (indep.terminus_type == N_TERMINUS).float()
-            msa_masked[:,:,:,MSAMASKED_C_TERM] = (indep.terminus_type == C_TERMINUS).float()
+            # ... annotate N-terminus
+            MSAMASKED_N_TERM = 2*N_AA_TOKENS + 2*N_INDEL
+            msa_masked[..., MSAMASKED_N_TERM] = (indep.terminus_type == N_TERMINUS).float()
+            # ... annotate C-terminus
+            MSAMASKED_C_TERM = 2*N_AA_TOKENS + 2*N_INDEL + 1
+            msa_masked[..., MSAMASKED_C_TERM] = (indep.terminus_type == C_TERMINUS).float()
+
 
         ### msa_full ###
         ################
-        msa_full = torch.zeros((1,1,L,ChemData().NAATOKENS+NINDEL+NTERMINUS))
-        msa_full[:,:,:,:ChemData().NAATOKENS] = seq_one_hot[None, None]
-        MSAFULL_N_TERM = ChemData().NAATOKENS+NINDEL
-        MSAFULL_C_TERM = MSAFULL_N_TERM+1
+        # `msa_full` has channels: N_AA_TOKENS, N_INDEL, N_TERMINUS
+        msa_full = torch.zeros((B,R,L,N_AA_TOKENS + N_INDEL + N_TERMINUS))
+        msa_full[..., :N_AA_TOKENS] = seq_one_hot[None, None]
+        
         if self.conf.preprocess.annotate_termini:
-            msa_full[:,:,:,MSAFULL_N_TERM] = (indep.terminus_type == N_TERMINUS).float()
-            msa_full[:,:,:,MSAFULL_C_TERM] = (indep.terminus_type == C_TERMINUS).float()
+            # ... annotate N-terminus
+            MSAFULL_N_TERM = N_AA_TOKENS + N_INDEL
+            msa_full[..., MSAFULL_N_TERM] = (indep.terminus_type == N_TERMINUS).float()
+            # ... annotate C-terminus
+            MSAFULL_C_TERM = MSAFULL_N_TERM + 1
+            msa_full[..., MSAFULL_C_TERM] = (indep.terminus_type == C_TERMINUS).float()
+
 
         ### t1d ###
         ###########
         # Here we need to go from one hot with 22 classes to one hot with 21 classes
         # If sequence is masked, it becomes unknown
-        # t1d = torch.zeros((1,1,L,NAATOKENS-1))
+        # t1d = torch.zeros((B,R,L,NAATOKENS-1))
 
         #seqt1d = torch.clone(seq)
         seq_cat_shifted = seq_one_hot.argmax(dim=-1)
-        seq_cat_shifted[seq_cat_shifted>=ChemData().MASKINDEX] -= 1
+        seq_cat_shifted[seq_cat_shifted >= ChemData().MASKINDEX] -= 1
         t1d = torch.nn.functional.one_hot(seq_cat_shifted, num_classes=ChemData().NAATOKENS-1)
-        t1d = t1d[None, None] # [L, NAATOKENS-1] --> [1,1,L, NAATOKENS-1]
-        # for idx in range(L):
+        t1d = t1d[None, None] # [L, NAATOKENS-1] --> [B,R,L, NAATOKENS-1]
 
-        #     if seqt1d[idx,MASKINDEX] == 1:
-        #         seqt1d[idx, MASKINDEX-1] = 1
-        #         seqt1d[idx,MASKINDEX] = 0
-        # t1d[:,:,:,:NPROTAAS+1] = seqt1d[None,None,:,:NPROTAAS+1]
-
-        ## Str Confidence
-        # Set confidence to 1 where diffusion mask is True, else 1-t/T
+        ## Str Confidence (structure confidence)
+        # ... set confidence to 1 where diffusion mask is True, else 1-t/T
         strconf = torch.zeros((L,)).float().to(is_diffused.device)
         strconf[~is_diffused] = 1.
-        strconf[is_diffused] = 1. - t/self.conf.diffuser.T
-        strconf = strconf[None,None,...,None]
+        strconf[is_diffused] = 1. - t/self.conf.diffuser.T  # [L]
+        strconf = strconf[None,None,...,None]  # [B,R,L,1]
 
-        t1d = torch.cat((t1d, strconf), dim=-1)
+        # ... and append as last channel in t1d
+        t1d = torch.cat((t1d, strconf), dim=-1) # [B,R,L,79+1]
         t1d = t1d.float()
+
 
         ### xyz_t ###
         #############
         if self.conf.preprocess.sidechain_input:
             raise NotImplementedError
-            # xyz_t[torch.where(seq_one_hot == 21, True, False),3:,:] = float('nan')
         else:
-            xyz_t[is_diffused,3:,:] = float('nan')
-        #xyz_t[:,3:,:] = float('nan')
+            # ... set all coordinates except those for the backbone 
+            #     `N`, `CA`, `C` atoms for nucleotides or the
+            #     `O4'`, `C1'` , `C2'` atoms for nucleotides or 
+            #     the atomized atom coordinates (in the CA channel) to `nan`
+            xyz_t[is_diffused, 3:, :] = float('nan')  # < if sidechain wasn't gone before, it's gone now
 
 
-
-        # Can either have shortened form, or full form
+        # ... can either have shortened form, or full form
         assert_that(tuple(xyz_t.shape)).is_in(*[(L,ChemData().NHEAVY,3),
                                                 (L, ChemData().NTOTAL, 3)])
-        # Chop off hydrogens (without this, there is a bug due to torsions)
+        # ... chop off hydrogens (without this, there is a bug due to torsions)
         xyz_t = xyz_t[:,:ChemData().NHEAVY]
-        xyz_t=xyz_t[None, None]
-        # Pad dimension if necessary
-        xyz_t = torch.cat((xyz_t, torch.full((1,1,L,ChemData().NTOTAL-xyz_t.shape[3],3), float('nan')).to(xyz_t.device)), dim=3)
+        xyz_t = xyz_t[None, None]
+
+        # ... pad dimension if necessary
+        xyz_t = torch.cat(
+            (
+                xyz_t, 
+                torch.full((B,1,L,ChemData().NTOTAL-xyz_t.shape[3],3), float('nan')).to(xyz_t.device)
+            ), 
+            dim=3
+        )  # [B(1), T(1), L, N_ATOMS_PER_TOKEN(36), 3]
 
 
         ### t2d ###
@@ -1143,6 +1165,7 @@ class Model:
         #     xyz_t[0], mask_t[0], seq_scalar[0], same_chain[0], atom_frames[0])
         # t2d = t2d[None] # Add batch dimension # [B,T,L,L,44]
 
+
         ### idx ###
         ###########
         """
@@ -1152,6 +1175,7 @@ class Model:
         """
         # JW Just get this from the contig_mapper now. This handles chain breaks
         #idx = torch.tensor(self.contig_map.rf)[None]
+
 
         # ### alpha_t ###
         # ###############
@@ -1163,23 +1187,33 @@ class Model:
         # alpha_mask = alpha_mask.reshape(1,-1,L,10,1)
         # alpha_t = torch.cat((alpha, alpha_mask), dim=-1).reshape(1, -1, L, 30)
 
-
-        # get torsion angles from templates
-        seq_tmp = t1d[...,:-1].argmax(dim=-1).reshape(-1,L)
-
+        # ... get torsion angles from templates
+        seq_tmp = t1d[...,:-1].argmax(dim=-1).reshape(-1,L)  # ... (everything up to last dim which is timestep embedding)
         alpha, _, alpha_mask, _ = self.converter.get_torsions(xyz_t.reshape(-1,L,ChemData().NTOTAL,3), seq_tmp)
             #rf2aa.util.torsion_indices, rf2aa.util.torsion_can_flip, rf2aa.util.reference_angles)
+        # ... set torsion angles that are nan to 0 and mask them out
         alpha_mask = torch.logical_and(alpha_mask, ~torch.isnan(alpha[...,0]))
         alpha[torch.isnan(alpha)] = 0.0
-        alpha = alpha.reshape(-1,L,ChemData().NTOTALDOFS,2)
-        alpha_mask = alpha_mask.reshape(-1,L,ChemData().NTOTALDOFS,1)
-        alpha_t = torch.cat((alpha, alpha_mask), dim=-1).reshape(-1, L, 3*ChemData().NTOTALDOFS) # [n,L,30]
-
-        alpha_t = alpha_t.unsqueeze(1) # [n,I,L,30]
+        # ... reshape 
+        alpha = alpha.reshape(-1,L,ChemData().NTOTALDOFS,2)  # [n, L, N_TOTAL_DOFS(10), 2]
+        alpha_mask = alpha_mask.reshape(-1,L,ChemData().NTOTALDOFS,1)  # [n, L, N_TOTAL_DOFS(10), 1]
+        # ... concatenate `alpha` and `alpha_mask` along last dimension
+        alpha_t = torch.cat((alpha, alpha_mask), dim=-1).reshape(-1, L, 3*ChemData().NTOTALDOFS)  # [n, L, 3*N_TOTAL_DOFS(30)]
+        # ... add template dimension
+        alpha_t = alpha_t.unsqueeze(1) # [n,T,L,3*N_TOTAL_DOFS(30)]
         alpha_t = alpha_t.tile((1,2,1,1))
 
+        ### bond_feats (distance matrix) ###
+        ####################################
+        # ... get bond distance matrix
+        dist_matrix = rf2aa.data.data_loader.get_bond_distances(indep.bond_feats)
 
 
+        ######################################
+        ## Create additional input features ##
+        ######################################
+
+        # Q(Woody): Can we delete this?
         # #put tensors on device
         # msa_masked = msa_masked.to(self.device)
         # msa_full = msa_full.to(self.device)
@@ -1216,24 +1250,36 @@ class Model:
         #     indep.extra_t1d[:,10:].argmax(dim=-1),
         # )
 
-        t1d = torch.cat((t1d, indep.extra_t1d[None, None, ...]), dim=-1)
+        ### extra_tXd ###
+        #################
+        t1d = torch.cat((t1d, indep.extra_t1d[None, None, ...]), dim=-1)  # [B, T, L, t1d+extra_t1d]
+        # ... add t1d for the self-conditioning template (template_idx=1)
+        t1d = torch.tile(t1d, (1,2,1,1))  # Repeat t1d accross the template dimension  # [B(1), T(2), L, t1d+extra_t1d]
+        # X_t template is at index 0, Self-conditioning template is at index 1 (if self conditioning is active)
+        t1d[0,1,:,ChemData().NAATOKENS-1] = -1 # This distiniguishes the templates to the model.
+        # ic(t1d[0,:,:4,NAATOKENS-1]) # Will look like [[conf, -1], [conf, -1], ...], 0 < conf < 1
         
         # return msa_masked, msa_full, seq[None], torch.squeeze(xyz_t, dim=0), idx, t1d, t2d, xyz_t, alpha_t
-        mask_t = torch.ones(1,2,L,L).bool()
+        mask_t = torch.ones(1,2,L,L).bool()  # [B, T, L, L]
         sctors = torch.zeros((1,L,ChemData().NTOTALDOFS,2))
 
         xyz = torch.squeeze(xyz_t, dim=0)
 
         # NO SELF COND
-        xyz_t = torch.zeros(1,2,L,3)
+        xyz_t = torch.zeros(1,2,L,3)  # < Q(Woody): This overwrites `xyz_t` from above (which is now in `xyz` somewhat confusingly)
         t2d = torch.zeros(1,2,L,L,68)
 
         use_cb = self.conf.preprocess.use_cb_to_get_pair_dist
-        t2d_xt, mask_t_2d_remade = util.get_t2d(
+        t2d_xt, _mask_t_2d_remade = util.get_t2d(
             xyz, indep.is_sm, indep.atom_frames, use_cb=use_cb)
         t2d[0,0] = t2d_xt[0]
         xyz_t[0,0] = xyz[0,:,1]
 
+        # ... concatenate `extra_t2d` channels [B(1),T(2),L,L,t2d_pre] -> [B,T,L,L,t2d+extra_t2d]
+        t2d = torch.cat((t2d, torch.tile(indep.extra_t2d[None, None, ...], (1,2,1,1,1))), dim=-1)  # [B(1), T(2), L, L, t2d+extra_t2d]
+
+
+        # Perform `nan_to_num` style replacement for the hydrogens (which follow the heavy atoms here)
         #ic(xyz.shape)
         # ic(
         #     xyz[0, is_diffused][0][:,0], # nan 3:
@@ -1259,38 +1305,34 @@ class Model:
         xyz[0, indep.is_sm,ChemData().NHEAVYPROT:] = 0
         xyz[0, is_protein_motif, ChemData().NHEAVYPROT:] = 0
         xyz[0, is_nucleic_motif, ChemData().NHEAVY:] = 0
-        dist_matrix = rf2aa.data.data_loader.get_bond_distances(indep.bond_feats)
-        
-        t1d = torch.tile(t1d, (1,2,1,1))
-        # Xt template is at index 0, Self-conditioning template is at index 1 (if self conditioning is active)
-        t1d[0,1,:,ChemData().NAATOKENS-1] = -1 # This distiniguishes the templates to the model.
-        # ic(t1d[0,:,:4,NAATOKENS-1]) # Will look like [[conf, -1], [conf, -1], ...], 0 < conf < 1
-
-        t2d = torch.cat((t2d, torch.tile(indep.extra_t2d[None, None, ...], (1,2,1,1,1))), dim=-1)
 
         # Note: should be batched
         rfi = RFI(
-            msa_masked,
-            msa_full,
-            indep.seq[None],
-            indep.seq[None],
-            xyz,
-            sctors,
-            indep.idx[None],
-            indep.bond_feats[None],
-            dist_matrix[None],
-            indep.chirals[None],
-            indep.atom_frames[None],
-            t1d,
-            t2d,
-            xyz_t,
-            alpha_t,
-            mask_t,
-            indep.same_chain[None],
-            ~is_diffused,
-            None,
-            None,
-            None)
+            # ... msa related features
+            msa_latent = msa_masked,  # [B(1), R(1), L, 164]
+            msa_full = msa_full,  # [B(1), R(1), L, 83]
+            seq = indep.seq[None],  # [B(1), L]
+            seq_unmasked = indep.seq[None],  # [B(1), L]
+            # ... structure related features
+            xyz =xyz,  # [B(1), L, 36, 3]
+            sctors = sctors,  # [1, L, 20, 2]
+            idx = indep.idx[None], # [L]
+            bond_feats = indep.bond_feats[None],  # [B(1), L, L]
+            dist_matrix = dist_matrix[None],  # [B(1), L, L]
+            chirals = indep.chirals[None],  # [n_chirals, 5]
+            atom_frames = indep.atom_frames[None],  # [n_frames, 3, 2]
+            # ... template related features 
+            t1d = t1d,  # [B(1), T(2), L, x1d] (x1d = 114 for example)
+            t2d = t2d,  # [B(1), T(2), L, L, x2d] (0 = Xt, 1 = self-conditioning, x2d = 68 for example)
+            xyz_t = xyz_t,  # [B(1), T(2), L, 3]  (0 = Xt, 1 = self-conditioning)
+            alpha_t = alpha_t,  # [B(1), T(2), L, 60]  (0 = Xt, 1 = self-conditioning)
+            mask_t = mask_t,  # [B(1), T(2), L, L]
+            # ... other features
+            same_chain = indep.same_chain[None],  # [B(1), L, L]
+            is_motif = ~is_diffused,  # [L] # TODO:(smathis) Swap to `is_motif` annotation
+            msa_prev = None,
+            pair_prev = None,
+            state_prev = None)
         return rfi
     
 
