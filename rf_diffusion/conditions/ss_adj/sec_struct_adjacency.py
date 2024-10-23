@@ -557,14 +557,14 @@ class LoadTargetSSADJTransform:
         size = None
         if conf.scaffoldguided.target_ss is not None:
             assert os.path.exists(conf.scaffoldguided.target_ss), f'scaffoldguided.target_ss: {conf.scaffoldguided.target_ss} does not exist!'
-            ss = torch.load(conf.scaffoldguided.target_ss)
+            ss = torch.load(conf.scaffoldguided.target_ss, weights_only=False)
             assert len(ss.shape) == 1
             size = ss.shape[0]
 
         adj = None
         if conf.scaffoldguided.target_adj is not None:
             assert os.path.exists(conf.scaffoldguided.target_adj), f'scaffoldguided.target_adj: {conf.scaffoldguided.target_adj} does not exist!'
-            adj = torch.load(conf.scaffoldguided.target_adj)
+            adj = torch.load(conf.scaffoldguided.target_adj, weights_only=False)
             assert len(adj.shape) == 2
             assert adj.shape[0] == adj.shape[1]
             size = adj.shape[0]

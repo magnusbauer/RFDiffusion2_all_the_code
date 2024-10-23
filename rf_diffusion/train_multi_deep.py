@@ -534,7 +534,7 @@ class Trainer():
             map_location = {"cuda:%d"%0: "cuda:%d"%rank}
             ic(f'loading model onto {"cuda:%d"%rank}')
         ic(chk_fn)
-        checkpoint = torch.load(chk_fn, map_location=map_location)
+        checkpoint = torch.load(chk_fn, map_location=map_location, weights_only=False)
         # Set to false for faster loading when debugging
         cautious = True
         for m, weight_state in [
@@ -645,7 +645,7 @@ class Trainer():
             map_location = {"cuda:%d"%0: "cuda:%d"%rank}
             ic(f'loading model onto {"cuda:%d"%rank}')
         ic(chk_fn)
-        checkpoint = torch.load(chk_fn, map_location=map_location)
+        checkpoint = torch.load(chk_fn, map_location=map_location, weights_only=False)
         return checkpoint
 
     def train_model(self, rank, world_size, return_setup=False):

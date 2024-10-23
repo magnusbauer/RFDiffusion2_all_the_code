@@ -579,7 +579,7 @@ def get_train_valid_set(params, OFFSET=1000000):
 
         train_cn = {}
         valid_cn = {}
-        cn_dict = torch.load(params['CN_DICT'])
+        cn_dict = torch.load(params['CN_DICT'], weights_only=False)
         for r in cn_dict['train_seqs']:
             if r[2] < params['MAX_LENGTH']:
                 if r[0] in train_cn.keys():
@@ -955,14 +955,14 @@ def featurize_homo(msa_orig, ins_orig, tplt, pdbA, pdbid, interfaces, params, pi
     # get ground-truth structures
     # load metadata
     PREFIX = f"{params['PDB_DIR']}/torch/pdb/{pdbid[1:3]}/{pdbid}"
-    meta = torch.load(PREFIX+".pt")
+    meta = torch.load(PREFIX+".pt", weights_only=False)
 
     # get all possible pairs
     npairs = len(interfaces)
     xyz = torch.full((npairs, 2*L, 27, 3), np.nan).float()
     mask = torch.full((npairs, 2*L, 27), False)
     for i_int,interface in enumerate(interfaces):
-        pdbB = torch.load(params['PDB_DIR']+'/torch/pdb/'+interface[0][1:3]+'/'+interface[0]+'.pt')
+        pdbB = torch.load(params['PDB_DIR']+'/torch/pdb/'+interface[0][1:3]+'/'+interface[0]+'.pt', weights_only=False)
         xformA = meta['asmb_xform%d'%interface[1]][interface[2]]
         xformB = meta['asmb_xform%d'%interface[3]][interface[4]]
         xyzA = torch.einsum('ij,raj->rai', xformA[:3,:3], pdbA['xyz']) + xformA[:3,3][None,None,:]
@@ -1025,9 +1025,9 @@ def get_msa(a3mfilename, item):
 # Load PDB examples
 def loader_pdb(item, params, homo, unclamp=False, pick_top=True, p_homo_cut=0.5):
     # load MSA, PDB, template info
-    pdb = torch.load(params['PDB_DIR']+'/torch/pdb/'+item[0][1:3]+'/'+item[0]+'.pt')
+    pdb = torch.load(params['PDB_DIR']+'/torch/pdb/'+item[0][1:3]+'/'+item[0]+'.pt', weights_only=False)
     a3m = get_msa(params['PDB_DIR'] + '/a3m/' + item[1][:3] + '/' + item[1] + '.a3m.gz', item[1])
-    tplt = torch.load(params['PDB_DIR']+'/torch/hhr/'+item[1][:3]+'/'+item[1]+'.pt')
+    tplt = torch.load(params['PDB_DIR']+'/torch/hhr/'+item[1][:3]+'/'+item[1]+'.pt', weights_only=False)
    
     # get msa features
     msa = a3m['msa'].long()
@@ -1053,7 +1053,7 @@ def loader_pdb_fixbb(item, params, homo = None, unclamp=False, pick_top=False,p_
     """
     Loader for fixbb tasks, from pdb dataset
     """
-    pdb = torch.load(params['PDB_DIR']+'/torch/pdb/'+item[0][1:3]+'/'+item[0]+'.pt')
+    pdb = torch.load(params['PDB_DIR']+'/torch/pdb/'+item[0][1:3]+'/'+item[0]+'.pt', weights_only=False)
     a3m = get_msa(params['PDB_DIR'] + '/a3m/' + item[1][:3] + '/' + item[1] + '.a3m.gz', item[1])
 
     # get msa features
@@ -1150,8 +1150,8 @@ def loader_fb_fixbb(item, params, unclamp=False, pick_top=False):
     return featurize_single_chain_fixbb(msa, pdb, params, unclamp=unclamp, pick_top=pick_top, fb=True)
 
 def loader_cn_fixbb(item, params, unclamp=False, pick_top=False):
-    seq = torch.load(os.path.join(params["CN_DIR"],"seq",item+".pt"))['seq'][0].long()
-    pdb = torch.load(os.path.join(params['CN_DIR'], 'pdb', item+'.pt'))
+    seq = torch.load(os.path.join(params["CN_DIR"],"seq",item+".pt"), weights_only=False)['seq'][0].long()
+    pdb = torch.load(os.path.join(params['CN_DIR'], 'pdb', item+'.pt'), weights_only=False)
     pdb['xyz'] = pdb['xyz'][0]
     return featurize_single_chain_fixbb(seq, pdb, params, unclamp=unclamp, pick_top=pick_top, fb=False)
 
@@ -1188,8 +1188,8 @@ def loader_complex(item, L_s, taxID, assem, params, negative=False, pick_top=Tru
     # read template info
     tpltA_fn = params['PDB_DIR'] + '/torch/hhr/' + msaA_id[:3] + '/' + msaA_id + '.pt'
     tpltB_fn = params['PDB_DIR'] + '/torch/hhr/' + msaB_id[:3] + '/' + msaB_id + '.pt'
-    tpltA = torch.load(tpltA_fn)
-    tpltB = torch.load(tpltB_fn)
+    tpltA = torch.load(tpltA_fn, weights_only=False)
+    tpltB = torch.load(tpltB_fn, weights_only=False)
     ntempl = np.random.randint(params['MINTPLT'], params['MAXTPLT']//2+1)
     xyz_t_A, f1d_t_A = TemplFeaturize(tpltA, sum(L_s), params, offset=0, npick=ntempl, pick_top=pick_top)
     ntempl = np.random.randint(params['MINTPLT'], params['MAXTPLT']//2+1)
@@ -1202,13 +1202,13 @@ def loader_complex(item, L_s, taxID, assem, params, negative=False, pick_top=Tru
 
     # read PDB
     pdbA_id, pdbB_id = pdb_pair.split(':')
-    pdbA = torch.load(params['PDB_DIR']+'/torch/pdb/'+pdbA_id[1:3]+'/'+pdbA_id+'.pt')
-    pdbB = torch.load(params['PDB_DIR']+'/torch/pdb/'+pdbB_id[1:3]+'/'+pdbB_id+'.pt')
+    pdbA = torch.load(params['PDB_DIR']+'/torch/pdb/'+pdbA_id[1:3]+'/'+pdbA_id+'.pt', weights_only=False)
+    pdbB = torch.load(params['PDB_DIR']+'/torch/pdb/'+pdbB_id[1:3]+'/'+pdbB_id+'.pt', weights_only=False)
 
     if len(assem) > 0:
         # read metadata
         pdbid = pdbA_id.split('_')[0]
-        meta = torch.load(params['PDB_DIR']+'/torch/pdb/'+pdbid[1:3]+'/'+pdbid+'.pt')
+        meta = torch.load(params['PDB_DIR']+'/torch/pdb/'+pdbid[1:3]+'/'+pdbid+'.pt', weights_only=False)
 
         # get transform
         xformA = meta['asmb_xform%d'%assem[0]][assem[1]]
@@ -1284,13 +1284,13 @@ def loader_complex_fixbb(item, L_s, taxID, assem, params, negative=False, pick_t
     f1d_t = TemplFeaturizeFixbb(seq)
     # read PDB
     pdbA_id, pdbB_id = pdb_pair.split(':')
-    pdbA = torch.load(params['PDB_DIR']+'/torch/pdb/'+pdbA_id[1:3]+'/'+pdbA_id+'.pt')
-    pdbB = torch.load(params['PDB_DIR']+'/torch/pdb/'+pdbB_id[1:3]+'/'+pdbB_id+'.pt')
+    pdbA = torch.load(params['PDB_DIR']+'/torch/pdb/'+pdbA_id[1:3]+'/'+pdbA_id+'.pt', weights_only=False)
+    pdbB = torch.load(params['PDB_DIR']+'/torch/pdb/'+pdbB_id[1:3]+'/'+pdbB_id+'.pt', weights_only=False)
 
     if len(assem) > 0:
         # read metadata
         pdbid = pdbA_id.split('_')[0]
-        meta = torch.load(params['PDB_DIR']+'/torch/pdb/'+pdbid[1:3]+'/'+pdbid+'.pt')
+        meta = torch.load(params['PDB_DIR']+'/torch/pdb/'+pdbid[1:3]+'/'+pdbid+'.pt', weights_only=False)
 
         # get transform
         xformA = meta['asmb_xform%d'%assem[0]][assem[1]]

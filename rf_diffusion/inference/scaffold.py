@@ -211,7 +211,7 @@ class FileSSADJScaffoldLoader(ScaffoldFirstLoader):
         # Alternatively, you can pass a torch.pt dictionary with <scaffold>_ss, <scaffold>_adj
         self.scaffold_arc = None
         if sg_conf.scaffold_arc:
-            self.scaffold_arc = torch.load(sg_conf.scaffold_arc)
+            self.scaffold_arc = torch.load(sg_conf.scaffold_arc, weights_only=False)
 
         assert self.scaffold_dir or self.scaffold_arc, 'Where are your scaffolds? Either pass scaffoldguided.scaffold_dir of scaffoldguided.scaffold_arc'
         assert bool(self.scaffold_dir) ^ bool(self.scaffold_arc), 'Pick only one of: scaffoldguided.scaffold_dir and scaffoldguided.scaffold_arc'
@@ -363,8 +363,8 @@ class FileSSADJScaffoldLoader(ScaffoldFirstLoader):
             adj (torch.Tensor[long]): Secondary structure adjacency [binderlen or L, binderlen or L]
         """
         if self.scaffold_dir:
-            ss = torch.load(os.path.join(self.scaffold_dir, f'{item.split(".")[0]}_ss.pt'))
-            adj = torch.load(os.path.join(self.scaffold_dir, f'{item.split(".")[0]}_adj.pt'))
+            ss = torch.load(os.path.join(self.scaffold_dir, f'{item.split(".")[0]}_ss.pt'), weights_only=False)
+            adj = torch.load(os.path.join(self.scaffold_dir, f'{item.split(".")[0]}_adj.pt'), weights_only=False)
         else:
             tag_part = item.split(".")[0]
             ss = self.scaffold_arc[tag_part + "_ss"]

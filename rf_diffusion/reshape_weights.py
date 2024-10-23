@@ -58,7 +58,7 @@ def run(conf: DictConfig) -> None:
     model = RFScore(conf.rf.model, diffuser, device).to(device)
 
     map_location = {"cuda:%d"%0: "cpu"}
-    checkpoint = torch.load(conf.ckpt_load_path, map_location=map_location)
+    checkpoint = torch.load(conf.ckpt_load_path, map_location=map_location, weights_only=False)
 
     # Add extra 'model.' prefix if user specifies reshape.legacy_input_weights as True:
     weight_prefix = 'model.' * conf.reshape.legacy_input_weights
