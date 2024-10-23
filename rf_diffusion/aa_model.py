@@ -1061,10 +1061,10 @@ class Model:
         R = 1  # number of recycles (always 1 here as not used in diffusion)
         T = 1  # number of templates (0=X_t, 1=self-conditioning, 2=2d-conditioning)
         L = seq_one_hot.shape[0]  # number of tokens (residues + atoms)
-        N_ATOMS_PER_TOKEN = ChemData().NTOTAL  # number of atoms per token 
-        N_AA_TOKENS = ChemData().NAATOKENS  # number of AA tokens
-        N_TERMINUS = 2  # number of terminus channels
-        N_INDEL = 1  # number of indel channels
+        NUM_ATOMS_PER_TOKEN = ChemData().NTOTAL  # number of atoms per token 
+        NUM_AA_TOKENS = ChemData().NAATOKENS  # number of AA tokens
+        NUM_TERMINI = 2  # number of terminus channels
+        NUM_INDEL = 1  # number of indel channels
 
         ##########################################
         ## Create standard RF2AA input features ##
@@ -1073,29 +1073,29 @@ class Model:
         ### msa_masked ###
         ##################
         # `msa_masked` has channels: N_AA_TOKENS, N_AA_TOKENS, N_INDEL, N_INDEL, N_TERMINUS
-        msa_masked = torch.zeros((B,R,L,2*N_AA_TOKENS + 2*N_INDEL + N_TERMINUS))
+        msa_masked = torch.zeros((B,R,L,2*NUM_AA_TOKENS + 2*NUM_INDEL + NUM_TERMINI))
 
-        msa_masked[..., :N_AA_TOKENS] = seq_one_hot[None, None]
-        msa_masked[..., N_AA_TOKENS:2*N_AA_TOKENS] = seq_one_hot[None, None]
+        msa_masked[..., :NUM_AA_TOKENS] = seq_one_hot[None, None]
+        msa_masked[..., NUM_AA_TOKENS:2*NUM_AA_TOKENS] = seq_one_hot[None, None]
 
         if self.conf.preprocess.annotate_termini:
             # ... annotate N-terminus
-            MSAMASKED_N_TERM = 2*N_AA_TOKENS + 2*N_INDEL
+            MSAMASKED_N_TERM = 2*NUM_AA_TOKENS + 2*NUM_INDEL
             msa_masked[..., MSAMASKED_N_TERM] = (indep.terminus_type == N_TERMINUS).float()
             # ... annotate C-terminus
-            MSAMASKED_C_TERM = 2*N_AA_TOKENS + 2*N_INDEL + 1
+            MSAMASKED_C_TERM = MSAMASKED_N_TERM + 1
             msa_masked[..., MSAMASKED_C_TERM] = (indep.terminus_type == C_TERMINUS).float()
 
 
         ### msa_full ###
         ################
         # `msa_full` has channels: N_AA_TOKENS, N_INDEL, N_TERMINUS
-        msa_full = torch.zeros((B,R,L,N_AA_TOKENS + N_INDEL + N_TERMINUS))
-        msa_full[..., :N_AA_TOKENS] = seq_one_hot[None, None]
+        msa_full = torch.zeros((B,R,L,NUM_AA_TOKENS + NUM_INDEL + NUM_TERMINI))
+        msa_full[..., :NUM_AA_TOKENS] = seq_one_hot[None, None]
         
         if self.conf.preprocess.annotate_termini:
             # ... annotate N-terminus
-            MSAFULL_N_TERM = N_AA_TOKENS + N_INDEL
+            MSAFULL_N_TERM = NUM_AA_TOKENS + NUM_INDEL
             msa_full[..., MSAFULL_N_TERM] = (indep.terminus_type == N_TERMINUS).float()
             # ... annotate C-terminus
             MSAFULL_C_TERM = MSAFULL_N_TERM + 1
@@ -1180,14 +1180,6 @@ class Model:
 
         # ### alpha_t ###
         # ###############
-        # seq_tmp = t1d[...,:-1].argmax(dim=-1).reshape(-1,L)
-        # alpha, _, alpha_mask, _ = util.get_torsions(xyz_t.reshape(-1,L,27,3), seq_tmp, TOR_INDICES, TOR_CAN_FLIP, REF_ANGLES)
-        # alpha_mask = torch.logical_and(alpha_mask, ~torch.isnan(alpha[...,0]))
-        # alpha[torch.isnan(alpha)] = 0.0
-        # alpha = alpha.reshape(1,-1,L,10,2)
-        # alpha_mask = alpha_mask.reshape(1,-1,L,10,1)
-        # alpha_t = torch.cat((alpha, alpha_mask), dim=-1).reshape(1, -1, L, 30)
-
         # ... get torsion angles from templates
         seq_tmp = t1d[...,:-1].argmax(dim=-1).reshape(-1,L)  # ... (everything up to last dim which is timestep embedding)
         alpha, _, alpha_mask, _ = self.converter.get_torsions(xyz_t.reshape(-1,L,ChemData().NTOTAL,3), seq_tmp)
