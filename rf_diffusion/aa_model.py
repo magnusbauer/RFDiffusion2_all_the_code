@@ -1059,9 +1059,7 @@ class Model:
         # Set basic RF2AA input shape variables
         B = 1  # batch size (always 1 here as not used in diffusion)
         R = 1  # number of recycles (always 1 here as not used in diffusion)
-        T = 1  # number of templates (0=X_t, 1=self-conditioning, 2=2d-conditioning)
         L = seq_one_hot.shape[0]  # number of tokens (residues + atoms)
-        NUM_ATOMS_PER_TOKEN = ChemData().NTOTAL  # number of atoms per token 
         NUM_AA_TOKENS = ChemData().NAATOKENS  # number of AA tokens
         NUM_TERMINI = 2  # number of terminus channels
         NUM_INDEL = 1  # number of indel channels
