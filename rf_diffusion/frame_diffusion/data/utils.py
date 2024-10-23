@@ -46,7 +46,7 @@ class CPU_Unpickler(pickle.Unpickler):
     """
     def find_class(self, module, name):
         if module == 'torch.storage' and name == '_load_from_bytes':
-            return lambda b: torch.load(io.BytesIO(b), map_location='cpu')
+            return lambda b: torch.load(io.BytesIO(b), map_location='cpu', weights_only=False)
         else: return super().find_class(module, name)
 
 # def write_pkl(
@@ -65,7 +65,7 @@ def read_pkl(read_path: str, verbose=True, use_torch=False, map_location=None):
     """Read data from a pickle file."""
     try:
         if use_torch:
-            return torch.load(read_path, map_location=map_location)
+            return torch.load(read_path, map_location=map_location, weights_only=False)
         else:
             with open(read_path, 'rb') as handle:
                 return pickle.load(handle)

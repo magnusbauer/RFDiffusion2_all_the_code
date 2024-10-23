@@ -28,6 +28,8 @@ upstream_training_transforms:
     - GenerateSSADJTrainingTransform
     - AddIdealSSTrainingTransform
   configs:
+    FindHotspotsTrainingTransform:
+      hotspot_values_mean: tenA_neighbors
     AddIdealSSTrainingTransform:
       p_ideal_ss: 0.2
       p_loop_frac: 0.2

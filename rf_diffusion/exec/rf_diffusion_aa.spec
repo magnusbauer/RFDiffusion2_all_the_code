@@ -9,9 +9,9 @@ rsync -a --no-g --no-o /home/dimaio/RoseTTAFold2/SE3Transformer/ $APPTAINER_ROOT
 /etc/localtime
 /etc/hosts
 /etc/apt/sources.list
-./Miniconda3-latest-Linux-x86_64.sh /opt/miniconda.sh
-./cutlass-3.5.1 /opt/cutlass
-./biotite /opt/biotite
+/home/dimaio/apptainer/Miniconda3-latest-Linux-x86_64.sh /opt/miniconda.sh
+/home/dimaio/apptainer/cutlass-3.5.1 /opt/cutlass
+/home/dimaio/apptainer/biotite /opt/biotite
 
 %post
 ## Switch shell to bash
@@ -82,6 +82,7 @@ pip install \
    dm-tree==0.1.8 \
    e3nn==0.5.1 \
    einops==0.7.0 \
+   executing==2.0.0 \
    fastparquet==2024.5.0 \
    fire==0.6.0 \
    GPUtil==1.4.0 \
