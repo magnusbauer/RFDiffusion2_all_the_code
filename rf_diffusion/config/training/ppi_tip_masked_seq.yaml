@@ -1,4 +1,4 @@
-# The base yaml for doing protein protein interface models
+# A PPI model that does tip-atom guideposting and has masked sequences
 defaults:
   - ppi
 

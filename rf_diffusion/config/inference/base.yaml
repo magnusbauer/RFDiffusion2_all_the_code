@@ -15,7 +15,7 @@ inference:
   recycle_schedule: null
   softmax_T: 1e-5
   output_prefix: samples/design
-  silent_out: False # Write silent files instead of pdbs. Doesn't support small molecules (yet). No trb unles write_trb=FORCE
+  silent_out: False # Write silent files instead of pdbs. Doesn't support small molecules (yet). No trb unless write_trb=FORCE
   silent_folder_sep: '_-_' # How folders are denoted in silent_file tags. Set to False, null, or '' to disable adding fodler to name
   write_trajectory: False # Boolean. Should the /traj/ video pdb file be generated? Takes up a lot of space in production
   write_trajectory_only_t: [] # list(int). Only write trajectory for these given t steps. Example: [50,40,30,20]

@@ -1,12 +1,12 @@
-# The base yaml for doing protein protein interface models
+# Modification of the PPI model to also do masked sequence during training (allowing inpaint_str and inpaint_seq during inference)
 defaults:
   - ppi
 
 
-#ckpt_load_path: models/rf2a_25c_reshaped_t1d-123_t2d-72.pt
-ckpt_load_path: /net/scratch/bcov/sc/flow/rf_diffusion_repo/rf_diffusion/training/ppi_masked_seq2024-10-14_23:38:23.142564/rank_0/models/RFD_9.pt
-resume: True
-resume_scheduler: True
+ckpt_load_path: models/rf2a_25c_reshaped_t1d-123_t2d-72.pt
+# ckpt_load_path: /net/scratch/bcov/sc/flow/rf_diffusion_repo/rf_diffusion/training/ppi_masked_seq2024-10-14_23:38:23.142564/rank_0/models/RFD_9.pt
+# resume: True
+# resume_scheduler: True
 
 
 # Reshape an old weights file to make ^^ that
