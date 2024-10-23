@@ -2044,51 +2044,15 @@ def add_motif_template(rfi: aa_model.RFI, motif_template: dict, masks_1d: dict) 
     return rfi
 
 
-
-
-def wrap_featurize( indep, 
-                    dataset_conf, 
-                    diffuser, 
-                    extra_tXd, 
+def wrap_featurize( indep_t, 
                     t, 
-                    t_cont, 
-                    tXd_kwargs, 
-                    mask_gen_seed, 
                     is_diffused,
-                    is_masked_seq,
-                    randomize_frames,
-                    eye_frames,
                     model_adaptor,
                     masks_1d,
-                    conf,
                     **kwargs): 
     """
     Wrapper to handle extra tXd, prepro, and adding extra templates.
     """
-
-    # First create the extra t1d/t2d features 
-    indep.extra_t1d, indep.extra_t2d = features.get_extra_tXd(indep, extra_tXd, t_cont=t_cont, **tXd_kwargs)
-
-    # Reseed the RNGs for test stability.
-    run_inference.seed_all(mask_gen_seed) 
-    
-    if conf.motif_only_2d:
-        is_diffused[:] = True
-
-    masks_1d['was_noised_in_3d'] = is_diffused
-
-    # diffuse the indep
-    indep_t, diffuser_out = aa_model.diffuse(dataset_conf, diffuser, indep, is_diffused, t)
-
-    # Frame corruption
-    if randomize_frames:
-        indep_t.xyz = aa_model.randomly_rotate_frames(indep_t.xyz)
-    elif eye_frames: 
-        indep_t.xyz = aa_model.eye_frames(indep_t.xyz)
-    else: 
-        pass 
-    # sequence masking 
-    indep_t = aa_model.mask_seq(indep_t, is_masked_seq) # Changed to new function that allows for multiple polymers
 
     # create RosettaFold input features
     rfi = model_adaptor.prepro(indep_t, t, is_diffused)
@@ -2096,7 +2060,7 @@ def wrap_featurize( indep,
     if kwargs.get('motif_template', None) is not None:
         rfi = add_motif_template(rfi, kwargs['motif_template'], masks_1d)
 
-    return diffuser_out, rfi
+    return rfi
 
 
 class DistilledDataset(data.Dataset):
@@ -2115,9 +2079,6 @@ class DistilledDataset(data.Dataset):
             assert not hasattr(self.conf, 'extra_t1d'), 'extra_t1d has been replaced by extra_tXd'
             assert not hasattr(self.conf, 'extra_t1d_params'), 'extra_t1d has been replaced by extra_tXd'
 
-            
-            # previous version 
-            """
             # ... create extra 1d and 2d track features
             indep.extra_t1d, indep.extra_t2d = features.get_extra_tXd(indep, self.conf.extra_tXd, t_cont=t_cont, **self.conf.extra_tXd_params, **conditions_dict)
 
@@ -2126,37 +2087,36 @@ class DistilledDataset(data.Dataset):
             
             indep_t, diffuser_out = aa_model.diffuse(self.conf, self.diffuser, indep, is_diffused, t)
 
-            # Compute all strictly dependent model inputs from the independent inputs.
+
+            if conf.motif_only_2d:
+                is_diffused[:] = True
+
+            masks_1d['was_noised_in_3d'] = is_diffused
+
+            # diffuse the indep
+            indep_t, diffuser_out = aa_model.diffuse(self.conf, diffuser, indep, is_diffused, t)
+
+            # Frame corruption
             if self.preprocess_param['randomize_frames']:
                 print('randomizing frames')
                 indep_t.xyz = aa_model.randomly_rotate_frames(indep_t.xyz)  # TODO: Q(Woody) Make sure only the diffused frames are randomized?
-
+            elif self.preprocess_param.get('eye_frames', False): 
+                indep_t.xyz = aa_model.eye_frames(indep_t.xyz)
+            else: 
+                pass
             # ... mask the sequence
             indep_t = aa_model.mask_seq(indep_t, is_masked_seq) # Changed to new function that allows for multiple polymers
 
-            # Featurize indep for the RF inputs
-            rfi = self.model_adaptor.prepro(indep_t, t, is_diffused)
-            """
             assert not kwargs.get('t', False), 't should not be passed in kwargs'
-            featurize_kwargs = {'indep'             : indep, 
-                                'dataset_conf'      : self.conf, 
-                                'diffuser'          : self.diffuser, 
-                                'extra_tXd'         : self.conf.extra_tXd, 
+            featurize_kwargs = {'indep_t'           : indep_t, 
                                 't'                 : t, 
-                                't_cont'            : t_cont, 
-                                'tXd_kwargs'        : {**self.conf.extra_tXd_params, **conditions_dict},
-                                'mask_gen_seed'     : mask_gen_seed, 
                                 'is_diffused'       : is_diffused, 
-                                'is_masked_seq'     : is_masked_seq, 
-                                'randomize_frames'  : self.preprocess_param['randomize_frames'], 
-                                'eye_frames'        : self.preprocess_param.get('eye_frames', False), 
                                 'model_adaptor'     : self.model_adaptor,
                                 'masks_1d'          : masks_1d,
-                                'conf'              : conf,
                                 **kwargs}
-            
-            
-            diffuser_out, rfi = wrap_featurize(**featurize_kwargs)
+        
+            rfi = wrap_featurize(**featurize_kwargs)
+
 
             # Sanity checks
             if torch.sum(~is_diffused) > 0:
@@ -2164,6 +2124,8 @@ class DistilledDataset(data.Dataset):
                 assert mydiff < 0.001, f'xyz diff: {mydiff}'
             run_inference.seed_all(mask_gen_seed) # Reseed the RNGs for test stability.
             indep.metadata = metadata
+
+
             return dict(
                 indep=indep,
                 rfi=rfi,

@@ -57,12 +57,15 @@ def diffuse_side_effect(*args, **kwargs):
     """
     Catch inputs/outputs of aa_model.diffuse
     """
-    assert args[4] == 78 
+    assert args[4] == 77
+    new_args = list(args)
+    new_args[4] = 78
 
-    diffuse_return = diffuse_saved(*args, **kwargs)
+    diffuse_return = diffuse_saved(*new_args, **kwargs)
     PATCH_SAVE_DICT['diffuse_return'] = diffuse_return
     PATCH_SAVE_DICT['diffuse_input_args'] = args # (conf, diffuser, indep, is_diffused, t)
     return diffuse_return
+
 
 def get_next_ca_side_effect(*args, **kwargs):
     """
@@ -78,6 +81,7 @@ def get_next_ca_side_effect(*args, **kwargs):
     PATCH_SAVE_DICT['get_next_ca_out_deltas'] = o2
     return o1, o2
 
+
 def get_mu_xt_x0_side_effect(*args, **kwargs):
     """
     Catch inputs/outputs of get_mu_xt_x0
@@ -87,18 +91,17 @@ def get_mu_xt_x0_side_effect(*args, **kwargs):
     PATCH_SAVE_DICT['sigma'] = sigma
     return mu, sigma
 
+
 def wrap_feat_side_effect(**kwargs):
     """
     Catch inputs/outputs of wrap_featurize
     """
     t = kwargs['t']
-    t_cont = kwargs['t_cont']
-    assert math.isclose(t_cont, 77./200)
     assert t == 77
     kwargs['t'] = 78
 
-    diffuser_out, rfi = wrap_featurize_saved(**kwargs)
-    return diffuser_out, rfi
+    rfi = wrap_featurize_saved(**kwargs)
+    return rfi
 
 
 def get_ang_side_effect(*args, **kwargs):

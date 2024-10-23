@@ -59,9 +59,11 @@ def diffuse_side_effect(*args, **kwargs):
     """
     Catch inputs/outputs of aa_model.diffuse
     """
-    assert args[4] == 78 
+    assert args[4] == 51
+    new_args = list(args)
+    new_args[4] = 78 
 
-    diffuse_return = diffuse_saved(*args, **kwargs)
+    diffuse_return = diffuse_saved(*new_args, **kwargs)
     PATCH_SAVE_DICT['diffuse_return'] = diffuse_return
     PATCH_SAVE_DICT['diffuse_input_args'] = args # (conf, diffuser, indep, is_diffused, t)
     return diffuse_return
@@ -97,14 +99,11 @@ def wrap_feat_side_effect(*args, **kwargs):
     Catch inputs/outputs of wrap_featurize
     """
     t = kwargs['t']
-    t_cont = kwargs['t_cont']
-    assert math.isclose(t_cont, 51./200)
     assert t == 51
     kwargs['t'] = 78
-    kwargs['t_cont'] = 78./200
 
-    diffuser_out, rfi = wrap_featurize_saved(*args, **kwargs)
-    return diffuser_out, rfi
+    rfi = wrap_featurize_saved(*args, **kwargs)
+    return rfi
 
 
 def get_t2d_side_effect(*args, **kwargs):
