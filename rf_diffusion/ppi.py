@@ -959,7 +959,7 @@ def get_hotspot_values(indep, is_hotspot, hotspot_values_mean, max_10a_neighbors
 
             # Count the number of residues on other chains that are close to this chain
             not_chain_mask = ~chain_mask
-            num_neighbors[chain_mask] = all_by_close[chain_mask][:,not_chain_mask].sum(axis=-1)
+            num_neighbors[chain_mask] = all_by_close[chain_mask][:,not_chain_mask].sum(axis=-1).float()
 
         # Random +- 1 to avoid exactness
         num_neighbors += torch.rand(len(num_neighbors)) * 2 - 1
