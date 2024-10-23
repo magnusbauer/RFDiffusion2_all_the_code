@@ -836,7 +836,7 @@ class AddIdealSSInferenceTransform:
 
             # ELSE is handled gracefully by the model. None we have to convert to nan manually
             topo_choices = list(conf.upstream_training_transforms.configs.AddIdealSSTrainingTransform.topo_spec_choices)
-            topo_ELSE = len(topo_choices)
+            # topo_ELSE = len(topo_choices)
             topo_choices.append('ELSE')
             topo_None = len(topo_choices)
             topo_choices.append('None')

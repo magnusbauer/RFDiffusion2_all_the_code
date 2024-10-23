@@ -585,11 +585,8 @@ class Dataloader(unittest.TestCase):
 
         chain_A_size = len(indep.chain_masks()[0])
         ideal_ss_mask = indep.extra_t1d[:,-11]
-        ideal_ss = indep.extra_t1d[:,-10]
         avg_scn_mask = indep.extra_t1d[:,-9]
-        avg_scn = indep.extra_t1d[:,-8]
         loop_frac_mask = indep.extra_t1d[:,-7]
-        loop_frac = indep.extra_t1d[:,-6]
 
         assert ideal_ss_mask[:chain_A_size].all()
         assert not ideal_ss_mask[chain_A_size:].any()
