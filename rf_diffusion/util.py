@@ -1,4 +1,4 @@
-
+from __future__ import annotations
 import copy
 import torch
 
@@ -328,32 +328,55 @@ def get_mu_xt_x0(xt, px0, t, schedule, alphabar_schedule, eps=1e-6):
 
     return mu, sigma
 
-def get_t2d(xyz_t, is_sm, atom_frames, use_cb=False):
-    '''
-    Returns t2d for a template.
+def get_t2d(
+        xyz_t: torch.Tensor, 
+        is_sm: torch.Tensor, 
+        atom_frames: torch.Tensor, 
+        use_cb: bool = False
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+    """
+    Computes the t2d features for given backbone (+cb) coordinates.
 
-    Parameters:
-        xyz_t: [T, L, 36, 3]
-        is_sm: [L]
-        atom_frames: [F, 3, 2]
-    '''
+    Args:
+        xyz_t (torch.Tensor): Atom coordinates of shape [T, L, 36, 3], where T is the number of
+            templates, L is the sequence length, and 36 is the number of atoms per residue.
+        is_sm (torch.Tensor): Boolean tensor of shape [L] indicating which residues are part of the
+            structural motif.
+        atom_frames (torch.Tensor): Atom frames of shape [F, 3, 2], where F is the number of frames.
+        use_cb (bool, optional): Whether to use CB atoms in t2d computation. Defaults to False.
 
-    # assert seq_cat.ndim == 1
-    # L = seq_cat.shape[0]
-    # seq_cat = seq_cat[None]
+    Returns:
+        tuple: A tuple containing:
+            - t2d (torch.Tensor): The computed t2d features of shape [L, L, C], where C is the
+                number of t2d channels.
+                The t2d channels contain:
+                - distance bins
+                - angle sin/cos
+                - mask values
+            - mask_t_2d (torch.Tensor): A dummy mask of shape [1, L, L], set to all True 
+                for rf diffusion.
+
+    Note:
+        The 'mask_t_2d' is set to all True because non-existing atoms are removed from the structure
+        upstream of this function.
+    """
     L = xyz_t.shape[1]
 
-    # # This will be all True because of the above
-    # mask_t_2d = rf2aa.util.get_prot_sm_mask(mask_t, seq_cat).to(same_chain.device) # (T, L)
-    # mask_t_2d = mask_t_2d[:,None]*mask_t_2d[:,:,None] # (T, L, L)
-
-    # mask_t_2d = mask_t_2d.float() * same_chain.float()[None] # (ignore inter-chain region)
     # TODO(Look into atom_frames)
     xyz_t_frames = rf2aa.util.xyz_t_to_frame_xyz_sm_mask(xyz_t[None], is_sm, atom_frames[None])
-    mask_t_2d = torch.ones(1,L,L).bool().to(xyz_t_frames.device)  # Q(Woody): Why is this set to all `True` indiscriminately?
+
+    # NOTE: In the original rf2aa code this mask takes a 1d mask for atom presence/absence.
+    #       In the RF diffusio code, we don't have a 1d mask fo ratoms existing/not existing in the
+    #       structure, since non-existing atoms are 'popped' out of the structure upstream of this
+    #       function. We therefore set this mask to all True indiscriminately.
+    mask_t_2d = torch.ones(1,L,L).bool().to(xyz_t_frames.device)
+
+    # Compute t2d from xyz_t_frames
     kinematics_params = copy.deepcopy(rf2aa.kinematics.PARAMS)
     kinematics_params['USE_CB'] = use_cb
     t2d = rf2aa.kinematics.xyz_to_t2d(xyz_t_frames, mask_t_2d[None], params=kinematics_params)
+    
     # Strip batch dimension
     t2d = t2d[0]
+    
     return t2d, mask_t_2d

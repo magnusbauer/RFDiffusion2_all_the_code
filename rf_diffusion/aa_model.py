@@ -1203,37 +1203,9 @@ class Model:
         ######################################
         ## Create additional input features ##
         ######################################
-
-        # Q(Woody): Can we delete this?
-        # #put tensors on device
-        # msa_masked = msa_masked.to(self.device)
-        # msa_full = msa_full.to(self.device)
-        # seq = seq.to(self.device)
-        # xyz_t = xyz_t.to(self.device)
-        # #idx = idx.to(self.device)
-        # t1d = t1d.to(self.device)
-        # # t2d = t2d.to(self.device)
-        # alpha_t = alpha_t.to(self.device)
-
-        ### added_features ###
-        ######################
-        # NB the hotspot input has been removed in this branch.
-        # JW added it back in, using pdb indexing
-
         if self.conf.preprocess.d_t1d == 24: # add hotpot residues
             raise NotImplementedError
-            if self.ppi_conf.hotspot_res is None:
-                print("WARNING: you're using a model trained on complexes and hotspot residues, without specifying hotspots. If you're doing monomer diffusion this is fine")
-                hotspot_idx=[]
-            else:
-                hotspots = [(i[0],int(i[1:])) for i in self.ppi_conf.hotspot_res]
-                hotspot_idx=[]
-                for i,res in enumerate(self.contig_map.con_ref_pdb_idx):
-                    if res in hotspots:
-                        hotspot_idx.append(self.contig_map.hal_idx0[i])
-            hotspot_tens = torch.zeros(L).float()
-            hotspot_tens[hotspot_idx] = 1.0
-            t1d=torch.cat((t1d, hotspot_tens[None,None,...,None].to(self.device)), dim=-1)
+
         # Uncomment to see categorical extra_t1d_v2
         # ic(
         #     indep.extra_t1d.shape,
@@ -1667,12 +1639,12 @@ def slice_indep(indep, pop, break_chirals=False):
     return indep, cross_bonds
  
 def cat_indeps(indeps: list[Indep], same_chain: torch.Tensor):
-    """Concatenate a list of indeps, not assuming any cross-indep bonds."""
+    """Concatenate a list of indeps, assuming no inter-indep bonds."""
     indep = Indep(None, None, None, None, None, None, None, None)
     indep.seq = torch.cat([i.seq for i in indeps])
     indep.xyz = torch.cat([i.xyz for i in indeps])
     indep.idx = torch.cat([i.idx for i in indeps])
-    # ... assume no cross-indep bonds (i.e. bond_feats is block diagonal)
+    # ... assume no inter-indep bonds (i.e. bond_feats is block diagonal)
     indep.bond_feats = torch.block_diag(*(i.bond_feats for i in indeps))
     indep.same_chain = same_chain
     indep.terminus_type = torch.cat([i.terminus_type for i in indeps])
@@ -1743,12 +1715,12 @@ def diffuse(conf, diffuser, indep, is_diffused, t):
     xT = all_atom.atom37_from_rigid(diffuser_out['rigids_t'])
     # Only update heavy atoms from diffused positions
     if conf.diffuser.preserve_motif_sidechains:
-        # Only is_diffused motifs get replaces, should be more correct in general
+        # Only 'is_diffused' motifs get replaced, should be more correct in general
         indep.xyz[is_diffused,:ChemData().NTOTAL] = xT[is_diffused,:ChemData().NTOTAL]
         indep.xyz = indep.xyz[:, :ChemData().NTOTAL]
     else:
         # In this case, all motif atoms are replaced with idealized frames from rigids
-        indep.xyz = xT[:,:ChemData().NTOTAL] #[:,:ChemData().NHEAVY]  # < Q(Woody): this goes from atom37 to 36? looks like not a problem for now since we only use N CA C CB?
+        indep.xyz = xT[:,:ChemData().NTOTAL] # WARNING: this goes from (AF's)atom37 to (our) 36. Looks like not a problem for now since we only use N CA C CB?
     return indep, diffuser_out
 
 

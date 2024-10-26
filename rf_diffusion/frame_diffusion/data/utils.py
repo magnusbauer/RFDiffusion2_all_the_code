@@ -169,7 +169,7 @@ def rigid_frames_from_atom_14(atom_14):
     '''
     n_atoms = atom_14[..., 2,:]
     ca_atoms = atom_14[..., 1,:]
-    c_atoms = atom_14[..., 0,:]  # Q(Woody): would not work with RNA/DNA?
+    c_atoms = atom_14[..., 0,:]
     rigids = rigid_utils.Rigid.from_3_points(
         n_atoms, ca_atoms, c_atoms
     )

@@ -34,7 +34,6 @@ from rf_diffusion.ppi import (PPITrimTailsChain0ComplexTransform, PPIRejectUnfol
 
 ###########################################################
 
-from rf_diffusion import util
 
 logger = logging.getLogger(__name__)
 
@@ -575,11 +574,37 @@ class AddConditionalInputs:
         self.p_is_guidepost_example = p_is_guidepost_example
         self.guidepost_bonds = guidepost_bonds
 
-    def __call__(self, indep, metadata, masks_1d, contig_map=types.SimpleNamespace(), **kwargs):
-        '''
+    def __call__(self, indep: Indep, metadata: dict, masks_1d: dict, contig_map=types.SimpleNamespace(), **kwargs):
+        """
         Duplicates/masks parts of a protein to create a conditional input.
-        i.e. creates guideposts, performs atomization, applies masks.
-        '''
+
+        This method creates guideposts, performs atomization, and creates some extra masks for the updated
+        indep.
+
+        Args:
+            indep: The independent variables of the structure.
+            metadata: Metadata associated with the structure.
+            masks_1d: Dictionary of 1D masks for various features (e.g. for motif, ...).
+            contig_map: A contig map object for storing contig information. (LEGACY)
+            **kwargs: Additional keyword arguments.
+
+        Returns:
+            dict: A dictionary containing the modified inputs and additional information:
+                - indep: The modified independent variables of the structure.
+                - is_diffused: 1D boolean mask indicating what will be diffused.
+                - is_masked_seq: 1D boolean mask indicating what part of the sequence is masked.
+                - atomizer: The atomizer used on the indep to atomize residues.
+                - metadata: The metadata (copied from input).
+                - masks_1d: The 1D masks (copied from input).
+                - contig_as_guidepost: Whether the contig is used as a guidepost.
+                - contig_map: The updated contig map (LEGACY).
+
+        WARNING:
+            The 'is_gp' (is guidepost) mask is not necessarily contiguous at the end of the structure.
+            Atomized residues can appear after guidepost residues and may not be guideposts themselves.
+            This can occur for example with covalent modifications that are not part of the motif, as 
+            these are always atomized but not necessarily part of the motif.
+        """
         is_res_str_shown = masks_1d['input_str_mask']
         is_res_seq_shown = masks_1d['input_seq_mask']
         is_atom_str_shown = masks_1d['is_atom_motif']
@@ -591,12 +616,13 @@ class AddConditionalInputs:
         indep, is_diffused, is_masked_seq, atomizer, contig_map.gp_to_ptn_idx0 = aa_model.transform_indep(indep, is_res_str_shown, is_res_seq_shown, is_atom_str_shown, can_be_gp, use_guideposts, guidepost_bonds=self.guidepost_bonds, metadata=metadata)
 
         masks_1d['is_masked_seq']=is_masked_seq
-        # The previous code here was wrong. All is_gp are not necessarily contiguously at the end.
-        #  Atomized residues come after gp residues (and aren't necessarily gp themselves)  # <--- Q(Woody): Is that still the case?
-        #     is_gp = torch.full((indep.length(),), False)
-        #     if use_guideposts:
-        #         # HACK: gp indices may be lost during atomization, so we assume they are at the end of the protein.
-        #         is_gp[pre_transform_length:] = True
+
+        # WARNING:
+        #  All 'is_gp' are not necessarily contiguously at the end.
+        #  Atomized residues can come after gp residues (and aren't necessarily gp themselves), for 
+        #  example when you have atomized residues that are not part of the motif: 
+        #  This may for instance happen when there are covalent modifications on residues that are not part 
+        #  of the guideposts, because a covalently modified residue is always atomized, but not necessarily motif.
         aa_model.assert_valid_seq_mask(indep, is_masked_seq)
         
         return kwargs | dict(
