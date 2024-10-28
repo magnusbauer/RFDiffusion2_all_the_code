@@ -21,9 +21,5 @@ benchmark:
   pipeline_yaml: 'training_benchmarks_ORI.yaml'
 
 rundir: /net/scratch/ahern/se3_diffusion/training/center_all
-<<<<<<< HEAD
 wandb_prefix: 'center_all'
 wandb_dir: "/scratch/${oc.env:USER}"
-=======
-wandb_prefix: 'center_all'
->>>>>>> 15acd514 (Allow restarting training.)
