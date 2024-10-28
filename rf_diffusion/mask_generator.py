@@ -1813,9 +1813,9 @@ def get_nearby_contigs(indep, atom_mask, low_prop, high_prop, broken_prop):
 
 def generate_masks(
         indep,
-        task: Literal['seq2str', 'diff', 'hal', 'hal_ar', 'str2seq', 'str2seq_full'],
+        task: Literal["diff"],
         loader_params: dict,
-        chosen_dataset: Literal['complex', 'negative', 'pdb_aa', 'compl', 'sm_compl', 'sm_complex'],
+        chosen_dataset: Literal["complex", "negative", "pdb_aa", "compl", "sm_compl", "sm_complex"],
         full_chain: tuple[int, int] | None = None,
         atom_mask=None,
         metadata=None
@@ -1837,6 +1837,7 @@ def generate_masks(
         -loss_str
         -loss_str_2d = additional coordinate pair masking to be applied on top of loss_str 1d masking.
     '''
+    assert task == "diff", "All tasks except 'diff' are deprecated and not supported anymore."
 
     L = indep.length()
 
@@ -1848,32 +1849,9 @@ def generate_masks(
     input_str_mask = torch.ones(L).bool()  # by default, all positions "shown"
     is_atom_motif = None
     can_be_gp = torch.ones(L).bool()  # by default, all positions "can_be_gp"
-    # ... other variables <-- Q(Woody): These seem to be never returned? Are they still needed?
-    input_floating_mask = -1
-    loss_seq_mask = torch.ones(L).bool()
-    loss_str_mask = torch.ones(L).bool()
-    loss_str_mask_2d = torch.ones(L,L).bool()
 
-    # ... task specific processing
-    if task == 'seq2str':
-        '''
-        Classic structure prediction task.
-        '''
-        #input masks
-        # Currently msa loss masking is performed in train_multi_EMA
-        #input_seq_mask = torch.clone(seq2str_mask) #this is not 1D
-        input_str_mask = torch.ones(L).bool()
-        input_floating_mask = torch.ones(L).bool()
-        can_be_gp = input_str_mask.clone()
-
-        #loss masks
-        # Currently msa loss masking is performed in train_multi_EMA
-        # loss_seq_mask = torch.clone(seq2str_mask) #this is not 1D
-        #loss_str_mask = seq2str_str_mask
-        #loss_str_mask_2d = seq2_str_mask[None, :] * seq2str_str_mask[:, None]
-
-    # dj - only perform diffusion hal on pdb and fb for now 
-    elif task == 'diff' and chosen_dataset not in ['complex','negative']:
+    # ... task & dataset specific processing 
+    if chosen_dataset not in ["complex", "negative"]:
         """
         Hal task but created for the diffusion-based training. 
         """ 
@@ -1906,11 +1884,7 @@ def generate_masks(
         pop = mask_dict.pop('pop')
         can_be_gp = mask_dict.pop('can_be_gp')
         mask_name = mask_dict.pop('mask_name')
-
-        ## loss masks 
-        loss_seq_mask[input_str_mask] = False  # Dont score where diffusion mask is True (i.e., where things are not diffused)
-
-    elif task == 'diff' and chosen_dataset == 'complex':
+    elif chosen_dataset == 'complex':
         '''
         Diffusion task for complexes. Default is to diffuse the whole of the complete chain.
         Takes full_chain as input, which is [full_chain_start_idx, full_chain_end_idx]
@@ -1920,197 +1894,11 @@ def generate_masks(
         input_str_mask = torch.clone(full_chain)
         input_seq_mask = torch.clone(input_str_mask)
         can_be_gp = input_str_mask.clone()  # by default, all positions for which structure is shown `can_be_gp`
-
-    elif task == 'hal' and chosen_dataset != 'complex':
-        '''
-        This is Joe's hallucination task, where a contiguous region is masked, along with flanks, and two residues either end are given (but not their angles).
-        Scored on everything but the flank regions (may want to change this to only score central inpainted region
-        '''
-        splice, flank_width = get_masks(L, loader_params['HAL_MASK_LOW'], loader_params['HAL_MASK_HIGH'], loader_params['FLANK_LOW'], loader_params['FLANK_HIGH'])
-
-        #input masks
-        input_seq_mask = torch.ones(L).bool()
-        input_seq_mask[splice[0]-flank_width:splice[1]+flank_width] = False #mask out flanks and central region
-        input_str_mask = torch.clone(input_seq_mask)
-        input_str_mask[splice[0]-1] = True #give structure of two flanking residues
-        input_str_mask[splice[1]] = True
-        can_be_gp = input_str_mask.clone()
-
-        input_floating_mask = torch.ones(L).bool()
-        input_floating_mask[splice[0]-1] = False #immediate two flanking residues are set to false/floating
-        input_floating_mask[splice[1]] = False
-
-
-        #loss masks
-        loss_seq_mask = torch.zeros(L).bool()
-        loss_seq_mask[splice[0]:splice[1]] = True #only apply a loss on the central region
-        loss_str_mask = torch.ones(L).bool()
-        loss_str_mask[splice[0]-flank_width:splice[0]] = False #don't apply a loss in the flanking regions
-        loss_str_mask[splice[1]:splice[1] + flank_width] = False
-        loss_str_mask_2d[~loss_str_mask,:] = False
-        loss_str_mask_2d[:,~loss_str_mask] = False
-
-    elif task == 'hal_ar' and chosen_dataset != 'complex':
-        '''
-        This is Joe's hallucination task, where a contiguous region is masked, along with flanks, and two residues either end are given (but not their angles).
-        This is autoregressive sequence unmasking.
-        Scored on everything but the flank regions (may want to change this to only score central inpainted region
-        '''
-        splice, flank_width = get_masks(L, loader_params['HAL_MASK_LOW'], loader_params['HAL_MASK_HIGH'], loader_params['FLANK_LOW'], loader_params['FLANK_HIGH'])
-
-        to_unmask = random.uniform(0,0.5) #up to 50% of sequence unmasked
-        #input masks
-        input_seq_mask = torch.where(torch.rand(L) < to_unmask, True, False)
-        input_seq_mask[:splice[0]-flank_width] = True
-        input_seq_mask[splice[1]+flank_width:] = True
-        input_seq_mask[splice[0]-flank_width:splice[0]] = False #mask out flanks
-        input_seq_mask[splice[1]:splice[1]+flank_width] = False
-        
-        input_str_mask[splice[0]-flank_width:splice[1]+flank_width] = False
-        input_str_mask[splice[0]-1] = True #give structure of two flanking residues
-        input_str_mask[splice[1]] = True
-        can_be_gp = input_str_mask.clone()
-
-        input_floating_mask = torch.ones(L).bool()
-        input_floating_mask[splice[0]-1] = False #immediate two flanking residues are set to false/floating
-        input_floating_mask[splice[1]] = False
-
-        #loss masks
-        loss_seq_mask = torch.zeros(L).bool()
-        loss_seq_mask[splice[0]:splice[1]] = True #only apply a loss on the central region
-        loss_str_mask = torch.ones(L).bool()
-        loss_str_mask[splice[0]-flank_width:splice[0]] = False #don't apply a loss in the flanking regions
-        loss_str_mask[splice[1]:splice[1] + flank_width] = False
-        loss_str_mask_2d[~loss_str_mask,:] = False
-        loss_str_mask_2d[:,~loss_str_mask] = False
-
-    elif task == 'hal' and chosen_dataset == 'complex':
-        ''' 
-        This is Joe's complex hal task, where a contiguous region is masked.
-        Everything is scored.
-        This is for complexes
-        '''
-        len_full_chain = full_chain[1]-full_chain[0]+1 #full_chain has start and end index
-        high_limit = min([loader_params['COMPLEX_HAL_MASK_HIGH'],len_full_chain-20])
-        low_limit = min([loader_params['COMPLEX_HAL_MASK_LOW'],high_limit])
-        len_to_mask = random.randint(low_limit, high_limit)
-        start = random.randint(full_chain[0], len_full_chain-len_to_mask + full_chain[0])
-        #input masks
-        input_seq_mask = torch.ones(L).bool()
-        input_seq_mask[start:start+len_to_mask] = False
-        input_str_mask = torch.ones(L).bool()
-        input_str_mask[start:start+len_to_mask] = False #not doing flanking masking now
-        can_be_gp = input_str_mask.clone()
-
-        #loss masks
-        loss_seq_mask = torch.zeros(L).bool()
-        loss_seq_mask[start:start+len_to_mask] = True
-        loss_str_mask = torch.ones(L).bool()
-        loss_str_mask_2d[~loss_str_mask,:] = False
-        loss_str_mask_2d[:,~loss_str_mask] = False
-   
-    elif task == 'hal_ar' and chosen_dataset == 'complex':
-        ''' 
-        This is Joe's complex hal task, where a contiguous region is masked, but with some sequence tokens visible (to mimic autoregressive unmasking).
-        Everything is scored.
-        This is for complexes
-        '''
-        len_full_chain = full_chain[1]-full_chain[0]+1 #full_chain has start and end index
-        high_limit = np.min([loader_params['COMPLEX_HAL_MASK_HIGH_AR'],len_full_chain-20])
-        low_limit=np.min([loader_params['COMPLEX_HAL_MASK_LOW_AR'],high_limit])
-        len_to_mask = random.randint(low_limit, high_limit)
-        start = random.randint(full_chain[0], len_full_chain-len_to_mask + full_chain[0])
- 
-        to_unmask = random.uniform(0,0.5) #up to 50% of sequence unmasked
-        #input masks
-        input_seq_mask = torch.where(torch.rand(L) < to_unmask, True, False)
-        input_seq_mask[:start] = True
-        input_seq_mask[start+len_to_mask:] = True
-        input_str_mask = torch.ones(L).bool()
-        input_str_mask[start:start+len_to_mask] = False #not doing flanking masking now. No AR unmasking of structure
-        can_be_gp = input_str_mask.clone()
-
-        #loss masks
-        loss_seq_mask = torch.zeros(L).bool()
-        loss_seq_mask[start:start+len_to_mask] = True
-        loss_str_mask = torch.ones(L).bool()
-        loss_str_mask_2d[~loss_str_mask,:] = False
-        loss_str_mask_2d[:,~loss_str_mask] = False
-
-    elif task == 'str2seq' and chosen_dataset != 'complex':
-        '''
-        This is Joe's str2seq task, where a contiguous region is masked, along with flanks.
-        Everything, but the flanked regions, is scored
-        This is only if the protein is monomeric
-        '''
-        splice, flank_width = get_masks(L, loader_params['HAL_MASK_LOW'], loader_params['HAL_MASK_HIGH'], loader_params['FLANK_LOW'], loader_params['FLANK_HIGH'])
-        #input masks
-        input_seq_mask = torch.ones(L).bool()
-        input_seq_mask[splice[0]-flank_width:splice[1]+flank_width] = False #mask out flanks and central region
-        input_str_mask = torch.ones(L).bool()
-        input_str_mask[splice[0] - flank_width:splice[0]] = False #mask out flanks only (i.e. provide structure of the central region)
-        input_str_mask[splice[1]:splice[1] + flank_width] = False
-        can_be_gp = input_str_mask.clone()
-        input_floating_mask = torch.ones(L).bool()
-
-        #loss masks
-        loss_seq_mask = torch.zeros(L).bool()
-        loss_seq_mask[splice[0]:splice[1]] = True #only apply a loss on sequence recovery in the central region
-        loss_str_mask = torch.clone(input_str_mask) #don't apply a structure loss on the flanking regions
-        loss_str_mask_2d[~loss_str_mask,:] = False
-        loss_str_mask_2d[:,~loss_str_mask] = False 
-    
-    elif task == 'str2seq' and chosen_dataset == 'complex':
-        ''' 
-        This is Joe's str2seq task, where a contiguous region is masked.
-        Everything is scored
-        This is for complexes
-        '''
-        len_full_chain = full_chain[1]-full_chain[0]+1 #full_chain has start and end index
-        high_limit = np.min([loader_params['COMPLEX_HAL_MASK_HIGH'],len_full_chain-20])
-        low_limit=np.min([loader_params['COMPLEX_HAL_MASK_LOW'],high_limit])
-        len_to_mask = random.randint(low_limit, high_limit)
-        start = random.randint(full_chain[0], len_full_chain-len_to_mask + full_chain[0])
-
-        #input masks
-        input_seq_mask = torch.ones(L).bool()
-        input_seq_mask[start:start+len_to_mask] = False
-        input_str_mask = torch.ones(L).bool()
-        can_be_gp = input_str_mask.clone()
- 
-        #loss masks
-        loss_seq_mask = torch.zeros(L).bool()
-        loss_seq_mask[start:start+len_to_mask] = True
-        loss_str_mask = torch.clone(input_str_mask)
-        loss_str_mask_2d[~loss_str_mask,:] = False
-        loss_str_mask_2d[:,~loss_str_mask] = False
-
-    elif task == 'str2seq_full':
-        '''
-        This is David's str2seq task, where most (default 90-100%) of sequence is masked.
-        Score on everything.
-        '''
-        #NOTE this has not been implemented yet for e.g. complexes
-        rand_prop = random.uniform(loader_params['STR2SEQ_FULL_LOW'], loader_params['STR2SEQ_FULL_HIGH']) #random proportion masked, between two extremes
-        
-        #input masks
-        input_seq_mask = torch.rand(L).bool() < rand_prop
-        input_str_mask = torch.ones(L).bool()
-        can_be_gp = input_str_mask.clone()
-        input_floating_mask = torch.ones(L).bool()
-
-        #loss masks
-        loss_seq_mask = torch.clone(input_seq_mask)
-        loss_str_mask = torch.ones(L).bool() #apply a loss on the whole structure        
-        loss_str_mask_2d[~loss_str_mask,:] = False
-        loss_str_mask_2d[:,~loss_str_mask] = False
- 
     else:
-        sys.exit(f'Masks cannot be generated for the {task} task!')
+        sys.exit(f"Masks cannot be generated for the {task} task!. NOTE: All tasks except 'diff' are deprecated and not supported anymore.")
 
-    # ... task specific sanity checks
-    if task != 'seq2str':
-       assert torch.sum(~input_seq_mask) > 0, f'Task = {task}, dataset = {chosen_dataset}, full chain = {full_chain}'
+    # ... sanity check
+    assert torch.sum(~input_seq_mask) > 0, f'Task = {task}, dataset = {chosen_dataset}, full chain = {full_chain}'
 
     # ... log task, dataset & mask selection
     logger.info(f'Mask selection: Task = {task}, dataset = {chosen_dataset}, mask = {mask_name}')
