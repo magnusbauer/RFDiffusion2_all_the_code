@@ -60,8 +60,19 @@ def rigid_loss(r):
         atom_names = [n.strip() for n in ChemData().aa2long[res][:14] if n is not None]
         is_atom_str_shown[i] = atom_names
     is_res_str_shown = torch.zeros((indep_motif_des.length(),)).bool()
-    true_atomized, is_diffused, is_masked_seq, atomizer = atomize.atomize_and_mask(indep_motif_native, is_res_str_shown, is_atom_str_shown)
-    pred_atomized, _, _, _                              = atomize.atomize_and_mask(indep_motif_des, is_res_str_shown, is_atom_str_shown)
+    # Q(Woody): These 2 function calls have an invalid signature <-- can we delete them?
+    true_atomized, is_diffused, is_masked_seq, atomizer = atomize.atomize_and_mask(
+        indep=indep_motif_native,
+        is_res_str_shown=is_res_str_shown,
+        is_res_seq_shown=torch.ones(indep_motif_native.length()).bool(),
+        is_atom_str_shown=is_atom_str_shown,
+    )
+    pred_atomized, _, _, _                              = atomize.atomize_and_mask(
+        indep=indep_motif_des,
+        is_res_str_shown=is_res_str_shown,
+        is_res_seq_shown=torch.ones(indep_motif_des.length()).bool(),
+        is_atom_str_shown=is_atom_str_shown,
+    )
 
     rigid_losses = bond_geometry.calc_rigid_loss(true_atomized, pred_atomized.xyz, is_diffused)
 

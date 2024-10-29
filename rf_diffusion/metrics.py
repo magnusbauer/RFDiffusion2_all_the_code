@@ -327,8 +327,13 @@ def all_atom_rigid(indep, true_crds, pred_crds, atomizer_spec, **kwargs):
     xyz_ideal = xyz_ideal[0] # Remove null batch dimension
     indep.xyz[was_gp, 4:] = xyz_ideal[:, 4:14]
 
-    def atomize_fully(indep):
-        return atomize.atomize_and_mask(indep, ~indep.is_sm, {})
+    def atomize_fully(indep): 
+        return atomize.atomize_and_mask(
+            indep=indep,
+            is_res_str_shown=~indep.is_sm,
+            is_res_seq_shown=torch.ones(indep.length()).bool(),  # Q(Woody): This function calls an invalid signature <-- can we delete it?
+            is_atom_str_shown={},
+        )
     
     indep_pred.seq[~indep.is_sm & ~was_gp] = 0
     indep.seq[~indep.is_sm & ~was_gp] = 0
