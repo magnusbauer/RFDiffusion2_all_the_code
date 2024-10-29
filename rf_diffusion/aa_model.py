@@ -112,13 +112,15 @@ class Indep:
     idx: torch.Tensor # [L] 
 
     # SM specific
-    bond_feats: torch.Tensor
-    chirals: torch.Tensor
-    same_chain: torch.Tensor
-    terminus_type: torch.Tensor
-    extra_t1d: torch.Tensor = dataclasses.field(default_factory=lambda: None)
-    extra_t2d: torch.Tensor = dataclasses.field(default_factory=lambda: None)
-    is_gp: torch.Tensor = None
+    bond_feats: torch.Tensor # [L, L, ?]
+    chirals: torch.Tensor # [n_chiral, 5]
+    same_chain: torch.Tensor # [L, L]
+    terminus_type: torch.Tensor # [L]
+
+    # Conditioning specific
+    extra_t1d: torch.Tensor = dataclasses.field(default_factory=lambda: None)  # [L, ?]
+    extra_t2d: torch.Tensor = dataclasses.field(default_factory=lambda: None)  # [L, L, ?]
+    is_gp: torch.Tensor = None  # [L]
 
     def __post_init__(self):
         '''
@@ -2468,6 +2470,7 @@ def make_guideposts(indep: Indep, is_motif: torch.Tensor):
     return indep_cat, gp_to_ptn_idx0
 
 def transform_indep(
+        *,
         indep: Indep,
         is_res_str_shown: torch.Tensor,
         is_res_seq_shown: torch.Tensor,

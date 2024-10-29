@@ -183,6 +183,7 @@ def create_masks_str_seq(
     return is_diffused, is_masked_seq
 
 def atomize_and_mask(
+        *,
         indep: aa_model.Indep, 
         is_res_str_shown: torch.Tensor, 
         is_res_seq_shown: torch.Tensor, 

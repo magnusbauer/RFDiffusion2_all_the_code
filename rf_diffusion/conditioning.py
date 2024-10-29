@@ -613,7 +613,16 @@ class AddConditionalInputs:
         # Sample guide posts with probability p_is_guidepost_example, or simply set true or false if p_is_guidepost_example is a boolean
         use_guideposts = self.p_is_guidepost_example if isinstance(self.p_is_guidepost_example, bool) else (torch.rand(1) < self.p_is_guidepost_example).item()
         masks_1d['use_guideposts'] = use_guideposts
-        indep, is_diffused, is_masked_seq, atomizer, contig_map.gp_to_ptn_idx0 = aa_model.transform_indep(indep, is_res_str_shown, is_res_seq_shown, is_atom_str_shown, can_be_gp, use_guideposts, guidepost_bonds=self.guidepost_bonds, metadata=metadata)
+        indep, is_diffused, is_masked_seq, atomizer, contig_map.gp_to_ptn_idx0 = aa_model.transform_indep(
+            indep=indep,
+            is_res_str_shown=is_res_str_shown,
+            is_res_seq_shown=is_res_seq_shown,
+            is_atom_str_shown=is_atom_str_shown,
+            can_be_gp=can_be_gp,
+            use_guideposts=use_guideposts,
+            guidepost_bonds=self.guidepost_bonds,
+            metadata=metadata
+        )
 
         masks_1d['is_masked_seq']=is_masked_seq
 
