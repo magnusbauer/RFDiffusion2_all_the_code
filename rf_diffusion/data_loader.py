@@ -1896,7 +1896,8 @@ class DistilledDataset(data.Dataset):
             # ... create extra 1d and 2d track features
             indep.extra_t1d, indep.extra_t2d = features.get_extra_tXd(indep, self.conf.extra_tXd, t_cont=t_cont, **self.conf.extra_tXd_params, **conditions_dict)
 
-            run_inference.seed_all(mask_gen_seed) # Reseed the RNGs for test stability.
+            # ... re-seed the RNGs for test stability
+            run_inference.seed_all(mask_gen_seed)
             
             indep_t, diffuser_out = aa_model.diffuse(self.conf, self.diffuser, indep, is_diffused, t)
 

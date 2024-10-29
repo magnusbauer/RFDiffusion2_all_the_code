@@ -105,6 +105,8 @@ def chain_start_end_from_hal(hal):
 
 @dataclass
 class Indep:
+    # WARNING: Be careful with the order of the fields as this will change the instantiation order 
+    #   where indeps are created without named arguments.
     seq: torch.Tensor # [L]
     xyz: torch.Tensor # [L, 36, 3]
     idx: torch.Tensor # [L] 
@@ -132,23 +134,26 @@ class Indep:
         copy.deepcopy can only copy leaf tensors and the 
         fields are not always leaves.
         '''
+
+        _deepcopy_detached = lambda x: copy.deepcopy(x.detach()) if hasattr(x, 'detach') else copy.deepcopy(x)  # noqa: E731
+
         indep_copy = self.__class__(
-            copy.deepcopy(self.seq.detach()),
-            copy.deepcopy(self.xyz.detach()),
-            copy.deepcopy(self.idx.detach()),
-            copy.deepcopy(self.bond_feats.detach()),
-            copy.deepcopy(self.chirals.detach()),
-            copy.deepcopy(self.same_chain.detach()),
-            copy.deepcopy(self.terminus_type.detach()),
-            copy.deepcopy(self.extra_t1d),
-            None if not hasattr(self, 'extra_t2d') or self.extra_t2d is None else copy.deepcopy(self.extra_t2d), # Only doesn't exist in tests
-            None if self.is_gp is None else self.is_gp.detach(), # None only occurs in unit tests
+            seq=_deepcopy_detached(self.seq),
+            xyz=_deepcopy_detached(self.xyz),
+            idx=_deepcopy_detached(self.idx),
+            bond_feats=_deepcopy_detached(self.bond_feats),
+            chirals=_deepcopy_detached(self.chirals),
+            same_chain=_deepcopy_detached(self.same_chain),
+            terminus_type=_deepcopy_detached(self.terminus_type),
+            extra_t1d=_deepcopy_detached(self.extra_t1d),
+            extra_t2d=None if not hasattr(self, 'extra_t2d') else _deepcopy_detached(self.extra_t2d), # Only doesn't exist in tests
+            is_gp=_deepcopy_detached(self.is_gp) # None only occurs in unit tests
         )
+
+        # Special extra fields
         if hasattr(self, 'origin'):
-            if self.origin is None:
-                indep_copy.origin = None
-            else:
-                indep_copy.origin = copy.deepcopy(self.origin.detach())
+            indep_copy.origin = _deepcopy_detached(self.origin)
+
         return indep_copy
 
     @property
@@ -838,14 +843,15 @@ def make_indep(pdb, ligand='', return_metadata=False):
     xyz[is_sm, 0] = 0
     xyz[is_sm, 2] = 0
     indep = Indep(
-        seq,
-        xyz,
-        idx_pdb,
+        seq=seq,
+        xyz=xyz,
+        idx=idx_pdb,
         # SM specific
-        bond_feats,
-        chirals,
-        same_chain,
-        terminus_type)
+        bond_feats=bond_feats,
+        chirals=chirals,
+        same_chain=same_chain,
+        terminus_type=terminus_type,
+    )
     if return_metadata:
         ligand_name_arr = []
         for l, name in zip(Ls, N_poly * [''] + ligands):
@@ -1430,15 +1436,15 @@ def adaptor_fix_bb_indep(out):
     terminus_type[is_c_terminus] = C_TERMINUS
 
     indep = Indep(
-        rf2aa.tensor_util.assert_squeeze(seq), # [L]
-        true_crds[:,:ChemData().NHEAVY], # [L, N_HEAVY, 3]  # N_HEAVY = 23
-        idx_pdb,
-
+        seq=rf2aa.tensor_util.assert_squeeze(seq), # [L]
+        xyz=true_crds[:,:ChemData().NHEAVY], # [L, N_HEAVY, 3]  # N_HEAVY = 23
+        idx=idx_pdb,
         # SM specific
-        bond_feats,
-        chirals,
-        same_chain.bool(),
-        terminus_type)
+        bond_feats=bond_feats,
+        chirals=chirals,
+        same_chain=same_chain.bool(),
+        terminus_type=terminus_type,
+    )
     return indep, atom_mask
 
 def deatomize_covales(indep, atom_mask):
@@ -1654,7 +1660,15 @@ def slice_indep(indep: Indep, pop: torch.Tensor, break_chirals: bool = False) ->
  
 def cat_indeps(indeps: list[Indep], same_chain: torch.Tensor) -> Indep:
     """Concatenate a list of indeps, assuming no inter-indep bonds."""
-    indep = Indep(None, None, None, None, None, None, None, None)
+    indep = Indep(
+        seq=None,
+        xyz=None,
+        idx=None,
+        bond_feats=None,
+        chirals=None,
+        same_chain=None,
+        terminus_type=None,
+    )
     indep.seq = torch.cat([i.seq for i in indeps])
     indep.xyz = torch.cat([i.xyz for i in indeps])
     indep.idx = torch.cat([i.idx for i in indeps])
@@ -2354,7 +2368,7 @@ class AtomizeResidues:
             
         return new_atomization_state, deatomized_labels, deatomized_idx0
             
-    def get_atomized_res_idx_from_res(self):        
+    def get_atomized_res_idx_from_res(self) -> dict[int, int]:
         atomized_res_idx_from_res = {
             atomized_label.coarse_idx0: atomized_res_idx for atomized_res_idx, atomized_label 
             in enumerate(self.atomized_state) if atomized_label.atom_name is None
