@@ -29,7 +29,7 @@ import rf_diffusion.rotation_conversions as rotation_conversions
 import rf_diffusion.atomize as atomize
 from rf_diffusion import write_file
 from rf_diffusion.contigs import ContigMap
-from rf_diffusion.atomization_primitives import AtomizedLabel, AtomizerSpec
+from rf_diffusion.atomization_primitives import AtomizedLabel, AtomizerSpec  # noqa: F401
 
 import rf_diffusion.frame_diffusion.data.utils as du
 from rf_diffusion.frame_diffusion.data import all_atom
@@ -37,7 +37,6 @@ from rf_diffusion.frame_diffusion.data import all_atom
 
 logger = logging.getLogger(__name__)
 
-AtomizerSpec.__sizeof__(None) # To avoid Ruff unused import error. aa_model.AtomizerSpec used elsewhere
 import rf_diffusion.nucleic_compatibility_utils as nucl_utils
 
 # CONSTANTS
@@ -2463,16 +2462,28 @@ GP_BOND = 7
 BACKBONE_BOND = 5
 """Integer used to indicate a backbone bond in `bond_feats`."""
 
-def make_guideposts(indep: Indep, is_motif: torch.Tensor):
+def make_guideposts(indep: Indep, is_motif: torch.Tensor) -> tuple[Indep, dict[int, int]]:
     """
-    Add guidepost residues (duplicates of residues set to be guideposted), atomize residues, and prepare is_diffused and is_seq_diffused
+    Creates guidepost residues by duplicating selected residues from the input structure. Guidepost residues are placed 
+    on separate chains and connected to their original residues via special guidepost bonds.
 
-    Inputs:
-        indep (Indep): indep
-        is_motif (torch.Tensor[bool]): Is the backbone of this residue/atom shown during diffusion? [L]
+    Args:
+    indep (Indep): Input structure containing sequence, coordinates, and other features
+    is_motif (torch.Tensor[bool]): Boolean mask of length L indicating which residues should be duplicated as 
+        guideposts. True indicates the residue will be duplicated.
 
     Returns:
-        indep (Indep): The indep but with guidepost residues added and residues atomized [new_L] = [L + n_gp]
+        tuple[Indep, dict[int, int]]:
+            - indep (Indep): Modified structure with guidepost residues added. Length is L + n_gp where n_gp is the 
+                number of guideposts added. Guidepost residues are appended at the end.
+            - gp_to_ptn_idx0 (dict[int, int]): Mapping from guidepost residue indices to their original residue 
+                indices. Keys are indices in range [L, L+n_gp), values are indices in range [0, L).
+
+    Note:
+        - Guidepost residues are placed CHAIN_GAP (33) residues apart. With a 32-length relative sequence encoding this
+            will put them on separate chains.
+        - Guidepost bonds are indicated by GP_BOND (7) in the bond_feats matrix
+        - Small molecules (indep.is_sm == True) cannot be made into guideposts
     """
     # If there is no motif, return the indep unchanged
     if is_motif.sum() == 0:
