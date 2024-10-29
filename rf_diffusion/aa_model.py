@@ -2369,13 +2369,51 @@ class AtomizeResidues:
         return new_atomization_state, deatomized_labels, deatomized_idx0
             
     def get_atomized_res_idx_from_res(self) -> dict[int, int]:
+        """Maps pre-atomized residue indices to post-atomized residue indices for non-atomized residues only.
+        
+        Returns a dictionary mapping original residue indices to their new indices after atomization, but only for 
+        residues that were not atomized. For atomized residues, see get_atom_idx_by_res().
+
+        Example:
+            If residues 0 and 140 are atomized, the returned dict would be:
+            {
+                1: 0,    # Original residue 1 is now at index 0
+                2: 1,    # Original residue 2 is now at index 1
+                ...
+                139: 138,  # Original residue 139 is now at index 138
+                141: 139,  # Original residue 141 is now at index 139
+                ...
+            }
+            Note that residues 0 and 140 are not in the mapping since they were atomized.
+
+        Returns:
+            dict[int, int]: Mapping from original residue indices to new indices after atomization
+        """
         atomized_res_idx_from_res = {
             atomized_label.coarse_idx0: atomized_res_idx for atomized_res_idx, atomized_label 
             in enumerate(self.atomized_state) if atomized_label.atom_name is None
         }
         return atomized_res_idx_from_res
     
-    def get_atom_idx_by_res(self):
+    def get_atom_idx_by_res(self) -> dict[int, torch.Tensor]:
+        """Maps pre-atomized residue indices to post-atomized atom indices for atomized residues only.
+        
+        For residues that were atomized during transformation, returns a mapping from their original residue index to the 
+        indices of their constituent atoms in the transformed structure. For non-atomized residues, 
+        see get_atomized_res_idx_from_res().
+
+        Returns:
+            dict[int, torch.Tensor]: A dictionary mapping original residue indices to tensors containing the indices of 
+                their constituent atoms after atomization. Only includes residues that were atomized.
+
+        Example:
+            If residue 0 and 140 are atomized and put at the end of a 253-residue sequence, the returned dict would be:
+            {
+                0: tensor([251, 252, 253, 254]),  # 251 because 0 and 140 are moved to end
+                140: tensor([255, 256, 257, 258, 259, 260, 261, 262])
+            }
+        """
+
         atom_idx_by_res = defaultdict(list)
         for atomized_res_idx, atomized_label in enumerate(self.atomized_state):
             if atomized_label.atom_name is not None:

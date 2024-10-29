@@ -16,7 +16,7 @@ def set_nonexistant_atoms_to_nan(xyz, seq, H_exists=False):
     xyz[~atom_mask] = torch.nan
     return xyz
 
-def atomized_indices_atoms(atomizer, atom_names_by_res):
+def atomized_indices_atoms(atomizer: aa_model.AtomizeResidues, atom_names_by_res: dict[int, list[str]]) -> list[int]:
     atom_idx_by_res = atomizer.get_atom_idx_by_res()
     named_i = []
     for res_i, atom_names in atom_names_by_res.items():
@@ -69,7 +69,9 @@ def atomized_indices_res(
     Raises:
         - KeyError: If allow_missing_residue is False and a residue index is not found in the atomized structure.
     """
-    atomized_res_idx_from_res = atomizer.get_atomized_res_idx_from_res()
+    # ... get mapping of pre-atomized residue idx to post-atomized residue idx (for non-atomized residues only!)
+    atomized_res_idx_from_res: dict[int, int] = atomizer.get_atomized_res_idx_from_res()
+
     atomized_res_idx = []
     mask_idx = torch.nonzero(mask)[:,0]
     for i in mask_idx:
@@ -95,12 +97,12 @@ def get_res_atom_name_by_atomized_idx(atomizer):
             )
     return res_idx_atom_name_by_atomized_idx
 
-def res_atom_name(atomizer, atomized_idx):
+def res_atom_name(atomizer: aa_model.AtomizeResidues, atomized_idx: torch.Tensor) -> list[tuple[int, str]]:
     '''
     Params:
         Indices of atoms in the atomized protein
     Returns:
-        List o (0-index residue, atom_name) from pre-atomization.
+        List of (0-index residue, atom_name)-tuples from pre-atomization.
     '''
     res_idx_atom_name_by_atomized_idx = get_res_atom_name_by_atomized_idx(atomizer)
     return [res_idx_atom_name_by_atomized_idx[i.item()] for i in atomized_idx]
