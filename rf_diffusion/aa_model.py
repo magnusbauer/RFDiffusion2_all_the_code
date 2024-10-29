@@ -34,7 +34,6 @@ from rf_diffusion.atomization_primitives import AtomizedLabel, AtomizerSpec
 import rf_diffusion.frame_diffusion.data.utils as du
 from rf_diffusion.frame_diffusion.data import all_atom
 
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -1049,8 +1048,7 @@ class Model:
             - indep (aa_model.Indep): Indep dataclass
             - t (float): current timestep 
             - is_diffused (torch.Tensor): mask of which atoms are diffused 
-            - indep_unnoised (optional, aa_model.Indep): Indep with native structure info, before diffusion
-                                             but after insert contig etc. 
+
         Returns:
             - rfi (aa_model.RFI): RFI dataclass with features ready for input to model
                 - seq (L,22) one-hot sequence
@@ -2579,7 +2577,12 @@ def transform_indep(
         # convert is_atom_str_shown keys to strings if they are tensors
         is_atom_str_shown = {k.item() if hasattr(k, 'item') else k :v for k,v in is_atom_str_shown.items()}
         # actually atomize
-        indep, tmp_is_diffused, tmp_is_masked_seq, atomizer = atomize.atomize_and_mask(indep, is_res_str_shown, is_res_seq_shown, is_atom_str_shown)
+        indep, tmp_is_diffused, tmp_is_masked_seq, atomizer = atomize.atomize_and_mask(
+            indep=indep,
+            is_res_str_shown=is_res_str_shown,
+            is_res_seq_shown=is_res_seq_shown,
+            is_atom_str_shown=is_atom_str_shown
+        )
         # convert back to "shown" notation
         is_res_str_shown, is_res_seq_shown = ~tmp_is_diffused, ~tmp_is_masked_seq
 
