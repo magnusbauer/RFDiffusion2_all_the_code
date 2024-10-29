@@ -47,7 +47,28 @@ def atomized_indices_res_i(atomizer, idx):
     return atomized_res_idx
 
 
-def atomized_indices_res(atomizer, mask, allow_missing_residue=False):
+def atomized_indices_res(
+        atomizer: aa_model.AtomizeResidues, 
+        mask: torch.Tensor, 
+        allow_missing_residue: bool=False
+    ) -> list[int]:
+    """
+    Converts residue indices from a pre-atomized mask to their corresponding indices in the atomized protein structure.
+
+    Args:
+        - atomizer (AtomizeResidues): Object that handles the mapping between atomized and non-atomized protein 
+            representations.
+        - mask (torch.Tensor): Binary mask tensor for the pre-atomized protein, where True indicates residues to convert.
+        - allow_missing_residue (bool, optional): If True, skips residues that don't have a mapping in the atomized 
+            structure. Defaults to False.
+
+    Returns:
+        - list[int]: List of indices in the atomized protein structure corresponding to the True positions in the input 
+            mask.
+
+    Raises:
+        - KeyError: If allow_missing_residue is False and a residue index is not found in the atomized structure.
+    """
     atomized_res_idx_from_res = atomizer.get_atomized_res_idx_from_res()
     atomized_res_idx = []
     mask_idx = torch.nonzero(mask)[:,0]
@@ -120,27 +141,37 @@ def atomized_indices_from_preatomized_res_indices(atomizer, res_indices):
 
     return torch.tensor(o)
 
-def atom_indices(atomizer, res_mask, atom_names_by_res, allow_missing_residue=False):
+def atom_indices(
+        atomizer: aa_model.AtomizeResidues, 
+        res_mask: torch.Tensor, 
+        atom_names_by_res: dict[int, list[str]], 
+        allow_missing_residue: bool=False
+    ) -> torch.Tensor:
     res_i = atomized_indices_res(atomizer, res_mask, allow_missing_residue=allow_missing_residue)
     atom_i = atomized_indices_atoms(atomizer, atom_names_by_res)
     assert set(res_i).isdisjoint(set(atom_i))
     return res_i + atom_i
 
 def create_masks(
-        atomizer, 
+        atomizer: aa_model.AtomizeResidues, 
         is_res_str_shown: torch.Tensor,  # e.g. [True, False, True, ...], shape [L]
         is_res_seq_shown: torch.Tensor,  # e.g. [True, False, True, ...], shape [L]
         is_atom_str_shown: dict[int, list[str]]  # e.g. {23: [" N " , " CA "], ...}
 ) -> tuple[torch.Tensor, torch.Tensor]:
 
     # Show all atoms for residues which have an atom motif
-    is_atom_seq_shown = {res_i: [e for e in ChemData().aa2long[atomizer.deatomized_state[res_i].aa][:ChemData().NHEAVYPROT] if e is not None]
+    is_atom_seq_shown = {res_i: [elt for elt in ChemData().aa2long[atomizer.deatomized_state[res_i].aa][:ChemData().NHEAVYPROT] if elt is not None]
                             for res_i in is_atom_str_shown.keys()}
     
     return create_masks_str_seq(atomizer, is_res_str_shown, is_res_seq_shown, is_atom_str_shown, is_atom_seq_shown)
 
 def create_masks_str_seq(
-        atomizer, is_res_str_shown, is_res_seq_shown, is_atom_str_shown, is_atom_seq_shown) -> tuple[torch.Tensor, torch.Tensor]:
+        atomizer: aa_model.AtomizeResidues, 
+        is_res_str_shown: torch.Tensor, 
+        is_res_seq_shown: torch.Tensor, 
+        is_atom_str_shown: dict[int, list[str]], 
+        is_atom_seq_shown: dict[int, list[str]]
+    ) -> tuple[torch.Tensor, torch.Tensor]:
     L = len(atomizer.atomized_state)
     str_shown_indices = atom_indices(atomizer, is_res_str_shown, is_atom_str_shown, allow_missing_residue=True)
     seq_shown_indices = atom_indices(atomizer, is_res_seq_shown, is_atom_seq_shown, allow_missing_residue=True)
