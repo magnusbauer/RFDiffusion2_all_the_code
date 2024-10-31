@@ -92,6 +92,11 @@ class GenerateMasks:
                  metadata: dict, 
                  mask_gen_seed: int, 
                  **kwargs):
+        # Asserts for deprecated arguments
+        assert task == "diff", "All tasks except 'diff' are deprecated and not supported anymore."
+        assert chosen_dataset not in ["complex", "negative"], "The chosen dataset is not directly supported anymore. (they may work)"
+        assert "full_chain" not in kwargs, "The full_chain argument is not supported anymore."
+
         # Mask the independent inputs.
         run_inference.seed_all(mask_gen_seed) # Reseed the RNGs for test stability.
         masks_1d = mask_generator.generate_masks(
@@ -708,7 +713,7 @@ class ExpandConditionsDict:
         )
 
 
-def get_contig_map(indep, input_str_mask, is_atom_motif):
+def get_contig_map(indep: Indep, input_str_mask: torch.Tensor, is_atom_motif: dict[int, list[str]]) -> ContigMap:
 
     motif_resis = sorted(list(set(
         indep.idx[input_str_mask].tolist() +

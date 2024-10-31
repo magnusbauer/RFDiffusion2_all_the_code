@@ -347,56 +347,6 @@ def default(pdb):
     return record
 
 
-
-def rigid_loss(r):
-    trb = rf_diffusion.dev.analyze.get_trb(r)
-    
-    def get_motif_indep(pdb, motif_i):
-        indep = aa_model.make_indep(pdb)
-        is_motif = aa_model.make_mask(motif_i, indep.length())
-        indep_motif, _ = aa_model.slice_indep(indep, is_motif)
-        return indep_motif
-    
-    
-    indep_motif_native = get_motif_indep(r['inference.input_pdb'], trb['con_ref_idx0'])
-    indep_motif_des = get_motif_indep(rf_diffusion.dev.analyze.get_design_pdb(r), trb['con_hal_idx0'])
-    i_inv = torch.argsort(torch.tensor(trb['con_hal_idx0']))
-    i_inv = torch.argsort(i_inv)
-    aa_model.rearrange_indep(indep_motif_des, i_inv)
-    
-    # ic(
-    #     indep_motif_des.seq,
-    #     indep_motif_native.seq,
-    # )
-    
-    is_atom_str_shown = {}
-    for i in range(indep_motif_des.length()):
-        res = indep_motif_des.seq[i]
-        atom_names = [n.strip() for n in ChemData().aa2long[res][:14] if n is not None]
-        is_atom_str_shown[i] = atom_names
-    is_res_str_shown = torch.zeros((indep_motif_des.length(),)).bool()
-    # Q(Woody): These 2 function calls have an invalid signature <-- can we delete them?
-    true_atomized, is_diffused, is_masked_seq, atomizer = atomize.atomize_and_mask(
-        indep=indep_motif_native,
-        is_res_str_shown=is_res_str_shown,
-        is_res_seq_shown=torch.ones(indep_motif_native.length()).bool(),
-        is_atom_str_shown=is_atom_str_shown,
-    )
-    pred_atomized, _, _, _                              = atomize.atomize_and_mask(
-        indep=indep_motif_des,
-        is_res_str_shown=is_res_str_shown,
-        is_res_seq_shown=torch.ones(indep_motif_des.length()).bool(),
-        is_atom_str_shown=is_atom_str_shown,
-    )
-
-    rigid_losses = bond_geometry.calc_rigid_loss(true_atomized, pred_atomized.xyz, is_diffused)
-
-    return rigid_losses.get('motif_atom_determined', torch.tensor(float('nan'))).item()
-
-def invert(d):
-   return {v: k for k,v in d.items()}
-
-
 from rf_diffusion.dev.show_bench import parse_traj
 def get_last_px0(row):
     px0_traj_path = analyze.get_traj_path(row, 'X0')

@@ -80,7 +80,7 @@ def atomized_indices_res(
         atomized_res_idx.append(atomized_res_idx_from_res[i.item()])
     return atomized_res_idx
 
-def get_res_atom_name_by_atomized_idx(atomizer):
+def get_res_atom_name_by_atomized_idx(atomizer) -> dict[int, tuple[int, str]]:
     '''
     Returns a dictionary mapping the index of an atom in the atomized protein
     to the original (0-index residue, atom_name) from pre-atomization.

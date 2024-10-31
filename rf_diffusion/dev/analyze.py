@@ -1474,39 +1474,6 @@ def get_motif_indep(pdb, motif_i):
     indep_motif, _ = aa_model.slice_indep(indep, is_motif)
     return indep_motif
 
-def rigid_loss(r):
-    trb = dev.analyze.get_trb(r)
-    has_motif = bool(len(trb['con_ref_idx0']))
-    if not has_motif:
-        return {'rigid_loss': torch.tensor(-1)}
-    
-    indep_motif_native = get_motif_indep(r['inference.input_pdb'], trb['con_ref_idx0'])
-    indep_motif_des = get_motif_indep(dev.analyze.get_design_pdb(r), trb['con_hal_idx0'])
-    i_inv = torch.argsort(torch.tensor(trb['con_hal_idx0']))
-    i_inv = torch.argsort(i_inv)
-    aa_model.rearrange_indep(indep_motif_des, i_inv)
-    is_atom_str_shown = {}
-    for i in range(indep_motif_des.length()):
-        res = indep_motif_des.seq[i]
-        atom_names = [n.strip() for n in ChemData().aa2long[res][:14] if n is not None]
-        is_atom_str_shown[i] = atom_names
-    is_res_str_shown = torch.zeros((indep_motif_des.length(),)).bool()
-    # Q(Woody): These 2 function calls have an invalid signature <-- can we delete them?
-    true_atomized, is_diffused, is_masked_seq, atomizer = atomize.atomize_and_mask(
-        indep=indep_motif_native,
-        is_res_str_shown=is_res_str_shown,
-        is_res_seq_shown=torch.ones(indep_motif_native.length()).bool(),
-        is_atom_str_shown=is_atom_str_shown,
-    )
-    pred_atomized, _, _, _                              = atomize.atomize_and_mask(
-        indep=indep_motif_des,
-        is_res_str_shown=is_res_str_shown,
-        is_res_seq_shown=torch.ones(indep_motif_des.length()).bool(),
-        is_atom_str_shown=is_atom_str_shown,
-    )
-
-    rigid_losses = bond_geometry.calc_rigid_loss(true_atomized, pred_atomized.xyz, is_diffused)
-    return {'rigid_loss': rigid_losses['motif_atom_determined']}
 
 def get_rog(row):
     trb = dev.analyze.get_trb(row)

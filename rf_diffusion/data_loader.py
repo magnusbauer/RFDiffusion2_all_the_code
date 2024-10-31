@@ -1808,7 +1808,6 @@ class TransformedDataset(data.Dataset):
         
     def __getitem__(self, index: int):
         # Entry point for dataset iteration
-        # --> Q(Woody): atom mask and indep can go out of sync?
         feats = self.dataset[index]  # feats has {'indep', 'atom_mask', 'metadata', 'chosen_dataset', 'sel_item', 'task', 'item_context', 'mask_gen_seed', 'params', 'conditions_dict'}
         logger.debug(f'Transform root inputs: {set(feats.keys()) if isinstance(feats, dict) else type(feats)}')
 
