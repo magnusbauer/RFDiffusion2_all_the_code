@@ -11,14 +11,9 @@ sys.path.append(SE3_DIR)
 import pandas as pd
 import fire
 from tqdm import tqdm
-import torch
 
 import rf_diffusion.dev.analyze
 import analysis.metrics
-from rf_diffusion import aa_model
-from rf_diffusion import atomize
-from rf_diffusion.chemical import ChemicalData as ChemData
-from rf_diffusion import bond_geometry
 from rf_diffusion.dev import benchmark as bm
 
 

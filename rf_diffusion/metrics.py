@@ -5,7 +5,6 @@ import inspect
 import torch
 from dataclasses import asdict
 import numpy as np
-from icecream import ic
 import itertools
 from rf_diffusion import bond_geometry
 import sys
@@ -16,10 +15,8 @@ from rf_diffusion.frame_diffusion.data import r3_diffuser
 from abc import abstractmethod, ABC
 from rf_diffusion.frame_diffusion.data import utils as du
 from rf_diffusion import idealize
-from rf_diffusion import atomize
 from rf_diffusion import aa_model
 from rf_diffusion import guide_posts as gp
-from rf2aa.util_module import XYZConverter
 import rf2aa.util
 from rf_diffusion.dev import idealize_backbone
 

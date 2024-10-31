@@ -23,12 +23,10 @@ import numpy as np
 import scipy
 
 from rf_diffusion import aa_model
-from rf_diffusion import atomize
 from rf_diffusion.dev import analyze
 from rf_diffusion.inference import utils
 import rf_diffusion.dev.analyze
 from rf_diffusion.chemical import ChemicalData as ChemData
-from rf_diffusion import bond_geometry
 from rf_diffusion.dev import benchmark as bm
 from rf_diffusion import loss
 import rf_diffusion.atomization_primitives
