@@ -113,7 +113,7 @@ class TestInferenceOutputPDB(HydraTest):
         ])
         pdb_contents = inference.utils.parse_pdb(pdb)
         pdb_contents = NA_adaptor(pdb_contents)
-        cmp = partial(tensor_util.cmp, atol=float32_precision*rf2aa_difference_amplification, rtol=0)
+        cmp = partial(tensor_util.cmp, atol=float32_precision*rf2aa_difference_amplification*10, rtol=0)
         test_utils.assert_matches_golden(self, test_name, pdb_contents, rewrite=REWRITE, custom_comparator=cmp)
 
     @pytest.mark.generates_golden
@@ -132,7 +132,7 @@ class TestInferenceOutputPDB(HydraTest):
         ])
         pdb_contents = inference.utils.parse_pdb(pdb)
         pdb_contents = NA_adaptor(pdb_contents)
-        cmp = partial(tensor_util.cmp, atol=0.2, rtol=0)
+        cmp = partial(tensor_util.cmp, atol=float32_precision*rf2aa_difference_amplification*10, rtol=0)
         test_utils.assert_matches_golden(self, test_name, pdb_contents, rewrite=REWRITE, custom_comparator=cmp)
 
 

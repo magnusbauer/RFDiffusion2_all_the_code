@@ -159,7 +159,11 @@ class Trainer():
         self._exp_conf = conf.experiment
         self.metric_manager = MetricManager(conf)
 
-        self.diffuser = noisers.get(self.conf.diffuser)
+        if 'diffuser_hydra' in conf:
+            self.diffuser = hydra.utils.instantiate(conf.diffuser_hydra)
+        else:
+            self.diffuser = noisers.get(self.conf.diffuser)
+
         self.diffuser.T = conf.diffuser.T
 
         # for all-atom str loss
@@ -753,8 +757,6 @@ class Trainer():
         
         for epoch in range(loaded_epoch, self.conf.n_epoch):
             train_loader.sampler.set_epoch(epoch)
-            train_loader.dataset.fallback_sampler.set_epoch(epoch)
-            
             print('Just before calling train cycle...')
             train_tot, train_loss, train_acc = self.train_cycle(ddp_model, train_loader, optimizer, scheduler, scaler, rank, gpu, world_size, epoch)
             if rank == 0: # save model
@@ -892,6 +894,7 @@ class Trainer():
         counter = 0
         
         print('About to enter train loader loop')
+
         for loader_out in train_loader:
             timer.checkpoint('data loading')
             indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context, conditions_dict = loader_out

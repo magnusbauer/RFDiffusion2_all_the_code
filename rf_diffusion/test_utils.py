@@ -14,7 +14,7 @@ from omegaconf import DictConfig, OmegaConf
 from rf2aa import tensor_util
 from rf_diffusion.data_loader import (
     default_dataset_configs,
-    DistilledDataset, DistributedWeightedSampler, DatasetWithNextExampleRetry
+    DistilledDataset, DistributedWeightedSampler, DatasetWithNextExampleRetry, DistilledDatasetUnnoised
 )
 from torch.utils import data
 from rf_diffusion.frame_diffusion.data import se3_diffuser
@@ -28,6 +28,7 @@ from rf_diffusion.chemical import ChemicalData as ChemData
 from rf_diffusion.data_loader import no_batch_collate_fn
 import rf_diffusion
 from rf_diffusion import aa_model
+from rf_diffusion.datahub_dataset_interface import get_datahub_fallback_dataset_and_dataloader
 
 golden_dir = 'goldens'
 
@@ -64,6 +65,7 @@ def assert_matches_golden(t, name, got, rewrite=False, processor_specific=False,
         raise Exception(f'golden at {p} does not exist, please generate it')
     # want = p.read_text()
     want = read(p)
+
     if isinstance(got, rf_diffusion.aa_model.Indep):
 
         # Don't compare new features that the old indeps don't have
@@ -320,9 +322,17 @@ def get_dataloader(conf: DictConfig, epoch=0) -> None:
     dataset_configs, homo = default_dataset_configs(conf.dataloader, debug=conf.debug)
 
     print('Making train sets')
-    train_set = DistilledDataset(dataset_configs,
-                                    conf.dataloader, diffuser,
-                                    conf.preprocess, conf, homo)
+    unnoised_dataset = DistilledDatasetUnnoised(
+                dataset_configs=dataset_configs,
+                params=conf.dataloader,
+                preprocess_param=conf.preprocess,
+                conf=conf,
+                homo=homo,
+                )
+    
+    train_set = DistilledDataset(dataset=unnoised_dataset,
+                                    params=conf.dataloader, diffuser=diffuser,
+                                    preprocess_param=conf.preprocess, conf=conf, homo=homo)
 
     train_set = DatasetWithNextExampleRetry(train_set)
     
@@ -349,6 +359,15 @@ def loader_out_from_conf(conf, epoch=0):
         # indep.metadata = None
         return loader_out
     
+def loader_out_from_conf_datahub(conf, epoch=0):
+    load_param = {'shuffle': False,
+                  'num_workers': 1,
+                  'pin_memory': True}
+    dataloader, _  = get_datahub_fallback_dataset_and_dataloader(conf, rank=0, world_size=1, LOAD_PARAM=load_param)
+    for loader_out in dataloader:
+        return loader_out
+
+
 def loader_out_for_dataset(dataset, mask, overrides=[], epoch=0, config_name='debug'):
     conf = construct_conf([
         'dataloader.DATAPKL_AA=aa_dataset_256_subsampled_10.pkl',
@@ -364,6 +383,14 @@ def loader_out_for_dataset(dataset, mask, overrides=[], epoch=0, config_name='de
     ] + overrides, config_name=config_name)
     
     return loader_out_from_conf(conf, epoch=epoch)
+
+def loader_out_for_datahub_dataset(config, overrides=[]):
+    conf = construct_conf_single(overrides=[
+        'datahub.n_fallback_retries=0',
+        f'datahub.train.pdb.sub_datasets.pn_unit.dataset.transform.full_config_name={config}',
+        f'datahub.train.pdb.sub_datasets.interface.dataset.transform.full_config_name={config}',
+    ] + overrides, config_name=config)
+    return loader_out_from_conf_datahub(conf)
 
 def subset_target_feats(target_feats, is_subset):
     '''

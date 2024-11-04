@@ -1414,6 +1414,7 @@ def adaptor_fix_bb_indep(out):
     (seq, msa, msa_masked, msa_full, mask_msa, true_crds, atom_mask, idx_pdb, xyz_t, t1d, mask_t, xyz_prev,
         mask_prev, same_chain, unclamp, negative, atom_frames, bond_feats, dist_matrix, chirals, ch_label, symm_group,
          dataset_name, item) = out
+    true_crds = torch.nan_to_num(true_crds)
     assert symm_group=="C1", f"example with {symm_group} found, symmetric training not set up for aa-diffusion"
     #remove permutation symmetry dimension if present
     if len(true_crds.shape) == 4 and len(atom_mask.shape) == 3:

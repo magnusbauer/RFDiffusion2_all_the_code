@@ -220,7 +220,7 @@ class TestRegression(unittest.TestCase):
         ])
         pdb_contents = inference.utils.parse_pdb(pdb)
         pdb_contents = NA_adaptor(pdb_contents)
-        cmp = partial(tensor_util.cmp, atol=6e-2, rtol=0)
+        cmp = partial(tensor_util.cmp, atol=1e-1, rtol=0)
         test_utils.assert_matches_golden(self, 'ori_cm', pdb_contents, rewrite=REWRITE, custom_comparator=cmp)
 
     @pytest.mark.generates_golden

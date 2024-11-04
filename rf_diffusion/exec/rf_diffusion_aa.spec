@@ -8,10 +8,13 @@ rsync -a --no-g --no-o /home/dimaio/RoseTTAFold2/SE3Transformer/ $APPTAINER_ROOT
 %files
 /etc/localtime
 /etc/hosts
-/archive/software/Miniconda3-latest-Linux-x86_64.sh /opt/miniconda.sh
+/etc/apt/sources.list
+./Miniconda3-latest-Linux-x86_64.sh /opt/miniconda.sh
+./cutlass-3.5.1 /opt/cutlass
+./biotite /opt/biotite
 
 %post
-# Switch shell to bash
+## Switch shell to bash
 rm /bin/sh; ln -s /bin/bash /bin/sh
 
 # Common symlinks
@@ -22,117 +25,124 @@ ln -s /projects /mnt/projects
 ln -s /net /mnt/net
 
 apt-get update
-# required X libs
-apt-get install -y libx11-6 libxau6 libxext6 libxrender1
 
-# git
+apt-get install -y g++-11
+update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-11 50
+update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-11 50
+update-alternatives --install /usr/bin/c++ c++ /usr/bin/gcc-11 50
+
+apt-get install -y libx11-6 libxau6 libxext6 libxrender1 libtiff5 libpng-dev libjpeg-dev
 apt-get install -y git
+apt-get install -y libaio-dev
 apt-get clean
 
 # Install conda
 bash /opt/miniconda.sh -b -u -p /usr
 
-# Install conda/pip packages
-conda update conda
-
-# Set python version before all else
-conda install python=3.9
-
-# Haven't tested if these need to be installed by themselves. Too much of a pain to check right now.
-conda install \
-   -c conda-forge \
-   dm-tree=0.1.7 \
-   pdbfixer=1.8.1 \
-   mdtraj=1.9.7
-
-# pytorch + dependancies
-conda install \
-   -c nvidia/label/cuda-12.1.0 \
-   -c pytorch \
-   -c pyg \
-   -c dglteam/label/cu121 \
-   -c anaconda \
+# install other deps
+conda install --yes \
+   python==3.11 \
    pip \
-   ipython=8.8.0 \
-   "ipykernel>=6.22.0" \
-   numpy=1.22 \
-   pandas=1.5.2 \
-   seaborn=0.12.2 \
+   numpy"<2" \
    matplotlib \
-   jupyterlab=3.5.0 \
-   pytorch==2.2 \
-   pytorch-cuda==12.1 \
-   dgl==2.0.0.cu121 \
-   einops=0.7.0 \
-   pyg
+   jupyterlab
 
+conda install --yes \
+   conda-forge::openbabel==3.1.1
 
-# open-babel needs to be conda installed last for reasons. Otherwise you get the error,
-# Error while loading conda entry point: conda-libmamba-solver (libarchive.so.19: cannot open shared object file: No such file or directory)
-# CondaValueError: You have chosen a non-default solver backend (libmamba) but it was not recognized. Choose one of: classic
-conda install \
-   -c conda-forge \
-   openbabel=3.1.1 \
-   
-# pip extras
+conda install --yes \
+   -c nvidia/label/cuda-12.4.0 \
+   cuda
+
+conda install --yes \
+   -c nvidia/label/cuda-12.4.0 \
+   -c pytorch \
+   pytorch==2.4 \
+   pytorch-cuda==12.4
+
+conda install --yes \
+   -c dglteam/label/th24_cu124 \
+   dgl
+
+conda install --yes \
+   -c https://conda.rosettacommons.org \
+   pyrosetta
+
 pip install \
-   e3nn==0.5.1 \
-   "hydra-core==1.3.1" \
-   pyrsistent==0.19.3 \
-   opt_einsum==3.3.0 \
-   sympy==1.12 \
-   omegaconf==2.3.0 \
-   icecream==2.1.3 \
-   wandb==0.13.10 \
-   deepdiff==6.3.0 \
-   assertpy==1.1 \
-   biotite==0.36.1 \
-   GPUtil==1.4.0 \
+   hydra-core==1.3.1 \
+   ml-collections==0.1.1 \
    addict==2.4.0 \
-   fire==0.5.0 \
-   tmtools==0.0.2 \
-   plotly==5.16.1 \
-   deepspeed==0.8.0 \
-   biopython==1.80 \
-   ipdb==0.13.11 \
-   pytest==7.4.0 \
-   openmm \
+   assertpy==1.1.0 \
+   biopython==1.83 \
    colorlog \
-   "ml-collections"
+   cython==3.0.0 \
+   cytoolz==0.12.3 \
+   debugpy==1.8.5 \
+   deepdiff==6.3.0 \
+   dm-tree==0.1.8 \
+   e3nn==0.5.1 \
+   einops==0.7.0 \
+   fastparquet==2024.5.0 \
+   fire==0.6.0 \
+   GPUtil==1.4.0 \
+   icecream==2.1.3 \
+   ipdb==0.13.11 \
+   ipykernel==6.29.5 \
+   ipython==8.27.0 \
+   ipywidgets \
+   mdtraj==1.10.0 \
+   omegaconf==2.3.0 \
+   opt_einsum==3.3.0 \
+   pandas==1.5.0 \
+   plotly==5.16.1 \
+   pre-commit==3.7.1 \
+   py3Dmol==2.2.1 \
+   pyarrow==17.0.0 \
+   pydantic \
+   pyrsistent==0.19.3 \
+   pytest-benchmark \
+   pytest-cov==4.1.0 \
+   pytest-dotenv==0.5.2 \
+   pytest==8.2.0 \
+   rdkit==2024.3.5 \
+   ruff==0.6.2 \
+   scipy==1.13.1 \
+   seaborn==0.13.2 \
+   sympy==1.13.2 \
+   tmtools \
+   tqdm==4.65.0 \
+   wandb==0.13.10
 
-# Jax doesn't install nicely with other packages for reasons
-pip install \
-   jax==0.4.13
+# biotite fork
+ln -s /usr/include/*.h /usr/local/include/
+pip install /opt/biotite/
+
+# pyg
+pip install pyg_lib torch_scatter torch_sparse torch_cluster torch_spline_conv -f https://data.pyg.org/whl/torch-2.4.0+cu124.html
+
+# for cuequivariant
+pip install -U -i https://pypi.anaconda.org/rapidsai-wheels-nightly/simple "pylibcugraphops-cu12>=24.6.0a24" 
+
+# deepspeed
+pip install deepspeed==0.15.1
 
 # Install git repos
 pip install git+https://github.com/RalphMao/PyTimer.git
-   
-# SE3 transformer
-pip install /SE3Transformer/
-
-# Install apptainer so that this container can run other containers.
-apt-get update
-apt-get install -y software-properties-common
-add-apt-repository -y ppa:apptainer/ppa
-apt-get update
-apt-get install -y apptainer
-
-# Git needs to be installed separately for reasons.
-# It also needs to be installed after installing apptainer, or errors will ensue.
-#conda install git
 
 # Clean up
 conda clean -a -y
-apt-get -y purge build-essential wget
+apt-get -y purge git
 apt-get -y autoremove
 apt-get clean
-rm /opt/miniconda.sh
+#rm /opt/miniconda.sh
 
 %environment
 export PATH=$PATH:/usr/local/cuda/bin
+export CUTLASS_PATH=/opt/cutlass/
 
 %runscript
-/usr/bin/python "$@"
+
+exec python "$@"
 
 %help
-Environment for running rf_diffusion_aa
+SE3nv environment for running RF-diffusion, etc.

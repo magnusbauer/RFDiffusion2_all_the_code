@@ -1,3 +1,4 @@
+import pytest
 import unittest
 import copy
 import time
@@ -31,6 +32,7 @@ class TestIdealizedResidueRMSD(unittest.TestCase):
         conf = OmegaConf.create({'idealization_metric_n_steps': 100})
         self.idealized_residue_rmsd = metrics.IdealizedResidueRMSD(conf)
         
+    @pytest.mark.noparallel
     def test_call_speed(self):
         '''
         Idealizing residues shouldn't take more than ~5 seconds.

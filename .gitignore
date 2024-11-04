@@ -10,6 +10,8 @@
 /rf_diffusion/samples/
 /doc/build
 /doc/source/api
+pytest*.log
+slurm_logs_*
 .vscode
 .env
 *.pt

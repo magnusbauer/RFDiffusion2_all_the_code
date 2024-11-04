@@ -20,6 +20,7 @@ import rf2aa.data.compose_dataset
 import rf2aa.util
 import rf2aa.tensor_util
 import rf2aa.kinematics
+from datahub.datasets.base import BaseDataset
 from rf_diffusion.chemical import ChemicalData as ChemData
 
 # for diffusion training
@@ -30,6 +31,7 @@ import math
 from functools import partial
 import pandas as pd
 import torch.distributed as dist
+import hydra
 
 from rf_diffusion import run_inference
 from rf_diffusion import aa_model
@@ -1347,6 +1349,14 @@ class WeightedDataset:
     task_loaders: dict
     weights: np.array
 
+@dataclass
+class DatahubBackwardCompatibilityWeightedDataset:
+    """
+    DistilledDataset expects a dataset_configs dict with WeightedDatasets for some functions. With Datahub dataloaders don't actually need ids to be a dict (only len(ids) is relevant), and task_loaders and dic are never used. For ease of use here we use this spoof object.
+    """
+    ids: np.array
+    weights: np.array
+
 def default_dataset_configs(loader_param, debug=False):
     ic(loader_param['MOL_DIR'])
     print('Getting train/valid set...')
@@ -1505,7 +1515,7 @@ def default_dataset_configs(loader_param, debug=False):
     for k in ['sm_compl_asmb', 'sm_compl_multi', 'metal_compl']:
         o[k] = WeightedDataset(
             train_ID_dict[k], train_dict[k], sm_compl_loader_fixbb, weights_dict[k])
-
+        
     return o, homo
 
 
@@ -1629,6 +1639,33 @@ class DistilledDatasetUnnoised(data.Dataset):
         # if chosen_dataset == 'sm_complex':
         #     raise Exception('sm_complex debug fail')
         dataset_config = self.dataset_configs[chosen_dataset]
+
+        # if datahub dataset, use that getitem instead of anything here
+        if isinstance(dataset_config, BaseDataset):
+            processed_output = dataset_config.__getitem__(index)
+            relevant_keys_from_row = ['pdb_id', 'assembly_id', 'resolution', 'deposition_date', 'q_pn_unit_processed_entity_canonical_sequence']
+            relevant_items = {key: processed_output['row'][key] for key in relevant_keys_from_row}
+
+            item_context = pprint.pformat({
+                'chosen_dataset': chosen_dataset,
+                'index': index,
+                'sel_item': relevant_items,
+                'task': task,
+                'mask_gen_seed': mask_gen_seed}, indent=4)
+
+            return {
+                    'indep': processed_output['indep'],
+                    'atom_mask': processed_output['atom_mask'],
+                    'metadata': processed_output['metadata'],
+                    'chosen_dataset': chosen_dataset,
+                    'sel_item': relevant_items,
+                    'task': task,
+                    'item_context': item_context,
+                    'mask_gen_seed': mask_gen_seed,
+                    'params': self.params,
+                    'conditions_dict': {}
+            }
+
         ID = dataset_config.ids[index]
         if chosen_dataset == "sm_complex":
             sel_item = rf2aa.data.data_loader.sample_item_sm_compl(dataset_config.dic, ID)
@@ -1784,6 +1821,59 @@ class DistilledDatasetUnnoised(data.Dataset):
 
     def __getitem__(self, index):
         return self.getitem_unsafe(index)
+    
+
+class DistilledDatasetUnnoisedDatahub(DistilledDatasetUnnoised):
+    def __init__(self, conf_datahub):
+        self.datasets = {}
+        self.dataset_probabilities = []
+        self.dataset_options = []
+
+        backward_compatible_dataset_configs = {}
+
+        for name, dataset_cfg in conf_datahub.items():
+            dataset = hydra.utils.instantiate(dataset_cfg.dataset)
+            if 'weights' in dataset_cfg:
+                dataset_weights = hydra.utils.instantiate(dataset_cfg.weights, dataset_df=dataset.data)
+            else:
+                dataset_weights = torch.ones(len(dataset))
+
+            self.datasets[name] = dataset
+
+            backward_compatible_dataset_configs[name] = DatahubBackwardCompatibilityWeightedDataset(
+                np.array(range(len(dataset))), # spoofing because all that matters is len(ids)
+                dataset_weights
+            )
+
+            self.dataset_probabilities.append(dataset_cfg.probability)
+            self.dataset_options.append(name)
+
+        self.dataset_configs = backward_compatible_dataset_configs # exposing this object for other methods
+        self.dataset_options = ','.join(self.dataset_options)
+    
+    def getitem_unsafe(self, index):
+        chosen_dataset, index = self.dataset_index_from_index(index)
+        processed_output = self.datasets[chosen_dataset].__getitem__(index)
+        item_context = pprint.pformat({
+            'chosen_dataset': chosen_dataset,
+            'index': index,
+            'sel_item': processed_output['sel_item'],
+            'task': processed_output['task'],
+            'mask_gen_seed': processed_output['mask_gen_seed']}, indent=4)
+        
+        return {
+                'indep': processed_output['indep'],
+                'atom_mask': processed_output['atom_mask'],
+                'metadata': processed_output['metadata'],
+                'chosen_dataset': chosen_dataset,
+                'sel_item': processed_output['sel_item'],
+                'task': processed_output['task'],
+                'item_context': item_context,
+                'mask_gen_seed': processed_output['mask_gen_seed'],
+                'params': processed_output['params'],
+                'conditions_dict': {}
+        }
+
 
 def get_class_name(f):
     clas = getattr(f, '__class__', None)
@@ -1871,20 +1961,12 @@ def get_t_training(conf: OmegaConf)-> Tuple[int, float]:
 
 
 class DistilledDataset(data.Dataset):
-    def __init__(self, dataset_configs, params, diffuser, preprocess_param, conf, homo=None, p_homo_cut=0.5, **kwargs):
+    def __init__(self, dataset, params, diffuser, preprocess_param, conf, homo=None, p_homo_cut=0.5, **kwargs):
         self.diffuser = diffuser
-        dataset = DistilledDatasetUnnoised(
-            dataset_configs,
-            params,
-            preprocess_param,
-            conf,
-            homo=homo,
-            p_homo_cut=p_homo_cut)
-
-        self.params = dataset.params
-        self.conf = dataset.conf
-        self.preprocess_param = dataset.preprocess_param
-        self.model_adaptor = dataset.model_adaptor
+        self.params = params
+        self.conf = conf
+        self.preprocess_param = preprocess_param
+        self.model_adaptor = aa_model.Model(conf)
 
         def diffuse(indep, metadata, chosen_dataset, sel_item, task, masks_1d, item_context, mask_gen_seed, is_masked_seq, is_diffused, atomizer, conditions_dict, **kwargs):
             t, t_cont = get_t_training(self.conf)
@@ -1949,6 +2031,7 @@ class DistilledDataset(data.Dataset):
             diffuse,
             feature_tuple_from_feature_dict
         ])
+
         self.dataset = TransformedDataset(dataset, transforms)
 
     def get_dataset_bounds_from_index(self, index):
@@ -2125,9 +2208,25 @@ def no_batch_collate_fn(data):
     assert len(data) == 1
     return data[0]
 
-def get_dataset_and_sampler(dataset_configs, dataset_options, dataset_prob, conf, diffuser, num_example_per_epoch, world_size, rank, homo):
+def get_dataset_and_sampler(dataset_configs, dataset_options, dataset_prob, conf, diffuser, num_example_per_epoch, world_size, rank, homo, use_datahub_if_available=False):
+    if use_datahub_if_available and 'datahub' in conf:
+        unnoised_dataset = DistilledDatasetUnnoisedDatahub(conf_datahub=conf.datahub)
+        dataset_prob = unnoised_dataset.dataset_probabilities
+        dataset_configs = unnoised_dataset.dataset_configs
+        dataset_options = unnoised_dataset.dataset_options
+    
+    else:
+        unnoised_dataset = DistilledDatasetUnnoised(
+                dataset_configs=dataset_configs,
+                params=conf.dataloader,
+                preprocess_param=conf.preprocess,
+                conf=conf,
+                homo=homo,
+                )
+
+
     dataset = DistilledDataset(
-        dataset_configs=dataset_configs,
+        dataset=unnoised_dataset,
         params=conf.dataloader,
         diffuser=diffuser, 
         preprocess_param=conf.preprocess,
@@ -2148,6 +2247,7 @@ def get_dataset_and_sampler(dataset_configs, dataset_options, dataset_prob, conf
     )
 
     return dataset, sampler
+    
 
 def get_fallback_dataset_and_dataloader(conf, diffuser, num_example_per_epoch, world_size, rank, LOAD_PARAM):
     # Make primary dataset
@@ -2162,6 +2262,7 @@ def get_fallback_dataset_and_dataloader(conf, diffuser, num_example_per_epoch, w
         world_size=world_size, 
         rank=rank,
         homo=homo,
+        use_datahub_if_available=True
     )
 
     # Make secondary dataset

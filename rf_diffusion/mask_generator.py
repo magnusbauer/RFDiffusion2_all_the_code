@@ -1949,5 +1949,5 @@ def get_residue_bond_feats(res, include_H=False):
         bond_feats[end_idx, start_idx] = ChemData().aabtypes[res][j]
     
     if not include_H:
-        bond_feats = bond_feats[:ChemData().NHEAVYPROT, :ChemData().NHEAVYPROT]
+        bond_feats = bond_feats[:ChemData().NHEAVY, :ChemData().NHEAVY]
     return bond_feats

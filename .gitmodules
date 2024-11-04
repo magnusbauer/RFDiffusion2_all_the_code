@@ -7,3 +7,9 @@
 [submodule "lib/fused_mpnn/fused_mpnn"]
 	path = lib/fused_mpnn/fused_mpnn
 	url = git@github.com:baker-laboratory/fused_mpnn.git
+[submodule "lib/datahub"]
+	path = lib/datahub
+	url = git@git.ipd.uw.edu:ai/datahub.git
+[submodule "lib/cifutils"]
+	path = lib/cifutils
+	url = git@git.ipd.uw.edu:ai/cifutils.git

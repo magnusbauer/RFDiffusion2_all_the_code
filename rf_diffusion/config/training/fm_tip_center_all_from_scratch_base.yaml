@@ -1,0 +1,326 @@
+ddp_backend: gloo
+
+inference:
+  str_self_cond: true
+  contig_as_guidepost: true
+
+guidepost_bonds: True
+
+diffuser:
+  diffuse_trans: true
+  diffuse_rot: true
+  r3:
+    min_b: 0.1
+    max_b: 20.0
+    coordinate_scaling: 0.1
+  so3:
+    num_omega: 1000
+    num_sigma: 1000
+    min_sigma: 0.1
+    max_sigma: 1.5
+    schedule: logarithmic
+    cache_dir: .cache/
+    use_cached_score: true
+  T: 200
+  time_type: continuous
+  t_distribution: uniform_t001
+  type: flow_matching
+  min_t: 0.01
+  rots:
+    train_schedule: linear
+    sample_schedule: exp
+    exp_rate: 10
+  trans:
+    train_schedule: linear
+    sample_schedule: linear
+  sampling:
+    num_timesteps: 100
+  preserve_motif_sidechains: false
+
+experiment:
+  trans_loss_weight: 0
+  rot_loss_weight: 0
+  trans_x0_threshold: 0
+  bb_atom_loss_weight: 0
+  bb_atom_loss_t_filter: 0.25
+  dist_mat_loss_weight: 0
+  dist_mat_loss_t_filter: 0.25
+  aux_loss_weight: 0
+  c6d_loss_weight: 0.0
+  gamma: 0.95
+  n_bb: 3
+  batch_size: 1
+  warm_start: null
+  early_ckpt_after: 2
+  keep_only_last_ckpt: false
+  normalize_trans_x0: true
+  normalize_trans_x0_max_scaling: 50
+  fm_translation_loss_weight: 2.0
+  fm_rotation_loss_weight: 1.0
+  fm_bb_atom: 0
+  fm_dist_mat: 0
+  aux_loss_ti_pass: 0.25
+
+sm_loss_weight: 0
+
+rf:
+  model:
+    get_quaternion: true
+    n_extra_block: 4
+    n_main_block: 32
+    n_ref_block: 4
+    d_msa: 256
+    d_msa_full: 64
+    d_pair: 192
+    d_templ: 64
+    n_head_msa: 8
+    n_head_pair: 6
+    n_head_templ: 4
+    d_hidden: 32
+    d_hidden_templ: 64
+    d_t1d: 100
+    p_drop: 0.15
+    SE3_param:
+      num_layers: 1
+      num_channels: 32
+      num_degrees: 2
+      n_heads: 4
+      div: 4
+      l0_in_features: 64
+      l0_out_features: 64
+      l1_in_features: 3
+      l1_out_features: 2
+      num_edge_features: 64
+    SE3_ref_param:
+      num_layers: 2
+      num_channels: 32
+      num_degrees: 2
+      n_heads: 4
+      div: 4
+      l0_in_features: 64
+      l0_out_features: 64
+      l1_in_features: 3
+      l1_out_features: 2
+      num_edge_features: 64
+    freeze_track_motif: true
+    symmetrize_repeats: false
+    repeat_length: None
+    symmsub_k: None
+    sym_method: mean
+    copy_main_block_template: false
+    main_block: None
+    lj_lin: 0.75
+    use_chiral_l1: true
+    use_lj_l1: true
+    use_atom_frames: true
+    use_same_chain: true
+    recycling_type: all
+    enable_same_chain: true
+    refiner_topk: 128
+  ckpt_path: null
+
+model:
+  embed:
+    embed_self_conditioning: false
+
+seed: 0
+wandb: True
+wandb_prefix: center_all_from_scratch
+debug: False
+epoch_size: 25600
+prob_self_cond: 0.5
+seq_self_cond: False
+sequence_decode: True
+rundir: /net/scratch/ahern/se3_diffusion/training/center_all_from_scratch
+interactive: False
+batch_size: 1
+verbose_checks: False
+lr: 0.001
+l2_coeff: 0.01
+model_name: RFD
+ckpt_load_path: None
+resume: None
+resume_scheduler: False
+reinitialize_missing_params: False
+zero_weights: True
+n_epoch: 500
+maxcycle: 1
+timing_summary_every: 1
+pseudobatch: 24
+log_inputs: False
+metrics: ['rigid_loss', 'true_bond_lengths', 'displacement_permutations', 'rotations', 'rotations_input']
+n_write_pdb: 30
+saves_per_epoch: 2
+
+preprocess:
+  use_cb_to_get_pair_dist: true
+  randomize_frames: false
+  sidechain_input: false
+  d_t1d: 22
+  annotate_termini: true
+
+spoof_item: 
+
+dataloader:
+  OMIT_PERMUTATE: false
+  RADIAL_CROP: true
+  p_msa_mask: 0.0
+  use_phospate_frames_for_NA: true
+  BLOCKCUT: 5
+  CN_DICT: /home/jwatson3/torch/cn_ideal/cn_ideal_train_test.pt
+  CN_DIR: /home/jwatson3/torch/cn_ideal
+  COMPLEX_HAL_MASK_HIGH: 35
+  COMPLEX_HAL_MASK_HIGH_AR: 50
+  COMPLEX_HAL_MASK_LOW: 10
+  COMPLEX_HAL_MASK_LOW_AR: 20
+  COMPL_DIR: /projects/ml/RoseTTAComplex
+  COMPL_LIST: /projects/ml/RoseTTAComplex/list.hetero.csv
+  CROP: 256
+  DATAPKL: ./dataset.pkl
+  DATAPKL_AA: aa_dataset_256.pkl
+  DATASETS: pdb_aa,compl,sm_complex,sm_compl_covale,metal_compl,sm_compl_asmb,sm_compl_multi
+  DATASET_PROB:
+  - 0.4
+  - 0.2
+  - 0.15
+  - 0.1
+  - 0.05
+  - 0.05
+  - 0.05
+  DATCUT: 2020-Apr-30
+  DIFF_MASK_HIGH: 999
+  DIFF_MASK_LOW: 20
+  DIFF_MASK_PROBS:
+    get_closest_tip_atoms: 0.0
+    get_unconditional_diffusion_mask: 0.075
+    get_diffusion_mask_islands: 0.05
+    get_closest_tip_atoms_partial_ligand: 0.0
+    get_diffusion_mask_islands_partial_ligand: 0.05
+    get_unconditional_diffusion_mask_partial_ligand: 0.075
+    get_unconditional_diffusion_mask_free_ligand: 0.2
+    get_atomized_islands: 0.0
+    get_entirely_atomized: 0.0
+    get_diffusion_mask_islands_free_ligand: 0.05
+    get_tip_mask: 0.125
+    get_tip_mask_unconditional_free_ligand: 0.25
+    get_tip_mask_unconditional_partial_ligand: 0.125
+  DISCONTIGUOUS_CROP: true
+  FB_DIR: /projects/ml/TrRosetta/fb_af
+  FB_LIST: /projects/ml/TrRosetta/fb_af/list_b1-3.csv
+  FLANK_HIGH: 6
+  FLANK_LOW: 3
+  HAL_MASK_HIGH: 35
+  HAL_MASK_HIGH_AR: 50
+  HAL_MASK_LOW: 10
+  HAL_MASK_LOW_AR: 20
+  HOMO_LIST: /projects/ml/RoseTTAComplex/list.homo.csv
+  MASK_BROKEN_PROPORTION: 0.5
+  MASK_MAX_PROPORTION: 1.0
+  MASK_MIN_PROPORTION: 0.2
+  MAXCYCLE: 1
+  MAXLAT: 256
+  MAXSEQ: 1024
+  MAXTPLT: 4
+  MAX_COMPLEX_CHAIN: 250
+  MAX_LENGTH: 256
+  MINSEQ: 1
+  MINTPLT: 1
+  MOL_DIR: /projects/ml/RF2_allatom/rcsb/pkl
+  NEGATIVE_LIST: /projects/ml/RoseTTAComplex/list.negative.csv
+  PDB_DIR: /projects/ml/TrRosetta/PDB-2021AUG02
+  PDB_LIST: /projects/ml/TrRosetta/PDB-2021AUG02/list_v02.csv
+  PLDDTCUT: 70.0
+  RESCUT: 5.0
+  ROWS: 1
+  SCCUT: 90.0
+  SEQID: 150.0
+  SPOOF_ITEM: ''
+  STR2SEQ_FULL_HIGH: 1.0
+  STR2SEQ_FULL_LOW: 0.9
+  USE_GUIDE_POSTS: false
+  VAL_COMPL: /projects/ml/RoseTTAComplex/val_lists/xaa
+  VAL_NEG: /projects/ml/RoseTTAComplex/val_lists/xaa.neg
+  VAL_PDB: /projects/ml/TrRosetta/PDB-2021AUG02/val/xaa
+  mask: {}
+  P_IS_GUIDEPOST_EXAMPLE: 0.5
+  use_fallback: true
+  max_residues: -1
+  use_validation_config: 0
+
+data:
+  samples_per_eval_length: 1
+  num_eval_lengths: 1
+  num_t: 100
+
+master_port: 12666
+conditionless_freq: 0
+
+show_dataset:
+  show: true
+  show_diffused: false
+  'n': 10
+  show_only_backbone: false
+
+reshape:
+  output_path: null
+  legacy_input_weights: false
+
+extra_tXd: ['radius_of_gyration_v2', 'relative_sasa_v2', 'sinusoidal_timestep_embedding']
+
+extra_tXd_params:
+  radius_of_gyration_v2:
+    low: 10
+    high: 100
+    n_bins: 9
+  relative_sasa_v2:
+    low: 0
+    high: 0.2
+    n_bins: 3
+  sinusoidal_timestep_embedding:
+    embedding_dim: 20
+    max_positions: 10000
+
+use_nonechucks: False
+restart_timer: False
+pin_memory: True
+num_workers: 4
+
+transforms:
+  names:
+  - AddConditionalInputs
+  - CenterPostTransform
+  configs:
+    PopMask: {}
+    Center: {}
+    AddConditionalInputs:
+      p_is_guidepost_example: 0.5
+      guidepost_bonds: true
+    ExpandConditionsDict: {}
+    CenterPostTransform:
+      jitter: 5.0
+      jitter_clip: 20.0
+      center_type: all
+
+scheduler:
+  n_warmup_steps: 500
+
+skip_backward: False
+log_every_n_examples: 1
+log_metrics_inputs_every_n_examples: 30
+
+benchmark:
+  pipeline_yaml: training_benchmarks_ORI.yaml
+
+fm:
+  t_normalize_clip: 0.9
+  trans_scale: 0.1
+
+upstream_training_transforms:
+  names:
+  - GenerateMasks
+  - PopMask
+  configs:
+    GenerateMasks: {}
+    PopMask: {}
+
+wandb_dir: /scratch/ptkim

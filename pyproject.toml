@@ -1,0 +1,60 @@
+[build-system]
+requires = ['hatchling']
+build-backend = 'hatchling.build'
+
+[project]
+name = 'mlb'
+version = '0.0.0'
+dependencies = [
+  'fastapi[standard]',
+  'uvicorn[standard]',
+  'sqlmodel',
+  'python-daemon',
+  'RestrictedPython',
+  'pandoc',
+  'jupyter',
+  'submitit'
+  # 'asciidoctor'
+]
+requires-python = '>=3.11'
+
+[tool.pyright]
+include = ["rf_diffusion", "lib/rf2aa/rf2aa", "lib/rf2aa/lib/ipd/ipd"]
+exclude = [
+    "**/__pycache__",
+]
+defineConstant = { DEBUG = true }
+typeCheckingMode = "basic"
+reportMissingImports = true
+reportMissingTypeStubs = false
+pythonPlatform = "Linux"
+requires-python = ">=3.11"
+pythonVersion = "3.12"
+
+[tool.ruff]
+lint.ignore = [
+   'E731', #  [ ] Do not assign a `lambda` expression, use a `def`
+   'E402', #  [ ] Module level import not at top of file
+   'E741', #  [ ] Ambiguous variable name: `I`
+   'E701', #  [ ] Multiple statements on one line (colon)
+   'F403', #  [ ] `from Attention_module import *` used; unable to detect undefined names
+
+]
+lint.dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?)|ic)$"
+line-length = 111
+target-version = "py39"
+format.quote-style = "single"
+format.indent-style = "space"
+format.docstring-code-format = true
+
+
+[tool.pytest.ini_options]
+minversion = 6.0
+addopts = '--disable-warnings -q -m "not nondeterministic"'
+pythonpath = ['.', 'rf_diffusion', 'rf2aa/SE3Transformer']
+testpaths = ['rf_diffusion/test_*.py']
+markers = [
+    'slow: marks tests as slow (deselect with -m "not slow")',
+    'fast: tests that run in a second or two',
+    'noparallel: tests teat cant run in parallel',
+]

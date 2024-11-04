@@ -792,6 +792,16 @@ class Dataloader(unittest.TestCase):
 
             golden_name = f'indep_{dataset}_{mask}'
             test_utils.assert_matches_golden(self, golden_name, indep, rewrite=REWRITE, custom_comparator=self.cmp)
+
+
+    # def test_basic_datahub_integration(self):
+
+    #     loader_out = test_utils.loader_out_for_datahub_dataset('datahub_test')
+    #     indep = loader_out[0]
+    #     indep.metadata=None
+
+    #     golden_name = 'basic_datahub_integration'
+    #     test_utils.assert_matches_golden(self, golden_name + '_indep', indep, rewrite=REWRITE, custom_comparator=self.cmp)
     
 
 

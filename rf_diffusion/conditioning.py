@@ -1,6 +1,7 @@
 from __future__ import annotations  # Fake import for type hinting, must be at beginning of file
 
 import types
+import pickle
 # Imports for typing only
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
@@ -15,6 +16,8 @@ import copy
 from rf_diffusion import aa_model
 from rf_diffusion.aa_model import Indep
 from rf_diffusion.contigs import ContigMap
+from rf_diffusion import features
+from rf_diffusion import data_loader
 
 from rf2aa.chemical import ChemicalData as ChemData
 
@@ -25,6 +28,7 @@ from rf_diffusion import run_inference
 from rf_diffusion import mask_generator
 from rf_diffusion import ppi
 from rf_diffusion.conditions.util import expand_1d_atomized_ok_gp_not
+from datahub.transforms.base import Compose
 
 ######## Group all imported transforms together ###########
 
@@ -43,6 +47,7 @@ def get_center_of_mass(xyz14, mask):
     return points.mean(dim=0)
 
 LEGACY_TRANSFORMS_TO_IGNORE = ['PopMask']
+
 
 class PopMask:
     def __call__(self, indep: Indep, metadata: dict, masks_1d: torch.Tensor, **kwargs):
@@ -65,14 +70,16 @@ class PopMask:
             masks_1d=masks_1d,
             **kwargs
         )
-    
+
+
 class NullTransform:
     """
     A null transform for testing purposes
     """
     def __call__(self, **kwargs):
         return dict(**kwargs)
-    
+
+
 class GenerateMasks:
     """
     Non-public class for generating masks. Is not a traditional tranform
@@ -124,6 +131,7 @@ class GenerateMasks:
             mask_gen_seed=mask_gen_seed,
             **kwargs
         )
+
 
 class NAInterfaceTightCrop:
     """
@@ -183,6 +191,7 @@ class NAInterfaceTightCrop:
             atom_mask=atom_mask,
             **kwargs
         )
+
 
 class UnmaskAndFreezeNA:
     """
@@ -271,6 +280,7 @@ class UnmaskAndFreezeNA:
             **kwargs
         )
 
+
 class TransmuteNA:
     """
     A class that probabilistically converts DNA to RNA and vice versa
@@ -346,7 +356,7 @@ class RejectBadComplexes:
                  debug: bool = True):
         self.max_inter_chain_dist = max_inter_chain_dist
         self.n_interacting_residues = n_interacting_residues
-        assert mode == all_vs_all
+        assert mode == 'all_vs_all'
         self.debug = debug
         self.count = 0
 
@@ -410,8 +420,7 @@ class RejectBadComplexes:
             indep=indep,
             **kwargs
         )
-
-import pickle
+    
 
 class RejectOutOfMemoryHazards:
     """
@@ -472,6 +481,7 @@ class Center:
             masks_1d=masks_1d,
             **kwargs
         )
+
 
 class CenterPostTransform:
     """
@@ -650,6 +660,7 @@ class AddConditionalInputs:
             contig_map=contig_map,
         )
 
+
 class ExpandConditionsDict:
     '''
     This class exists because conditions_dict gets generated on the vanilla indep before aa_model.transform_indep is called.
@@ -740,6 +751,7 @@ def get_contig_map(indep: Indep, input_str_mask: torch.Tensor, is_atom_motif: di
     }
     return ContigMap(**contig_map_args)
 
+
 class ReconstructContigMap:
 
     def __call__(self, indep, masks_1d, **kwargs):
@@ -795,3 +807,214 @@ class NAMotifPreservingTightCrop:
             atom_mask=atom_mask,
             **kwargs
         )
+    
+
+class GetTrainingT:
+    """
+    Pulls out the "get_t_training" function as a separate 
+    """
+    def __init__(self,
+                 full_config
+                 ):
+        self.full_config=full_config
+
+    def __call__(self,
+                 **kwargs
+                 ):
+        t, t_cont = data_loader.get_t_training(self.full_config)
+        return dict(
+            t=t,
+            t_cont=t_cont,
+            **kwargs
+        )
+        
+    
+class Diffuse:
+    """
+    Pulls out the diffuse() function from DistilledDataset and separates it from all the other stuff that function does
+    The get_t_training function jankily takes the entire config - something to fix someday
+    """
+    def __init__(self,
+                 diffuser,
+                 full_config
+                 ):
+        self.diffuser = diffuser
+        self.full_config = full_config
+
+    def __call__(self, indep, is_diffused, t, t_cont, **kwargs):
+        indep_t, diffuser_out = aa_model.diffuse(self.full_config, self.diffuser, indep, is_diffused, t)
+
+        return dict(
+            indep=indep,
+            is_diffused=is_diffused,
+            indep_t=indep_t,
+            diffuser_out=diffuser_out,
+            t=t,
+            t_cont=t_cont,
+            **kwargs
+        )
+    
+
+class GetExtraTxd:
+    """
+    Pulls out the get_extra_tXd function as a separate transform
+    """
+
+    def __init__(self,
+                 full_config
+                 ):
+        self.full_config = full_config
+
+    def __call__(self,
+                 indep,
+                 t_cont,
+                 conditions_dict,
+                 **kwargs
+                 ):
+        
+        indep.extra_t1d, indep.extra_t2d = features.get_extra_tXd(indep, self.full_config.extra_tXd, t_cont=t_cont, **self.full_config.extra_tXd_params, **conditions_dict)
+
+        return dict(
+            indep=indep,
+            t_cont=t_cont,
+            conditions_dict=conditions_dict,
+            **kwargs
+        )
+
+
+class RandomizeFrames:
+    """
+    Randomly rotate frames of the xyz to be a ca-only diffusion model
+    """
+    def __call__(self,
+                 indep_t,
+                 **kwargs
+                 ):
+        indep_t = aa_model.randomly_rotate_frames(indep_t.xyz)
+        return dict(
+            indep_t=indep_t,
+            **kwargs
+        )
+    
+
+class ReinitializeRandomSeed:
+    """
+    For RNG test stability purposes
+    """
+    def __call__(self,
+                 mask_gen_seed,
+                 **kwargs
+                 ):
+        run_inference.seed_all(mask_gen_seed)
+        return dict(
+            mask_gen_seed=mask_gen_seed,
+            **kwargs
+        )
+
+
+class MaskSeq:
+    """
+    Applies sequence masking to indep_t
+    """
+    def __call__(self,
+                 indep_t,
+                 is_masked_seq,
+                 **kwargs
+                 ):
+        indep_t = aa_model.mask_seq(indep_t, is_masked_seq)
+        return dict(
+            indep_t=indep_t,
+            is_masked_seq=is_masked_seq,
+            **kwargs
+        )
+    
+
+class Prepro:
+    """
+    Converts the indep_t (the noised datapoint) into a rosettafold input (RFI)
+    """
+    def __init__(self,
+                full_config
+                ):
+        self.model_adaptor = aa_model.Model(full_config)
+
+    def __call__(self,
+                 indep_t,
+                 t,
+                 is_diffused,
+                 **kwargs
+                 ):
+        rfi = self.model_adaptor.prepro(indep_t, t, is_diffused)
+        rfi.bond_feats = rfi.bond_feats.to(torch.int64)
+        return dict(
+            rfi=rfi,
+            indep_t=indep_t,
+            t=t,
+            is_diffused=is_diffused,
+            **kwargs
+        )
+    
+
+class SetMetadata:
+    def __call__(self, indep, metadata, **kwargs):
+        indep.metadata = metadata
+        return dict(
+            indep=indep,
+            metadata=metadata,
+            **kwargs
+        )
+        
+
+class DistilledDatasetDotDiffuseDotPy:
+    """
+    Sets up the transforms that mimic the diffuse function in distilleddataset without randomizing frames
+    """
+    def __init__(self, diffuser, full_config):
+        self.diffuser = diffuser
+        self.full_config = full_config
+        self.transform_stack = [
+            GetTrainingT(self.full_config),
+            GetExtraTxd(self.full_config),
+            ReinitializeRandomSeed(),
+            Diffuse(self.diffuser, self.full_config),
+            MaskSeq(),
+            Prepro(self.full_config),
+            ReinitializeRandomSeed(),
+            SetMetadata()
+        ]
+        self.composed_transforms = Compose(self.transform_stack)
+
+    def __call__(self, **kwargs):
+        for T in self.transform_stack:
+            kwargs = T(**kwargs)
+    
+    def forward(self, data: dict) -> dict:
+        return self.composed_transforms.forward(data)
+    
+
+class DistilledDatasetDotDiffuseDotPyWithRandomFrames:
+    """
+    Sets up the transforms that mimic the diffuse function in distilleddataset WITH randomizing frames
+    """
+    def __init__(self, diffuser, full_config):
+        self.diffuser = diffuser
+        self.full_config = full_config
+        self.transform_stack = [
+            GetTrainingT(self.full_config),
+            GetExtraTxd(self.full_config),
+            ReinitializeRandomSeed(),
+            Diffuse(self.diffuser, self.full_config),
+            RandomizeFrames(),
+            MaskSeq(),
+            Prepro(self.full_config),
+            ReinitializeRandomSeed(),
+            SetMetadata()
+        ]
+        self.composed_transforms = Compose(self.transform_stack)
+
+    def __call__(self, **kwargs):
+        for T in self.transform_stack:
+            kwargs = T(**kwargs)
+    
+    def forward(self, data: dict) -> dict:
+        return self.composed_transforms.forward(data)

@@ -59,7 +59,7 @@ def validate_centering_strategy(origin: torch.Tensor, for_partial_diffusion: boo
     if 'CenterPostTransform' in conf.transforms.names:
         # Get the center type, or use default if not found
         center_type = getattr(conf.transforms.configs.CenterPostTransform, 'center_type', conditioning.CenterPostTransform().center_type)        
-        if center_type == 'is_not_diffused' or for_partial_diffusion:
+        if center_type not in ['all', 'is_diffused'] or for_partial_diffusion:
             return
         assert origin is not None, "ORI HETATM token is required for centering input correctly but was not provided"
 
