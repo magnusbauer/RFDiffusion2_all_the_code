@@ -50,5 +50,7 @@ transforms:
     CenterPostTransform:
       jitter: 0
       center_type: target_hotspot
+    RejectOutOfMemoryHazards:
+      max_size: 100000
 
 
