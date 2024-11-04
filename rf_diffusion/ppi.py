@@ -1155,11 +1155,9 @@ class RenumberCroppedInput:
         self.verbose = verbose
 
 
-    def __call__(self, indep, contig_map, **kwargs):
+    def __call__(self, indep, contig_map, conf, masks_1d, **kwargs):
 
         if self.enabled:
-
-            assert not indep.is_sm.any(), "bcov isn't sure that inference.renumber_cropped_input works with small molecules. Let's test it together"
 
             # Accumulator variable for where we are inserting
             insert_n_after_res = torch.zeros(indep.length(), dtype=int)
@@ -1175,9 +1173,26 @@ class RenumberCroppedInput:
             for chain_mask in indep.chain_masks():
                 chain_mask = torch.tensor(chain_mask)
 
-                # Idk what to do with small molecules for now
+                chain_sm = chain_mask & indep.is_sm
+
+                # Entirely a small molecule. We definitely don't want to mess with it
+                if chain_sm.all():
+                    continue
+                if chain_sm.any():
+                    # Make sure the small molecules are entirely after the protein
+                    wh_sm = torch.where(chain_sm)[0]
+                    wh_prot = torch.where(chain_mask & ~indep.is_sm)[0]
+                    assert wh_sm.min() > wh_prot.max(), ('You have small molecules mixed into your protein. '
+                                                'Maybe set upstream_inference_transforms.configs.RenumberCroppedInput.enabled=False and tell bcov?')
+
+                # Small molecules all at the end so drop them
                 chain_mask[indep.is_sm] = False
                 chain_mask[~had_input_coords] = False
+
+                # Guidepost residues shouldn't be renumbered. The indices that we would be changing are actually the diffused indices
+                if conf.inference.contig_as_guidepost:
+                    chain_mask[masks_1d['can_be_gp']] = False
+
 
                 if chain_mask.sum() <= 1:
                     continue
@@ -1209,7 +1224,7 @@ class RenumberCroppedInput:
 
                 wh_insert = wh_chain_mask[:-1][C_N_too_far & (d_idx == 1)]
 
-                insert_n_after_res[wh_insert] = missing_n_res[C_N_too_far]
+                insert_n_after_res[wh_insert] = missing_n_res[C_N_too_far & (d_idx == 1)]
 
                 if self.verbose:
                     for idx, n in zip(wh_insert, missing_n_res[C_N_too_far]):
@@ -1220,7 +1235,9 @@ class RenumberCroppedInput:
 
         return kwargs | dict(
             indep=indep,
-            contig_map=contig_map
+            contig_map=contig_map,
+            conf=conf,
+            masks_1d=masks_1d
         )
 
 
