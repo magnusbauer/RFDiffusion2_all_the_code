@@ -480,7 +480,7 @@ def match_guideposts_and_generate_mappings(indep, is_diffused, contig_map, denoi
     '''
 
     # Only diffused residues that aren't small molecules are elgible to be guidepost residues
-    could_be_gp_corr = is_diffused & ~indep.is_sm
+    could_be_gp_corr = is_diffused & ~indep.is_sm & ~indep.is_gp
 
     # Make where masks for our subsetted arrays
     could_be_gp_corr_idx = torch.nonzero(could_be_gp_corr)[:,0].numpy()
