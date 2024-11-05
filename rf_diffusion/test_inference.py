@@ -755,6 +755,11 @@ class TestRegression(unittest.TestCase):
             '+extra_tXd_params.ppi_hotspots_antihotspots={}',
             '++diffuser.independently_center_diffuseds=True',
 
+            '++upstream_training_transforms.names=[FindHotspotsTrainingTransform]',
+            '++upstream_training_transforms.configs.FindHotspotsTrainingTransform.p_is_hotspot_example=0.9',
+            '++upstream_training_transforms.configs.FindHotspotsTrainingTransform.p_is_antihotspot_example=0.05',
+            '++upstream_training_transforms.configs.FindHotspotsTrainingTransform.hotspot_values_mean=tenA_neighbors',
+
             '++upstream_inference_transforms.names=[HotspotAntihotspotResInferenceTransform,ExposedTerminusTransform,RenumberCroppedInput]',
             '++upstream_inference_transforms.configs.HotspotAntihotspotResInferenceTransform={}',
             '++upstream_inference_transforms.configs.ExposedTerminusTransform={}',
@@ -766,6 +771,7 @@ class TestRegression(unittest.TestCase):
             '++transforms.configs.CenterPostTransform.center_type=target_hotspot',
 
             '++ppi.hotspot_res="B122,B128"',
+            '++ppi.super_hotspot_res="B124,B125"',
             '++ppi.antihotspot_res="B123,B129"',
             '++ppi.exposed_N_terminus=5',
             '++ppi.exposed_C_terminus=6',
@@ -774,9 +780,11 @@ class TestRegression(unittest.TestCase):
         assert mapped_calls[0]['t1d'].shape[-1] == 84, "If this throws, the hotspots arent being written to t1d"
 
         hotspots = mapped_calls[0]['t1d'][0,0,:,-4]
+        super_hotspots = mapped_calls[0]['t1d'][0,0,:,-3]
         antihotspots = mapped_calls[0]['t1d'][0,0,:,-2]
 
         assert (torch.where(hotspots)[0] == torch.tensor([31,37])).all()
+        assert (torch.where(super_hotspots)[0] == torch.tensor([33,34])).all()
         assert (torch.where(antihotspots)[0] == torch.tensor([0,1,2,3,4,24,25,26,27,28,29,32,38])).all()
 
 
