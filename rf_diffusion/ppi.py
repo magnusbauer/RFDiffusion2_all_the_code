@@ -752,20 +752,41 @@ class HotspotAntihotspotResInferenceTransform:
             Return signature is the same as call signature
         '''
 
+
         if bool(conf.ppi.hotspot_res):
             assert isinstance(conf.ppi.hotspot_res, str), f'ppi.hotspot_res must be a string! You passed "{conf.ppi.hotspot_res}"'
             hotspot_mask = contig_map.res_list_to_mask(conf.ppi.hotspot_res)
+
+            assert 'FindHotspotsTrainingTransform' in conf.upstream_training_transforms.names, 'Model not set up for hotspots'
+            assert conf.upstream_training_transforms.configs.FindHotspotsTrainingTransform.get('p_is_hotspot_example', 0) > 0, 'Model not trained for hotspots'
 
             if 'is_hotspot' in conditions_dict:
                 conditions_dict['is_hotspot'] |= hotspot_mask
             else:
                 conditions_dict['is_hotspot'] = hotspot_mask
 
-        # conditions_dict['hotspot_value'] coming soon!
+
+        if bool(conf.ppi.super_hotspot_res):
+            assert isinstance(conf.ppi.super_hotspot_res, str), f'ppi.super_hotspot_res must be a string! You passed "{conf.ppi.super_hotspot_res}"'
+            super_hotspot_mask = contig_map.res_list_to_mask(conf.ppi.super_hotspot_res)
+
+            assert 'FindHotspotsTrainingTransform' in conf.upstream_training_transforms.names, 'Model not set up for super_hotspots'
+            assert str(conf.upstream_training_transforms.configs.FindHotspotsTrainingTransform.get('hotspot_values_mean', False)) in ['tenA_neighbors'], (
+                                                                                                                                'Model not trained for super_hotspots')
+
+            if 'hotspot_values' in conditions_dict:
+                conditions_dict['hotspot_values'][super_hotspot_mask] = 1.0 # Until we know who else wants to write to this vector just overwrite them
+            else:
+                conditions_dict['hotspot_values'] = super_hotspot_mask.float()
+
 
         if bool(conf.ppi.antihotspot_res):
             assert isinstance(conf.ppi.antihotspot_res, str), f'ppi.antihotspot_res must be a string! You passed "{conf.ppi.antihotspot_res}"'
             antihotspot_mask = contig_map.res_list_to_mask(conf.ppi.antihotspot_res)
+
+            assert 'FindHotspotsTrainingTransform' in conf.upstream_training_transforms.names, 'Model not set up for antihotspots'
+            assert conf.upstream_training_transforms.configs.FindHotspotsTrainingTransform.get('p_is_antihotspot_example', 0) > 0, 'Model not trained for antihotspots'
+
             if 'is_antihotspot' not in conditions_dict:
                 conditions_dict['is_antihotspot'] = antihotspot_mask
             else:

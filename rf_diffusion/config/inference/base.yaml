@@ -182,6 +182,7 @@ denoiser:
 
 ppi:
   hotspot_res: null # Which residues on the target should we be within 7A (CB-dist) of? (B10,B15,B20-25)
+  super_hotspot_res: null # Which residues should be absolutely buried? Requires a special model. (B10,B15,B20-25)
   antihotspot_res: null # Which residues on the target should we be at least 10A away from?
   exposed_N_terminus: 0 # How many N-terminus residues of the first chain should be at least 10A away from every other chain?
   exposed_C_terminus: 0 # How many C-terminus residues of the first chain should be at least 10A away from every other chain?
