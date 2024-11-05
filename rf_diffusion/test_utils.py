@@ -28,7 +28,6 @@ from rf_diffusion.chemical import ChemicalData as ChemData
 from rf_diffusion.data_loader import no_batch_collate_fn
 import rf_diffusion
 from rf_diffusion import aa_model
-from rf_diffusion.datahub_dataset_interface import get_datahub_fallback_dataset_and_dataloader
 
 golden_dir = 'goldens'
 
