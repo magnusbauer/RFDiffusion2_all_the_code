@@ -16,6 +16,8 @@ from dateutil import parser
 import numpy as np
 from rf_diffusion.parsers import parse_a3m, parse_pdb
 from rf_diffusion.kinematics import xyz_to_t2d
+from rf_diffusion.preprocess import wrap_featurize 
+
 import rf2aa.data.compose_dataset
 import rf2aa.util
 import rf2aa.tensor_util
@@ -2043,24 +2045,6 @@ def add_motif_template(rfi: aa_model.RFI, motif_template: dict, masks_1d: dict) 
 
     return rfi
 
-
-def wrap_featurize( indep_t, 
-                    t, 
-                    is_diffused,
-                    model_adaptor,
-                    masks_1d,
-                    **kwargs): 
-    """
-    Wrapper to handle extra tXd, prepro, and adding extra templates.
-    """
-
-    # create RosettaFold input features
-    rfi = model_adaptor.prepro(indep_t, t, is_diffused)
-    # add the templated motif information/features
-    if kwargs.get('motif_template', None) is not None:
-        rfi = add_motif_template(rfi, kwargs['motif_template'], masks_1d)
-
-    return rfi
 
 
 class DistilledDataset(data.Dataset):

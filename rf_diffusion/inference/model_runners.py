@@ -4,7 +4,7 @@ import torch
 import numpy as np
 from omegaconf import DictConfig, OmegaConf
 from icecream import ic
-
+import time 
 from rf_diffusion.chemical import ChemicalData as ChemData
 import rf2aa.util
 import rf2aa.data.data_loader
@@ -24,9 +24,10 @@ from rf_diffusion import noisers
 from rf_diffusion.config import config_format
 from pathlib import Path
 import os
-
+import pdb
 import rf_diffusion.inference.data_loader
-
+from rf_diffusion.preprocess import wrap_featurize 
+import pdb
 import sys
 
 # When you import this it causes a circular import due to the changes made in apply masks for self conditioning
@@ -118,7 +119,6 @@ class Sampler:
 
         # Assign config to Sampler
         self._conf = conf
-
         # self.initialize_sampler(conf)
         self.initialized=True
         self.load_model()
@@ -198,7 +198,11 @@ class Sampler:
         """
         assert self.initialized, 'sampler.initialize() has not been called yet'
         indep_uncond, self.indep_orig, self.indep_cond, metadata, self.is_diffused, self.atomizer, contig_map, t_step_input, self.conditions_dict, self.masks_1d, self.extra_transform_kwargs = self.dataset.getitem_inner(i_des % len(self.dataset), **extra)
+
         indep = self.indep_cond.clone()
+
+        self.metadata = metadata
+
         return indep, contig_map, self.atomizer, t_step_input
 
     def symmetrise_prev_pred(self, px0, seq_in, alpha):
@@ -234,17 +238,28 @@ class NRBStyleSelfCond(Sampler):
             tors_t_1: (L, ?) The updated torsion angles of the next  step.
             plddt: (L, 1) Predicted lDDT of x0.
         '''
-
+        print('SAMPLING STEP') 
+        print('*'*100)
         if self._conf.inference.get('recenter_xt'):
             indep_cond = copy.deepcopy(indep)
             indep_uncond_com = indep.xyz[:,1,:].mean(dim=0)
             indep.xyz = indep.xyz - indep_uncond_com
-            indep = aa_model.make_conditional_indep(indep, indep_cond, self.is_diffused)
+            indep = aa_model.make_conditional_indep(indep, indep_cond, self.is_diffused, sm_assertion=(not self._conf.motif_only_2d))
 
         extra_tXd_names = getattr(self._conf, 'extra_tXd', [])
         t_cont = t/self._conf.diffuser.T
         indep.extra_t1d, indep.extra_t2d = features.get_extra_tXd_inference(indep, extra_tXd_names, self._conf.extra_tXd_params, self._conf.inference.conditions, t_cont=t_cont, features_cache=features_cache, **self.conditions_dict)
-        rfi = self.model_adaptor.prepro(indep, t, self.is_diffused)
+
+        #rfi = self.model_adaptor.prepro(indep, t, self.is_diffused)
+        featurize_kwargs = {'indep_t'           : indep,
+                            't'                 : t,
+                            'is_diffused'       : self.is_diffused,
+                            'model_adaptor'     : self.model_adaptor,
+                            'masks_1d'          : self.metadata.get('masks_1d', None), 
+                            'motif_template'    : self.metadata.get('motif_template', None)
+                            }
+
+        rfi = wrap_featurize(**featurize_kwargs)
 
         rf2aa.tensor_util.to_device(rfi, self.device)
 
@@ -331,6 +346,9 @@ class NRBStyleSelfCond(Sampler):
 
 def get_x_t_1(rigids_t, xyz, is_diffused):
     x_t_1 = all_atom.atom37_from_rigid(rigids_t)
+    if x_t_1.shape[0] != 1:
+        x_t_1 = x_t_1[None]
+
     x_t_1 = x_t_1[0,:,:ChemData().NTOTAL]  # Conversion from 37 style to 36 style
     # Replace the xyzs of the motif
     x_t_1[~is_diffused.bool(), :ChemData().NHEAVY] = xyz[~is_diffused.bool(), :ChemData().NHEAVY]

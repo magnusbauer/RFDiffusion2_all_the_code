@@ -12,7 +12,7 @@ num_workers: 0
 extra_tXd: null
 
 motif_only_2d: true
-omit_frame_permutations: true
+
 
 resume_scheduler: false 
 
@@ -22,6 +22,7 @@ model_name: caBFF
 preprocess: 
   eye_frames: true
   use_cb_to_get_pair_dist: true
+  omit_atom_frame_permutation: ${motif_only_2d}
 
 loss:
   backprop_non_displacement_on_given: false
@@ -33,15 +34,14 @@ upstream_training_transforms:
 
 transforms: 
   names:
-    - OmitFramePermutations
     - ComputeMotifTemplate
     - CenterOnCA # since we are doing motif_only_2d, center on all
     - AddConditionalInputs
   
   configs:
-    OmitFramePermutations: {}
     ComputeMotifTemplate:
-      use_cb: true
+      use_cb: ${preprocess.use_cb_to_get_pair_dist}
+      omit_frame_permutation: ${preprocess.omit_atom_frame_permutation}
     Center: {}
     CenterOnCA: {}
     AddConditionalInputs:

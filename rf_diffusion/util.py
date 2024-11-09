@@ -10,6 +10,8 @@ import rf2aa.kinematics
 import rf2aa.util
 import networkx as nx 
 
+
+
 def any_a_in_b(a: list, b: list): 
     # check if any element in a is in b
     return any([x in b for x in a])

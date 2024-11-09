@@ -29,6 +29,7 @@ import rf_diffusion.rotation_conversions as rotation_conversions
 import rf_diffusion.atomize as atomize
 from rf_diffusion import write_file
 from rf_diffusion.contigs import ContigMap
+
 from rf_diffusion.atomization_primitives import AtomizedLabel, AtomizerSpec  # noqa: F401
 from rf_diffusion import build_coords
 
@@ -170,7 +171,6 @@ class Indep:
         if skipped:     print(spacer)
         print('='*23, flush=True)
 
-        self.frames_omit_permutation = False
 
     def clone(self):
         '''
@@ -201,12 +201,8 @@ class Indep:
         if hasattr(self, 'extra_t2d'):
             indep_copy.extra_t2d = copy.deepcopy(self.extra_t2d.detach())
 
-        indep_copy.frames_omit_permutation = self.frames_omit_permutation
         return indep_copy
 
-    def __deepcopy__(self, memo): 
-
-        return self.clone()
 
     @property
     def device(self):
@@ -218,6 +214,9 @@ class Indep:
 
     @property
     def atom_frames(self) -> torch.Tensor:
+        return self.get_atom_frames()
+    
+    def get_atom_frames(self, omit_permutation=False):
         is_sm = rf2aa.util.is_atom(self.seq).to('cpu')
 
         # Make a graph of the small molecule elements
@@ -230,7 +229,7 @@ class Indep:
         atom_frames = rf2aa.util.get_atom_frames(
             sm_seq, 
             G, 
-            omit_permutation=self.frames_omit_permutation
+            omit_permutation=omit_permutation
             )
 
         # If atom_frames is empty, make it the "right" size
@@ -1440,8 +1439,15 @@ class Model:
         t2d = torch.zeros(1,2,L,L,68)
 
         use_cb = self.conf.preprocess.use_cb_to_get_pair_dist
-        t2d_xt, _mask_t_2d_remade = util.get_t2d(
-            xyz, indep.is_sm, indep.atom_frames, use_cb=use_cb)
+        
+        if not self.conf.preprocess.omit_atom_frame_permutation: 
+            atom_frames_in = indep.atom_frames # without omit permutation
+        else: 
+            atom_frames_in = indep.get_atom_frames(True) # with omit permutation
+
+        t2d_xt, mask_t_2d_remade = util.get_t2d(
+            xyz, indep.is_sm, atom_frames_in, use_cb=use_cb)
+
         t2d[0,0] = t2d_xt[0]
         xyz_t[0,0] = xyz[0,:,1]
 
@@ -3104,8 +3110,9 @@ def open_indep(indep, is_open, break_chirals=False):
 def residue_atoms(res):
     return [n.strip() for n in ChemData().aa2long[res][:ChemData().NHEAVY] if n is not None]
 
-def make_conditional_indep(indep, indep_original, is_diffused):
-    assert indep.is_sm[~is_diffused].all(), 'sequence unmasking not yet implemented, only coordinate conditioning, so only atomized/small molecule motifs are allowed'
+def make_conditional_indep(indep, indep_original, is_diffused, sm_assertion=True):
+    if sm_assertion:
+        assert indep.is_sm[~is_diffused].all(), 'sequence unmasking not yet implemented, only coordinate conditioning, so only atomized/small molecule motifs are allowed'
     indep = copy.deepcopy(indep)
     indep.xyz[~is_diffused, :ChemData().NHEAVY] = indep_original.xyz[~is_diffused, :ChemData().NHEAVY]
     return indep

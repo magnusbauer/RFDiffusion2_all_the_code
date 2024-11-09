@@ -103,7 +103,7 @@ def get_next_ca(xt, px0, t, diffusion_mask, crd_scale, beta_schedule, alphabar_s
     delta = sampled_crds - xt[:,1,:] 
 
     if not diffusion_mask is None:
-        delta[diffusion_mask,...] = 0
+        delta[diffusion_mask.squeeze(),...] = 0
 
     out_crds = xt + delta[:, None, :]
 
@@ -228,12 +228,12 @@ class WrappedEuclideanDiffuser(EuclideanDiffuser, r3_diffuser.R3Diffuser):
         """
         trans_t, _ = _extract_trans_rots(rigid_t)       # CAs at time t 
         trans_0, _ = _extract_trans_rots(rigid_pred)    # CAs at time 0
-        L = len(trans_t)
+        L = len(trans_t.squeeze())
 
         ### build inputs for get_next_ca ###
         # Xt coordinates 
         xt = torch.zeros(L,14,3, dtype=torch.float) # (L,14,3)
-        xt[:,1] = torch.from_numpy(trans_t) 
+        xt[:,1] = torch.from_numpy(trans_t.squeeze()) 
 
         # pX0 coordinates
         px0 = torch.zeros(L,14,3, dtype=torch.float) # (L,14,3)
@@ -291,6 +291,9 @@ class LegacyDiffuser(SE3Diffuser):
         rigid_pred = kwargs['rigid_pred']
         trans_t, rot_t = _extract_trans_rots(rigid_t)
         # reverse translations like EuclideanDiffuser
+        if isinstance(kwargs['diffuse_mask'], np.ndarray): 
+            kwargs['diffuse_mask'] = torch.from_numpy(kwargs['diffuse_mask'])
+
         trans_t_1 = self._r3_diffuser.reverse(rigid_t, 
                                               rigid_pred, 
                                               kwargs['t'], 
@@ -303,8 +306,7 @@ class LegacyDiffuser(SE3Diffuser):
         #         trans_t_1, trans_t, kwargs['diffuse_mask'][..., None])
             
             # don't need to do it for rots because super does it
-        
-        return _assemble_rigid(rot_t_1, trans_t_1)
+        return _assemble_rigid(rot_t_1.squeeze(), trans_t_1)
 
 
 

@@ -93,19 +93,135 @@ class OmitFramePermutations:
             indep=indep,
             **kwargs
         )
-    
+
+
+def label_true_islands(tensor) -> torch.Tensor:
+    """
+    Written by ChatGPT. 
+
+    Incrementally labels True islands in a boolean tensor.
+
+    Parameters:
+        tensor (torch.Tensor): A 1D boolean tensor.
+    """
+    labels = torch.full(tensor.shape, -1)  # Initialize all positions to -1
+    current_label = 0  # Initialize the label for islands of True values
+
+    # Iterate through the tensor and label islands
+    for i in range(len(tensor)):
+        if tensor[i]:  # If current position is True
+            if i == 0 or not tensor[i - 1]:  # Start a new island if the previous was False
+                current_label += 1  # Increment the label for each new island
+            labels[i] = current_label - 1  # Assign the label
+
+    return labels
+
+
+def compute_token_pair_mask(is_motif_w_chunk_id, coarse_ij_matrix):
+    """
+    Compute 2D mask for motif chunk pairs. 
+
+    Parameters: 
+        is_motif_w_chunk_id (torch.Tensor): 1D tensor desginating motif chunks, with 
+            each chunk labeled by an integer. 
+        coarse_ij_matrix (torch.Tensor): 2D tensor designating which motif chunks can see each other.
+
+    Returns: 
+        torch.Tensor: 2D tensor designating which pairs of tokens will be constrained w.r.t each other.
+    """
+    # cartesian product of pairs of motif chunks constrained w.r.t each other. 
+    visible_pairs = torch.nonzero(coarse_ij_matrix)
+    visible_pairs = [tuple(p.numpy()) for p in visible_pairs]
+
+    L = is_motif_w_chunk_id.shape[0]
+    A = is_motif_w_chunk_id[None].repeat(L,1)   # L x L, each row is a copy of is_motif_w_chunk
+    B = A.T                                     # L x L, ^^ but transposed
+
+    stacks = []
+    for (i,j) in visible_pairs: 
+        is_i = A == i
+        is_j = B == j
+
+        is_i_and_j = is_i & is_j  # find tokens that are part of group i and j intersection
+        stacks.append(is_i_and_j)
+
+    stacks = torch.stack(stacks+[t.T for t in stacks]) 
+    return torch.any(stacks, dim=0) # combine them all
+
+
+abet = 'abcdefghijklmnopqrstuvwxyz'
+abet = abet + abet.upper()
+abet = [a for a in abet]
+abet2num = {a:i for i,a in enumerate(abet)}
+class GetTemplatedMotifMasks:
+    """
+    Given contig map and indep, compute the 2D and 1D masks used for motif template addition. 
+    """
+
+    def __init__(self, ij_visible: str, template_ligand: bool=True): 
+        self.ij_visible = ij_visible
+        self.template_ligand = template_ligand 
+
+    def __call__(self, 
+                 indep: Indep, 
+                 contig_map: ContigMap, 
+                 masks_1d: dict, 
+                 metadata: dict, 
+                 **kwargs):
+        # compute 1D array designating which tokens correspond to each motif chunk in contig map
+        motif_visibility_groupings = self.ij_visible.split('-')
+        motif_visibility_groupings_int = [tuple([abet2num[a] for a in s]) for s in motif_visibility_groupings]
+        
+        # total motif chunks, supplied by the user, including ligand
+        nchunk_total = len( set( [i for S in motif_visibility_groupings_int for i in S] ) )
+
+        # Make a 2D array designating which motif chunks can see each other 
+        coarse_ij_visibility = torch.eye(nchunk_total)
+        for S in motif_visibility_groupings_int:
+            for i in S:
+                for j in S:
+                    coarse_ij_visibility[i,j] = 1
+
+
+        # 1D feature designating motif tokens 
+        is_motif = torch.zeros(indep.length(), dtype=torch.bool)
+        for i,entry in enumerate(contig_map.inpaint): 
+            if entry != ('_','_'): 
+                is_motif[i] = True
+        is_motif[indep.is_sm] = True # assumes the ligand is motif as well
+
+        is_motif_w_chunk_id = label_true_islands(is_motif)
+        
+        # make some assertion about how the computed number of motif chunks from 
+        # contig map + indep needs to be the same number computed from user supplied ij_visible
+        assert nchunk_total == len(set(is_motif_w_chunk_id[is_motif_w_chunk_id != -1].tolist())), f'{nchunk_total=} {is_motif_w_chunk_id=}'
+
+        # 2D feature designating which pairs of tokens will be constrained w.r.t each other  
+        token_pair_is_revealed = compute_token_pair_mask(is_motif_w_chunk_id, coarse_ij_visibility)
+
+        masks_1d['input_str_mask'] = is_motif
+        masks_1d['is_motif_2d'] = token_pair_is_revealed
+        metadata['masks_1d'] = masks_1d 
+
+        return {'indep'     : indep, 
+                'masks_1d'  : masks_1d,
+                'metadata'  : metadata, 
+                'contig_map': contig_map, 
+                **kwargs}
 
 class ComputeMotifTemplate: 
     """
     Takens in an unnoised indep, 1D is_motif mask and 2D is_motif_2d mask and 
     computes a new template containing motif structure.
     """
-    def __init__(self, use_cb: bool):
+    def __init__(self, use_cb: bool, omit_frame_permutation: bool):
         self.use_cb = use_cb
+        self.omit_frame_permutation = omit_frame_permutation
 
     def __call__(self, 
                  indep      : Indep,
                  masks_1d   : dict,
+                 metadata   : dict,
                  **kwargs): 
         
         """
@@ -118,12 +234,12 @@ class ComputeMotifTemplate:
         is_motif_2d = masks_1d['is_motif_2d']
 
         motif_xyz_t = indep.xyz.clone() # perfect native structure 
-        motif_xyz_t[~is_motif] = 0.0             # remove non-motif information 
+        motif_xyz_t[~is_motif] = 0.0    # remove non-motif information 
 
         ### t2d ### 
         t2d_motif, _ = rf_diffusion.util.get_t2d(motif_xyz_t[None], 
                                                  indep.is_sm, 
-                                                 indep.atom_frames,  
+                                                 indep.get_atom_frames(self.omit_frame_permutation),  
                                                  use_cb    = self.use_cb,
                                                  mask_t_2d = is_motif_2d[None])
         
@@ -134,10 +250,15 @@ class ComputeMotifTemplate:
         xyz_t_out = motif_xyz_t[:,1] # CA's of motif residues 
 
         motif_template = {'t2d': t2d_motif, 'xyz_t': xyz_t_out}
+        metadata['motif_template'] = motif_template
+
+        masks_1d['input_str_mask'] = torch.zeros_like(is_motif) # ensure it gets diffused in 3D 
+
 
         return {'indep'         : indep,
                 'masks_1d'      : masks_1d,
                 'motif_template': motif_template,
+                'metadata'      : metadata,
                 **kwargs}
         
 

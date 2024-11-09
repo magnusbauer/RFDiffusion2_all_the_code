@@ -362,6 +362,12 @@ def sample_one(sampler, i_des=0, simple_logging=False):
         if sampler._conf.preprocess.randomize_frames:
             print('randomizing frames')
             indep.xyz = aa_model.randomly_rotate_frames(indep.xyz)
+        elif sampler._conf.preprocess.eye_frames: 
+            print('Eye frames')
+            indep.xyz = aa_model.eye_frames(indep.xyz)
+        else:
+            pass
+
         extra['n_steps'] = n_steps[it]
         extra['self_cond'] = self_cond[it]
         px0, x_t, seq_t, rfo, extra = sampler.sample_step(
