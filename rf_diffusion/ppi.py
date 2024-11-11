@@ -1197,7 +1197,7 @@ class RenumberCroppedInput:
                 chain_sm = chain_mask & indep.is_sm
 
                 # Entirely a small molecule. We definitely don't want to mess with it
-                if chain_sm.all():
+                if chain_sm[chain_mask].all():
                     continue
                 if chain_sm.any():
                     # Make sure the small molecules are entirely after the protein
