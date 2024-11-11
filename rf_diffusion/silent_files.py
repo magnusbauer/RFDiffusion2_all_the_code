@@ -39,7 +39,7 @@ def add_xyz_to_silent(silent_path, tag, xyz, seq, bond_feats, scores={}, **kwarg
 
     # First turn the coordinates into a pdb
     xyz_stack = xyz[None]
-    xyz23 = aa_model.pad_dim(xyz_stack, 2, ChemData().NHEAVY)
+    xyz23 = aa_model.pad_dim(xyz_stack, 2, ChemData().NHEAVY)[:,:,:ChemData().NHEAVY]
     if bond_feats is not None:
         bond_feats = bond_feats[None]
     fh = io.StringIO()
