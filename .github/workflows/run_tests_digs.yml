@@ -21,7 +21,7 @@ jobs:
 
     - name: run ruff
       run: |
-        ipd ci tests ruff
+        ipd ci tests ruff rf_diffusion
 
     - name: run pytest digs
       run: |
