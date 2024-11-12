@@ -33,8 +33,7 @@ class BackwardCompatibleDataLoaderProcessOut(Transform):
             ["is_polymer", "pn_unit_iid", "molecule_iid", "molecule_entity", "chain_entity", "chain_iid", "atomize", "is_N_terminus", "is_C_terminus"],
         )
 
-    def __init__(self, loader_params, sel_item_keys=['example_id', 'pdb_id', 'assembly_id', 'cluster'], task='diff'):
-        self.loader_params = loader_params
+    def __init__(self, sel_item_keys=['example_id', 'pdb_id', 'assembly_id', 'cluster'], task='diff'):
         self.sel_item_keys = sel_item_keys
         self.task = task
 
@@ -99,6 +98,5 @@ class BackwardCompatibleDataLoaderProcessOut(Transform):
             'sel_item': sel_item,
             'task': self.task,
             'mask_gen_seed': mask_gen_seed,
-            'params': self.loader_params,
             'conditions_dict': {}
         }

@@ -80,11 +80,10 @@ datahub:
           - q_pn_unit_iid
           - q_pn_unit_non_polymer_res_names
       transform:
-        _target_: datahub.pipelines.rf_diffusion.build_rf_diffusion_transform_pipeline
+        _target_: rf_diffusion.datahub_pipelines.rf_diffusion.build_rf_diffusion_transform_pipeline
         crop_size: 384
         crop_contiguous_probability: 0.9
         crop_spatial_probability: 0.1
-        loader_params: ${dataloader}
     weights:
       _target_: datahub.samplers.calculate_weights_for_pdb_dataset_df
       beta: 0.5
@@ -137,11 +136,10 @@ datahub:
           - pn_unit_2_non_polymer_res_names
           - is_inter_molecule
       transform:
-        _target_: datahub.pipelines.rf_diffusion.build_rf_diffusion_transform_pipeline
+        _target_: rf_diffusion.datahub_pipelines.rf_diffusion.build_rf_diffusion_transform_pipeline
         crop_size: 384
         crop_contiguous_probability: 0.0
         crop_spatial_probability: 1.0
-        loader_params: ${dataloader}
     weights:
       _target_: datahub.samplers.calculate_weights_for_pdb_dataset_df
       beta: 0.5

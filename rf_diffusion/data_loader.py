@@ -20,7 +20,6 @@ import rf2aa.data.compose_dataset
 import rf2aa.util
 import rf2aa.tensor_util
 import rf2aa.kinematics
-from datahub.datasets.base import BaseDataset
 from rf_diffusion.chemical import ChemicalData as ChemData
 
 # for diffusion training
@@ -1640,32 +1639,6 @@ class DistilledDatasetUnnoised(data.Dataset):
         #     raise Exception('sm_complex debug fail')
         dataset_config = self.dataset_configs[chosen_dataset]
 
-        # if datahub dataset, use that getitem instead of anything here
-        if isinstance(dataset_config, BaseDataset):
-            processed_output = dataset_config.__getitem__(index)
-            relevant_keys_from_row = ['pdb_id', 'assembly_id', 'resolution', 'deposition_date', 'q_pn_unit_processed_entity_canonical_sequence']
-            relevant_items = {key: processed_output['row'][key] for key in relevant_keys_from_row}
-
-            item_context = pprint.pformat({
-                'chosen_dataset': chosen_dataset,
-                'index': index,
-                'sel_item': relevant_items,
-                'task': task,
-                'mask_gen_seed': mask_gen_seed}, indent=4)
-
-            return {
-                    'indep': processed_output['indep'],
-                    'atom_mask': processed_output['atom_mask'],
-                    'metadata': processed_output['metadata'],
-                    'chosen_dataset': chosen_dataset,
-                    'sel_item': relevant_items,
-                    'task': task,
-                    'item_context': item_context,
-                    'mask_gen_seed': mask_gen_seed,
-                    'params': self.params,
-                    'conditions_dict': {}
-            }
-
         ID = dataset_config.ids[index]
         if chosen_dataset == "sm_complex":
             sel_item = rf2aa.data.data_loader.sample_item_sm_compl(dataset_config.dic, ID)
@@ -1821,10 +1794,11 @@ class DistilledDatasetUnnoised(data.Dataset):
     
 
 class DistilledDatasetUnnoisedDatahub(DistilledDatasetUnnoised):
-    def __init__(self, conf_datahub):
+    def __init__(self, conf_datahub, params):
         self.datasets = {}
         self.dataset_probabilities = []
         self.dataset_options = []
+        self.params = params
 
         backward_compatible_dataset_configs = {}
 
@@ -1867,7 +1841,7 @@ class DistilledDatasetUnnoisedDatahub(DistilledDatasetUnnoised):
                 'task': processed_output['task'],
                 'item_context': item_context,
                 'mask_gen_seed': processed_output['mask_gen_seed'],
-                'params': processed_output['params'],
+                'params': self.params,
                 'conditions_dict': {}
         }
 
@@ -2207,7 +2181,7 @@ def no_batch_collate_fn(data):
 
 def get_dataset_and_sampler(dataset_configs, dataset_options, dataset_prob, conf, diffuser, num_example_per_epoch, world_size, rank, homo, use_datahub_if_available=False):
     if use_datahub_if_available and 'datahub' in conf:
-        unnoised_dataset = DistilledDatasetUnnoisedDatahub(conf_datahub=conf.datahub)
+        unnoised_dataset = DistilledDatasetUnnoisedDatahub(conf_datahub=conf.datahub, params=conf.dataloader)
         dataset_prob = unnoised_dataset.dataset_probabilities
         dataset_configs = unnoised_dataset.dataset_configs
         dataset_options = unnoised_dataset.dataset_options
