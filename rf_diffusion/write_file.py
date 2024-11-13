@@ -4,7 +4,6 @@ import numpy as np
 import torch
 
 from rf_diffusion.chemical import ChemicalData as ChemData
-from rf2aa.util_module import XYZConverter
 from rf2aa.scoring import *
 from rf_diffusion import build_coords
 
