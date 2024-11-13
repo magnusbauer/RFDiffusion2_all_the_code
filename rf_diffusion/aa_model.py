@@ -30,6 +30,7 @@ import rf_diffusion.atomize as atomize
 from rf_diffusion import write_file
 from rf_diffusion.contigs import ContigMap
 from rf_diffusion.atomization_primitives import AtomizedLabel, AtomizerSpec  # noqa: F401
+from rf_diffusion import build_coords
 
 import rf_diffusion.frame_diffusion.data.utils as du
 from rf_diffusion.frame_diffusion.data import all_atom
@@ -891,6 +892,39 @@ def add_fake_frame_legs(xyz, is_atom, generator=None):
     xyz[is_atom, 0] += torch.normal(torch.zeros_like(xyz[is_atom, 0]), std=1.0, generator=generator)
     xyz[is_atom, 2] += torch.normal(torch.zeros_like(xyz[is_atom, 2]), std=1.0, generator=generator)
     return xyz
+
+
+def indep_from_sequence(sequence_str=None, sequence_numeric=None):
+    '''
+    Build an indep with extended backbone from sequence
+
+    Works exactly like pyrosetta.pose_from_sequence()
+
+    This isn't a quick function. If you are relying on this to be fast, maybe we should rethink how this works...
+
+    Args:
+        sequence_str (str): A string of the sequence ("ACDEFG")
+        sequence_numeric (torch.tensor[int]): A tensor of the sequence like found in indep ([0, 1, 2, 3, 4])
+
+    Returns:
+        indep (indep): An indep with the sequence you specified
+    '''
+
+    assert (sequence_str is None) != (sequence_numeric is None), 'One of sequence_str and sequence_numeric should be specified'
+
+    if sequence_numeric is None:
+        sequence_numeric = torch.tensor([ChemData().one_letter.index(s) for s in sequence_str])
+
+    xyz, atom_mask = build_coords.extended_ideal_xyz_from_seq(sequence_numeric, include_hydrogens=False)
+
+    # So this is definitely not the most elegant way to make an indep
+    # BUT! It is definitely the way to ensure we do this in the most accurate way possible
+    fh = io.StringIO()
+    write_file.writepdb_file(fh, xyz, sequence_numeric)
+    fh.seek(0)
+
+    return make_indep('indep_from_sequence', pdb_stream=fh.readlines())
+
 
 
 class Model:

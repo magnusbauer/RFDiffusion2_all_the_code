@@ -6,6 +6,7 @@ import torch
 from rf_diffusion.chemical import ChemicalData as ChemData
 from rf2aa.util_module import XYZConverter
 from rf2aa.scoring import *
+from rf_diffusion import build_coords
 
 def writepdb(filename, *args, file_mode='w', **kwargs, ):
     f = open(filename, file_mode)
@@ -16,9 +17,7 @@ def writepdb(filename, *args, file_mode='w', **kwargs, ):
 def writepdb_file(f, atoms, seq, modelnum=None, chain="A", idx_pdb=None, bfacts=None, 
              bond_feats=None, file_mode="w",atom_mask=None, atom_idx_offset=0, chain_Ls=None,
              remap_atomtype=True, lig_name=None, atom_names=None, chain_letters=None,
-             ligand_name_arr=None):
-
-    fix_null_sidechains(atoms, seq, atom_mask=atom_mask)
+             ligand_name_arr=None, fix_corrupt_sidechains=True):
     
     # PDBs coordinate range is (-999.99, 9999.99)
     atoms = torch.where(atoms >= 10000, 9999.99, atoms)
@@ -64,9 +63,9 @@ def writepdb_file(f, atoms, seq, modelnum=None, chain="A", idx_pdb=None, bfacts=
     assert not (chain_Ls and chain_letters)
     if chain_letters is None:
         if chain_Ls is not None:
-            chain_letters = np.concatenate([np.full(L, alphabet[i]) for i,L in enumerate(chain_Ls)])
+            chain_letters = np.concatenate([torch.full(L, alphabet[i]) for i,L in enumerate(chain_Ls)])
         else:
-            chain_letters = [chain]*len(scpu)
+            chain_letters = np.array([chain]*len(scpu)) # torch can't handle strings apparently
 
     assert not ((ligand_name_arr is not None) and lig_name)
     if ligand_name_arr is None:
@@ -75,6 +74,12 @@ def writepdb_file(f, atoms, seq, modelnum=None, chain="A", idx_pdb=None, bfacts=
         
     if modelnum is not None:
         f.write(f"MODEL        {modelnum}\n")
+
+    if fix_corrupt_sidechains and atoms.shape[1] > 4:
+        res_fixed = fix_null_sidechains(atoms, seq, atom_mask=atom_mask).numpy()
+        if res_fixed.any():
+            print('Building fake sidechains for positions:', ','.join(f'{chain}{seqpos}' for (chain, seqpos) in 
+                                                                                    zip(chain_letters[res_fixed], idx_pdb[res_fixed])))
 
     Bfacts = torch.clamp( bfacts.cpu(), 0, 1)
     atom_idxs = {}
@@ -141,12 +146,24 @@ def writepdb_file(f, atoms, seq, modelnum=None, chain="A", idx_pdb=None, bfacts=
 
 
 
-def fix_null_sidechains(atoms, seq, atom_mask=None, too_close_thresh=0.01):
+def fix_null_sidechains(atoms, seq, atom_mask=None, too_close_thresh=0.01, flag_atoms_exactly_0000=True):
     '''
     If sidechains atoms of a protein residue are xyz identical. Replace with an ideal sidechain
 
-    Future iterations of this function could also fix dna and perhaps try to match correctly-built atoms
+    Future iterations of this function could also fix dna and perhaps try to match correctly-built atoms if any exist
+
+    Args:
+        atoms (torch.Tensor[float]): xyz from an indep [L,4]
+        seq (torch.Tensor[int]): seq from an indep [L]
+        atom_mask (torch.Tensor[bool] or None): Which atoms exist for each residue? [L,36]
+        too_close_thresh (float): Any any two sidechain atoms are closer than this rebuild the sidechain
+        flag_atoms_exactly_0000 (bool): If a sidechain atom has coordinates exactly 0.000 then call the sidechain bad (catches alanine)
+
+    Returns:
+        res_fixed (torch.tensor[bool]): The mask of residues that were rebuilt [L]
     '''
+
+    assert atoms.shape[1] >= 4, "You're trying to build sidechains on a backbone that doesn't even have oxygens. Something is probably wrong."
 
     too_close_squared = too_close_thresh**2
 
@@ -158,6 +175,7 @@ def fix_null_sidechains(atoms, seq, atom_mask=None, too_close_thresh=0.01):
         res_atoms = atoms[pos]
         res_seq = seq[pos]
 
+        # Only deal with protein sidechains for now
         if res_seq >= 20:
             continue
 
@@ -170,7 +188,6 @@ def fix_null_sidechains(atoms, seq, atom_mask=None, too_close_thresh=0.01):
         if torch.sum(torch.square(res_atoms[1]-res_atoms[2])) < too_close_squared:
             continue
 
-
         # Figure out what the atom mask should be. We choose the input with the fewest number of atoms
         atom_names = ChemData().aa2long[res_seq]
         true_atom_mask = torch.tensor([name is not None for name in atom_names])
@@ -182,6 +199,7 @@ def fix_null_sidechains(atoms, seq, atom_mask=None, too_close_thresh=0.01):
 
         # We don't care about backbone corruption since only O can be salvaged and you'd fix that differently
         final_atom_mask[:4] = False
+        final_atom_mask[1] = True # But put CA back in there to catch atoms overlapping with CA
 
         # GLY
         if final_atom_mask.sum() == 0:
@@ -191,41 +209,31 @@ def fix_null_sidechains(atoms, seq, atom_mask=None, too_close_thresh=0.01):
         all_by_d2 = torch.sum( torch.square( res_atoms[final_atom_mask][:,None] - res_atoms[final_atom_mask][None,:] ), axis=-1 )
         all_by_d2[torch.eye(final_atom_mask.sum(), dtype=bool)] = too_close_squared + 1
 
-        if (all_by_d2 > too_close_squared).all():
+        # Strip CA from this calculation
+        exactly_origin = (torch.abs( res_atoms[final_atom_mask][1:] ) < 0.0001).all(axis=-1)
+
+        # if they're all separated and no one is at the origin we're good
+        if (all_by_d2 > too_close_squared).all() and not exactly_origin.any():
             continue
 
-        # Mark the residues as needs fixing and store it's atom mask
+        # Mark the residue as needs fixing and store its atom mask
         needs_fix[pos] = True
         atom_mask_of_fixes.append(final_atom_mask)
 
 
     if needs_fix.sum() == 0:
-        return
+        return needs_fix
 
     atom_mask_of_fixes = torch.stack(atom_mask_of_fixes, axis=0)
+    atom_mask_of_fixes[:,:4] = False # Don't mess with the backbone
 
-    # XYZConverter is pretty much the only way to build ideal coordinates from rf2aa
-    #   Trouble is that it wants to know a bunch of angles and if we try to recover them
-    #   from our input protein it's just going to crash
-    xyz_converter = XYZConverter()
-    alphas = torch.zeros((needs_fix.sum(),ChemData().NTOTALDOFS,2))
-    alphas[:,:,0] = torch.cos(torch.deg2rad(torch.tensor(60))) # Set all chi to 60
-    alphas[:,:,1] = torch.sin(torch.deg2rad(torch.tensor(60))) # Set all chi to 60
-    alphas[:,7,1] = torch.sin(torch.deg2rad(torch.tensor(0))) # CB Bend 0
-    alphas[:,7,1] = torch.sin(torch.deg2rad(torch.tensor(0))) # CB Bend 0
-    alphas[:,8,1] = torch.sin(torch.deg2rad(torch.tensor(0))) # CB Twist 0
-    alphas[:,8,1] = torch.sin(torch.deg2rad(torch.tensor(0))) # CB Twist 0
-    alphas[:,9,1] = torch.sin(torch.deg2rad(torch.tensor(0))) # CG Bend 0
-    alphas[:,9,1] = torch.sin(torch.deg2rad(torch.tensor(0))) # CG Bend 0
-
-    # Compute the ideal coordinates for the sidechains
-    _, xyz_ideal = xyz_converter.compute_all_atom(seq[needs_fix][None], atoms[needs_fix][None], alphas[None])
-    xyz_ideal = xyz_ideal[0,:,:atom_mask_of_fixes.shape[-1]]
+    # Generate ideal sidechain coordinates (ideal in the sense that they look good and don't clash with themselves)
+    xyz_ideal = build_coords.build_ideal_sidechains(atoms[needs_fix], seq[needs_fix])
+    xyz_ideal = xyz_ideal[:,:atom_mask_of_fixes.shape[-1]]
 
     # Store the ideal coordinates back into the atoms
     expanded_fix_mask = torch.zeros((len(atoms), atom_mask_of_fixes.shape[1]), dtype=bool)
     expanded_fix_mask[needs_fix] = atom_mask_of_fixes
     atoms[expanded_fix_mask] = xyz_ideal[atom_mask_of_fixes]
 
-
-
+    return needs_fix

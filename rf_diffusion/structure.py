@@ -9,7 +9,7 @@ import numpy as np
 from typing import Union, Tuple
 from typing import Literal
 from rf2aa.chemical import ChemicalData as ChemData
-from rf_diffusion.kinematics import generate_H
+from rf_diffusion.build_coords import generate_H
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from rf_diffusion.aa_model import Indep
