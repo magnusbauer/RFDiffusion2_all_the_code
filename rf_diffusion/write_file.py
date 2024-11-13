@@ -78,8 +78,9 @@ def writepdb_file(f, atoms, seq, modelnum=None, chain="A", idx_pdb=None, bfacts=
     if fix_corrupt_sidechains and atoms.shape[1] > 4:
         res_fixed = fix_null_sidechains(atoms, seq, atom_mask=atom_mask).numpy()
         if res_fixed.any():
+            # The strange slicing on the next line is because this writepdb_file doesnt enforce that idx_pdb is the same length as xyz
             print('Building fake sidechains for positions:', ','.join(f'{chain}{seqpos}' for (chain, seqpos) in 
-                                                                                    zip(chain_letters[res_fixed], idx_pdb[res_fixed])))
+                                                            zip(chain_letters[:len(res_fixed)][res_fixed], idx_pdb[:len(res_fixed)][res_fixed])))
 
     Bfacts = torch.clamp( bfacts.cpu(), 0, 1)
     atom_idxs = {}
