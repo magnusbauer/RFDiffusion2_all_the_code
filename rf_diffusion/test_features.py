@@ -15,7 +15,7 @@ class TestSSComp(unittest.TestCase):
         indep, metadata = aa_model.make_indep(input_pdb, ligand_name, return_metadata=True)
         coord_correct = structure.read_pdbtext_with_checking(open('./benchmark/input/1AYA.pdb').read())
 
-        bb_pydssp, is_prot = structure.get_bb_pydssp(indep)
+        bb_pydssp, is_prot, _ = structure.get_bb_pydssp(indep)
         # Strip H
         torch.all(torch.eq(bb_pydssp[:,:4], torch.Tensor(coord_correct)))
 
