@@ -88,6 +88,9 @@ class GenerateMasks:
 
     The reason this function is a transform and not hard-coded is because some transforms might want to be applied before masks are generated - for example more specific cropping. 
     """
+    def __init__(self, datahub_config=None):
+        self.datahub_config = datahub_config
+
     def __call__(self, 
                  indep: Indep, 
                  task: str,
@@ -111,7 +114,8 @@ class GenerateMasks:
             chosen_dataset=chosen_dataset, 
             full_chain=None, 
             atom_mask=atom_mask[:, :ChemData().NHEAVY], 
-            metadata=metadata  # holds e.g. `covale_bonds`
+            metadata=metadata,  # holds e.g. `covale_bonds`
+            datahub_config=self.datahub_config
         )
         # Pop masks_1d if exists since it is being overwritten
         if 'masks_1d' in kwargs: 

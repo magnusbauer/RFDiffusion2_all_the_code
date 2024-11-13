@@ -1824,7 +1824,8 @@ def generate_masks(
         chosen_dataset: Literal["complex", "negative", "pdb_aa", "compl", "sm_compl", "sm_complex"],
         full_chain: tuple[int, int] | None = None,
         atom_mask=None,
-        metadata=None
+        metadata=None,
+        datahub_config=None
     ) -> dict: #full_chain is for complexes, to signify which chain is complete
     '''
     Slimmed down function that outputs 1D masks for inputs and loss calculations.
@@ -1863,7 +1864,14 @@ def generate_masks(
         """ 
         thismodule = sys.modules[__name__]
         mask_probs = OrderedDict()
-        for k, v in loader_params['DIFF_MASK_PROBS'].items():
+        
+        # mask probabilities from datahub config
+        if datahub_config and chosen_dataset in datahub_config and 'mask_probabilities' in datahub_config[chosen_dataset]:
+            mask_probabilities = datahub_config[chosen_dataset]['mask_probabilities']
+        else:
+            mask_probabilities = loader_params['DIFF_MASK_PROBS']
+        
+        for k,v in mask_probabilities.items():
             f = getattr(thismodule, k)
             f.name = k
             mask_probs[f] = float(v)
