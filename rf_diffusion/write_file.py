@@ -63,7 +63,7 @@ def writepdb_file(f, atoms, seq, modelnum=None, chain="A", idx_pdb=None, bfacts=
     assert not (chain_Ls and chain_letters)
     if chain_letters is None:
         if chain_Ls is not None:
-            chain_letters = np.concatenate([torch.full(L, alphabet[i]) for i,L in enumerate(chain_Ls)])
+            chain_letters = np.concatenate([np.full(L, alphabet[i]) for i,L in enumerate(chain_Ls)])
         else:
             chain_letters = np.array([chain]*len(scpu)) # torch can't handle strings apparently
 
