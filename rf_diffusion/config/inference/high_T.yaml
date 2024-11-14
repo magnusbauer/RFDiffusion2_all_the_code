@@ -1,0 +1,15 @@
+# Config for sampling symmetric assemblies.
+
+defaults:
+  - base
+  - viz
+  - sym
+  - _self_
+
+sym:
+  input_pdb: '/home/heisen/0_projects/8_delivery/input/1dwn_ASU.pdb'
+  kind: 'rf_diffusion_highT'
+  symid: 'I'
+  asu_sym: 'diffuse:[[0,0.5]]' # called when we want to apply operation to the asu coords 
+  high_t_number: 1
+  

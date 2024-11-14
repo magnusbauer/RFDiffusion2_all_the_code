@@ -18,7 +18,7 @@ from pyrosetta import *
 from pyrosetta.rosetta import *
 import pyrosetta.distributed.tasks.rosetta_scripts as rosetta_scripts
 
-import inference.utils
+from rf_diffusion import inference
 from rf_diffusion.parsers import load_ligand_from_pdb
 
 

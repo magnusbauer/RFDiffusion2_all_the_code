@@ -151,9 +151,9 @@ class PotentialManager:
             kwargs = {k: potential_dict[k] for k in potential_dict.keys() - {'type'}}
 
             # symmetric oligomer contact potential args
-            if self.inference_config.symmetry:
+            if self.inference_config.old_symmetry:
 
-                num_chains = calc_nchains(symbol=self.inference_config.symmetry, components=1) # hard code 1 for now 
+                num_chains = calc_nchains(symbol=self.inference_config.old_symmetry, components=1) # hard code 1 for now
                 print('WARNING: Hard coded in potentials, number of components = 1 per ASU. Multi-component ASU potentials may not work yet.')
                 contact_kwargs={'nchain':num_chains,
                                 'intra_all':self.potentials_config.olig_intra_all,

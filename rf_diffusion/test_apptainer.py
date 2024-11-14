@@ -8,7 +8,7 @@ class TestApptainer(unittest.TestCase):
 
     def test_rf_diffusion_aa_spec(self):
         '''
-        This test ensures that rf_diffusion/exec/rf_diffusion_aa.spec stays up-to-date with 
+        This test ensures that rf_diffusion/exec/rf_diffusion_aa.spec stays up-to-date with
          rf_diffusion/exec/bakerlab_rf_diffusion_aa.sif
         Further, if this test passes at the IPD, it means that rf_diffusion/exec/rf_diffusion_aa.spec
          will build a valid apptainer for rf_diffusion (since all the other tests presumably pass)
@@ -27,7 +27,13 @@ class TestApptainer(unittest.TestCase):
 
         if not os.path.exists(at_ipd_file):
             ic('TestApptainer:test_rf_diffusion_aa_spec is not run because you are not at the IPD (sorry!)')
+            return
 
+        if 'APPTAINER_CONTAINER' not in os.environ:
+            print('You are not running this test from inside an apptainer')
+            return
+
+        symlink_target = os.path.realpath(bakerlab_sif_symlink)
         if not os.path.islink(bakerlab_sif_symlink):
             if os.path.exists(bakerlab_sif_symlink):
                 assert False, f"{bakerlab_sif_symlink} isn't a symlink!"
@@ -38,8 +44,6 @@ class TestApptainer(unittest.TestCase):
         symlink_target = os.path.realpath(bakerlab_sif_symlink)
 
         assert os.path.exists(symlink_target), f"{bakerlab_sif_symlink} target {symlink_target} doesn't exist!"
-
-        assert 'APPTAINER_CONTAINER' in os.environ, 'You are not running this test from inside an apptainer'
 
         our_apptainer = os.path.realpath(os.environ['APPTAINER_CONTAINER'])
 

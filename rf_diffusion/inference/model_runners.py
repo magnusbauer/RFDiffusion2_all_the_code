@@ -14,7 +14,7 @@ import rf2aa.tensor_util
 import rf_diffusion.aa_model as aa_model
 
 from rf_diffusion.inference import utils as iu
-from rf_diffusion.inference import symmetry
+from rf_diffusion.inference import old_symmetry
 from hydra.core.hydra_config import HydraConfig
 from rf_diffusion.frame_diffusion.data import all_atom
 import rf_diffusion.frame_diffusion.data.utils as du
@@ -149,15 +149,15 @@ class Sampler:
         else:
             sys.exit(f'Seq Diffuser of type: {self._conf.seq_diffuser.seqdiff} is not known')
 
-        if self.inf_conf.symmetry is not None:
-            self.symmetry = symmetry.SymGen(
-                self.inf_conf.symmetry,
+        if self.inf_conf.old_symmetry is not None:
+            self.old_symmetry = old_symmetry.SymGen(
+                self.inf_conf.old_symmetry,
                 self.inf_conf.model_only_neighbors,
                 self.inf_conf.recenter,
                 self.inf_conf.radius, 
             )
         else:
-            self.symmetry = None
+            self.old_symmetry = None
 
 
         self.converter = XYZConverter()
@@ -198,7 +198,7 @@ class Sampler:
         Method for symmetrising px0 output, either for recycling or for self-conditioning
         """
         _,px0_aa = self.converter.compute_all_atom(torch.argmax(seq_in, dim=-1), px0, alpha)
-        px0_sym,_ = self.symmetry.apply_symmetry(px0_aa.to('cpu').squeeze()[:,:14], torch.argmax(seq_in, dim=-1).squeeze().to('cpu'))
+        px0_sym,_ = self.old_symmetry.apply_symmetry(px0_aa.to('cpu').squeeze()[:,:14], torch.argmax(seq_in, dim=-1).squeeze().to('cpu'))
         px0_sym = px0_sym[None].to(self.device)
         return px0_sym
 
@@ -248,8 +248,8 @@ class NRBStyleSelfCond(Sampler):
                 self._conf.inference.str_self_cond]):
             rfi = aa_model.self_cond(indep, rfi, rfo, use_cb=self._conf.preprocess.use_cb_to_get_pair_dist)
 
-        if self.symmetry is not None:
-            idx_pdb, self.chain_idx = self.symmetry.res_idx_procesing(res_idx=idx_pdb)
+        if self.old_symmetry is not None:
+            idx_pdb, self.chain_idx = self.old_symmetry.res_idx_procesing(res_idx=idx_pdb)
 
         with torch.no_grad():
             if self.recycle_schedule[t-1] > 1:
@@ -310,8 +310,8 @@ class NRBStyleSelfCond(Sampler):
         # x_t_1 = x_t_1.cpu()
         # seq_t_1 = seq_t_1.cpu()
 
-        # if self.symmetry is not None:
-        #     x_t_1, seq_t_1 = self.symmetry.apply_symmetry(x_t_1, seq_t_1)
+        # if self.old_symmetry is not None:
+        #     x_t_1, seq_t_1 = self.old_symmetry.apply_symmetry(x_t_1, seq_t_1)
 
         # return px0, x_t_1, seq_t_1, model_out['rfo'], {}
         return px0, get_x_t_1(rigids_t, indep.xyz, self.is_diffused), get_seq_one_hot(indep.seq), model_out['rfo'], {'traj':{}}
@@ -353,8 +353,8 @@ class FlowMatching(Sampler):
                 self._conf.inference.str_self_cond]):
             rfi = aa_model.self_cond(indep, rfi, rfo, use_cb=self._conf.preprocess.use_cb_to_get_pair_dist)
 
-        if self.symmetry is not None:
-            idx_pdb, self.chain_idx = self.symmetry.res_idx_procesing(res_idx=idx_pdb)
+        if self.old_symmetry is not None:
+            idx_pdb, self.chain_idx = self.old_symmetry.res_idx_procesing(res_idx=idx_pdb)
 
         with torch.no_grad():
             # assert not rfi.xyz[0,:,:3,:].isnan().any(), f'{t}: {rfi.xyz[0,:,:3,:]}'

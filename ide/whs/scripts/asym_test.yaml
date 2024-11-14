@@ -1,0 +1,39 @@
+defaults:
+  - base
+  - sym
+  - viz
+  - _self_
+
+hydra:
+  searchpath:
+    - pkg://rf_diffusion/config/inference
+
+viz:
+  rfold_iter_end: True
+  diffusion_step: False
+
+sym:
+  symid: I
+  max_nsub: 4
+  # rf_asym_only: 'diffuse:[[0,0.5]]'
+  # asu_to_canon: 'diffuse:[[0.501,1]]'
+  asu_to_canon: 'diffuse:[[0,0.3]]'
+
+sieve:
+  # enabled: 'diffuse:[[0,0.5]]'
+  PCA:
+    max_bigsmallratio: 3.5
+  # SS:
+    # min_helix: 0.25
+
+inference:
+  num_designs: 1
+  cautious: False
+  output_prefix: ./tmp/asym_test/asym_test
+
+contigmap:
+  contigs: ['80']
+
+diffuser:
+  T: 20
+

@@ -1,0 +1,74 @@
+# Config for sampling symmetric assemblies.
+
+defaults:
+  - _self_
+  - base
+  - viz
+
+sym:
+  # Symmetry to sample
+  # Available symmetries:
+  # - Cyclic symmetry (C_n) # call as C5
+  # - Dihedral symmetry (D_n) # call as D5
+  # - Tetrahedral symmetry # call as T
+  # - Octahedral symmetry # call as O
+  # - Icosahedral symmetry # call as I
+  kind: null # defaults to rf_diffusion_default
+  symid: C1 # default to no symmetry
+  subsymid: null # sub sym
+  max_nsub: 5
+
+  # sym_enabled: 'diffuse:[[0,0.5]]' # only use symmetry on first half of diffusion steps
+  sym_enabled: True # enable symmetry sampling
+  rfsym_enabled: True
+  rf_asym_only: False
+
+  # pair stuff
+  sympair_enabled: True
+  sympair_protein_only: True
+  sympair_method: max
+  symmsub_k: null
+
+  # chem stuff
+  motif_position: "fixed" # asu, asym, onaxisCx, acrossCx
+  motif_copy_position_from_px0: False,
+  motif_fit: "rfold:[[0,1]]"
+  Lasu_prot: null
+  Lasu_ligand: null
+  ligand_is_symmetric: True
+  guideposts_are_symmetric: True
+  contig_is_symmetric: False
+  pseudo_cycle: null
+  contig_relabel_chains: False
+
+  # Symmetry options
+  recenter_for_diffusion: False
+  recenter_xt_chains_on_px0: False
+  start_radius: 0
+  force_radius: null
+  asu_to_best_frame: null
+  fit: False
+  fit_tscale: 1.0
+  fit_wclash: 4.0
+  center_cyclic: False
+  move_unsym_with_asu: True
+
+  # repeat stuff
+  symmetrize_repeats: False
+  n_repeats: null
+  repeat_length: null
+
+  copy_main_block_template: null
+  main_block: null
+  pre_symm_permutation: null
+
+transforms:
+  names:
+    - AddConditionalInputs
+    - ExpandConditionsDict
+  configs:
+    CenterPostTransform:
+      center_type: "keep_input_pos"
+
+
+

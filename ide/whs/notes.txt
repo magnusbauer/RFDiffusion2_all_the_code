@@ -1,0 +1,79 @@
+rf_diffusion/test_aa_model.py::AAModelTestCase::test_atomize_residues_Cterm
+rf_diffusion/test_aa_model.py::AAModelTestCase::test_atomize_residues_Nerm
+rf_diffusion/test_aa_model.py::AAModelTestCase::test_atomize_residues_discontig_motif
+rf_diffusion/test_aa_model.py::AAModelTestCase::test_parses_covale
+rf_diffusion/test_aa_model.py::TestConditionalIndep::test_all
+rf_diffusion/test_aa_model.py::TestOpenIndep::test_open_sm
+rf_diffusion/test_aa_model.py::TestRearrange::test_all
+rf_diffusion/test_aa_model.py::TestRearrange::test_move_sm
+rf_diffusion/test_aa_model.py::TestRearrange::test_rearrange_sm
+rf_diffusion/test_aa_model.py::TestRearrange::test_split_sm
+rf_diffusion/test_aa_model.py::TestRearrange::test_swap
+rf_diffusion/test_aa_model.py::TestTwoChains::test_3_chain_binder_middle_indep
+rf_diffusion/test_aa_model.py::TestTwoChains::test_3_chain_indep
+rf_diffusion/test_aa_model.py::TestTwoChains::test_inpaint_str
+rf_diffusion/test_aa_model.py::TestTwoChains::test_two_chain_aa_model
+rf_diffusion/test_apptainer.py::TestApptainer::test_rf_diffusion_aa_spec
+rf_diffusion/test_contigs.py::TestContigs::test_3_chain_termini
+rf_diffusion/test_contigs.py::TestContigs::test_3_chain_termini_swapped
+rf_diffusion/test_contigs.py::TestContigs::test_3_contig_map_hal
+rf_diffusion/test_contigs.py::TestContigs::test_one_chain_covale
+rf_diffusion/test_contigs.py::TestContigs::test_two_chains
+rf_diffusion/test_contigs.py::TestContigs::test_two_chains_swapped
+rf_diffusion/test_dataset.py::Dataloader::test_multi_covale
+rf_diffusion/test_metrics_regression.py::TestIdealizedResidueRMSD::test_call_speed
+rf_diffusion/test_pipeline.py::TestBenchmark::test_arg_combos
+rf_diffusion/test_pipeline.py::TestBenchmark::test_subprocess_retcode
+rf_diffusion/test_training_regression.py::TestDistributed::test_distributed_teardown
+rf_diffusion/tests/sym/test_rfd_sym_manager.py::test_sym_contig
+rf_diffusion/tests/sym/test_sym_color.py::test_symslices_from_colors_fuzz
+rf_diffusion/tests/sym/test_sym_indep.py::test_sym_indep
+
+tests/test_metrics.py       82.42 secs
+tests/test_model.py         57.10 secs
+tests/test_msa_loading.py   30.56 secs
+tests/test_semantics.py     30.16 secs
+tests/test_benchmark.py     29.23 secs
+tests/test_msa_featurize.py 5.71 secs
+tests/test_conditions.py    4.33 secs
+tests/test_dataset.py       4.29 secs
+tests/test_trainer.py       4.19 secs
+tests/test_configs.py       3.95 secs
+
+rf2aa/tests/observer/test_dynamic_parameters.py:191 test_dynparam_steps
+rf2aa/tests/sym/test_sym_slice.py:199 test_nonprot
+rf2aa/tests/test_apptainer.py:9 TestApptainer.test_rf2aa_spec
+rf2aa/tests/test_benchmark.py:51 test_benchmark_fw[pdb196-rf2aa]
+rf2aa/tests/test_benchmark.py:51 test_benchmark_fw[pdb196-rf2_deep_layerdropout]
+rf2aa/tests/test_benchmark.py:71 test_benchmark_fw_bw[pdb196-rf2aa]
+rf2aa/tests/test_benchmark.py:71 test_benchmark_fw_bw[pdb196-rf2_deep_layerdropout]
+rf2aa/tests/test_model.py:26 test_regression[pdb-rf2aa]
+rf2aa/tests/test_model.py:26 test_regression[pdb-rf_with_gradients]
+rf2aa/tests/test_model.py:26 test_regression[pdb-untied_p2p]
+rf2aa/tests/test_model.py:26 test_regression[pdb-rf2_deep_layerdropout]
+
+rf2aa/SE3Transformer/se3_transformer/runtime/callbacks.py
+rf2aa/SE3Transformer/se3_transformer/runtime/gpu_affinity.py
+rf2aa/SE3Transformer/se3_transformer/runtime/inference.py
+rf2aa/SE3Transformer/se3_transformer/runtime/loggers.py
+rf2aa/SE3Transformer/se3_transformer/runtime/training.py
+rf2aa/archived/arguments.py
+rf2aa/archived/eval.py
+rf2aa/archived/evaluate.py
+rf2aa/archived/predict.py
+rf2aa/archived/predict_casp14.py
+rf2aa/archived/tests.py
+rf2aa/archived/train_multi_EMA.py
+rf2aa/data/data_loader.py
+rf2aa/data/parsers.py
+rf2aa/loss/loss.py
+rf2aa/model/RoseTTAFoldModel.py
+rf2aa/model/Track_module.py
+rf2aa/model/layers/Attention_module.py
+rf2aa/model/layers/AuxiliaryPredictor.py
+rf2aa/model/layers/Embeddings.py
+rf2aa/model/layers/SE3_network.py
+rf2aa/tools/generate_sample_lengths.py
+rf2aa/tools/minimize_example.py
+rf2aa/training/scheduler.py
+

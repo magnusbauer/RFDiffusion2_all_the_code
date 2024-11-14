@@ -22,6 +22,7 @@ import torch
 import numpy as np
 import scipy
 
+from ipd.dev import safe_eval
 from rf_diffusion import aa_model
 from rf_diffusion.dev import analyze
 from rf_diffusion.inference import utils
@@ -148,7 +149,7 @@ def catalytic_constraints_inner(pdb, mpnn_packed: bool):
 
     contig_atoms = row['contigmap.contig_atoms']
     if contig_atoms is not None:
-        contig_atoms = eval(contig_atoms)
+        contig_atoms = safe_eval(contig_atoms)
         contig_atoms = {k:v.split(',') for k,v in contig_atoms.items()}
     else:
         contig_atoms = heavy_motif_atoms

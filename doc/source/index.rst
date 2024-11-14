@@ -17,6 +17,10 @@ Indices and tables
 * :ref:`modindex`
 * :ref:`search`
 
+.. include:: new.rst
 
+.. include:: modules.rst
 
 .. mdinclude:: ../../README.md
+
+

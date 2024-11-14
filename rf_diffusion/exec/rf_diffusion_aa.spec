@@ -41,32 +41,21 @@ bash /opt/miniconda.sh -b -u -p /usr
 
 # install other deps
 conda install --yes \
+   -c nvidia/label/cuda-12.4.0 \
+   -c https://conda.rosettacommons.org \
+   -c pytorch \
+   -c dglteam/label/th24_cu124 \
    python==3.11 \
    pip \
    numpy"<2" \
    matplotlib \
-   jupyterlab
-
-conda install --yes \
-   conda-forge::openbabel==3.1.1
-
-conda install --yes \
-   -c nvidia/label/cuda-12.4.0 \
-   cuda
-
-conda install --yes \
-   -c nvidia/label/cuda-12.4.0 \
-   -c pytorch \
+   jupyterlab \
+   dgl \
+   conda-forge::openbabel==3.1.1 \
+   cuda \
    pytorch==2.4 \
-   pytorch-cuda==12.4
-
-conda install --yes \
-   -c dglteam/label/th24_cu124 \
-   dgl
-
-conda install --yes \
-   -c https://conda.rosettacommons.org \
-   pyrosetta
+   pytorch-cuda==12.4 \
+   pyrosetta \
 
 pip install \
    hydra-core==1.3.1 \
@@ -75,6 +64,7 @@ pip install \
    assertpy==1.1.0 \
    biopython==1.83 \
    colorlog \
+   compact-json \
    cython==3.0.0 \
    cytoolz==0.12.3 \
    debugpy==1.8.5 \
@@ -92,6 +82,7 @@ pip install \
    ipython==8.27.0 \
    ipywidgets \
    mdtraj==1.10.0 \
+   numba \
    omegaconf==2.3.0 \
    opt_einsum==3.3.0 \
    pandas==1.5.0 \
@@ -106,12 +97,14 @@ pip install \
    pytest-dotenv==0.5.2 \
    pytest==8.2.0 \
    rdkit==2024.3.5 \
+   RestrictedPython \
    ruff==0.6.2 \
    scipy==1.13.1 \
    seaborn==0.13.2 \
    sympy==1.13.2 \
    tmtools \
    tqdm==4.65.0 \
+   typer==0.12.5 \
    wandb==0.13.10
 
 # biotite fork
@@ -129,13 +122,14 @@ pip install deepspeed==0.15.1
 
 # Install git repos
 pip install git+https://github.com/RalphMao/PyTimer.git
+pip install git+https://github.com/baker-laboratory/ipd.git
+pip uninstall -y ipd
 
 # Clean up
 conda clean -a -y
-apt-get -y purge git
 apt-get -y autoremove
 apt-get clean
-#rm /opt/miniconda.sh
+# rm /opt/miniconda.sh
 
 %environment
 export PATH=$PATH:/usr/local/cuda/bin

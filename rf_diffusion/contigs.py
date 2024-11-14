@@ -1,8 +1,10 @@
-import torch
-import sys
-import numpy as np 
 import random
+import sys
 
+import numpy as np
+import torch
+
+import ipd
 from rf_diffusion.chemical import ChemicalData as ChemData
 
 
@@ -78,12 +80,14 @@ class ContigMap():
             self.contigs=contigs
             if contig_atoms is None:
                 self.contig_atoms = None
-            elif contig_atoms.find('-') > -1:
+            elif isinstance(contig_atoms, str) and contig_atoms.find('-') > -1:
+                assert 0
                 # Use alternative reader
                 self.contig_atoms={kv.split('-')[0]:kv.split("-")[1:] for kv in contig_atoms.split('_')}
             else:
                 # Use standard
-                self.contig_atoms={k:v.split(",") for k,v in eval(contig_atoms).items()}
+                if isinstance(contig_atoms, str): contig_atoms = ipd.dev.safe_eval(contig_atoms)
+                self.contig_atoms={k:v.split(",") if isinstance(v,str) else v for k,v in contig_atoms.items()}
                 self.contig_atoms={k:[e for e in v if e != ''] for k,v in self.contig_atoms.items()}
             self.sampled_mask,self.contig_length,self.n_inpaint_chains,deterministic = self.get_sampled_mask()
             self.deterministic = deterministic and self.deterministic
@@ -191,6 +195,7 @@ class ContigMap():
             for subcon in con.split(","):
                 subcon=subcon.split("/")[0]
                 if subcon[0].isalpha(): # this is a part of the motif because the first element of the contig is the chain letter
+                    if subcon[1:].isnumeric(): subcon = f'{subcon[0]}{subcon[1:]}-{subcon[1:]}'
                     ref_to_add=[(subcon[0], i) for i in np.arange(int(subcon.split("-")[0][1:]),int(subcon.split("-")[1])+1)]
                     inpaint.extend(ref_to_add)
                     inpaint_hal.extend([(chain_order[inpaint_chain_idx], i) for i in np.arange(inpaint_idx,inpaint_idx+len(ref_to_add))])

@@ -20,7 +20,6 @@ import sys
 import argparse
 import glob
 import time
-
 import re
 import numpy as np
 import pandas as pd
@@ -36,6 +35,7 @@ from alphafold.model import data
 from alphafold.model import config
 from alphafold.model import model
 
+from ipd.dev import safe_eval
 from alphafold.model.tf import shape_placeholders                                                        
 import tensorflow.compat.v1 as tf
 
@@ -505,7 +505,7 @@ def main():
 
             contig_atoms = get_contig_atoms(trb)
             if contig_atoms is not None:
-                contig_atoms = eval(contig_atoms)
+                contig_atoms = safe_eval(contig_atoms)
                 contig_atoms = {k:v.split(',') for k,v in contig_atoms.items()}
                 # For debugging: print all contig related keys.
                 # for k in trb.keys():

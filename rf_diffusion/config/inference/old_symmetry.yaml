@@ -11,7 +11,7 @@ inference:
   # - Tetrahedral symmetry # call as tetrahedral
   # - Octahedral symmetry # call as octahedral
   # - Icosahedral symmetry # call as icosahedral
-  symmetry: c2
+  old_symmetry: c2
 
   # Set to true for computational efficiency 
   # to avoid memory overhead of modeling all subunits.

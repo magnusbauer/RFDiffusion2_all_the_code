@@ -7,7 +7,7 @@ inference:
   seed_offset: 0
   ckpt_path: /net/scratch/ahern/se3_diffusion/training/fm_tip_resume_24/fm_tip_resume_242023-12-03_14:20:34.490797/rank_0/models/RFD_44.pt
   autogenerate_contigs: False
-  symmetry: null
+  old_symmetry: null
   recenter: True
   radius: 10.0
   model_only_neighbors: False

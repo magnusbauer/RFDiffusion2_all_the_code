@@ -35,6 +35,7 @@ from rf_diffusion import build_coords
 import rf_diffusion.frame_diffusion.data.utils as du
 from rf_diffusion.frame_diffusion.data import all_atom
 
+import ipd
 
 logger = logging.getLogger(__name__)
 
@@ -128,6 +129,46 @@ class Indep:
         # is_gp needs to be the correct size if it was not specified
         if self.is_gp is None and self.seq is not None:
             self.is_gp = torch.zeros(self.length(), dtype=bool)
+        self.add_tensor_dim_names() # make sure names are ok
+        self.remove_tensor_dim_names()
+
+    def add_tensor_dim_names(self):
+        '''used to temporarially adds dimension names to the tensors needed for symmetry'''
+        if self.seq           is not None: self.seq          .rename_(*'L'.split())
+        if self.xyz           is not None: self.xyz          .rename_(*'L Atom XYZ'.split())
+        if self.idx           is not None: self.idx          .rename_(*'L'.split())
+        if self.bond_feats    is not None: self.bond_feats   .rename_(*'L1 L2'.split())
+        if self.chirals       is not None: self.chirals      .rename_(*'Lsparse IdxAll0'.split())
+        if self.same_chain    is not None: self.same_chain   .rename_(*'L1 L2'.split())
+        if self.terminus_type is not None: self.terminus_type.rename_(*'L'.split())
+        if self.extra_t1d     is not None: self.extra_t1d    .rename_(*'L D'.split())
+        if self.extra_t2d     is not None: self.extra_t2d    .rename_(*'L1 L2 D'.split())
+        if self.is_gp         is not None: self.is_gp        .rename_(*'L'.split())
+
+    def remove_tensor_dim_names(self):
+        '''used to remove dimension names from the tensors'''
+        for field in dataclasses.fields(self):
+            val = getattr(self, field.name)
+            if torch.is_tensor(val): val.rename_(None)
+
+    def print1d(self, compact=True):
+        '''Pretty prints the indeps bacis 1D information'''
+        chirals = {int(_) for _ in self.chirals[:,0].reshape(-1)}
+        stuff1d = zip(self.is_gp,self.seq,self.idx,self.human_readable_seq(),self.type())
+        chain, prev, skipped, first = 0, None, False, True
+        spacer = ' ⋮   ⋮  ⋮  ⋮  ⋮   ⋮   ⋮'
+        for i, (gp, si, idx, sn, typ) in enumerate(stuff1d):
+            if i > 0 and not self.same_chain[i,i-1]: chain += 1
+            crl = "CRL" if i in chirals else  "   "
+            if compact and prev == (gp, chain, crl, typ):
+                skipped = True
+                continue
+            if skipped: print(spacer)
+            if not prev or prev[1] != chain: print('='*23 if first else '-'*23)
+            print(f'CH{chain} {"GP" if gp else "  "} {crl} {typ} {si:2} {idx:3} {sn:5}')
+            prev, skipped, first = (gp, chain, crl, typ), False, False
+        if skipped:     print(spacer)
+        print('='*23, flush=True)
 
     def clone(self):
         '''
@@ -425,6 +466,45 @@ class RFI:
     pair_prev: torch.Tensor
     state_prev: torch.Tensor
 
+    def __post_init__(self):
+        '''sanity check and tensor dimension naming'''
+        self.add_tensor_dim_names()
+        self.remove_tensor_dim_names()
+
+    def add_tensor_dim_names(self):
+        '''Adds dimension names to the tensors; needed for symmetry'''
+        self.msa_latent  .rename_(*'B T L D'.split())
+        self.msa_full    .rename_(*'B T L D'.split())
+        self.seq         .rename_(*'B L'.split())
+        self.seq_unmasked.rename_(*'B L'.split())
+        self.xyz         .rename_(*'B L Atom XYZ'.split())
+        self.sctors      .rename_(*'B L AA D'.split())
+        self.idx         .rename_(*'B L'.split())
+        self.bond_feats  .rename_(*'B L1 L2'.split())
+        self.dist_matrix .rename_(*'B L1 L2'.split())
+        self.chirals     .rename_(*'B Lsparse IdxAll0'.split())
+        self.atom_frames .rename_(*'B Lsparse IdxAll0 D'.split())
+        self.t1d         .rename_(*'B T L D'.split())
+        self.t2d         .rename_(*'B T L1 L2 Pair'.split())
+        self.xyz_t       .rename_(*'B T L XYZ'.split())
+        self.alpha_t     .rename_(*'B T L D'.split())
+        self.mask_t      .rename_(*'B T L1 L2'.split())
+        self.same_chain  .rename_(*'B L1 L2'.split())
+        self.is_motif    .rename_(*'L'.split())
+        # self.msa_prev    .rename_('B T L D'.split())
+        # self.pair_prev   .rename_('B T L D'.split())
+        # self.state_prev  .rename_('B T L D'.split())
+
+    def remove_tensor_dim_names(self):
+        '''Removes dimension names from the tensors'''
+        for field in dataclasses.fields(self):
+            val = getattr(self, field.name)
+            if torch.is_tensor(val): val.rename_(None)
+
+class SymAdaptRFI(ipd.sym.SymAdaptDataClass):
+    "Symmetrize RFI with the default dataclass SymAdaptor; uses add_tensor_dim_names"
+    adapts = RFI
+
 @dataclass
 class RFO:
     logits: torch.Tensor      # ([1, 61, L, L], [1, 61, L, L], [1, 37, L, L], [1, 19, L, L])
@@ -441,6 +521,35 @@ class RFO:
     state: torch.Tensor
     quat: torch.Tensor
 
+    def __post_init__(self):
+        '''sanity check and tensor dimension naming'''
+        self.add_tensor_dim_names()
+        self.remove_tensor_dim_names()
+
+    def add_tensor_dim_names(self):
+        '''Adds dimension names to the tensors; needed for symmetry'''
+        for l in self.logits: l.rename_(*'B D L1 L2'.split())
+        self.logits_aa  .rename_(*'B D L'.split())
+        self.logits_pae .rename_(*'B D L1 L2'.split())
+        self.logits_pde .rename_(*'B D L1 L2'.split())
+        # self.p_bind     .rename_(*'D'.split())
+        self.xyz        .rename_(*'R B L Atom XYZ'.split())
+        self.alpha_s    .rename_(*'R B L AA D'.split())
+        self.xyz_allatom.rename_(*'B L Atom XYZ'.split())
+        self.lddt       .rename_(*'B D L'.split())
+        if self.pair  is not None: self.pair .rename_(*'B L1 L2 Pair'.split())
+        if self.msa   is not None: self.msa  .rename_(*'B L D'.split())
+        if self.quat  is not None: self.quat .rename_(*'B D L Quat'.split())
+        if self.state is not None: self.state.rename_(*'B L D'.split())
+
+    def remove_tensor_dim_names(self):
+        '''Removes dimension names from the tensors'''
+        for field in dataclasses.fields(self):
+            val = getattr(self, field.name)
+            if torch.is_tensor(val): val.rename_(None)
+            elif isinstance(val, tuple):
+                for l in val: l.rename_(None)
+
     # dataclass.astuple returns a deepcopy of the dataclass in which
     # gradients of member tensors are detached, so we define a
     # custom unpacker here.
@@ -452,6 +561,10 @@ class RFO:
 
     def get_xyz(self):
         return self.xyz_allatom[0]
+
+class SymAdaptRFO(ipd.sym.SymAdaptDataClass):
+    "Symmetrize RFO with the default dataclass SymAdaptor; uses add_tensor_dim_names"
+    adapts = RFO
 
 def get_ligands(pdb_lines):
     ligands = set()

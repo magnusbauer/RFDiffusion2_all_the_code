@@ -1,73 +1,191 @@
 {
-	"folders":
-	[
-		{
-			"path": "../..",
-			"folder_exclude_patterns": ["lib/rf2aa"]
-		}
+    "folders":
+    [
+        {
+            "path": "../..",
+            "folder_exclude_patterns":
+            [
+                "Eigen",
+                "doc",
+                "lib/rf2aa/lib/ipd",
+                "cifutils",
+                "datahub",
+                // "ipd",
+                "fused_mpnn",
+                "se3_flow_matching"
+            ]
+        }
+    ],
+        "settings":
+     {
+        "PyYapf":{
+         "yapf_command": "yapf",
+         "on_save": false
+         // "yapf_command": "/home/sheffler/src/willutil/willutil/app/codealign",
+        },
+        "project_environment": {
+            "env": {
+                "PYTHON": "/home/sheffler/sw/MambaForge/envs/rfdsym312/bin/python",
+                // "PYTHON": "/home/sheffler/sw/MambaForge/envs/rfdsym312/bin/python",
+                "QT_QPA_PLATFORM": "xcb"
+            }
+        }
+    },
+    "build_systems":
+    [
+        {
+            "name": "ide tests",
+            "shell_cmd": "cd $folder; PYTHONPATH=../.. \\$PYTHON lib/rf2aa/lib/ipd/ipd/tools/run_tests_on_file.py rf_diffusion rf2aa ipd $file 2>&1 | tee $folder/ide/sublime_build.log",
+            "file_regex": "^\\s*File \"(...*?)\", line ([0-9]*)"
+        },
+        {
+            "name": "ide tests pytest",
+            "shell_cmd": "cd $folder; PYTHONPATH=../.. \\$PYTHON lib/rf2aa/lib/ipd/ipd/tools/run_tests_on_file.py rf_diffusion rf2aa ipd $file --pytest 2>&1 | tee $folder/ide/sublime_build.log",
+            "file_regex": "^\\s*File \"(...*?)\", line ([0-9]*)"
+        },
+        {
+            "name": "run ruff",
+            "shell_cmd": "cd $folder/lib/rf2aa; ruff check --fix rf2aa 2>&1 | tee $folder/ide/sublime_build.log",
+            "file_regex": "^\\s*File \"(...*?)\", line ([0-9]*)"
+        },
+        {
+            "name": "AUTO_TEST_FILE",
+         "shell_cmd": "cd $folder/rf_diffusion; CUDA_VISIBLE_DEVICES='' PYTHONPATH=.. \\$PYTHON ../ide/runtests.py /home/sheffler/rfdsym/rf_diffusion/tests/sym/test_sym_rfio.py 2>&1 | tee $folder/ide/sublime_build.log",
+            "file_regex": "^\\s*File \"(...*?)\", line ([0-9]*)"
+        },
+        {
+            "name": "AUTO_TEST_FILE CUDA",
+         "shell_cmd": "cd $folder/rf_diffusion; rm /home/sheffler/.cache/torch_extensions/py310_cu121/*/lock; PYTHONPATH=.. \\$PYTHON ../ide/runtests.py /home/sheffler/rfdsym/rf_diffusion/tests/sym/test_sym_rfio.py 2>&1 | tee $folder/ide/sublime_build.log",
+            "file_regex": "^\\s*File \"(...*?)\", line ([0-9]*)"
+        },
+        {
+            "name": "pytest sym_indep",
+            "shell_cmd": "cd $folder; PYTHONPATH=. \\$PYTHON rf_diffusion/tests/sym/test_sym_indep.py 2>&1 | tee $folder/ide/sublime_build.log"
+        },
+        {
+            "name": "test icos",
+            "shell_cmd": "cd $folder; QT_QPA_PLATFORM=xcb PYTHONPATH=. \\$PYTHON rf_diffusion/run_inference.py --config-name sym sym.symid=I sym.force_radius=30 viz.diffusion_step=True contigmap.contigs=[\\'66\\'] diffuser.T=20 inference.num_designs=1 sym.max_nsub=4 inference.ckpt_path=/net/databases/lab/aa-diffusion/models/RFD_45.pt inference.output_prefix=./test/icos4 &> $folder/ide/sublime_build.log"
+        },
+        {
+            "name": "test_icos_helen",
+            "shell_cmd": "cd $folder; sh ide/whs/scripts/helen_test_whs_sym.sh 2>&1 | tee $folder/ide/sublime_build.log"
+        },
+        {
+            "name": "test sym infer",
+            "shell_cmd": "cd $folder; PYTHONPATH=. \\$PYTHON rf_diffusion/tests/integration/test_sym_inference.py 2>&1 | tee $folder/ide/sublime_build.log",
+            "file_regex": "^\\s*File \"(...*?)\", line ([0-9]*)"
+        },
+        {
+            "name": "test ipdtool",
+            "shell_cmd": "cd $folder/lib/rf2aa/lib/ipd; PYTHONPATH=. \\$PYTHON -m ipd update 2>&1 | tee $folder/ide/sublime_build.log",
+            "file_regex": "^\\s*File \"(...*?)\", line ([0-9]*)"
+        },
+        {
+            "name": "pytest ipd",
+            "shell_cmd": "cd $folder/lib/rf2aa/lib/ipd; PYTHONPATH=. \\$PYTHON -m pytest -x 2>&1 | tee $folder/ide/sublime_build.log",
+            "file_regex": "^\\s*File \"(...*?)\", line ([0-9]*)"
+        },
+        {
+            "name": "pytest rf_diffusion",
+            "shell_cmd": "cd $folder; CUDA_VISIBLE_DEVICES='' PYTHONPATH=. \\$PYTHON -m pytest ipd rf_diffusion/tests 2>&1 | tee $folder/ide/sublime_build.log",
+            "file_regex": "^\\s*File \"(...*?)\", line ([0-9]*)"
+        },
+        {
+            "name": "pytest rf2aa",
+            "shell_cmd": "cd $folder/lib/rf2aa; \\$PYTHON -m pytest --benchmark-disable -m fast -x 2>&1 | tee $folder/ide/sublime_build.log",
+            "file_regex": "^\\s*File \"(...*?)\", line ([0-9]*)"
+        },
+        {
+            "name": "pytest mine",
+            "shell_cmd": "PYTHONPATH=~/rfdsym \\$PYTHON ~/rfdsym/rf_diffusion/run_inference.py --config-name sym sym.symid=\\'C2\\' inference.output_prefix=output inference.contig_as_guidepost=True inference.input_pdb=/digs/home/aidris1/pdb1hqs_B_CA_145_zaligned_origin.pdb contigmap.contigs=[\\'30,A14-14,8,A23-23,30_30,B14-14,8,B23-23,30\\'] contigmap.has_termini=[\\'True\\',\\'True\\'] inference.ligand=CA diffuser.T=5 contigmap.contig_atoms={\\'A14\\':\\'CG,OD1,OD2\\',\\'A23\\':\\'CD,OE1,OE2\\'}\\' &> $folder/ide/sublime_build.log"
+        },
+        {
 
-	],
+            "name": "test sym_gp_retroaldo",
+            "shell_cmd": "cd /home/sheffler/project/rfdsym/retroaldo; echo $folder; PYTHONPATH=$folder \\$PYTHON $folder/rf_diffusion/run_inference.py --config-name symgp_retroaldo --config-path /home/sheffler/project/rfdsym/retroaldo/input 2>&1 | tee $folder/ide/sublime_build.log",
+            "file_regex": "^\\s*File \"(...*?)\", line ([0-9]*)"
 
+        },
+        {
 
-	"build_systems":
-	[		
-		{
-			"name": "act push",
-			"shell_cmd" : "cd $folder; act push -P self-hosted=-self-hosted &> $folder/sublime_build.log"
-		},
-		{
-			"name": "pytest rf_diffusion",
-			"shell_cmd" : "cd $folder/rf_diffusion; CUDA_VISIBLE_DEVICES=\"\" PYTHONPATH=.. pytest  --disable-warnings -m \"not nondeterministic\" -s -x test_training_regression.py -k test_loss_grad &> $folder/sublime_build.log"
-		},
-		{
-			"name": "test_sym_gp_atomized_lig",
-			"shell_cmd" : "cd $folder/rf_diffusion; PYTHONPATH=.. python test_inference.py  &> $folder/sublime_build.log"
-		},
-		{
-			"name": "pytest rf2aa",
-			"shell_cmd" : "cd $folder/rf2aa; PYTHONPATH=.. pytest -x -s --benchmark-skip tests/test_model.py   &> $folder/sublime_build.log"
-		},
-		{
-			"name": "test_dynparams",
-			"shell_cmd" : "cd $folder/rf2aa;   PYTHONPATH=.. python tests/tools/test_dynamic_parameters.py   &> $folder/sublime_build.log"
-		},
-		{
-			"name": "runtests.py",
-			"shell_cmd": "cd $folder/rf_diffusion; PYTHONPATH=../.. python ../ide/runtests.py $file &> ../sublime_build.log"
-		},
-		{
-			"name": "test_nosym",
-			"shell_cmd" : "cd $folder/rf_diffusion; PYTHONPATH=.. python run_inference.py  contigmap.contigs=[\\'100\\'] diffuser.T=20 inference.num_designs=1 inference.cautious=False inference.output_prefix=./test_nosym/test &> $folder/sublime_build.log"
-		},
-		{
-			"name": "test_c2_small",
-			"shell_cmd" : "cd $folder/rf_diffusion; rm -f *.pdb; PYTHONPATH=.. python run_inference.py --config-name=sym sym.symid=C2 sym.start_radius=0.0 sym.force_radius=30 denoiser.center=true contigmap.contigs=[\\'30\\'] diffuser.T=20 inference.num_designs=1 inference.cautious=False inference.output_prefix=./test_c2_small/test &> $folder/sublime_build.log"
-		},
-		{
-			"name": "test_c2",
-			"shell_cmd" : "cd $folder/rf_diffusion; rm -f *.pdb; PYTHONPATH=.. python run_inference.py sym.symid=C2 sym.start_radius=0.0 denoiser.center=true contigmap.contigs=[\\'60\\'] diffuser.T=20 inference.num_designs=20 inference.cautious=False inference.output_prefix=./test_c2/test &> $folder/sublime_build.log"
-		},
-		{
-			"name": "test_c3",
-			"shell_cmd" : "cd $folder/rf_diffusion; rm -f *.pdb; PYTHONPATH=.. python run_inference.py --config-name sym sym.symid=C3 sym.start_radius=0.0 denoiser.center=true contigmap.contigs=[\\'60\\'] diffuser.T=20 inference.num_designs=1 inference.cautious=False inference.output_prefix=./test_c3/test &> $folder/sublime_build.log"
-		},
-		{
-			"name": "test_c6",
-			"shell_cmd" : "cd $folder/rf_diffusion; rm -f *.pdb; PYTHONPATH=.. python run_inference.py sym.symid=C6 sym.start_radius=5.0 denoiser.center=true contigmap.contigs=[\\'60\\'] diffuser.T=20 inference.num_designs=20 inference.cautious=False inference.output_prefix=./test_c6_center/test &> $folder/sublime_build.log"
-		},
-		{
-			"name": "test_d3",
-			"shell_cmd" : "cd $folder/rf_diffusion; rm -f *.pdb; PYTHONPATH=.. python run_inference.py --config-name=sym sym.symid=D3 sym.start_radius=0.0 denoiser.center=true contigmap.contigs=[\\'60\\'] diffuser.T=20 inference.num_designs=1 inference.cautious=False inference.output_prefix=./test_d3/test &> $folder/sublime_build.log"
-		},
-		{
-			"name": "test_icos",
-			"shell_cmd" : "cd $folder/rf_diffusion; rm -f *.pdb; PYTHONPATH=.. python run_inference.py sym.symid=I --confid-name=sym denoiser.center=true contigmap.contigs=[\\'100\\'] diffuser.T=200 inference.num_designs=10 sym.start_radius=27.0 inference.cautious=False inference.output_prefix=./test_icos_T200_100res_r27_v2/test &> $folder/sublime_build.log"
-		},
-		{
-			"name": "test_icos_fit",
-			"shell_cmd" : "cd $folder/rf_diffusion; rm -f *.pdb; PYTHONPATH=.. python run_inference.py --config-name sym sym.symid=I denoiser.center=true contigmap.contigs=[\\'30\\'] diffuser.T=20 inference.num_designs=1 sym.force_radius=\\'diffuse:[[0,0.5]]:[100.0,False]\\' sym.fit=\\'rfold:[5,10,15,20,25,30,37]\\' sym.max_nsub=4 inference.cautious=False inference.output_prefix=./test_icos_T20_50res_fit/test &> $folder/sublime_build.log"
-		}
+            "name": "test abbas",
+            "shell_cmd": "cd /home/sheffler/project/rfdsym/hilvert; echo $folder; PYTHONPATH=$folder \\$PYTHON $folder/rf_diffusion/run_inference.py --config-name abbas_ca_c2.yaml --config-path /home/sheffler/project/rfdsym/abbas/input 2>&1 | tee $folder/ide/sublime_build.log",
+            "file_regex": "^\\s*File \"(...*?)\", line ([0-9]*)"
 
+        },
+        {
 
-	]
+            "name": "test sym_gp",
+            "shell_cmd": "cd /home/sheffler/project/rfdsym/hilvert; echo $folder; PYTHONPATH=$folder \\$PYTHON $folder/rf_diffusion/run_inference.py --config-name sym_gp --config-path /home/sheffler/project/rfdsym/hilvert/input 2>&1 | tee $folder/ide/sublime_build.log",
+            "file_regex": "^\\s*File \"(...*?)\", line ([0-9]*)"
+
+        },
+        {
+            "name": "rebuild sg",
+            "shell_cmd": "cd $folder/rf_diffusion; PYTHONPATH=..:../lib/rf2aa/lib/ipd \\$PYTHON  ../lib/rf2aa/lib/ipd/ipd/sym/xtal/spacegroup_deriveddata.py 2>&1 | tee $folder/ide/sublime_build.log",
+            "file_regex": "^\\s*File \"(...*?)\", line ([0-9]*)"
+        },
+        {
+            "name": "test sym_gp_motif",
+            "shell_cmd": "cd /home/sheffler/project/rfdsym/hilvert; rm -rf sym_gp_motif; PYTHONPATH=$folder \\$PYTHON $folder/rf_diffusion/run_inference.py --config-name sym_gp_motif --config-path /home/sheffler/project/rfdsym/hilvert/input 2>&1 | tee $folder/ide/sublime_build.log; paplay /usr/share/sounds/freedesktop/stereo/trash-empty.oga",
+            "file_regex": "^\\s*File \"(...*?)\", line ([0-9]*)"
+
+        },
+        {
+            "name": "pytest fast",
+            "shell_cmd": "cd $folder; pytest rf_diffusion/test_*.py rf_diffusion/tests rf2aa/tests -mfast -x 2>&1 | tee $folder/ide/sublime_build.log",
+             "file_regex": "^\\s*File \"(...*?)\", line ([0-9]*)"
+        },
+        {
+            "name": "asym_test",
+            "shell_cmd": "cd $folder/rf_diffusion; rm -f tmp/asym_test/*; PYTHONPATH=.. \\$PYTHON run_inference.py --config-name asym_test --config-path $folder/ide/whs/scripts 2>&1 | tee $folder/ide/sublime_build.log",
+            "file_regex": "^\\s*File \"(...*?)\", line ([0-9]*)"
+
+        },         {
+            "name": "test_filter",
+            "shell_cmd": "cd $folder/rf_diffusion; rm -f *.pdb; PYTHONPATH=.. bash ../ide/whs/scripts/filter_test.sh 2>&1 | tee $folder/ide/sublime_build.log",
+            "file_regex": "^\\s*File \"(...*?)\", line ([0-9]*)"
+
+        },
+        {
+            "name": "test_icos_fit",
+            "shell_cmd": "cd $folder/rf_diffusion; rm -f *.pdb; PYTHONPATH=.. \\$PYTHON run_inference.py --config-name sym viz.sym_xyzpair=True viz.diffusion_step=True sym.asu_to_best_frame=True sym.symid=I denoiser.center=true contigmap.contigs=[\\'60\\'] diffuser.T=20 inference.num_designs=1 sym.force_radius=\\'diffuse:[[0,0.1]]:[50.0,False]\\' sym.fit=\\'rfold:[10,20,30,37]\\' sym.max_nsub=4 inference.cautious=False inference.output_prefix=./tmp/test_icos_T20_50res_fit/test &> $folder/ide/sublime_build.log"
+        },
+        {
+            "name": "test_inference.py",
+            "shell_cmd": "cd $folder/rf_diffusion; PYTHONPATH=.. \\$PYTHON test_inference.py &> $folder/ide/sublime_build.log"
+        },
+        {
+            "name": "test_dynparams",
+            "shell_cmd": "cd $folder/rf2aa;   PYTHONPATH=.. \\$PYTHON tests/tools/test_dynamic_parameters.py   &> $folder/ide/sublime_build.log"
+        },
+        {
+            "name": "test_nosym",
+            "shell_cmd": "cd $folder/rf_diffusion; PYTHONPATH=.. \\$PYTHON run_inference.py  contigmap.contigs=[\\'100\\'] diffuser.T=20 inference.num_designs=1 inference.cautious=False inference.output_prefix=./tmp/test_nosym/test &> $folder/ide/sublime_build.log"
+        },
+        {
+            "name": "test_c2_small",
+            "shell_cmd": "cd $folder/rf_diffusion; rm -f *.pdb; PYTHONPATH=.. \\$PYTHON run_inference.py --config-name=sym viz.sym_xyzpair=true sym.symid=C2 denoiser.center=true contigmap.contigs=[\\'20\\'] diffuser.T=10 inference.num_designs=1 sym.sympair_enabled=True inference.cautious=False inference.output_prefix=./tmp/test_c2_small/test &> $folder/ide/sublime_build.log && pymol test_c2_small/*.pdb"
+        },
+        {
+            "name": "test_c2",
+            "shell_cmd": "cd $folder/rf_diffusion; rm -f *.pdb; PYTHONPATH=.. \\$PYTHON run_inference.py --config-name=sym sym.symid=C2 sym.start_radius=0.0 denoiser.center=true contigmap.contigs=[\\'80\\'] diffuser.T=50 inference.num_designs=10 inference.cautious=False inference.output_prefix=./tmp/test_c2_pairsym/test &> $folder/ide/sublime_build.log"
+        },
+        {
+            "name": "test_c3",
+            "shell_cmd": "cd $folder/rf_diffusion; rm -f *.pdb; PYTHONPATH=.. \\$PYTHON run_inference.py --config-name sym sym.symid=C3 sym.start_radius=0.0 denoiser.center=true contigmap.contigs=[\\'60\\'] diffuser.T=20 inference.num_designs=1 inference.cautious=False inference.output_prefix=./tmp/test_c3/test &> $folder/ide/sublime_build.log"
+        },
+        {
+            "name": "test_c6",
+            "shell_cmd": "cd $folder/rf_diffusion; rm -f *.pdb; PYTHONPATH=.. \\$PYTHON run_inference.py --config-name sym viz.sym_xyzpair=False sym.max_nsub=3 sym.symid=C6 sym.start_radius=5.0  denoiser.center=true contigmap.contigs=[\\'100\\'] diffuser.T=20 inference.num_designs=20 inference.cautious=False inference.output_prefix=./tmp/test_c6_center/test &> $folder/ide/sublime_build.log"
+        },
+        {
+            "name": "test_d3",
+            "shell_cmd": "cd $folder/rf_diffusion; rm -f *.pdb; PYTHONPATH=.. \\$PYTHON run_inference.py --config-name=sym sym.symid=D3 sym.start_radius=0.0 denoiser.center=true contigmap.contigs=[\\'60\\'] diffuser.T=20 inference.num_designs=1 inference.cautious=False inference.output_prefix=./tmp/test_d3/test &> $folder/ide/sublime_build.log"
+        },
+        {
+            "name": "test_icos",
+            "shell_cmd": "cd $folder/rf_diffusion; rm -f *.pdb; PYTHONPATH=.. \\$PYTHON run_inference.py sym.symid=I --confid-name=sym denoiser.center=true contigmap.contigs=[\\'100\\'] diffuser.T=200 inference.num_designs=10 sym.start_radius=27.0 inference.cautious=False inference.output_prefix=./tmp/test_icos_T200_100res_r27_v2/test &> $folder/ide/sublime_build.log"
+        }
+    ]
 }

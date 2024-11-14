@@ -1,0 +1,22 @@
+# Config for visualization
+
+defaults:
+  - _self_
+
+viz:
+
+  # list observer function names to enable here:
+  debug_transforms: False
+  new_indep: False
+  new_sym_indep: False
+  sym_xyzpair: False
+  sym_initial_offset: False
+  diffusion_step: False
+  rfold_iter_end: False
+
+  settings: # put settings here
+    enabled: True # set to false to force all visualizations off
+    showfrac: 1.0 # probability of showing each time
+    delprev: True # delete previous visualizations each time
+    split: False # show each below as separate pymol object
+    show: 'bb gp atom bond lig chirals'

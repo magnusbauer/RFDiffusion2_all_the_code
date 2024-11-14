@@ -2,8 +2,8 @@
 	path = lib/se3_flow_matching
 	url = git@github.com:baker-laboratory/frame-flow.git
 [submodule "lib/rf2aa"]
-    path = lib/rf2aa
-    url = git@git.ipd.uw.edu:jue/RF2-allatom.git
+        path = lib/rf2aa
+        url = git@git.ipd.uw.edu:jue/RF2-allatom.git
 [submodule "lib/fused_mpnn/fused_mpnn"]
 	path = lib/fused_mpnn/fused_mpnn
 	url = git@github.com:baker-laboratory/fused_mpnn.git
@@ -13,3 +13,6 @@
 [submodule "lib/cifutils"]
 	path = lib/cifutils
 	url = git@git.ipd.uw.edu:ai/cifutils.git
+[submodule "lib/ipd"]
+	path = lib/ipd
+	url = https://github.com/baker-laboratory/ipd.git
