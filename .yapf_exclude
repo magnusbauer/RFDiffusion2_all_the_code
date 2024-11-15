@@ -154,3 +154,5 @@ rf_diffusion/train_multi_deep.py
 rf_diffusion/test_idealize.py
 rf_diffusion/silent_files.py
 rf_diffusion/test_inference.py
+rf_diffusion/build_coords.py
+rf_diffusion/test_build_coords.py
