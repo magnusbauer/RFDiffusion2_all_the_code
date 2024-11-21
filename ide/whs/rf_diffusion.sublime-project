@@ -7,7 +7,7 @@
             [
                 "Eigen",
                 "doc",
-                "lib/rf2aa/lib/ipd",
+                "lib/ipd",
                 "cifutils",
                 "datahub",
                 // "ipd",
@@ -35,12 +35,12 @@
     [
         {
             "name": "ide tests",
-            "shell_cmd": "cd $folder; PYTHONPATH=../.. \\$PYTHON lib/rf2aa/lib/ipd/ipd/tools/run_tests_on_file.py rf_diffusion rf2aa ipd $file 2>&1 | tee $folder/ide/sublime_build.log",
+            "shell_cmd": "cd $folder; PYTHONPATH=../.. \\$PYTHON lib/ipd/ipd/tools/run_tests_on_file.py rf_diffusion rf2aa ipd $file 2>&1 | tee $folder/ide/sublime_build.log",
             "file_regex": "^\\s*File \"(...*?)\", line ([0-9]*)"
         },
         {
             "name": "ide tests pytest",
-            "shell_cmd": "cd $folder; PYTHONPATH=../.. \\$PYTHON lib/rf2aa/lib/ipd/ipd/tools/run_tests_on_file.py rf_diffusion rf2aa ipd $file --pytest 2>&1 | tee $folder/ide/sublime_build.log",
+            "shell_cmd": "cd $folder; PYTHONPATH=../.. \\$PYTHON lib/ipd/ipd/tools/run_tests_on_file.py rf_diffusion rf2aa ipd $file --pytest 2>&1 | tee $folder/ide/sublime_build.log",
             "file_regex": "^\\s*File \"(...*?)\", line ([0-9]*)"
         },
         {
@@ -77,12 +77,12 @@
         },
         {
             "name": "test ipdtool",
-            "shell_cmd": "cd $folder/lib/rf2aa/lib/ipd; PYTHONPATH=. \\$PYTHON -m ipd update 2>&1 | tee $folder/ide/sublime_build.log",
+            "shell_cmd": "cd $folder/lib/ipd; PYTHONPATH=. \\$PYTHON -m ipd update 2>&1 | tee $folder/ide/sublime_build.log",
             "file_regex": "^\\s*File \"(...*?)\", line ([0-9]*)"
         },
         {
             "name": "pytest ipd",
-            "shell_cmd": "cd $folder/lib/rf2aa/lib/ipd; PYTHONPATH=. \\$PYTHON -m pytest -x 2>&1 | tee $folder/ide/sublime_build.log",
+            "shell_cmd": "cd $folder/lib/ipd; PYTHONPATH=. \\$PYTHON -m pytest -x 2>&1 | tee $folder/ide/sublime_build.log",
             "file_regex": "^\\s*File \"(...*?)\", line ([0-9]*)"
         },
         {
@@ -122,7 +122,7 @@
         },
         {
             "name": "rebuild sg",
-            "shell_cmd": "cd $folder/rf_diffusion; PYTHONPATH=..:../lib/rf2aa/lib/ipd \\$PYTHON  ../lib/rf2aa/lib/ipd/ipd/sym/xtal/spacegroup_deriveddata.py 2>&1 | tee $folder/ide/sublime_build.log",
+            "shell_cmd": "cd $folder/rf_diffusion; PYTHONPATH=..:../lib/ipd \\$PYTHON  ../lib/ipd/ipd/sym/xtal/spacegroup_deriveddata.py 2>&1 | tee $folder/ide/sublime_build.log",
             "file_regex": "^\\s*File \"(...*?)\", line ([0-9]*)"
         },
         {

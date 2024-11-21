@@ -95,7 +95,7 @@ def get_sampler(conf):
         existing = glob.glob(conf.inference.output_prefix + '*.pdb')
         indices = [-1]
         for e in existing:
-            m = re.match(f'{conf.inference.output_prefix}_(\d+).*\.pdb$', e)
+            m = re.match(fr'{conf.inference.output_prefix}_(\d+).*\.pdb$', e)
             if m:
                 m = m.groups()[0]
                 indices.append(int(m))

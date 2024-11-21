@@ -134,6 +134,7 @@ apt-get clean
 %environment
 export PATH=$PATH:/usr/local/cuda/bin
 export CUTLASS_PATH=/opt/cutlass/
+export MKL_SERVICE_FORCE_INTEL=1
 
 %runscript
 

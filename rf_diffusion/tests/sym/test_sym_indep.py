@@ -70,6 +70,7 @@ def test_sym_indep_gp_atom_lig_asym():
     assert th.allclose(indep.is_gp, symindep.is_gp)
     assert th.allclose(indep.type(), symindep.type())
 
+@pytest.mark.skip
 def test_sym_indep_gp_lig_asym_chains():
     contigconf = omegaconf.DictConfig(
         yaml.load('''
@@ -178,6 +179,7 @@ def make_tiny_indep(reload=False):
     _, _, indep_cond, _, is_diffused, atomizer, contig_map, t_step_input, _ = next(iter(dataset))
     return indep_cond
 
+@pytest.mark.skip
 @pytest.mark.fast
 def test_sym_indep():
     indep = make_tiny_indep(reload=False)

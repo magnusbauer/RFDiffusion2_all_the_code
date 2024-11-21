@@ -1,4 +1,9 @@
 # Setup
+
+## Dependencies
+rf_diffusion now includes a pre-commit hook that runs ruff and yapf to autoformat files. If you run into an error, just run "pip install ruff yapf," or otherwise install the two packages. Most existing files are, for now, grandfathered out of autoformatting via inclusion in the .yapf_exclude file. If you really don't want your new files autoformatted, you can add them to that file. Linting and formatting will be applied before each commit. After the initial run, which may take ten seconds or so, formatting will be done incrementally and shouldn't slow you down.
+
+## Paths
 Let's define some paths. Begin by `cd`ing to any directory you like.
 ```
 REPO_NAME="rf_diffusion_repo"  # Set REPO_NAME to be anything you like.
