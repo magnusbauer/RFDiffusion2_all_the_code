@@ -34,6 +34,11 @@ update-alternatives --install /usr/bin/c++ c++ /usr/bin/gcc-11 50
 apt-get install -y libx11-6 libxau6 libxext6 libxrender1 libtiff5 libpng-dev libjpeg-dev
 apt-get install -y git
 apt-get install -y libaio-dev
+
+apt-get install -y software-properties-common
+add-apt-repository -y ppa:apptainer/ppa
+apt-get update
+apt-get install -y apptainer
 apt-get clean
 
 # Install conda

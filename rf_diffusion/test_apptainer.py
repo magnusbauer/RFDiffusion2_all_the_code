@@ -67,8 +67,12 @@ class TestApptainer(unittest.TestCase):
     def test_shebang(self):
         cmd = fr'{rfd.projdir}/run_inference.py inference.num_designs=0 inference.input_pdb={rfd.projdir}/test_data/1qys.pdb'
         out = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE)
-        print(out)
         assert out.returncode == 0
 
+
+    def test_apptainer_apptainer(self):
+        out = subprocess.run('apptainer --version', shell=True)
+        assert out.returncode == 0, 'apptainer must have apptainer installed!'
+        
 if __name__ == '__main__':
         unittest.main()
