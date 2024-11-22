@@ -543,7 +543,7 @@ def save_outputs(sampler, out_prefix, indep, contig_map, atomizer, t_step_input,
     final_seq = torch.where((final_seq == 20) | (final_seq==21), 0, final_seq)
 
     # determine lengths of protein and ligand for correct chain labeling in output pdb
-    chain_Ls = rf2aa.util.Ls_from_same_chain_2d(indep.same_chain[~indep.is_gp][:,~indep.is_gp])
+    chain_Ls = rf2aa.util.Ls_from_same_chain_2d(indep.same_chain)
 
     # Figure out which timesteps we are going to output
     write_ts = []
