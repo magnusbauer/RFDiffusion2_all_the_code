@@ -1,7 +1,10 @@
+import os
+import shutil
 import assertpy
 import subprocess
 import unittest
 
+import pandas as pd
 from icecream import ic
 # from deepdiff import DeepDiff
 
@@ -143,6 +146,37 @@ class TestBenchmark(unittest.TestCase):
         print(f'{proc=}') 
         print(f'{proc.returncode=}')
         assertpy.assert_that(proc.returncode).is_not_equal_to(0)
+    
+    def test_pipeline_completes(self):
+        '''
+        Tests that the pipeline runs end-to-end and produces the appropriate metrics
+        for a toy input.
+        '''
+
+        expected_number_of_sequences = 2
+        outdir = os.path.abspath('test_outputs/pipeline_0')
+        if os.path.exists(outdir):
+            shutil.rmtree(outdir)
+
+        # Speed up the process by making the expected AF2 outputs, so that AF2 doesn't have to run.
+        shutil.copytree('test_data/pipeline_0', outdir)
+
+        job = f'''./benchmark/pipeline.py --config-name=pipeline_test in_proc=1 outdir={outdir}'''
+        print(f'running job: {job}')
+        proc = subprocess.run(job, shell=True)
+        print(f'{proc=}')
+        print(f'{proc.returncode=}')
+        assertpy.assert_that(proc.returncode).is_equal_to(0)
+
+        expected_metrics_csv_path = os.path.join(outdir, 'compiled_metrics.csv')
+        assert os.path.exists(expected_metrics_csv_path)
+
+        df = pd.read_csv(expected_metrics_csv_path)
+        assertpy.assert_that(df.shape[0]).is_equal_to(expected_number_of_sequences)
+
+        af2_success_metric = 'backbone_aligned_allatom_rmsd_af2_unideal_all_sym_resolved'
+        assert df[af2_success_metric].notna().all(), f'expected non nans: {df[af2_success_metric]=}'
+
 
 if __name__ == '__main__':
         unittest.main()

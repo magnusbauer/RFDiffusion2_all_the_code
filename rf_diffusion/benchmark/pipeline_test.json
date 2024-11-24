@@ -1,0 +1,4 @@
+{
+    "extra_mini_retroaldolase": "inference.contig_as_guidepost=True inference.input_pdb=pipeline_test_0_input.pdb contigmap.contigs=[\\'4,A1051-1051\\'] contigmap.contig_atoms=\"'{\\'A1051\\':\\'OH,CZ\\'}'\" inference.ligand=LLK"
+}
+

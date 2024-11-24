@@ -2,7 +2,6 @@ import copy
 import logging
 import sys
 
-import assertpy
 import torch as th
 
 import ipd
@@ -13,7 +12,7 @@ log = logging.getLogger(__name__)
 try:
     pymol = ipd.lazyimport('pymol')
 
-    class PymolObserver(ipd.dev.observer.Observer):
+    class PymolObserver(ipd.observer.Observer):
         '''
         Observer that visualizes an indep or xyz in PyMol.
 
@@ -73,7 +72,7 @@ try:
                     indep = self.sym_indep if ipd.symmetrize.is_symmetrical(xyz) else self.asym_indep
                 else:
                     indep = self.indep
-                assertpy.assert_that(indep.xyz.shape[0]).is_equal_to(xyz.shape[0])
+                assert indep.xyz.shape[0] == xyz.shape[0]
                 indep.xyz = xyz.cpu()
                 ipd.showme(indep, sym=ipd.symmetrize, **kw)
             else:

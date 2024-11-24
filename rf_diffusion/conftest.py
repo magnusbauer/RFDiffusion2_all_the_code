@@ -1,10 +1,10 @@
 import os
 
+os.environ['CUDA_VISIBLE_DEVICES'] = ''
+
 import pytest
 
 import ipd
-
-os.environ['CUDA_VISIBLE_DEVICES'] = ''
 
 default_sym_manager = ipd.sym.create_sym_manager()
 default_motif_manager = ipd.motif.create_motif_manager()

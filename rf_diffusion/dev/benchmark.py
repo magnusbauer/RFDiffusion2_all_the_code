@@ -22,7 +22,10 @@ from rf_diffusion.dev import show_tip_pa
 import tree
 import torch
 
-api = wandb.Api(timeout=150)
+try:
+    api = wandb.Api(timeout=150)
+except Exception as e:
+    print(f'Warning: wandb API failed to instantiate: {e}')
 
 def get_history(run_id, api, n_samples):
     run = api.run(f"bakerlab/fancy-pants/{run_id}")
@@ -100,6 +103,9 @@ def melt_only(df, melt_vars):
     id_vars = [v for v in id_vars if v not in melt_vars]
     return df.melt(id_vars)
 
+def extract_metric(x):
+    if isinstance(x, torch.Tensor) and x.numel() == 0: return None
+    return x.item() if hasattr(x, 'cpu') else x
 
 def get_metrics(conf, metrics_inputs_list, metric_names=None):
     conf = OmegaConf.create(conf)
@@ -115,7 +121,7 @@ def get_metrics(conf, metrics_inputs_list, metric_names=None):
     for metrics_inputs in metrics_inputs_list:
         m=compile_metrics.flatten_dictionary(dict(metrics=manager.compute_all_metrics(**metrics_inputs)))
         m['t'] = metrics_inputs['t']
-        m=tree.map_structure(lambda x: x.item() if hasattr(x, 'cpu') else x, m)
+        m=tree.map_structure(extract_metric, m)
         # m = {'metrics':m}
         all_metrics.append(m)
     return all_metrics

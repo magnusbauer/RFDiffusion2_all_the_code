@@ -1,7 +1,10 @@
-from assertpy import assert_that
-import pytest
 import random
+
+import pytest
+from assertpy import assert_that
+
 import ipd
+import rf_diffusion.sym.rfd_sym_manager  # noqa
 
 @pytest.mark.fast
 @pytest.mark.parametrize(

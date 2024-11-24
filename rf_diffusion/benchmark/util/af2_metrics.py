@@ -300,29 +300,39 @@ def expand(mask_str):
 
     return expanded
 
+def lazy_get_model_runner():
+    pass
+
+
 def main():
 
     args = get_args()
 
-    # setup AF2 model
-    model_name = f'model_{args.model_num}'
-    if args.use_ptm:
-        model_name += '_ptm'
-    print(f'Using {model_name}')
-    model_config = config.model_config(model_name)
-    model_config.data.eval.num_ensemble = 1
+    # Enables lazy-loading of model_runner, if all PDBs already scored.
+    model_runner = None
+    model2crop_feats = None
+    def setup_model():
+        # setup AF2 model
+        model_name = f'model_{args.model_num}'
+        if args.use_ptm:
+            model_name += '_ptm'
+        print(f'Using {model_name}')
+        model_config = config.model_config(model_name)
+        model_config.data.eval.num_ensemble = 1
 
-    model_config.model.num_recycle = args.num_recycle
-    model_config.data.common.num_recycle = args.num_recycle
+        model_config.model.num_recycle = args.num_recycle
+        model_config.data.common.num_recycle = args.num_recycle
 
-    model_config.data.common.max_extra_msa = 1
-    model_config.data.eval.max_msa_clusters = 1
+        model_config.data.common.max_extra_msa = 1
+        model_config.data.eval.max_msa_clusters = 1
 
-    model_params = data.get_model_haiku_params(model_name=model_name, data_dir="/software/mlfold/alphafold-data")
-    model_runner = model.RunModel(model_config, model_params)
+        model_params = data.get_model_haiku_params(model_name=model_name, data_dir="/software/mlfold/alphafold-data")
+        model_runner = model.RunModel(model_config, model_params)
 
-    eval_cfg = model_config.data.eval
-    model2crop_feats = {k:[None]+v for k,v in dict(eval_cfg.feat).items()}
+        eval_cfg = model_config.data.eval
+        model2crop_feats = {k:[None]+v for k,v in dict(eval_cfg.feat).items()}
+
+        return model_runner, model2crop_feats
 
     # reference pdb
     if args.template is not None:
@@ -391,6 +401,10 @@ def main():
             row['af2_ptm'] = npz['ptm']
 
         else:
+            
+            if model_runner is None:
+                model_runner, model2crop_feats = setup_model()
+
             # run AF2
             feature_dict = {
                 **pipeline.make_sequence_features(sequence=seq,description="none",num_res=len(seq),idx_res=np.arange(len(seq))),
