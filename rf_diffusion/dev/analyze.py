@@ -25,7 +25,38 @@ import rf_diffusion.estimate_likelihood as el
 from rf_diffusion.inference import utils
 from itertools import takewhile
 
+import time
 
+class ExecutionTimer:
+
+    def __init__(self, message='Execution time', unit='s'):
+        self.message = message
+        self.unit = unit
+        self.start_time = None
+        self.end_time = None
+        self.result = None
+
+    def __enter__(self):
+        self.start_time = time.time()
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.end_time = time.time()
+        self.result = self.end_time - self.start_time
+        self.print_time()
+
+    def print_time(self):
+        elapsed_time = self.result
+        if self.unit == 'ms':
+            elapsed_time *= 1000  # convert to milliseconds
+        elif self.unit == 'us':
+            elapsed_time *= 1e6  # convert to microseconds
+        elif self.unit == 'ns':
+            elapsed_time *= 1e9  # convert to nanoseconds
+        else:
+            assert self.unit == 's', f"Invalid unit: {self.unit}"
+
+        print(f"{self.message}: {elapsed_time:.2f}{self.unit}")
 
 
 print(f'initializing analyze, cmd: {cmd}')
@@ -58,46 +89,54 @@ def get_epoch(row, model_key='inference.ckpt_path'):
 def get_source(rundir):
     return os.path.basename(rundir.removesuffix('/').removesuffix('out'))
 
-def read_metrics(df_path, add_contig_rmsd=True):
-    print(f'START: reading metrics from {df_path}')
-    df = pd.read_csv(df_path)
-    print(f'END  : reading metrics from {df_path}')
-    df['method'] = 'placeholder_method'
-    df['rundir'] = os.path.split(df_path)[0]
-    df['run'] = df['name'].apply(lambda x: x.split('_')[0])
-    # df = df[df['run'] =='run2'].reset_index()
-    try:
-        df['benchmark'] = [n[n.index('_')+1:n.index('_cond')] for n in df.name]
-    except Exception as e:
-        print('failed to get benchmark', e)
+def read_metrics_simple(df_path, **kwargs):
+    print(f'read_metrics_simple: reading metrics from {df_path}')
+    with ExecutionTimer(f'read_metrics_simple: read_csv(*args, {kwargs=})'):
+        df = pd.read_csv(df_path, **kwargs)
 
-    try:
-        df['run'] = [n[:n.index('_')] for n in df.name]
-    except Exception as e:
-        print('failed to get run', e)
-    # For backwards compatibility
-    model_key = 'inference.ckpt_path'
-    possible_model_keys = ['inference.ckpt_path', 'score_model.weights_path', 'inference.ckpt_override_path']
-    count_by_model_key = {k: len(df.value_counts(k)) if k in df.columns else 0 for k in possible_model_keys}
-    model_key = max(count_by_model_key, key=count_by_model_key.get)
-    if not any(k in df.columns for k in possible_model_keys):
-        model_key = 'fake_model_key'
-        df[model_key] = 'SOME_MODEL_1.pt'
-    df[model_key] = df[model_key].map(lambda x: x if isinstance(x, str) else "MODEL_NOT_FOUND")
-    # df = df[df[model_key] != "MODEL_NOT_FOUND"]
-    if model_key in df.columns:
-        models = df[model_key].unique()
-        common = common_prefix(models)
-        df['model'] = df[model_key].apply(lambda x: x[len(common):])
-    
-    df['pdb_path'] = df.apply(get_pdb_path, axis=1)
-    df['des_color'] = 'rainbow'
-    df['epoch'] = df.apply(partial(get_epoch, model_key=model_key), axis=1)
-    df['seed'] = df.name.apply(lambda x: int(x.split('_cond')[1].split('_')[1].split('-')[0]))
-    if 'diffuser.type' not in df:
-        df['diffuser.type'] = 'diffuser_unknown'
-    df['diffuser.type'] = df['diffuser.type'].fillna('diffusion')
-    df['mpnn_index'] = df['mpnn_index'].astype(int)
+    with ExecutionTimer('read_metrics_simple: computing derived values'):
+        df['method'] = 'placeholder_method'
+        df['rundir'] = os.path.split(df_path)[0]
+        df['run'] = df['name'].apply(lambda x: x.split('_')[0])
+        # df = df[df['run'] =='run2'].reset_index()
+        try:
+            df['benchmark'] = [n[n.index('_')+1:n.index('_cond')] for n in df.name]
+        except Exception as e:
+            print('failed to get benchmark', e)
+
+        try:
+            df['run'] = [n[:n.index('_')] for n in df.name]
+        except Exception as e:
+            print('failed to get run', e)
+        # For backwards compatibility
+        model_key = 'inference.ckpt_path'
+        possible_model_keys = ['inference.ckpt_path', 'score_model.weights_path', 'inference.ckpt_override_path']
+        count_by_model_key = {k: len(df.value_counts(k)) if k in df.columns else 0 for k in possible_model_keys}
+        model_key = max(count_by_model_key, key=count_by_model_key.get)
+        if not any(k in df.columns for k in possible_model_keys):
+            model_key = 'fake_model_key'
+            df[model_key] = 'SOME_MODEL_1.pt'
+        df[model_key] = df[model_key].map(lambda x: x if isinstance(x, str) else "MODEL_NOT_FOUND")
+        df['model_key_name'] = model_key
+        # df = df[df[model_key] != "MODEL_NOT_FOUND"]
+        if model_key in df.columns:
+            models = df[model_key].unique()
+            common = common_prefix(models)
+            df['model'] = df[model_key].apply(lambda x: x[len(common):])
+            df['seed'] = df.name.apply(lambda x: int(x.split('_cond')[1].split('_')[1].split('-')[0]))
+        if 'diffuser.type' not in df:
+            df['diffuser.type'] = 'diffuser_unknown'
+        df['diffuser.type'] = df['diffuser.type'].fillna('diffusion')
+        df['mpnn_index'] = df['mpnn_index'].astype(int)
+        df['des_color'] = 'rainbow'
+    return df
+
+def read_metrics(df_path, **kwargs):
+    df = read_metrics_simple(df_path, **kwargs)
+    with ExecutionTimer('read_metrics: computing derived values'):
+        model_key = df['model_key_name'].iloc[0]
+        df['epoch'] = df.apply(partial(get_epoch, model_key=model_key), axis=1)
+        df['pdb_path'] = df.apply(get_pdb_path, axis=1)
 
     #get_epoch  = lambda x: re.match('.*_(\w+).*', x).groups()[0]
 
@@ -107,10 +146,14 @@ def read_metrics(df_path, add_contig_rmsd=True):
     #df['contig_rmsd'] = df.apply(lambda x: get_contig_c_alpha_rmsd(x).item(), axis=1)
     return df
 
-def combine(*df_paths, names=None):
+def combine(*df_paths, names=None, simple=True, **kwargs):
+    f = read_metrics
+    if simple:
+        f = read_metrics_simple
     to_cat = []
     for i,p in enumerate(df_paths):
-        df = read_metrics(p)
+        with ExecutionTimer(f'Loaded {p}'):
+            df = f(p, **kwargs)
         #_, base = os.path.split(p)
         root, _ = os.path.splitext(os.path.abspath(p))
         root = root.split('/')[-3]
@@ -342,6 +385,12 @@ def get_best_chai1(row, key='aggregate_score'):
     df = get_chai1_df(row)
     best = df.nlargest(1, key)
     return best, True
+
+def get_chai1_path(row, model_idx):
+    mpnn_pdb = get_mpnn_pdb(row)
+    head, tail = os.path.split(mpnn_pdb)
+    tail = tail.split('.')[0]
+    return os.path.join(head, 'chai1/out', f'pred.{tail}_model_idx_{model_idx}.pdb')
 
 def get_best_chai1_path(row, key='aggregate_score'):
     best, has_chai1 = get_best_chai1(row, key)
@@ -719,7 +768,7 @@ def make_row_from_traj(traj_prefix, use_trb=True):
     
     synth_row['rundir'], synth_row['name'] = os.path.split(traj_prefix)
     synth_row['mpnn_index'] = 0
-    if 'packed' in synth_row['rundir']:
+    if 'packed/' in synth_row['rundir']:
         synth_row['rundir'] = os.path.dirname(synth_row['rundir'])
         synth_row['name'] = re.sub(r'_\d+$', '', synth_row['name'])
     if 'mpnn/' in traj_prefix:
@@ -1677,3 +1726,14 @@ def get_trb_path(row):
 def translate(pymol_name, dxyz):
     dxyz = [e for e in dxyz]
     cmd.translate(dxyz, pymol_name, -1, 0)
+
+def fast_apply(df, f, input_columns):
+    o = []
+
+    input_values = {c: df[c] for c in input_columns}
+
+    for i in range(df.shape[0]):
+        o.append(f({c: input_values[c][i] for c in input_columns}))
+    
+    return o
+

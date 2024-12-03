@@ -177,7 +177,7 @@ def load_checkpoint_done(sampler):
             _, individual_prefix = sampler_out_prefix(sampler, i_des=i_des)
 
             # Check for 4 output patterns that might exist
-            for pattern in ['[.]trb', '-.*[.]trb', '[.]pdb', '-.*[.]pdb']:
+            for pattern in ['[.]trb', '-.*[.]trb']:
                 re_comp = re.compile(individual_prefix + pattern)
 
                 for file in files:

@@ -149,3 +149,8 @@ We crawled M-CSA for 41 enzymes where all reactants and products are present to 
 Run it with:
 
 `./benchmark/pipeline.py --config-name=enzyme_bench_n41`
+
+# Debugging
+
+## pipeline.py
+If your outdir is `/a/b/c/` then slurm logs appear at: `/a/b/SLURMJOBID_SLURMJOBARRAYINDEX_jobtype.log`

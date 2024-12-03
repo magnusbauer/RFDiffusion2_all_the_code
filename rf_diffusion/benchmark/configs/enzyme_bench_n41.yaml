@@ -24,6 +24,7 @@ sweep:
     ++diffuser.rots.exp_rate=10
     contigmap.intersperse='10-100'
     contigmap.reintersperse=True
+    inference.guidepost_xyz_as_design_bb=[True]
   benchmark_json: mcsa_41.json
   benchmarks: all
   num_per_condition: 100
@@ -34,13 +35,29 @@ sweep:
 
 in_proc: False
 
+mpnn:
+  slurm:
+    p: gpu
+    gres: gpu:rtx2080:1
+
 score:
   chunk: 200
+  run: chai1
+  chai1:
+    slurm:
+      p: gpu
+      gres: gpu:a4000:1
 
 outdir: /net/scratch/${oc.env:USER}/se3_diffusion/benchmarks/${now:%Y-%m-%d}_${now:%H-%M-%S}_enzyme_bench_n41
 
 metrics:
   design_metrics:
     - backbone
+    - rmsd_to_input
   sequence_metrics:
+    - chai1_pocket_aligned_ligand
     - sidechain_symmetry_resolved
+
+skip_steps:
+- foldseek
+- tm_align

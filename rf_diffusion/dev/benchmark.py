@@ -639,13 +639,14 @@ def add_cc_columns(df):
 
 
 def best_in_group(df, group_by=['design_id'], cols=['catalytic_constraints.raw.criterion_1'], ascending=[False], unique_column='seq_id'):
+    assert df[unique_column].is_unique
     df_small  = df[group_by + cols + [unique_column]]
     grouped = df_small.groupby(group_by).apply(lambda grp: grp.sort_values(cols, ascending=ascending).head(1))
     return pd.merge(df, grouped[unique_column], on=unique_column, how='inner')
 
 
 def best_in_group_fast(df, group_by=['design_id'], cols=['catalytic_constraints.raw.criterion_1'], ascending=True):
-    return df.sort_values(by=cols).drop_duplicates(group_by, keep='first' if ascending else 'last')
+    return df.sort_values(by=cols, ascending=ascending).drop_duplicates(group_by, keep='first')
 
 def get_best_in_group_for_each_metric(
         df,
@@ -653,8 +654,10 @@ def get_best_in_group_for_each_metric(
         variable_renamer=None,
         var_name='variable',
         value_name='value',
-        group_by=['design_id']):
+        group_by=['design_id'],
+        ascending=True):
 
+    # This helps for bookkeeping later
     assert df.index.is_unique
     df_small = df[melt_vars + group_by]
     df_small.reset_index(inplace=True)
@@ -663,8 +666,8 @@ def get_best_in_group_for_each_metric(
             var_name=var_name, value_name=value_name,
             variable_renamer=variable_renamer)
     
-    best = best_in_group(melted, group_by=group_by + [var_name], cols=[value_name], ascending=[True])
-    return best
+    best = best_in_group_fast(melted, group_by=group_by + [var_name], cols=[value_name], ascending=ascending)
+    return best, melted
 
 def get_cc_passing(df, subtypes=('raw',)):
     all_melted = {}
@@ -738,6 +741,30 @@ def grouped_palette(
 def get_n_motif(row):
     return len(eval(row['contigmap.contig_atoms']))
 
+def get_n_contiguous_motif(row):
+    # print(f"{row['contigmap.contigs']=}")
+    contigs = eval(row['contigmap.contigs'])
+    assert len(contigs) == 1
+    contigs =  contigs[0]
+    # print(f'{contigs=}')
+    contigs = contigs.split(',')
+    # print(f'{contigs=}')
+
+    n_contiguous = 0
+    for c in contigs:
+        if c[0].isalpha():
+            n_contiguous += 1
+    return n_contiguous
+
+def motif_has_backbone_atom(row):
+    backbone_atoms = ['N', 'CA', 'C', 'O']
+    d = eval(row['contigmap.contig_atoms'])
+    d = {k: v.split(',') for k,v in d.items()}
+    for v in d.values():
+        assert isinstance(v, list), f'{v=} {type(v)=}'
+        if any(a in v for a in backbone_atoms):
+            return True
+    return False
 
 
 def label_bar_heights(ax):
@@ -759,11 +786,13 @@ def label_bar_heights(ax):
     max_height = max(p.get_height() for p in ax.patches)
     _ = plt.ylim(0, max_height + 2 * label_y_offset + 0.01)
 
+def set_seq_id(df):
+    df['seq_id'] = analyze.fast_apply(df, lambda x: f'{x["design_id"]}_{x["mpnn_index"]}', ['design_id', 'mpnn_index'])
 
 def set_sequence_id_unique_index(df):
     drop = df.index.name == 'seq_id'
     df.reset_index(inplace=True, drop=drop)
-    df['seq_id'] = df.apply(lambda x: f'{x["design_id"]}_{x["mpnn_index"]}', axis=1)
+    set_seq_id(df)
     df.set_index('seq_id', inplace=True, verify_integrity=True)
 
 def designs_with_all_sequences_scored(
@@ -828,14 +857,96 @@ def melt_chai_models(df, pocket_aligned_prefix=pocket_aligned_prefix):
         suffix=r'.*'
     )
 
-def join_on_seq_id(df, additional, additional_suffix=None):
+def safe_merge(*args, merge_assert='both', **kwargs):
+    out = pd.merge(*args, **kwargs, indicator=True)
+    if merge_assert == 'both':
+        assert out['_merge'].unique() == [merge_assert], 'corresponding row not found in both dataframes'
+    out.drop(['_merge'], axis=1, inplace=True)
+    return out
 
+
+def join_on_seq_id(df, additional, additional_suffix=None, one_to_one=True, **kwargs):
+    print(f'{df.index.name=}')
+    print(f'{additional.index.name=}')
     assert df.index.name == 'seq_id'
+
     assert additional.index.name == 'seq_id'
-    assert df.index.is_unique
     assert additional.index.is_unique
+    if one_to_one:
+        assert df.index.is_unique
 
     m = df.merge(additional, how='left', left_on='seq_id', right_index=True, indicator=True, suffixes=(None, additional_suffix))
     assert m['_merge'].unique() == ['both'], 'corresponding row in df not found for seq_id in additoinal'
     return m
+
+### Chai melting utilities
+
+def trim_all_sym_resolved_suffixes(df):
+    '''
+    For any column ending in _sym_resolved, remove the suffix if the column without the suffix is not present already in the dataframe.
+    '''
+    for col in df.columns:
+        if col.endswith('_sym_resolved'):
+            base = col[:-len('_sym_resolved')]
+            if base not in df.columns:
+                df.rename(columns={col: base}, inplace=True)
+
+chaimodel = 'chaimodel'
+def normalize_chai_columns(df):
+    '''
+    Put the model suffix at the end
+    '''
+
+    def pocket_metrics_mapper(column):
+        if column.startswith('pocket_aligned_model_'):
+            m = re.match(r'^pocket_aligned_model_(\d+)_(.*)', column)
+            return f'{pocket_aligned_prefix}{m.group(2)}_{chaimodel}_{m.group(1)}'
+        return column
+    
+    for mapper in [pocket_metrics_mapper]:
+        df.rename(
+            columns=mapper,
+            inplace=True
+        )
+
+def melt_all_chai_models(df):
+
+    normalize_chai_columns(df)
+
+    stubname_cols = df.columns[df.columns.str.contains(chaimodel)]
+    # print(f'{stubname_cols=}')
+
+    # stubnames = []
+
+    stubnames = []
+    for col in stubname_cols:
+        pattern = rf'^(.*_{chaimodel})_\d+'
+        m = re.match(pattern, col)
+        if not m:
+            raise Exception(f'column {col} does not match the regex: {pattern}')
+        stubnames.append(m.group(1))
+
+    # # stubnames = [re.match(rf'^({pocket_aligned_prefix}.*)-\d+', col).group(1) for col in stubname_cols]
+    stubnames = list(set(stubnames))
+    # print(f'{stubnames=}')
+
+    # df.reset_index(inplace=True, drop=True)
+    assert df.index.is_unique
+    df['id'] = df.index
+
+    out = pd.wide_to_long(
+        df=df,
+        i='id',
+        j='chai_model_idx',
+        stubnames=stubnames,
+        sep='_',
+        suffix=r'\d'
+        # suffix=r'.*'
+    )
+    out.reset_index('chai_model_idx', inplace=True)
+
+    # Remove the suffix chaimodel from all column names
+    out.columns = [re.sub(rf'_{chaimodel}$', '', col) for col in out.columns]
+    return out
+
 

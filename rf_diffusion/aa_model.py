@@ -1,4 +1,5 @@
 from __future__ import annotations
+from itertools import groupby
 import logging
 import torch
 import contextlib
@@ -986,6 +987,11 @@ def make_indep(pdb, ligand='', return_metadata=False, pdb_stream=None):
         ligand_atom_names_arr = ['']*sum(Ls[:N_poly])
         if ligand:
             ligand_atom_names_arr.extend(sm_atom_names)
+        
+        # ligand_info is wrong in the case of multiple ligands. TODO: fix this, add a test.
+        ligand_info_ligand_order = [d['name'].strip() for d in target_feats['info_het']]
+        ligand_info_ligand_order = [key for key, _group in groupby(ligand_info_ligand_order)]
+        assert ligands == ligand_info_ligand_order, f'{ligands} != {ligand_info_ligand_order}'
 
         metadata = {
             'covale_bonds': covale_bonds,
@@ -1153,11 +1159,9 @@ class Model:
                     raise Exception(f'bad parse of {self.conf.inference.partially_fixed_ligand=}: hydra does not allow int keys: {ligand_name=} {type(ligand_name)=}')
 
             is_res_str_shown_sm = torch.zeros(n_sm).bool()
-            info_het = metadata['ligand_info']
             within_sm_index_by_name_atom = defaultdict(dict)
-            for i, d in enumerate(info_het):
-                atom_id = d['atom_id'].strip()
-                ligand_name = d['name'].strip()
+            for i, (ligand_name, atom_id) in enumerate(zip(metadata['ligand_names'][indep.is_sm], metadata['ligand_atom_names'][indep.is_sm])):
+                atom_id = atom_id.strip()
                 within_sm_index_by_name_atom[ligand_name][atom_id] = i
             violations_by_ligand = defaultdict(list)
             for ligand_name, atom_ids in self.conf.inference.partially_fixed_ligand.items():

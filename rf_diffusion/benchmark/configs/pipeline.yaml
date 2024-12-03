@@ -58,3 +58,5 @@ metrics:
     submit: ${slurm_submit}
   mpnn_dirs: ${mpnn.outdirs}
 
+compile:
+  metrics_chunk: -1

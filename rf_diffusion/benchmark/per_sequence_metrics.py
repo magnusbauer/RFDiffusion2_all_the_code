@@ -30,6 +30,7 @@ from rf_diffusion.inference import utils
 import rf_diffusion.dev.analyze
 from rf_diffusion.chemical import ChemicalData as ChemData
 from rf_diffusion.dev import benchmark as bm
+from rf_diffusion import loss
 import rf_diffusion.atomization_primitives
 from rf2aa.util import rigid_from_3_points
 
@@ -91,6 +92,14 @@ def get_aligner(
         return f_aligned[:, 0, :]
 
     return T_flat
+
+def aligned_rmsd(
+        f, # from [L, 3]
+        t, # to [L, 3]
+        ):
+    T = get_aligner(f, t)
+    f_aligned = T(f)
+    return rmsd(f_aligned, t)   
 
 def catalytic_constraints_mpnn_packed(pdb):
     out = catalytic_constraints_inner(pdb, mpnn_packed=True)
@@ -421,6 +430,32 @@ def guidepost_af2_rmsd(pdb):
     o['mpnn_index'] = row['mpnn_index']
     return o
 
+def junction_bond_len(xyz, is_motif, idx):
+    '''
+        Args:
+            xyz: [L, 14, 3] protein only xyz
+            is_motif: [L] boolean motif mask
+            idx: [L] pdb index
+    '''
+    sig_len=0.02
+    ideal_NC=1.329
+    blen_CN  = loss.length(xyz[:-1,2], xyz[1:,0])
+    CN_loss = torch.clamp( torch.abs(blen_CN - ideal_NC) - sig_len, min=0.0 )
+
+    pairsum = is_motif[:-1].double() + is_motif[1:].double()
+    pairsum[idx[:-1] - idx[1:] != -1] = -1
+
+    junction = pairsum == 1
+    intra_motif = pairsum == 2
+    intra_diff = pairsum == 0
+
+    return {
+        'junction_CN_loss': CN_loss[junction].mean().item(),
+        'intra_motif_CN_loss': CN_loss[intra_motif].mean().item(),
+        'intra_diff_CN_loss': CN_loss[intra_diff].mean().item()
+    }
+
+
 def junction_cn(pdb):
     row = analyze.make_row_from_traj(pdb[:-4])
     trb = analyze.get_trb(row)
@@ -441,22 +476,24 @@ def backbone(pdb):
     row = rf_diffusion.dev.analyze.make_row_from_traj(pdb[:-4])
     record['name'] = row['name']
 
-    traj_metrics = bm.get_inference_metrics_base(bm.get_trb_path(row), regenerate_cache=True)
-    traj_t0_metrics = traj_metrics[traj_metrics.t==traj_metrics.t.min()]
-    assert len(traj_t0_metrics) == 1
-    traj_t0_metrics = traj_t0_metrics.iloc[0].to_dict()
-    record.update(traj_t0_metrics)
+    if not analyze.is_rfd(row):
+        traj_metrics = bm.get_inference_metrics_base(bm.get_trb_path(row), regenerate_cache=True)
+        traj_t0_metrics = traj_metrics[traj_metrics.t==traj_metrics.t.min()]
+        assert len(traj_t0_metrics) == 1
+        traj_t0_metrics = traj_t0_metrics.iloc[0].to_dict()
+        record.update(traj_t0_metrics)
 
     # Ligand distance
     if row['inference.ligand']:
         for af2, c_alpha in [
             (False, True),
+            (False, False),
             # (True, True),
             # (True, True)
         ]:
             dgram = rf_diffusion.dev.analyze.get_dist_to_ligand(row, af2=af2, c_alpha=c_alpha) # [P, L]
             maybe_af2 = 'af2' if af2 else 'des'
-            maybe_c_alpha = 'c-alpha' if c_alpha else 'all-atom'
+            maybe_c_alpha = 'c-alpha' if c_alpha else 'ncac'
             record[f'ligand_dist_{maybe_af2}_{maybe_c_alpha}'] = dgram.min(-1)[0].tolist() # [P]
             record[f'ligand_dist_{maybe_af2}_{maybe_c_alpha}_min'] = dgram.min().item()
 
@@ -518,9 +555,79 @@ def sidechain(pdb, resolve_symmetry=False):
         ('des', des_pdb),
         ('packed', packed_pdb),
     ]
-    chai_path, has_chai = analyze.get_best_chai1_path(row)
+
+    has_chai = analyze.has_chai1(row)
+    n_chai = 5
+    chai_names = []
     if has_chai:
-        name_pdb_pairs.append(('chai1', chai_path))
+        chai_df = analyze.get_chai1_df(row)
+        assert chai_df.shape[0] == n_chai
+        for _, chai_row in chai_df.iterrows():
+            chai_model_index = chai_row['model_idx']
+            chai_name = f'chai_{chai_model_index}'
+            name_pdb_pairs.append((chai_name, chai_row['pdb_path']))
+            chai_names.append(chai_name)
+
+            chai_model_suffix = f'_chaimodel_{chai_model_index}'
+            for k, v in chai_row.to_dict().items():
+
+                # Ignore iterable values
+                if isinstance(v, list):
+                    continue
+
+                out[f'{k}{chai_model_suffix}'] = copy.deepcopy(v)
+    
+    has_af2 = os.path.exists(af2_pdb)
+    if has_af2:
+        name_pdb_pairs.append(('af2', af2_pdb))
+
+    for name, pdb in name_pdb_pairs:
+    has_chai = analyze.has_chai1(row)
+    n_chai = 5
+    chai_names = []
+    if has_chai:
+        chai_df = analyze.get_chai1_df(row)
+        assert chai_df.shape[0] == n_chai
+        for _, chai_row in chai_df.iterrows():
+            chai_model_index = chai_row['model_idx']
+            chai_name = f'chai_{chai_model_index}'
+            name_pdb_pairs.append((chai_name, chai_row['pdb_path']))
+            chai_names.append(chai_name)
+
+            chai_model_suffix = f'_chaimodel_{chai_model_index}'
+            for k, v in chai_row.to_dict().items():
+
+                # Ignore iterable values
+                if isinstance(v, list):
+                    continue
+
+                out[f'{k}{chai_model_suffix}'] = copy.deepcopy(v)
+    
+    has_af2 = os.path.exists(af2_pdb)
+    if has_af2:
+        name_pdb_pairs.append(('af2', af2_pdb))
+
+    for name, pdb in name_pdb_pairs:
+    has_chai = analyze.has_chai1(row)
+    n_chai = 5
+    chai_names = []
+    if has_chai:
+        chai_df = analyze.get_chai1_df(row)
+        assert chai_df.shape[0] == n_chai
+        for _, chai_row in chai_df.iterrows():
+            chai_model_index = chai_row['model_idx']
+            chai_name = f'chai_{chai_model_index}'
+            name_pdb_pairs.append((chai_name, chai_row['pdb_path']))
+            chai_names.append(chai_name)
+
+            chai_model_suffix = f'_chaimodel_{chai_model_index}'
+            for k, v in chai_row.to_dict().items():
+
+                # Ignore iterable values
+                if isinstance(v, list):
+                    continue
+
+                out[f'{k}{chai_model_suffix}'] = copy.deepcopy(v)
     
     has_af2 = os.path.exists(af2_pdb)
     if has_af2:
@@ -614,8 +721,10 @@ def sidechain(pdb, resolve_symmetry=False):
                     ('packed', 'unideal'),
                 ]
             if has_chai:
-                pairs_to_compare.append(('chai1', 'unideal'))
-                pairs_to_compare.append(('chai1', 'packed'))
+                for chai_name in chai_names:
+                    pairs_to_compare.append((chai_name, 'unideal'))
+                    pairs_to_compare.append((chai_name, 'packed'))
+                    pairs_to_compare.append((chai_name, 'ref'))
             if has_af2:
                 pairs_to_compare.append(('af2', 'unideal'))
                 pairs_to_compare.append(('af2', 'packed'))
@@ -626,8 +735,7 @@ def sidechain(pdb, resolve_symmetry=False):
                     get_motif_allatom = partial(get_motif, ref=tag=='ref', contig_atoms=subset_heavy_motif_atoms)
                     get_motif_backbone = lambda x: get_backbone(get_motif_allatom(x))
                     if align_to_whole_motif:
-                        get_motif_allatom_constellation = partial(get_motif, ref=tag=='ref', contig_atoms=heavy_motif_atoms)
-                        get_motif_backbone = lambda x: get_backbone(get_motif_allatom_constellation(x))
+                        get_motif_backbone = partial(get_motif, ref=tag=='ref', contig_atoms=subset_heavy_motif_atoms)
                     motif_backbone_xyz = xyz(tag, get_motif_backbone)
                     motif_allatom_xyz = xyz(tag, get_motif_allatom)
                     return motif_backbone_xyz, motif_allatom_xyz
@@ -637,7 +745,13 @@ def sidechain(pdb, resolve_symmetry=False):
                 T = get_aligner(motif_source_backbone, motif_target_backbone)
                 motif_source_allatom_backbone_aligned = T(motif_source_allatom)
                 whole_motif_str = 'constellation_' if align_to_whole_motif else ''
-                out[f'{whole_motif_str}backbone_aligned_allatom_rmsd_{source}_{target}_{subset_name}'] = rmsd(motif_source_allatom_backbone_aligned, motif_target_allatom).item()
+
+                chai_model_suffix = ''
+                if 'chai' in source:
+                    source, chai_model_index = source.split('_')
+                    chai_model_suffix = f'_chaimodel_{chai_model_index}'
+
+                out[f'{whole_motif_str}backbone_aligned_allatom_rmsd_{source}_{target}_{subset_name}{chai_model_suffix}'] = rmsd(motif_source_allatom_backbone_aligned, motif_target_allatom).item()
 
     return out
 
@@ -1375,12 +1489,596 @@ def traj_geometry_precompute(row, trb, config, parsed, motif_idxs, o={}, t_step=
 ####################
 
 
+
+def atoms_within_distance(atom_array, xyz_target, dist_cutoff):
+    '''
+    Parameters:
+        xyz: [N, 3] array of coordinates
+        xyz_target: [M, 3] array of coordinates
+    '''
+
+    dist = biotite.structure.geometry.distance(
+        atom_array.coord[:, None,:],
+        xyz_target[None,:,:]
+    )
+    min_dist = np.min(dist, axis=1)
+    return atom_array[min_dist < dist_cutoff]
+
+
+def get_chai1_metrics(pdb, chai1_pdbs):
+    '''
+    Given a pdb and the list of pdbs predicted by chai1, return a dictionary of metrics.
+
+    These metrics include:
+        Internal ligand RMSD:
+        Pocket-aligned ligand RMSD:
+        Motif-backbone-aligned sidechain RMSD:
+    '''
+    pass
+
+def get_mistmatched_annotations(atom_array_a, atom_array_b):
+    mismatched = []
+    for annotation in atom_array_a.get_annotation_categories():
+        if not np.all(atom_array_a.get_annotation(annotation) == atom_array_b.get_annotation(annotation)):
+            mismatched.append(annotation)
+
+    return mismatched
+
+def check_atom_names_set_matches(atom_array_a, atom_array_b):
+    a_names = set(atom_array_a.atom_name)
+    b_names = set(atom_array_b.atom_name)
+
+    a_not_b = a_names.difference(b_names)
+    b_not_a = b_names.difference(a_names)
+
+    return a_not_b, b_not_a
+    
+def print_check_atom_names_set_matches(atom_array_a, atom_array_b):
+    a_not_b, b_not_a = check_atom_names_set_matches(atom_array_a, atom_array_b)
+    print(f'Atom names in a but not b: {a_not_b}')
+    print(f'Atom names in b but not a: {b_not_a}')
+
+
+def get_ligands(atom_array):
+    ligand_by_resname = {}
+    ligand_resnames = set(atom_array.res_name[atom_array.hetero])
+    for resname in ligand_resnames:
+        ligand_by_resname[resname] = atom_array[atom_array.res_name == resname]
+    return ligand_by_resname
+
+def ligands_match(pdb, chai1_pdbs):
+    out = {}
+
+    def atom_array_from_pdb(pdb):
+        atom_array = bt.atom_array_from_pdb(pdb)
+        atom_array = bt.without_hydrogens(atom_array)
+        return atom_array
+
+    atoms_true = atom_array_from_pdb(pdb)
+    atoms_pred_stack = [atom_array_from_pdb(p) for p in chai1_pdbs[0:1]]
+    # Strip b factors:
+    for i, atoms_pred in enumerate(atoms_pred_stack):
+        atoms_pred.set_annotation('b_factor', np.ones(len(atoms_pred)))
+
+    atoms_pred_stack = biotite.structure.stack(atoms_pred_stack)
+    atoms_pred = atoms_pred_stack[0]
+
+    # Matching sanity checks
+    ligands_true = get_ligands(atoms_true)
+    atoms_pred.hetero = np.isin(atoms_pred.res_name, list(ligands_true.keys()))
+    ligands_pred = get_ligands(atoms_pred)
+
+    out['ligand_match.has_same_ligands'] = set(ligands_true.keys()) == set(ligands_pred.keys())
+    ligands_true_lengths = {k: len(v) for k,v in ligands_true.items()}
+    ligands_pred_lengths = {k: len(v) for k,v in ligands_pred.items()}
+
+    length_matches = {}
+    for k in ligands_true.keys():
+        length_matches[k] = ligands_true_lengths[k] == ligands_pred_lengths.get(k, 0)
+
+    order_match = False
+    length_match = atoms_pred.hetero.sum() == atoms_true.hetero.sum()
+    if length_match:
+        order_match = np.all(atoms_pred.res_name[atoms_pred.hetero] == atoms_true.res_name[atoms_true.hetero])
+    
+    element_match = False
+    atoms_pred_hetero = atoms_pred[atoms_pred.hetero]
+    atoms_true_hetero = atoms_true[atoms_true.hetero]
+    if order_match:
+        is_element_match = atoms_pred_hetero.element == atoms_true_hetero.element
+        element_match = np.all(is_element_match)
+    
+    bond_graph_match = False
+    if element_match:
+        bonds_true = biotite.structure.connect_via_distances(atoms_true_hetero)
+        bonds_pred = biotite.structure.connect_via_distances(atoms_pred_hetero)
+        bond_graph_match = np.mean(bonds_true.adjacency_matrix() == bonds_pred.adjacency_matrix())
+    
+    atom_names_match = False
+    if length_match:
+        is_atom_name_match = atoms_pred_hetero.atom_name == atoms_true_hetero.atom_name
+        atom_names_match = np.all(is_atom_name_match)
+    
+    atom_names_set_match = False
+    true_hetero_names = set(atoms_true_hetero.atom_name)
+    pred_hetero_names = set(atoms_pred_hetero.atom_name)
+    atom_names_set_match = true_hetero_names == pred_hetero_names
+
+    atom_names_set_difference = format_set_difference(true_hetero_names, pred_hetero_names)
+
+    res_name_atom_name_true = set((res_name, atom_name) for res_name, atom_name in zip(atoms_true_hetero.res_name, atoms_true_hetero.atom_name))
+    res_name_atom_name_pred = set((res_name, atom_name) for res_name, atom_name in zip(atoms_pred_hetero.res_name, atoms_pred_hetero.atom_name))
+
+    unique_atoms_true = res_name_atom_name_true.difference(res_name_atom_name_pred)
+    unique_atoms_pred = res_name_atom_name_pred.difference(res_name_atom_name_true)
+    unique_atoms_true_str = ','.join([f'{res_name}_{atom_name}' for res_name, atom_name in unique_atoms_true])
+    unique_atoms_pred_str = ','.join([f'{res_name}_{atom_name}' for res_name, atom_name in unique_atoms_pred])
+
+
+    # Get atoms where atom names match but elements do not
+    atom_name_match_element_mismatch_str = ""
+    if length_match:
+        is_atom_name_match = atoms_pred_hetero.atom_name == atoms_true_hetero.atom_name
+        is_element_match = atoms_pred_hetero.element == atoms_true_hetero.element
+        is_atom_name_match_element_mismatch = is_atom_name_match & ~is_element_match
+        
+        matched_names = atoms_true_hetero.atom_name[is_atom_name_match_element_mismatch]
+        true_elements = atoms_true_hetero.element[is_atom_name_match_element_mismatch]
+        pred_elements = atoms_pred_hetero.element[is_atom_name_match_element_mismatch]
+
+        atom_name_element_mismatch = [f'{name}_{true}_{pred}' for name, true, pred in zip(matched_names, true_elements, pred_elements)]
+        n_hetero = len(atoms_true_hetero)
+        n_name_match_element_mismatch = is_atom_name_match_element_mismatch.sum()
+        atom_name_match_element_mismatch_str = f'{n_name_match_element_mismatch}/{n_hetero}: ' + ','.join(atom_name_element_mismatch)
+
+    
+    out['ligand_match.f_match'] = np.array(list(length_matches.values())).mean()
+    out['ligand_match.n_match'] = sum(length_matches.values())
+    out['ligand_match.n_ligands'] = len(length_matches)
+    out['ligand_match.true_lengths'] = str(sorted(ligands_true_lengths.items()))
+    out['ligand_match.pred_lengths'] = str(sorted(ligands_pred_lengths.items()))
+    out['ligand_match.order_match'] = order_match
+    out['ligand_match.element_match'] = element_match
+    out['ligand_match.bond_graph_match'] = bond_graph_match
+    out['ligand_match.atom_names_match'] = atom_names_match
+    out['ligand_match.atom_names_set_match'] = atom_names_set_match
+    out['ligand_match.atom_names_set_difference'] = atom_names_set_difference
+    out['ligand_match.atom_name_element_mismatch_str'] = atom_name_match_element_mismatch_str
+    out['ligand_match.unique_atoms_true_str'] = unique_atoms_true_str
+    out['ligand_match.unique_atoms_pred_str'] = unique_atoms_pred_str
+    return out
+
+def format_set_difference(set_a, set_b):
+    a_not_b = set_a.difference(set_b)
+    b_not_a = set_b.difference(set_a)
+    n_same = len(set_a.intersection(set_b))
+    n_both = len(set_a.union(set_b))
+    return f'matching/total: {n_same}/{n_both}, a_not_b: {a_not_b}, b_not_a: {b_not_a}'
+
+def without_sidechains(atom_array):
+    is_backbone = biotite.structure.filter_peptide_backbone(atom_array)
+    is_returned = is_backbone | atom_array.hetero
+    if isinstance(atom_array, biotite.structure.AtomArrayStack):
+        return atom_array[..., is_returned]
+    return atom_array[is_returned]
+
+def assert_arrays_equal(a, b):
+    if (a == b).all():
+        return
+    i_mismatch = np.where(a != b)[0]
+    fraction_matched = np.mean(a == b)
+    raise Exception(f'{fraction_matched=}, mismatched (i, got, want): {list(zip(i_mismatch, a[i_mismatch], b[i_mismatch]))}')
+
+def get_atom_id(atom_array):
+    np.array([f'{res_name}_{res_id}_{atom_name}' for res_name, res_id, atom_name in zip(atom_array.chain_id, atom_array.res_name, atom_array.res_id, atom_array.atom_name)])
+
+def set_res_name_occurance_old(atom_array):
+    new_id_by_res_name_res_id = {}
+    res_name_last_i = defaultdict(int)
+    if isinstance(atom_array, biotite.structure.AtomArrayStack):
+        aa = atom_array[0]
+    else:
+        aa = atom_array
+    
+    for i, atom in enumerate(aa):
+
+        k = (atom.res_name, atom.res_id)
+        if k not in new_id_by_res_name_res_id:
+            new_id_by_res_name_res_id[k] = f'{atom.res_name}_{res_name_last_i[atom.res_name]}'
+            res_name_last_i[atom.res_name] += 1
+    atom_array.set_annotation('res_name_occurance', np.array([new_id_by_res_name_res_id[(res_name, res_id)] for res_name, res_id in zip(atom_array.res_name, atom_array.res_id)]))
+
+
+def set_res_name_occurance(atom_array):
+    if isinstance(atom_array, biotite.structure.AtomArrayStack):
+        aa = atom_array[0]
+    else:
+        aa = atom_array
+    
+    def get_residue_id(atom):
+        return (atom.chain_id, atom.res_name, atom.res_id)
+    
+    def get_res_name(atom):
+        return atom.res_name
+
+    subgroup_i_within_group = enumerate_distinct_subgroups(aa, get_res_name, get_residue_id)
+    groups = [get_res_name(atom) for atom in aa]
+    atom_array.set_annotation('res_name_occurance', np.array([f'{group}_{subgroup_i}' for group, subgroup_i in zip(groups, subgroup_i_within_group)]))
+
+def enumerate_distinct_subgroups(iterable, get_group, get_subgroup):
+
+    new_id_by_res_name_res_id = {}
+    res_name_last_i = defaultdict(int)
+    
+    for element in iterable:
+        group = get_group(element)
+        subgroup = get_subgroup(element)
+        if subgroup not in new_id_by_res_name_res_id:
+            new_id_by_res_name_res_id[subgroup] = res_name_last_i[group]
+            res_name_last_i[group] += 1
+    
+    return np.array([new_id_by_res_name_res_id[get_subgroup(element)] for element in iterable])
+
+def find_indices(a, b):
+    '''
+    Find the index array i such that a[i] == b.
+    '''
+
+    if set(a) != set(b):
+        raise Exception(format_set_difference(set(a), set(b)))
+
+    # Create a dictionary to map values in a to their indices
+    index_map = {value: idx for idx, value in enumerate(a)}
+    
+    # Use list comprehension to get indices from b using the index map
+    indices = np.array([index_map[element] for element in b])
+
+    # assert_arrays_equal
+    assert (a[indices] == b).all()
+    
+    return indices
+
+def assert_unique(a):
+    '''
+    Parameters:
+        a: iterable
+    Raises:
+        Exception if a contains duplicate elements
+    '''
+    if len(set(a)) != len(a):
+        raise Exception(f'Duplicate elements found in {a}')
+
+def correspond_chai_predictions(atoms_true, atoms_pred_stack):
+    '''
+    Corresponds the input with the output of chai.
+
+    The output `atoms_true` and `atoms_pred_stack` will have the
+    same number of atoms, and atoms_true[i] will correspond to
+    atoms_pred_stack[:, i].
+
+    Params:
+        atoms_true [AtomArray]: Input to chai
+        atoms_pred_stack [AtomArrayStack]: chai predictions
+    Returns:
+        atoms_true [AtomArray]: Normalized chai input atoms
+        atoms_pred_stack [AtomArrayStack]: Normalized chai predictions
+        true_extra[AtomArray]: Atoms in the input that were not in the chai prediction
+        pred_extra[AtomArray]: Atoms in the prediction that were not in the input
+    '''
+
+    # Some initial standardization
+    atoms_true = atoms_true.copy()
+    atoms_pred_stack = atoms_pred_stack.copy()
+
+    set_res_name_occurance(atoms_true)
+    set_res_name_occurance(atoms_pred_stack)
+
+    def get_ids(atom_array):
+        return np.array([f'{res_name_occurance}_{atom_name}' for res_name_occurance, atom_name in zip(atom_array.res_name_occurance, atom_array.atom_name)])
+
+    def set_ids(atom_array):
+        ids = get_ids(atom_array)
+        atom_array.set_annotation('res_name_occurance_atom_name', ids)
+        assert_unique(ids)
+        return ids
+    
+    true_ids = set_ids(atoms_true)
+    pred_ids = set_ids(atoms_pred_stack)
+
+    true_extra_ids = set(true_ids).difference(set(pred_ids))
+    true_extra = atoms_true[np.isin(true_ids, list(true_extra_ids))]
+
+    is_expected_true_extra = [
+        lambda atom: (not atom.hetero) and atom.atom_name == 'OXT',
+    ]
+
+    def expected_heavy_atom_names(res_name):
+        residue = biotite.structure.info.residue(res_name)
+        return residue.atom_name[residue.element != 'H']
+    
+    def true_missing_heavy_atom_names(res_name_occurance):
+        residue = atoms_true[res_name_occurance == atoms_true.res_name_occurance]
+        true_heavy_atom_names = residue.atom_name
+        res_name, occurance = res_name_occurance.split('_')
+        return set(expected_heavy_atom_names(res_name)).difference(set(true_heavy_atom_names))
+
+    def corresponding_atom_missing_in_true(atom):
+        return (
+            (not atom.hetero) and
+            atom.atom_name in true_missing_heavy_atom_names(atom.res_name_occurance)
+        )
+    is_expected_pred_extra = [
+        corresponding_atom_missing_in_true
+    ]
+
+    unexpected_true_extra = []
+    for atom in true_extra:
+        for is_expected in is_expected_true_extra:
+            for is_expected in is_expected_true_extra:
+                if is_expected(atom):
+                    break
+            else:
+                unexpected_true_extra.append(atom)
+    
+    pred_extra_ids = set(pred_ids).difference(set(true_ids))
+    pred_extra = atoms_pred_stack[0, np.isin(pred_ids, list(pred_extra_ids))]
+    unexpected_pred_extra = []
+    for atom in pred_extra:
+        for is_expected in is_expected_pred_extra:
+            if is_expected(atom):
+                break
+        else:
+            unexpected_pred_extra.append(atom)
+    
+    errors = []
+    if len(unexpected_true_extra) > 0:
+        errors.append(f'Unexpected true extra atoms: {unexpected_true_extra}')
+    if len(unexpected_pred_extra) > 0:
+        errors.append(f'Unexpected pred extra atoms: {unexpected_pred_extra}')
+    
+    if len(errors):
+        raise Exception('\n'.join(errors))
+
+    shared_ids = set(true_ids).intersection(set(pred_ids))
+
+    atoms_true = atoms_true[np.isin(true_ids, list(shared_ids))]
+    atoms_pred_stack = atoms_pred_stack[:, np.isin(pred_ids, list(shared_ids))]
+    
+    i = find_indices(atoms_pred_stack.res_name_occurance_atom_name, atoms_true.res_name_occurance_atom_name)
+    atoms_pred_stack = atoms_pred_stack[:, i]
+
+    assert_arrays_equal(atoms_true.res_name, atoms_pred_stack.res_name)
+    assert_arrays_equal(atoms_true.atom_name, atoms_pred_stack.atom_name)
+
+    return atoms_true, atoms_pred_stack, true_extra, pred_extra
+
+
+def set_is_hetero(atoms_true, atoms_pred_stack):
+    '''
+    Copy the hetero annotation from atoms_true to atoms_pred_stack by comparing res_name.
+    '''
+    # Pocket-aligned ligand RMSD
+    ligands_true = get_ligands(atoms_true)
+    atoms_pred_stack.hetero = np.isin(atoms_pred_stack.res_name, list(ligands_true.keys()))
+
+def get_pocket_aligned_ligand_rmsds(pdb, chai1_pdbs, aligned_pdb_dir=None):
+
+    out = {}
+
+    def atom_array_from_pdb(pdb):
+        atom_array = bt.atom_array_from_pdb(pdb)
+        atom_array = bt.without_hydrogens(atom_array)
+        return atom_array
+
+    atoms_true = atom_array_from_pdb(pdb)
+    atoms_pred_stack = [atom_array_from_pdb(p) for p in chai1_pdbs]
+    # Strip b factors:
+    for i, atoms_pred in enumerate(atoms_pred_stack):
+        atoms_pred.set_annotation('b_factor', np.ones(len(atoms_pred)))
+
+    atoms_pred_stack = biotite.structure.stack(atoms_pred_stack)
+    set_is_hetero(atoms_true, atoms_pred_stack)
+
+    # Save raw arrays
+    atoms_true.set_annotation('original_idx', np.arange(len(atoms_true)))
+    atoms_pred_stack.set_annotation('original_idx', np.arange(len(atoms_pred_stack[0])))
+
+    atoms_pred_stack_complete = atoms_pred_stack.copy()
+
+    atoms_true, atoms_pred_stack, _, _ = correspond_chai_predictions(atoms_true, atoms_pred_stack)
+
+    assert_arrays_equal(atoms_true.hetero, atoms_pred_stack.hetero)
+    assert_arrays_equal(atoms_true.element, atoms_pred_stack.element)
+    assert_arrays_equal(atoms_true.res_name, atoms_pred_stack.res_name)
+
+    # Get the pocket
+    atoms_true.set_annotation('corresponded_idx', np.arange(len(atoms_true)))
+    atoms_true_het = atoms_true[atoms_true.hetero]
+
+    atoms_true_pocket_candidates = atoms_true[biotite.structure.filter_peptide_backbone(atoms_true) & ~atoms_true.hetero]
+    assert atoms_true_pocket_candidates.hetero.sum() == 0
+    atoms_true_pocket = atoms_within_distance(atoms_true_pocket_candidates, atoms_true_het.coord, 10)
+
+    pocket_i = atoms_true_pocket.corresponded_idx
+    atoms_pred_stack_pocket = atoms_pred_stack[:, pocket_i]
+    
+    assert (atoms_pred_stack_pocket.res_name == atoms_true_pocket.res_name).all(), f'{list(zip(atoms_pred_stack_pocket.res_name, atoms_true_pocket.res_name))=}'
+    fitted, transformations = biotite.structure.superimpose(atoms_true_pocket, atoms_pred_stack_pocket)
+
+    if aligned_pdb_dir is not None:
+        atoms_pred_stack_pocket_aligned_complete = transformations.apply(atoms_pred_stack_complete)
+        aligned_chai_pdbs = []
+        os.makedirs(aligned_pdb_dir, exist_ok=True)
+        for i, (chai1_pdb, atoms_pred_aligned) in enumerate(zip(chai1_pdbs, atoms_pred_stack_pocket_aligned_complete)):
+            aligned_pdb = os.path.join(aligned_pdb_dir, os.path.basename(chai1_pdb))
+            bt.pdb_from_atom_array(atoms_pred_aligned, aligned_pdb)
+            aligned_chai_pdbs.append(aligned_pdb)
+            out[f'pocket_aligned_chai1_pdb_{i}'] = aligned_chai_pdbs[i]
+
+    atoms_pred_stack_pocket_aligned = transformations.apply(atoms_pred_stack)
+    atoms_pred_stack_pocket_aligned_het = atoms_pred_stack_pocket_aligned[:, atoms_pred_stack_pocket_aligned.hetero]
+
+    pocket_rmsd = biotite.structure.rmsd(atoms_true_pocket, atoms_pred_stack_pocket_aligned[:, pocket_i])
+
+    pocket_aligned_ligand_rmsds = biotite.structure.rmsd(atoms_true_het, atoms_pred_stack_pocket_aligned_het)
+    for i, rmsd in enumerate(pocket_aligned_ligand_rmsds):
+        out[f'pocket_aligned_model_{i}_total_ligand_rmsd'] = pocket_aligned_ligand_rmsds[i]
+        out[f'pocket_aligned_model_{i}_pocket_rmsd'] = pocket_rmsd[i]
+    
+    # TODO: Handle duplicate ligands
+    ligand_resnames = set(atoms_true[atoms_true.hetero].res_name)
+    for ligand_resname in ligand_resnames:
+        res_ids = set(atoms_true[atoms_true.res_name == ligand_resname].res_id)
+        assert len(res_ids) == 1, f'{res_ids=} for {ligand_resname=}.  Currently code assumes single ligand per ligand resname.'
+    get_ligand_key = lambda atom: f'{atom.res_name}'
+
+    ligand_rmsd = []
+    ligand_keys = np.array([get_ligand_key(atom) for atom in atoms_true])
+    ligand_key_set = set(ligand_keys[atoms_true.hetero])
+    for ligand_key in ligand_key_set:
+        is_ligand = ligand_key == ligand_keys
+        atoms_true_ligand = atoms_true[is_ligand]
+        atoms_pred_stack_pocket_aligned_ligand = atoms_pred_stack_pocket_aligned[:, is_ligand]
+
+        assert len(set(atoms_true_ligand.res_id)) == 1, f'len({set(atoms_true_ligand.res_id)}) != 1'
+        assert len(set(atoms_pred_stack_pocket_aligned_ligand.res_id)) == 1, f'len({set(atoms_pred_stack_pocket_aligned_ligand.res_id)}) != 1'
+        ligand_rmsd.append((
+                atoms_pred_stack_pocket_aligned_ligand.copy(),
+                ligand_key,
+                biotite.structure.rmsd(atoms_true_ligand, atoms_pred_stack_pocket_aligned_ligand)
+        ))
+
+    ligand_rmsd.sort(key=lambda x: len(x[0][0]), reverse=True)
+    for i in range(len(atoms_pred_stack)):
+        for ligand_i, (atoms_pred_stack_pocket_aligned_ligand, ligand_key, rmsds) in enumerate(ligand_rmsd):
+            # print(f'{ligand_i=} {len(atoms_pred_stack_pocket_aligned_ligand[i])=}')
+            out[f'pocket_aligned_model_{i}_ligand_{ligand_i}_rmsd'] = rmsds[i]
+            out[f'pocket_aligned_model_{i}_ligand_{ligand_i}_len'] = len(atoms_pred_stack_pocket_aligned_ligand[i])
+
+
+    i_min = np.argmin(pocket_aligned_ligand_rmsds)
+    out['pocket_aligned_total_ligand_rmsd_argmin'] = i_min
+    out['pocket_aligned_total_ligand_rmsd_min'] = pocket_aligned_ligand_rmsds[i_min]
+
+    true_pocket_i = atoms_true_pocket.original_idx
+    pred_pocket_i = atoms_pred_stack_pocket.original_idx
+    out['true_pocket_atom_idx'] = '+'.join(map(str, true_pocket_i))
+    out['pred_pocket_atom_idx'] = '+'.join(map(str, pred_pocket_i))
+
+    return out
+
+def has_valid_ccd(row):
+    '''
+    This stores the labels of M-CSA entries with valid CCD codes (i.e. CCD codes correctly recognized by chai)
+    '''
+    if 'M0' not in row['name']:
+        return True
+    good_labels = 'M0040_13pk,M0050_1dbt,M0078_1al6,M0092_1dli,M0093_1dqa,M0096_1chm,M0097_1ctt,M0129_1os7,M0151_1q0n,M0157_1qh5,M0179_1q3s,M0188_1xel,M0315_1ey3,M0349_1e3v,M0365_1pfk,M0375_4ts9,M0500_1e3i,M0552_1fgh,M0555_1f8r,M0584_1ldm,M0636_1uaq,M0663_1rk2,M0664_2dhn,M0710_1ra0,M0711_2esd,M0732_1xs1,M0738_1o98,M0739_1knp,M0904_1qgx,M0907_1rbl'.split(',')
+    for label in good_labels:
+        if label in row['name']:
+            return True
+    return False
+    
+
+def chai1_pocket_aligned_ligand(pdb):
+    row_new = analyze.make_row_from_traj(pdb[:-4], use_trb=False)
+    row = row_new
+
+    out = {}
+    out['name'] = row['name']
+    out['mpnn_index'] = row['mpnn_index']
+    if not analyze.has_chai1(row):
+        return out
+    
+
+    valid_ccd = has_valid_ccd(row)
+    print(f'{valid_ccd=} {os.path.basename(pdb)=}')
+    if not valid_ccd:
+        return out
+    
+    chai_paths_df = analyze.get_chai1_df(row)
+    chai1_pdbs = sorted(chai_paths_df['pdb_path'])
+    design_pdb = analyze.get_mpnn_pdb(row)
+    pocket_metrics = get_pocket_aligned_ligand_rmsds(design_pdb, chai1_pdbs, aligned_pdb_dir=None)
+    out.update(pocket_metrics)
+    return out
+
+def zip_safe(*args):
+    assert len(set(map(len, args))) == 1
+    return zip(*args)
+
+def atom_by_id(atoms, get_id=get_atom_id):
+    return OrderedDict((get_id(a), a) for a in atoms)
+
+from collections import OrderedDict
+def get_atom_by_reference_atom_id(
+    contig_atoms, # str
+    con_ref_pdb_idx,
+    con_hal_pdb_idx,
+    ref = False,
+):
+    contig_atoms = eval(contig_atoms)
+    contig_atoms = {k:v.split(',') for k,v in contig_atoms.items()}
+
+    current_by_ref = OrderedDict()
+
+    current_pdb_idx = con_ref_pdb_idx if ref else con_hal_pdb_idx
+    for (ref_chain, ref_idx_pdb), (chain, idx_pdb) in zip_safe(con_ref_pdb_idx, current_pdb_idx):
+        for atom_name in contig_atoms[f'{ref_chain}{ref_idx_pdb}']:
+            current_by_ref[(ref_chain, ref_idx_pdb, atom_name)] = ((chain, idx_pdb, atom_name))
+
+    return current_by_ref
+
+def get_motif_atoms(
+    atoms,
+    contig_atoms, # str
+    con_ref_pdb_idx,
+    con_hal_pdb_idx,
+    ref = False,
+):
+    current_by_ref = get_atom_by_reference_atom_id(contig_atoms, con_ref_pdb_idx, con_hal_pdb_idx, ref=ref)
+    atoms_by_id = atom_by_id(atoms, get_atom_id)
+
+    atoms = biotite.structure.array([atoms_by_id[v] for v in current_by_ref.values()])
+    return atoms    
+
+def biotite_aligned_rmsd(atoms_true, atoms_pred):
+    '''
+    Calculate the RMSD between two sets of atoms, using biotite's superimpose function.
+    '''
+    fitted, transformation = biotite.structure.superimpose(atoms_true, atoms_pred)
+    return biotite.structure.rmsd(atoms_true, fitted)
+
+def rmsd_to_input(
+        pdb,
+):
+    row = analyze.make_row_from_traj(pdb[:-4])
+    out = {'name': row['name']}
+    output_pdb = analyze.get_unidealized_pdb(row, return_design_if_backbone_only=True)
+    input_pdb = analyze.get_input_pdb(row)
+
+    print(f'{output_pdb=}')
+
+    atoms_input = bt.atom_array_from_pdb(input_pdb)
+    atoms_output = bt.atom_array_from_pdb(output_pdb)
+
+    trb = analyze.get_trb(row)
+    atoms_input = get_motif_atoms(atoms_input, row['contigmap.contig_atoms'], trb['con_ref_pdb_idx'], trb['con_hal_pdb_idx'], ref=True)
+    atoms_output = get_motif_atoms(atoms_output, row['contigmap.contig_atoms'], trb['con_ref_pdb_idx'], trb['con_hal_pdb_idx'], ref=False)
+
+    assert_arrays_equal(atoms_input.res_name, atoms_output.res_name)
+    assert_arrays_equal(atoms_input.atom_name, atoms_output.atom_name)
+    out['motif_rmsd_to_input'] = biotite_aligned_rmsd(atoms_input, atoms_output)
+    return out
+
 # For debugging, can be run like:
-# python -m fire /home/ahern/projects/aa/rf_diffusion_flow/rf_diffusion/benchmark/per_sequence_metrics.py single --metric guidepost --pdb=/net/scratch/ahern/se3_diffusion/benchmarks/2023-12-18_20-48-06_cc_sh_schedule_sweep/run_siteD_troh1_cond1_0-atomized-bb-False.pdb
-def single(metric, pdb, **kwargs):
+# exec/bakerlab_rf_diffusion_aa.sif -m fire benchmark/per_sequence_metrics.py single --metric sidechain --pdb=/net/scratch/ahern/se3_diffusion/benchmarks/2024-12-16_08-05-59_enzyme_bench_n41_fixedligand/ligmpnn/packed/run_M0711_2esd_cond32_97-atomized-bb-True_4_1.pdb --log=backbone_aligned_allatom_rmsd_chai_unideal_all_chaimodel_0,constellation_backbone_aligned_allatom_rmsd_chai_unideal_all_chaimodel_0
+def single(metric, pdb, log=None, **kwargs):
     metric_f = globals()[metric]
     df = get_metrics([pdb], metric_f)
-    ic(df)
+    ic(df.to_dict())
+    if log is not None:
+        ic(df[list(log)].to_dict())
 
 def multi(metric, pdbs, **kwargs):
     metric_f = globals()[metric]

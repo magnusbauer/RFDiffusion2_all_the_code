@@ -336,6 +336,7 @@ def main(path,
          mpnn_packed=False,
          ga_lig=False,
          rosetta_lig=False,
+         input=False,
          sidechains=False,
          hydrogenated=False,
          key=None,
@@ -357,7 +358,10 @@ def main(path,
     # cmd.fragment('pro')
     # ic('after show pro')
     ic.configureOutput(includeContext=True)
-    data = get_sdata(path)
+    datas = []
+    for p in path.split(','):
+        datas.append(get_sdata(p))
+    data = pd.concat(datas, ignore_index=True)
     assert len(data) > 0
     data['des_color'] = 'rainbow'
     print(f'1 {data.shape=}')
@@ -403,6 +407,7 @@ def main(path,
             mpnn_packed=mpnn_packed,
             ga_lig=ga_lig,
             rosetta_lig=rosetta_lig,
+            input=input,
             hydrogenated=hydrogenated,
             return_entities=True)
 

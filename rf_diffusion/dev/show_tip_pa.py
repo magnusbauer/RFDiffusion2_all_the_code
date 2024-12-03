@@ -94,10 +94,13 @@ def clear():
     analyze.clear()
 
 def is_rf_diff(row):
-    if "inference_outputs" in row['pdb_path']:
-        return False
+    if 'pdb_path' in row:
+        if "inference_outputs" in row['pdb_path']:
+            return False
     k = 'resume_scheduler'
     if k in row:
+        if row[k] is None:
+            return True
         return math.isnan(row[k])
     k = 'inference.contig_as_guidepost'
     if k in row:
@@ -105,7 +108,7 @@ def is_rf_diff(row):
     return True
 
 import random
-def show(row, structs = {'X0'}, af2=False, chai1_best=False, des=True, des_color=None, hetatm_color=None, mpnn_packed=False, rosetta_lig=False, ga_lig=False, hydrogenated=False, unbond_motif=True, extras=None):
+def show(row, structs = {'X0'}, af2=False, chai1_best=False, chai1_index=False, des=True, des_color=None, hetatm_color=None, mpnn_packed=False, rosetta_lig=False, input=False, ga_lig=False, hydrogenated=False, unbond_motif=True, extras=None):
     logger.debug(f"{row.get('inference.contig_as_guidepost')=}")
     # x0_pdb = analyze.get_design_pdb(row)
     # print(f'{row["extras"]=}')
@@ -203,6 +206,15 @@ def show(row, structs = {'X0'}, af2=False, chai1_best=False, des=True, des_color
         pdbs['chai1_best'] = chai1_best
         scored.append('chai1_best')
     
+    if chai1_index:
+        assert 'chai_model_idx' in row
+        chai1_index= analyze.get_chai1_path(row, row['chai_model_idx'])
+        pdbs['chai1_index'] = chai1_index
+        scored.append('chai1_index')
+    
+    if input:
+        pdbs['input'] = analyze.get_input_pdb(row)
+
     name = row['name']
     if 'pymol' in row:
         name = row['pymol']
@@ -226,16 +238,34 @@ def show(row, structs = {'X0'}, af2=False, chai1_best=False, des=True, des_color
     
     obj_selectors = {}
     for label in pymol_objects:
-        is_traj = label in structs
-        logger.debug(f'{is_rf_diff(row)=}')
-        print(f'{is_rf_diff(row)=}')
-        if is_rf_diff(row):
+        if label == 'input':
             trb = analyze.get_trb(row)
-            atom_names_by_res_idx = {resi: 'RES' for ch, resi in trb['con_hal_pdb_idx']}
+            atom_names_by_res_idx = {resi: 'RES' for ch, resi in trb['con_ref_pdb_idx']}
         else:
-            atom_names_by_res_idx = get_motif_spec(row, traj=is_traj)
+            is_traj = label in structs
+            logger.debug(f'{is_rf_diff(row)=}')
+            # print(f'{is_rf_diff(row)=}')
+            if is_rf_diff(row):
+                trb = analyze.get_trb(row)
+                atom_names_by_res_idx = {resi: 'RES' for ch, resi in trb['con_hal_pdb_idx']}
+            else:
+                atom_names_by_res_idx = get_motif_spec(row, traj=is_traj)
+
         selectors = show_tip_row.get_selectors_2(atom_names_by_res_idx)
         obj_selectors[label] = selectors
+    
+    # Align the input to the design.
+    if input:
+        for k, align in [
+                ('mpnn_packed', cmd.align),
+                ('des', cmd.super),
+                ('unidealized', cmd.super),
+        ]:
+            if k not in pymol_objects:
+                continue
+            align(
+                pymol_objects['input'], pymol_objects[k])
+            break
     # Uncomment to debug
     # ic(obj_selectors)
 
@@ -245,9 +275,6 @@ def show(row, structs = {'X0'}, af2=False, chai1_best=False, des=True, des_color
         shown = sels.pop(f'{pymol_name}_shown')
         # cmd.hide('everything', pymol_name)
         cmd.show_as('licorice', shown)
-        gp_selector = f'{pymol_name}_residue_gp_motif'
-        if gp_selector in sels:
-            cmd.unbond(sels[gp_selector], show_tip_row.NOT(sels[gp_selector]))
         show_tip_row.color_selectors(sels, verbose=False, des_color=des_color, hetatm_color=hetatm_color)
         cmd.show('spheres', f'name CA and {pymol_name}')
 
@@ -260,6 +287,8 @@ def show(row, structs = {'X0'}, af2=False, chai1_best=False, des=True, des_color
         cmd.color('white', pymol_objects['af2'])
     if chai1_best:
         cmd.color('grey', pymol_objects['chai1_best'])
+    if chai1_index:
+        cmd.color('grey80', pymol_objects['chai1_index'])
 
     entities = {}
     for label, pymol_name in pymol_objects.items():
@@ -277,6 +306,23 @@ def show(row, structs = {'X0'}, af2=False, chai1_best=False, des=True, des_color
 
             # DEBUG: hide the non-gp
             # cmd.hide('everything', f'{e.name} and not ({gp})')
+
+    # Align the input to the design.
+    if input:
+        for k, align in [
+                ('mpnn_packed', cmd.align),
+                ('des', cmd.super),
+                ('unidealized', cmd.super),
+        ]:
+            if k not in pymol_objects:
+                continue
+            input_selector = entities['input']['residue_motif']
+            design_selector = entities[k]['residue_motif']
+            align(
+                input_selector, design_selector)
+            break
+
+
     return entities
 
 class PymolObj:

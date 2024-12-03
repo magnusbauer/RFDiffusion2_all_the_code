@@ -31,13 +31,24 @@ def count_of_counts(df, cols):
         ['count']
     )
 
+def count_lines(file_path):
+    with open(file_path, 'r') as file:
+        return sum(1 for _ in file)
+
+def autodetect_chunk_size(metrics_csvs):
+    csv_0_list = [m for m in metrics_csvs if m.endswith('.0')]
+    if len(csv_0_list) == 0:
+        return 1
+
+    return count_lines(csv_0_list[0]) - 1
+
 def main():
     ic.configureOutput(includeContext=True)
     parser = argparse.ArgumentParser()
     parser.add_argument('datadir',type=str,help='Folder of designs')
     parser.add_argument('--outcsv',type=str,default='compiled_metrics.csv',help='Output filename')
     parser.add_argument('--cached_trb_df', action=argparse.BooleanOptionalAction)
-    parser.add_argument('--metrics_chunk',type=int,default=1,help='Ignore output csvs that do not end in csv.i where i % metrics_chunk == 0')
+    parser.add_argument('--metrics_chunk',type=int,default=-1,help='Ignore output csvs that do not end in csv.i where i % metrics_chunk == 0')
     args = parser.parse_args()
     print('finding trbs')
     filenames = glob.glob(args.datadir+'/*.trb')
@@ -199,14 +210,17 @@ def main():
 
         metrics_csvs = glob.glob(path)
         if args.metrics_chunk:
+            metrics_chunk = args.metrics_chunk
+            if metrics_chunk == -1:
+                metrics_chunk = autodetect_chunk_size(metrics_csvs)
             new_metrics_csvs = []
             for p in metrics_csvs:
                 i = 0
                 if not p.endswith('csv'):
                     i = int(p.split('.')[-1])
-                if i % args.metrics_chunk == 0:
+                if i % metrics_chunk == 0:
                     new_metrics_csvs.append(p)
-            print(f'Using {args.metrics_chunk=}, pared down {len(metrics_csvs)} to {len(new_metrics_csvs)}')
+            print(f'Using {metrics_chunk=}, pared down {len(metrics_csvs)} to {len(new_metrics_csvs)}')
             metrics_csvs = new_metrics_csvs
 
         df_s = [ pd.read_csv(fn,index_col=0) for fn in tqdm(metrics_csvs) ]
@@ -219,18 +233,22 @@ def main():
     # add seq/struc clusters (assumed to be the same for mpnn designs as non-mpnn)
     sequence_metric_dirs = [os.path.join(d, 'csv.*') for d in glob.glob(args.datadir+'/metrics/per_sequence/*/')]
     for path in sequence_metric_dirs:
-        print('sequence metrics: loading from {path}')
+        print(f'sequence metrics: loading from {path}')
         if len(glob.glob(path)) == 0:
             continue
 
         metrics_csvs = glob.glob(path)
         if args.metrics_chunk:
+            metrics_chunk = args.metrics_chunk
+            if metrics_chunk == -1:
+                metrics_chunk = autodetect_chunk_size(metrics_csvs)
+
             new_metrics_csvs = []
             for p in metrics_csvs:
                 i = int(p.split('.')[-1])
-                if i % args.metrics_chunk == 0:
+                if i % metrics_chunk == 0:
                     new_metrics_csvs.append(p)
-            print(f'Using {args.metrics_chunk=}, pared down {len(metrics_csvs)} to {len(new_metrics_csvs)}')
+            print(f'Using {metrics_chunk=}, pared down {len(metrics_csvs)} to {len(new_metrics_csvs)}')
             metrics_csvs = new_metrics_csvs
 
         df_s = [ pd.read_csv(fn,index_col=0) for fn in tqdm(metrics_csvs) ]

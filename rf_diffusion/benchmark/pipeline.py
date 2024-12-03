@@ -155,7 +155,7 @@ def main(conf: HydraConfig) -> None:
 
     if step_in_scope(conf.start_step, conf.stop_step, 'compile'):
         print('Compiling metrics...')
-        run_pipeline_step(f'{script_dir}compile_metrics.py {conf.outdir} --cached_trb_df --metrics_chunk {conf.metrics.chunk}')
+        run_pipeline_step(f'{script_dir}compile_metrics.py {conf.outdir} --cached_trb_df --metrics_chunk {conf.compile.metrics_chunk}')
 
     print('Done.')
 
