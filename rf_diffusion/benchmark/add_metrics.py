@@ -5,6 +5,7 @@
 # outputs job ID
 # 
 
+from datetime import datetime, timedelta
 import sys
 import os
 import glob
@@ -86,14 +87,22 @@ def main(conf: HydraConfig) -> list[int]:
                         n_chunk += 1
                         print(filenames[j], file=outf)
                 out_csv_path = f'{conf.datadir}/metrics/per_{cohort}/{metric}/csv.{i}'
+
+                compute = True
                 if os.path.exists(out_csv_path):
                     if num_lines(out_csv_path)-1 == n_chunk:
                         if not conf.invalidate_cache:
-                            continue
-                print(f'/net/tukwila/ahern/sifs/rfdaa_041624_dgl200_w_cuda.sif {os.path.join(script_dir, "per_sequence_metrics.py")} '\
-                        f'--metric {metric} '\
-                        f'--outcsv {conf.datadir}/metrics/per_{cohort}/{metric}/csv.{i} '\
-                        f'{tmp_fn}', file=job_list_file)
+                            compute = False
+                        if conf.invalidate_cache_older_than:
+                            if is_modified_since(out_csv_path, datetime_to_epoch_seconds(conf.invalidate_cache_older_than)):
+                                compute = False
+
+                if compute:
+                    sif_path = '/net/software/containers/users/ahern/rf_diffusion_prod_sifs/SE3nv-20240912.sif'
+                    print(f'{sif_path} {os.path.join(script_dir, "per_sequence_metrics.py")} '\
+                            f'--metric {metric} '\
+                            f'--outcsv {conf.datadir}/metrics/per_{cohort}/{metric}/csv.{i} '\
+                            f'{tmp_fn}', file=job_list_file)
 
             # submit job
             if conf.slurm.submit: 
@@ -102,11 +111,62 @@ def main(conf: HydraConfig) -> list[int]:
                     job_name = conf.slurm.J 
                 else:
                     job_name = f'{cohort}_metrics_{metric}_'+os.path.basename(conf.datadir.strip('/'))
-                af2_job, proc = slurm_tools.array_submit(job_fn, p = conf.slurm.p, gres=None if conf.slurm.p=='cpu' else conf.slurm.gres, log=conf.slurm.keep_logs, J=job_name, in_proc=conf.slurm.in_proc)
+                af2_job, proc = slurm_tools.array_submit(job_fn, p = conf.slurm.p, gres=None if conf.slurm.p=='cpu' else conf.slurm.gres, log=conf.slurm.keep_logs, J=job_name, in_proc=conf.slurm.in_proc, mem=12)
                 if af2_job > 0:
                     job_ids.append(af2_job)
                 print(f'Submitted array job {af2_job} with {int(np.ceil(len(filenames)/conf.chunk))} jobs to compute per-{cohort} metrics for {len(filenames)} designs')
 
     return job_ids
 
+
+def is_modified_since(path, timestamp):
+    """
+    Check if a file at the given path was modified since the specified timestamp.
+
+    Args:
+        path (str): The path to the file.
+        timestamp (float): The timestamp to compare against (in seconds since epoch).
+
+    Returns:
+        bool: True if the file was modified since the timestamp, False otherwise.
+    """
+    try:
+        file_mod_time = os.path.getmtime(path)
+        return file_mod_time > timestamp
+    except FileNotFoundError:
+        print(f"File not found: {path}")
+        return False
+    except Exception as e:
+        print(f"An error occurred: {e}")
+        return False
+
+def datetime_to_epoch_seconds(datetime_str):
+    """
+    Convert a datetime string in the format 'YYYY-MM-DD_HH:MM' or 'YYYY-MM-DD' to seconds since the epoch in PST (UTC-8).
+
+    Args:
+        datetime_str (str): The datetime string to convert.
+
+    Returns:
+        float: The number of seconds since the epoch (January 1, 1970) in PST.
+    """
+    # Define the PST offset (UTC-8)
+    pst_offset = timedelta(hours=-8)
+
+    formats = ['%Y-%m-%d_%H:%M', '%Y-%m-%d']  # List of formats to try
+    
+    for fmt in formats:
+        try:
+            # Parse the datetime string into a naive datetime object
+            naive_dt = datetime.strptime(datetime_str, fmt)
+            # Apply the PST offset
+            pst_dt = naive_dt + pst_offset
+            # Convert the PST datetime object to a timestamp (seconds since epoch)
+            epoch_seconds = pst_dt.timestamp()
+            return epoch_seconds
+        except ValueError:
+            continue  # Try the next format
+    
+    print(f"Error parsing date: {datetime_str}")
+    return None
 

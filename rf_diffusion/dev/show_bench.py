@@ -214,7 +214,7 @@ def load_df(metrics_path):
 
     return df
 
-def show_df(data, structs={'X0'}, af2=False, des=False, pair_seeds=False, return_entities=False, **kwargs):
+def show_df(data, structs={'X0'}, af2=False, chai1_best=False, des=False, pair_seeds=False, return_entities=False, **kwargs):
     cmd.set('grid_mode', 1)
     all_pymol = []
     all_entities = []
@@ -228,7 +228,7 @@ def show_df(data, structs={'X0'}, af2=False, des=False, pair_seeds=False, return
             des_color = row['des_color']
         if 'hetatm_color' in row and not pd.isna(row['hetatm_color']):
             hetatm_color = row['hetatm_color']
-        entities = show_tip_pa.show(row, structs=structs, af2=af2, des=des, des_color=des_color, hetatm_color=hetatm_color, **kwargs)
+        entities = show_tip_pa.show(row, structs=structs, af2=af2, chai1_best=chai1_best, des=des, des_color=des_color, hetatm_color=hetatm_color, **kwargs)
         
         all_entities.append(entities)
 
@@ -316,6 +316,7 @@ def main(path,
          pair_seeds=False,
          des=False,
          af2=False,
+         chai1_best=False,
          mpnn_packed=False,
          ga_lig=False,
          rosetta_lig=False,
@@ -382,6 +383,7 @@ def main(path,
             des=des,
             pair_seeds=pair_seeds,
             af2=af2,
+            chai1_best=chai1_best,
             mpnn_packed=mpnn_packed,
             ga_lig=ga_lig,
             rosetta_lig=rosetta_lig,

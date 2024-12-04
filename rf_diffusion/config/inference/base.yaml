@@ -86,6 +86,7 @@ contigmap:
   shuffle: null
   has_termini: [True]
   intersperse: null
+  reintersperse: False
 
 rf:
   model:

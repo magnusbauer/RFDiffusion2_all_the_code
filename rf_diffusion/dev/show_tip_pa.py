@@ -105,7 +105,7 @@ def is_rf_diff(row):
     return True
 
 import random
-def show(row, structs = {'X0'}, af2=False, des=True, des_color=None, hetatm_color=None, mpnn_packed=False, rosetta_lig=False, ga_lig=False, hydrogenated=False, unbond_motif=True, extras=None):
+def show(row, structs = {'X0'}, af2=False, chai1_best=False, des=True, des_color=None, hetatm_color=None, mpnn_packed=False, rosetta_lig=False, ga_lig=False, hydrogenated=False, unbond_motif=True, extras=None):
     logger.debug(f"{row.get('inference.contig_as_guidepost')=}")
     # x0_pdb = analyze.get_design_pdb(row)
     # print(f'{row["extras"]=}')
@@ -191,9 +191,17 @@ def show(row, structs = {'X0'}, af2=False, des=True, des_color=None, hetatm_colo
     # pdbs = [x0_pdb]
     
     
+    scored = []
     if af2:
         af2 = analyze.get_af2(row)
         pdbs['af2'] = af2
+        scored.append('af2')
+
+    if chai1_best:
+        chai1_best, has_chai1 = analyze.get_best_chai1_path(row)
+        assert has_chai1, f'{chai1_best=} but no chai1 pdbs found'
+        pdbs['chai1_best'] = chai1_best
+        scored.append('chai1_best')
     
     name = row['name']
     if 'pymol' in row:
@@ -203,14 +211,15 @@ def show(row, structs = {'X0'}, af2=False, des=True, des_color=None, hetatm_colo
     for label, pdb in pdbs.items():
         name_by_pdb[pdb] = f'{prefix}_{label}'
     pymol_objects = load_pdbs(pdbs, name_by_pdb)
-    if af2:
+    for from_name in scored:
         for k, align in [
                 ('mpnn_packed', cmd.align),
                 ('des', cmd.super),
+                ('unidealized', cmd.super),
         ]:
             if k not in pymol_objects:
                 continue
-            align(pymol_objects['af2'], pymol_objects[k])
+            align(pymol_objects[from_name], pymol_objects[k])
             break
 
     # print(pdbs, pymol_objects)
@@ -249,6 +258,8 @@ def show(row, structs = {'X0'}, af2=False, des=True, des_color=None, hetatm_colo
 
     if af2:
         cmd.color('white', pymol_objects['af2'])
+    if chai1_best:
+        cmd.color('grey', pymol_objects['chai1_best'])
 
     entities = {}
     for label, pymol_name in pymol_objects.items():

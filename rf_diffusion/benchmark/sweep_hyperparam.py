@@ -237,7 +237,7 @@ def main(conf: HydraConfig) -> list[int]:
         return os.path.join(out_dir, '_'.join(output_path_components))
     df['inference.output_prefix'] = df.apply(get_output_path, axis=1)
 
-    write_trajectories_flags = 'inference.write_trajectory=True inference.write_trb_indep=True inference.write_trb_trajectory=True'
+    write_trajectories_flags = '++inference.write_trajectory=True ++inference.write_trb_indep=True ++inference.write_trb_trajectory=True'
 
     # output commands with all combos of argument values
     job_fn = os.path.dirname(conf.out) + '/jobs.list'

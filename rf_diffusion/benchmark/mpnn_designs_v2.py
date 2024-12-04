@@ -132,6 +132,7 @@ def run_mpnn(conf, filenames):
 
         if conf.unsafe_skip_parsing and len(completed):
             raise Exception('do not combine unsafe_skip_parsing with cautious')
+        filenames = filtered
 
     if conf.chunk == -1:
         conf.chunk = len(filenames)

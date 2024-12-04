@@ -2,6 +2,8 @@ import glob
 import itertools
 import math
 import os
+import re
+
 from rf_diffusion.dev import analyze
 # analyze.cmd = analyze.set_remote_cmd('10.64.100.67')
 cmd = analyze.cmd
@@ -98,10 +100,14 @@ hex_codes = [
 sns.set_palette(hex_codes)
 cm = 1/2.54
 
-def melt_only(df, melt_vars):
+def melt_only(df, melt_vars, variable_renamer=None, var_name='variable', value_name='value', **kwargs):
     id_vars = df.columns
     id_vars = [v for v in id_vars if v not in melt_vars]
-    return df.melt(id_vars)
+    melted = df.melt(id_vars, var_name=var_name, value_name=value_name, **kwargs)
+    if variable_renamer:
+        melted[var_name] = melted[var_name].map(variable_renamer)
+    return melted
+
 
 def extract_metric(x):
     if isinstance(x, torch.Tensor) and x.numel() == 0: return None
@@ -369,6 +375,14 @@ def get_least_in_group(df, groups, n, columns, ascendings):
     data = df.groupby(groups,  dropna=False).apply(lambda grp: grp.sort_values(columns, ascending=ascendings).head(n)).reset_index(drop=True)
     return data
 
+def get_least_in_group_indexed(df, groups, n, columns, ascendings):
+    index_name = df.index.name
+    df.reset_index(inplace=True)
+    df.set_index(groups, inplace=True)
+    data = df.groupby(groups,  dropna=False).apply(lambda grp: grp.sort_values(columns, ascending=ascendings).head(n)).reset_index(drop=True)
+    df.set_index(index_name, inplace=True)
+    return data
+
 def get_training_id(bench):
     return bench['score_model.weights_path'].map(lambda x: x.split('/')[-4].split('2023')[0])
 
@@ -629,6 +643,29 @@ def best_in_group(df, group_by=['design_id'], cols=['catalytic_constraints.raw.c
     grouped = df_small.groupby(group_by).apply(lambda grp: grp.sort_values(cols, ascending=ascending).head(1))
     return pd.merge(df, grouped[unique_column], on=unique_column, how='inner')
 
+
+def best_in_group_fast(df, group_by=['design_id'], cols=['catalytic_constraints.raw.criterion_1'], ascending=True):
+    return df.sort_values(by=cols).drop_duplicates(group_by, keep='first' if ascending else 'last')
+
+def get_best_in_group_for_each_metric(
+        df,
+        melt_vars,
+        variable_renamer=None,
+        var_name='variable',
+        value_name='value',
+        group_by=['design_id']):
+
+    assert df.index.is_unique
+    df_small = df[melt_vars + group_by]
+    df_small.reset_index(inplace=True)
+
+    melted = melt_only(df_small, melt_vars,
+            var_name=var_name, value_name=value_name,
+            variable_renamer=variable_renamer)
+    
+    best = best_in_group(melted, group_by=group_by + [var_name], cols=[value_name], ascending=[True])
+    return best
+
 def get_cc_passing(df, subtypes=('raw',)):
     all_melted = {}
     for subtype in subtypes:
@@ -658,6 +695,14 @@ def columns_with_substring(df, substring):
         if substring in c:
             o.append(c)
     return o
+
+def columns_with_substring_value(df, substring):
+    '''
+    Same as above, but include an example value for that column
+    '''
+    o = columns_with_substring(df, substring)
+    return {c: df.iloc[0][c] for c in o}
+
 
 def get_sweep_df(df, sweeps):
     '''
@@ -689,3 +734,108 @@ def grouped_palette(
         hues_flat.extend(hues)
         palette_flat.extend(sns.color_palette(sub_pallete, n_colors=len(hues)))
     return hues_flat, palette_flat
+
+def get_n_motif(row):
+    return len(eval(row['contigmap.contig_atoms']))
+
+
+
+def label_bar_heights(ax):
+    def round_half_up(n, decimals=0):
+        multiplier = 10 ** decimals
+        return np.floor(n * multiplier + 0.5) / multiplier
+
+    # show the mean
+    label_y_offset = 0.002
+    for p in ax.patches:
+        h, w, x = p.get_height(), p.get_width(), p.get_x()
+        xy = (x + w / 2., h + label_y_offset)
+
+        h = round_half_up(h, 3)
+        
+        text = f'{h*100:0.1f}%'
+        _ = ax.annotate(text=text, xy=xy, ha='center', va='center')
+
+    max_height = max(p.get_height() for p in ax.patches)
+    _ = plt.ylim(0, max_height + 2 * label_y_offset + 0.01)
+
+
+def set_sequence_id_unique_index(df):
+    drop = df.index.name == 'seq_id'
+    df.reset_index(inplace=True, drop=drop)
+    df['seq_id'] = df.apply(lambda x: f'{x["design_id"]}_{x["mpnn_index"]}', axis=1)
+    df.set_index('seq_id', inplace=True, verify_integrity=True)
+
+def designs_with_all_sequences_scored(
+        df,
+        score_column,
+        expected_sequences_per_design=8,
+        verbose=True):
+
+    df.reset_index(inplace=True)
+    df.set_index('design_id', inplace=True)
+
+    df[f'has_{score_column}'] = df[score_column].notna()
+    designs = df.groupby('design_id').agg({f'has_{score_column}': 'sum'})
+
+    has_all_sequences_scored = designs[f'has_{score_column}'] == expected_sequences_per_design
+    good_design_ids = designs[has_all_sequences_scored].index
+    df_good = df.loc[good_design_ids]
+
+    assert len(df_good) == (len(good_design_ids) * expected_sequences_per_design)
+
+    if verbose:
+        print(f'{len(df_good)}/{len(df)} = {len(df_good)/len(df)}  designs with all {expected_sequences_per_design} sequences having non-NA {score_column}')
+    return df_good
+
+pocket_aligned_prefix = 'chai_pocket_aligned_'
+def is_raw_chai1_pocket_column(column):
+    return column.startswith('pocket_aligned_model_')
+
+def is_processed_chai1_pocket_column(column):
+    return column.startswith(pocket_aligned_prefix)
+
+def rename_pocket_aligned_columns(df):
+    def mapper(column):
+        if is_raw_chai1_pocket_column(column):
+            m = re.match(r'^pocket_aligned_model_(\d+)_(.*)', column)
+            return f'{pocket_aligned_prefix}{m.group(2)}-{m.group(1)}'
+        return column
+    df.rename(
+        columns=mapper,
+        inplace=True
+    )
+
+
+def melt_chai_models(df, pocket_aligned_prefix=pocket_aligned_prefix):
+
+    rename_pocket_aligned_columns(df)
+
+    stubname_cols = df.columns[df.columns.str.startswith(pocket_aligned_prefix)]
+    stubnames = [re.match(rf'^({pocket_aligned_prefix}.*)-\d+', col).group(1) for col in stubname_cols]
+    stubnames = list(set(stubnames))
+
+    # df.reset_index(inplace=True, drop=True)
+    assert df.index.is_unique
+    df['id'] = df.index
+
+    return pd.wide_to_long(
+        df=df,
+        i='id',
+        j='chai_model_idx',
+        stubnames=stubnames,
+        sep='-',
+        suffix=r'.*'
+    )
+
+def join_on_seq_id(df, additional, additional_suffix=None):
+
+    assert df.index.name == 'seq_id'
+    assert additional.index.name == 'seq_id'
+    assert df.index.is_unique
+    assert additional.index.is_unique
+
+    m = df.merge(additional, how='left', left_on='seq_id', right_index=True, indicator=True, suffixes=(None, additional_suffix))
+    assert m['_merge'].unique() == ['both'], 'corresponding row in df not found for seq_id in additoinal'
+    return m
+

@@ -91,15 +91,23 @@ def parse_a3m(filename):
 
 def parse_pdb(filename, xyz27=False,seq=False):
     lines = open(filename,'r').readlines()
-    return parse_pdb_lines(lines, xyz27, seq)
+    return parse_pdb_lines_target(lines, xyz27, seq)
 
 def parse_pdb_lines_target(lines, parse_hetatom=False, ignore_het_h=True):
-    # indices of residues observed in the structure
-    prot_base_atom = 'CA'
-    nucl_base_atom = 'P'
-    res = [(l[22:26],l[17:20]) for l in lines if l[:4]=="ATOM" and (l[12:16].strip()==prot_base_atom or l[12:16].strip()==nucl_base_atom)] # Add compatability for nucleic
+
+    def first_atom_iter():
+        pdb_idx_set = set()
+        for l in lines:
+            if l[:4]!="ATOM":
+                continue
+            chain, residue_index = ( l[21:22].strip(), int(l[22:26].strip()) )
+            if (chain, residue_index) not in pdb_idx_set:
+                pdb_idx_set.add((chain, residue_index))
+                yield l
+
+    res = [(l[22:26],l[17:20]) for l in first_atom_iter()]
     seq = [ChemData().aa2num[r[1]] if r[1] in ChemData().aa2num.keys() else 20 for r in res]
-    pdb_idx = [( l[21:22].strip(), int(l[22:26].strip()) ) for l in lines if l[:4]=="ATOM" and (l[12:16].strip()==prot_base_atom or l[12:16].strip()==nucl_base_atom)]  # chain letter, res num
+    pdb_idx = [(l[21:22].strip(), int(l[22:26].strip())) for l in first_atom_iter()]
 
     # 4 BB + up to 10 SC atoms
     xyz = np.full((len(res), ChemData().NHEAVY, 3), np.nan, dtype=np.float32)
@@ -150,7 +158,7 @@ def parse_pdb_lines_target(lines, parse_hetatom=False, ignore_het_h=True):
                         idx=int(l[7:11]),
                         atom_id=l[12:16],
                         atom_type=l[77],
-                        name=l[16:20],
+                        name=l[17:20],
                         res_idx=int(l[22:26]),
                     ))
                     xyz_het.append([float(l[30:38]), float(l[38:46]), float(l[46:54])])

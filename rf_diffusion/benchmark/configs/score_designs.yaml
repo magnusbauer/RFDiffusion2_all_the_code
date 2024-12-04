@@ -13,3 +13,13 @@ slurm:
   submit: True
   in_proc: False
   keep_logs: True
+
+chai1:
+  slurm:
+    J: null
+    p: gpu
+    gres: gpu:a4000:1
+    mem: 32
+    submit: True
+    in_proc: False
+    keep_logs: True

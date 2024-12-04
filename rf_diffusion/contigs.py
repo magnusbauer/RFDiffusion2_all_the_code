@@ -32,22 +32,25 @@ class ContigMap():
             inpaint_str_tensor=None,
             topo=False,
             shuffle=False,
-            intersperse='10-100',
+            intersperse=None,
+            reintersperse=False,
             ):
         
         self.deterministic = True
-        if shuffle:
+        if reintersperse or shuffle:
             shuffled_contig_list = np.array(contigs[0].strip().split(','))
             print(f'{length=}')
             print(f'before shuffle: {contigs=}')
             print(f'{shuffled_contig_list=}')
             is_motif = np.array([e[0].isalpha() for e in shuffled_contig_list])
             motifs = shuffled_contig_list[is_motif]
-            np.random.shuffle(motifs)
+            if shuffle:
+                np.random.shuffle(motifs)
             if len(motifs) > 1:
                 self.deterministic = False
             shuffled_contig_list[is_motif] = motifs
-            shuffled_contig_list[~is_motif] = intersperse
+            if reintersperse:
+                shuffled_contig_list[~is_motif] = intersperse
             contigs = [','.join(shuffled_contig_list)]
             print(f'after shuffle: {contigs=}')
 
@@ -129,6 +132,9 @@ class ContigMap():
         '''
         length_compatible=False
         count = 0
+        min_sampled_length = float('inf')
+        max_sampled_length = 0
+        max_attempts =100000000
         deterministic = True
         while not length_compatible:
             inpaint_chains=0
@@ -166,9 +172,11 @@ class ContigMap():
                 length_compatible = True
             elif sampled_mask_length >= self.length[0] and sampled_mask_length < self.length[1]:
                 length_compatible = True
+            min_sampled_length = min(min_sampled_length, sampled_mask_length)
+            max_sampled_length = max(max_sampled_length, sampled_mask_length)
             count+=1
-            if count == 100000: #contig string incompatible with this length
-                sys.exit("Contig string incompatible with --length range")
+            if count == max_attempts: #contig string incompatible with this length
+                sys.exit(f"Contig string incompatible with --length range: {self.length=}.  {min_sampled_length=} {max_sampled_length=} in {max_attempts} attempts")
         return sampled_mask, sampled_mask_length, inpaint_chains, deterministic
     
     def seq(self, chain, residue_idx):

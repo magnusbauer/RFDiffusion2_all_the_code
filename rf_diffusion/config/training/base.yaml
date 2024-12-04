@@ -29,6 +29,7 @@ inference:
 
 guidepost_bonds: true
 diffuser:
+  independently_center_diffuseds: false
   diffuse_trans: true
   diffuse_rot: true
   r3:

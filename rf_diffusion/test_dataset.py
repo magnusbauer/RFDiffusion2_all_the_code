@@ -1,4 +1,5 @@
 from functools import partial
+import os
 import unittest
 
 import assertpy
@@ -255,7 +256,93 @@ class Dataloader(unittest.TestCase):
         #show_tip_pa.clear()
         #cmd.set('grid_mode', 1)
         return test_utils.loader_out_for_dataset(dataset,mask,overrides=overrides,epoch=epoch, **kwargs)
-        
+
+    def test_t_1_diffused_centered(self):
+        loader_out = self.indep_for_dataset(
+            dataset = 'sm_complex',
+            mask = 'get_tip_mask',
+            config_name = 'fm_tip_center_all_from_scratch_enz_finetune',
+            overrides=[
+                'dataloader.CROP=60',
+                'diffuser.t_distribution=dirac_1',
+            ],
+        )
+        indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context, conditions_dict = loader_out
+
+        diffused_r3 = rfi.xyz[0, is_diffused,1]
+        diffused_r3_com = torch.mean(diffused_r3, dim=0)
+
+        # Assert we have some diffused, some not diffused
+        assertpy.assert_that(is_diffused.float().mean().item()).is_between(0.001, 0.999)
+
+        # Assert that the diffused atoms are centered
+        np.testing.assert_allclose(diffused_r3_com.numpy(), 0, atol=1e-5)
+
+
+    def test_t_0p4_diffused_centered(self):
+        loader_out = self.indep_for_dataset(
+            dataset = 'sm_complex',
+            mask = 'get_tip_mask',
+            config_name = 'fm_tip_center_all_from_scratch_enz_finetune',
+            overrides=[
+                'dataloader.CROP=60',
+                'diffuser.t_distribution=dirac_p4',
+            ],
+        )
+        indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context, conditions_dict = loader_out
+
+        diffused_r3 = rfi.xyz[0, is_diffused,1]
+        diffused_r3_com = torch.mean(diffused_r3, dim=0)
+        T = 200
+        t_flow = 1 - little_t / T
+
+        # Assert we have some diffused, some not diffused
+        assertpy.assert_that(is_diffused.float().mean().item()).is_between(0.001, 0.999)
+
+        # Assert that the diffused atoms are interpolated between X0 and the gt.
+        # TODO: X0 is not currently recorded, so we can't check this.
+
+        # Assert that the diffused atoms CoM are interpolated between (0,0,0) and the gt.
+        diffused_r3_gt = indep.xyz[is_diffused, 1]
+        diffused_r3_com_gt = torch.mean(diffused_r3_gt, dim=0)
+        diffused_r3_com_interp = diffused_r3_com_gt * t_flow
+
+        ic(
+            t_flow,
+            diffused_r3_com,
+            diffused_r3_com_interp,
+        )
+
+        np.testing.assert_allclose(diffused_r3_com.numpy(), diffused_r3_com_interp, 0, atol=1e-5)
+
+    def test_t_1_batch_ot(self):
+        loader_out = self.indep_for_dataset(
+            dataset = 'sm_complex',
+            mask = 'get_tip_mask',
+            config_name = 'fm_tip_center_all_from_scratch_enz_finetune',
+            overrides=[
+                'dataloader.CROP=60',
+                'diffuser.t_distribution=dirac_1',
+            ],
+        )
+        indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context, conditions_dict = loader_out
+
+        diffused_r3 = rfi.xyz[0, is_diffused,1]
+
+        try:
+            # Assert we have some diffused, some not diffused
+            assertpy.assert_that(is_diffused.float().mean().item()).is_between(0.001, 0.999)
+
+            # TODO: Assert that the diffused atoms are interpolated between X0 and the gt.
+            # Unfortunately the sampled X0 is not currently recorded by the dataset, so we can't check this.
+        except Exception as e:
+            # If the assertion fails, save the tensors to disk for inspection.
+            diffused_r3_gt = indep.xyz[is_diffused, 1]
+            relpath = 'tmp/trash/dataloader_0.pt'
+            os.makedirs(os.path.dirname(relpath), exist_ok=True)
+            torch.save(dict(diffused_r3_gt=diffused_r3_gt, diffused_r3=diffused_r3), relpath)
+            raise e
+
     def test_uncond_sm(self):
         dataset = 'sm_complex'
         mask = 'get_unconditional_diffusion_mask'

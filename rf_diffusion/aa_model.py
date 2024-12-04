@@ -1141,21 +1141,38 @@ class Model:
         # this line looks wrong but it's because inpaint_str is defined backwards. inpaint_str[i] == False means diffuse this residue's structure
         is_res_str_shown_prot = torch.from_numpy(contig_map.inpaint_str)
         is_res_str_shown_sm = torch.ones(n_sm, dtype=bool)
-        assert not (self.conf.inference.flexible_ligand and len(self.conf.inference.partially_fixed_ligand)), 'inference.flexible_ligand and inference.partially_fixed_ligand and mutually exclusive'
+
+        partially_fixed_ligand = self.conf.inference.partially_fixed_ligand or {}
+        assert not (self.conf.inference.flexible_ligand and len(partially_fixed_ligand)), 'inference.flexible_ligand and inference.partially_fixed_ligand and mutually exclusive'
         if self.conf.inference.flexible_ligand:
             is_res_str_shown_sm[:] = False
-        if len(self.conf.inference.partially_fixed_ligand) > 0:
+        
+        if partially_fixed_ligand:
+            for ligand_name, atom_ids in self.conf.inference.partially_fixed_ligand.items():
+                if isinstance(ligand_name, int):
+                    raise Exception(f'bad parse of {self.conf.inference.partially_fixed_ligand=}: hydra does not allow int keys: {ligand_name=} {type(ligand_name)=}')
+
             is_res_str_shown_sm = torch.zeros(n_sm).bool()
             info_het = metadata['ligand_info']
-            within_sm_index_by_name_atom = {}
+            within_sm_index_by_name_atom = defaultdict(dict)
             for i, d in enumerate(info_het):
                 atom_id = d['atom_id'].strip()
                 ligand_name = d['name'].strip()
-                within_sm_index_by_name_atom[(ligand_name, atom_id)] = i
+                within_sm_index_by_name_atom[ligand_name][atom_id] = i
+            violations_by_ligand = defaultdict(list)
             for ligand_name, atom_ids in self.conf.inference.partially_fixed_ligand.items():
                 for atom_id in atom_ids:
-                    i = within_sm_index_by_name_atom[(ligand_name, atom_id)]
+                    if atom_id not in within_sm_index_by_name_atom[ligand_name]:
+                        violations_by_ligand[ligand_name].append(atom_id)
+                        continue
+                    i = within_sm_index_by_name_atom[ligand_name][atom_id]
                     is_res_str_shown_sm[i] = True
+            if len(violations_by_ligand) > 0:
+                msg = []
+                for ligand_name, atom_ids in violations_by_ligand.items():
+                    msg.append(f'{ligand_name} has {len(within_sm_index_by_name_atom[ligand_name])} ids: {within_sm_index_by_name_atom[ligand_name]}, missing {len(atom_ids)}/{len(self.conf.inference.partially_fixed_ligand[ligand_name])} partially fixed atoms: {atom_ids}')
+                msg = '\n'.join(msg)
+                raise Exception(f'atom_ids not found in ligand: {msg}')
 
         is_res_str_shown = torch.cat((is_res_str_shown_prot, is_res_str_shown_sm))
         is_atom_str_shown = contig_map.atomize_indices2atomname

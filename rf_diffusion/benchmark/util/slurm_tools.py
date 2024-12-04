@@ -11,7 +11,7 @@ def slurm_submit(cmd, p='cpu', c=1, mem=2, gres=None, J=None, wait_for=[], hold_
     job_name = J if J else os.environ["USER"]+'_auto_submit'
     log_file = f'%A_%a_{J}.log' if log else '/dev/null'
     # The RAM on this gpu is busted, raises ECC errors on torch.load
-    exclude_gpu = "--exclude=gpu135,gpu111,gpu51,gpu53" if gres and gres.startswith('gpu') else ""
+    exclude_gpu = "--exclude=gpu135,gpu111,gpu51,gpu53,gpu21" if gres and gres.startswith('gpu') else "--exclude=dig193"
     cmd_sbatch = f'sbatch --wrap "{cmd}" -p {p} -c {c} --mem {mem}g '\
         f'-J {job_name} '\
         f'{f"--gres {gres}" if gres else ""} '\
@@ -21,6 +21,7 @@ def slurm_submit(cmd, p='cpu', c=1, mem=2, gres=None, J=None, wait_for=[], hold_
         f'-o {log_file} ' \
         f'--export PYTHONPATH={os.environ["PYTHONPATH"]} '
     cmd_sbatch += ' '.join([f'{"--"+k if len(k)>1 else "-"+k} {v}' for k,v in kwargs.items() if v is not None])
+    print(f'cmd_sbatch: {cmd_sbatch}')
 
     proc = subprocess.run(cmd_sbatch, shell=True, stdout=subprocess.PIPE)
     slurm_job = re.findall(r'\d+', str(proc.stdout))[0]
@@ -32,7 +33,7 @@ def line_count(path):
     with open(path) as fh:
         return len(fh.readlines())
 
-def array_submit(job_list_file, p='gpu', gres='gpu:rtx2080:1', wait_for=None, log=False, in_proc=False, already_ran=None, **kwargs):
+def array_submit(job_list_file, p='gpu', gres='gpu:rtx2080:1', wait_for=None, log=False, in_proc=False, already_ran=None, mem=12, **kwargs):
     print(f'array_submit: in_proc: {in_proc}')
 
     if already_ran is not None:
@@ -63,7 +64,7 @@ def array_submit(job_list_file, p='gpu', gres='gpu:rtx2080:1', wait_for=None, lo
         a = f'1-$(cat {job_list_file} | wc -l)',
         p = p,
         c = 1,
-        mem = 12,
+        mem = mem,
         gres = gres,
         wait_for = wait_for,
         log = log,

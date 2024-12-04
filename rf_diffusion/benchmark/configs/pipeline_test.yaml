@@ -19,6 +19,7 @@ mpnn:
   num_seq_per_target: 2
   preprocessing_slurm:
     in_proc: ${in_proc}
+  omit_AA: ACDEFGIKLMNPQRSTVWYX
 
 metrics:
   sequence_metrics:

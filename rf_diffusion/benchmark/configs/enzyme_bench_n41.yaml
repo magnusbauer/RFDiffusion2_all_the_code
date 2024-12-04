@@ -1,0 +1,46 @@
+defaults:
+  - pipeline
+
+
+sweep:
+  command_args: >
+    --config-name=aa
+    inference.deterministic=True
+    (
+      inference.ckpt_path=
+        /net/scratch/ahern/se3_diffusion/training/center_all_from_scratch_enz_finetune_stage_2a/center_all_from_scratch_enz_finetune_stage_2a2024-07-03_02:34:09.651142/rank_0/models/RFD_140.pt
+      ++transforms.configs.CenterPostTransform.center_type='all'
+    )
+    inference.contig_as_guidepost=True 
+    diffuser.T=100
+    inference.state_dict_to_load=model_state_dict
+    inference.str_self_cond=False
+    (
+      inference.model_runner=NRBStyleSelfCond
+    )
+    ++idealization_metric_n_steps=50
+    inference.idealize_sidechain_outputs=True
+    ++diffuser.rots.sample_schedule=normed_exp
+    ++diffuser.rots.exp_rate=10
+    contigmap.intersperse='10-100'
+    contigmap.reintersperse=True
+  benchmark_json: mcsa_41.json
+  benchmarks: all
+  num_per_condition: 100
+  num_per_job: 10
+  slurm:
+    p: gpu-bf
+    gres: gpu:1
+
+in_proc: False
+
+score:
+  chunk: 200
+
+outdir: /net/scratch/${oc.env:USER}/se3_diffusion/benchmarks/${now:%Y-%m-%d}_${now:%H-%M-%S}_enzyme_bench_n41
+
+metrics:
+  design_metrics:
+    - backbone
+  sequence_metrics:
+    - sidechain_symmetry_resolved

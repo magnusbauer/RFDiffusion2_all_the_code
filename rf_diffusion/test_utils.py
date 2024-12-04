@@ -17,7 +17,6 @@ from rf_diffusion.data_loader import (
     DistilledDataset, DistributedWeightedSampler, DatasetWithNextExampleRetry, DistilledDatasetUnnoised
 )
 from torch.utils import data
-from rf_diffusion.frame_diffusion.data import se3_diffuser
 
 import urllib
 from rf_diffusion import parsers
@@ -28,6 +27,7 @@ from rf_diffusion.chemical import ChemicalData as ChemData
 from rf_diffusion.data_loader import no_batch_collate_fn
 import rf_diffusion
 from rf_diffusion import aa_model
+from rf_diffusion import noisers
 
 golden_dir = 'goldens'
 
@@ -279,6 +279,11 @@ def cmp_pretty(got, want, **kwargs):
         ic('failed to pretty print output', e)
         return json.dumps(diff.pop('tensors unequal', ''), indent=4) + '\n' + str(diff)
 
+def assert_arrays_equal(got, want, **kwargs):
+    diff = cmp_pretty(got, want, **kwargs)
+    if diff:
+        raise Exception(diff)
+
 def where_nan(t):
     if torch.isnan(t).any():
         return (torch.isnan(t).nonzero(), torch.isnan(t).float().mean())
@@ -316,7 +321,7 @@ def get_dataloader(conf: DictConfig, epoch=0) -> None:
 
     if conf.debug:
         ic.configureOutput(includeContext=True)
-    diffuser = se3_diffuser.SE3Diffuser(conf.diffuser)
+    diffuser = noisers.get(conf.diffuser)
     diffuser.T = conf.diffuser.T
     dataset_configs, homo = default_dataset_configs(conf.dataloader, debug=conf.debug)
 

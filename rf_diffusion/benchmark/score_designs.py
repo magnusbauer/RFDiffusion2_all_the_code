@@ -233,6 +233,56 @@ def main(conf: HydraConfig) -> list[int]:
                 job_ids.append(lig_job)
             print(f'Submitted array job {lig_job} with {int(np.ceil(len(filenames)/conf.chunk))} jobs to compute Rosetta gen ff metrics on {len(filenames)} designs')
 
+    from collections import defaultdict
+    if 'chai1' in conf.run:
+        job_fn = conf.datadir + '/jobs.score.chai1.list'
+        job_list_file = open(job_fn, 'w') if conf.slurm.submit else sys.stdout
+        already_ran = {}
+        filenames_by_i = defaultdict(list)
+        for i in np.arange(0,len(filenames),conf.chunk):
+            tmp_fn = f'{conf.datadir}/{conf.tmp_pre}.chai1.{i}'
+            input_filenames = []
+            with open(tmp_fn,'w') as outf:
+                for j in np.arange(i,min(i+conf.chunk, len(filenames))):
+                    input_filenames.append(filenames[j])
+                    print(filenames[j], file=outf)
+                    filenames_by_i[i].append(filenames[j])
+            outdir = f'{conf.datadir}/chai1/out'
+            os.makedirs(outdir, exist_ok=True)
+
+            # Resolve chai1 path, e.g. /home/ahern/reclone/rf_diffusion_dev/lib/chai/predict.py
+            chai1_script = os.path.join(script_dir, '../../lib/chai/predict.py')
+            job = (f'/usr/bin/apptainer run --nv --bind /net/software/lab/chai:/net/software/lab/chai /net/software/lab/chai/chai_apptainer/chai.sif {chai1_script} '\
+                  f'--output_dir {outdir} '\
+                  f'--pdb_paths_file {tmp_fn}\
+                  --allow_ccd_pdb_mismatch')
+            print(job, file=job_list_file)
+            def outputs_exist(input_filenames=filenames_by_i[i]):
+                def expected_outputs(input_pdb):
+                    name = os.path.basename(input_pdb).removesuffix('.pdb')
+                    return [
+                        f'{outdir}/pred.{name}_model_idx_{i}.pdb'
+                        for i in range(5)
+                    ]
+                for input_pdb in input_filenames:
+                    for expected in expected_outputs(input_pdb):
+                        if not os.path.exists(expected):
+                            return False
+                return True
+
+            already_ran[job] = copy.deepcopy(outputs_exist)
+
+        # submit job
+        if conf.slurm.submit: 
+            job_list_file.close()
+            if conf.slurm.J is not None:
+                job_name = conf.slurm.J 
+            else:
+                job_name = 'chai1_'+os.path.basename(conf.datadir.strip('/'))
+            chai1_job, proc = slurm_tools.array_submit(job_fn, p = conf.chai1.slurm.p, gres=None if conf.chai1.slurm.p=='cpu' else conf.chai1.slurm.gres, log=conf.slurm.keep_logs, J=job_name, in_proc=conf.slurm.in_proc, already_ran=already_ran, mem=conf.chai1.slurm.mem)
+            if chai1_job > 0:
+                job_ids.append(chai1_job)
+            print(f'Submitted array job {chai1_job} with {int(np.ceil(len(filenames)/conf.chunk))} jobs to chai1-predict {len(filenames)} designs')
 
     return job_ids
 

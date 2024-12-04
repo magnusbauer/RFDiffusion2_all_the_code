@@ -17,6 +17,6 @@ slurm:
   in_proc: False
   keep_logs: True
 
-
+retries: 1
 
 

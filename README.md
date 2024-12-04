@@ -139,3 +139,13 @@ s: the comparison type:
 	- 'full_atom': All heavy atoms
 	- 'motif_atom': Only motif heavy atoms
 
+
+# Running the enzyme benchmark
+
+We crawled M-CSA for 41 enzymes where all reactants and products are present to create this benchmark.  Only positon-agnostic tip atoms and partial ligand positions are provided to the network.
+
+100 designs for each case are created.
+
+Run it with:
+
+`./benchmark/pipeline.py --config-name=enzyme_bench_n41`

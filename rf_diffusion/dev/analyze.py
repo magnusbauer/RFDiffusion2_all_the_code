@@ -1,4 +1,5 @@
 from functools import partial
+import glob
 import os
 import re
 
@@ -231,7 +232,7 @@ def get_input_pdb(row):
     return refpdb_fn
 
 def pdb_to_xyz_idx(pdb, chain_i):
-    parsed = parse_pdb(pdb)
+    parsed = parsers.parse_pdb(pdb)
     idxmap = dict(zip(parsed['pdb_idx'],range(len(parsed['pdb_idx']))))
     idx = [idxmap[e] for e in chain_i]
     return idx
@@ -295,6 +296,58 @@ def get_unidealized_pdb(row, return_design_if_backbone_only=False):
         return os.path.join(row['rundir'], f'{row["name"]}.pdb')
 
     return os.path.join(row['rundir'], 'unidealized', f'{row["name"]}.pdb')
+
+def get_chai1_df(row):
+
+    mpnn_pdb = get_mpnn_pdb(row)
+    head, tail = os.path.split(mpnn_pdb)
+    tail = tail.split('.')[0]
+
+    pattern = os.path.join(head, 'chai1/out', f'pred.{tail}_*.pdb')
+    pdb_paths = glob.glob(pattern)
+    model_idxs = []
+    # print(f'{pattern=}')
+    # print(f'{len(pdb_paths)} pdb_paths found')
+    # print(f'{pdb_paths=}')
+    for path in pdb_paths:
+        model_idx = re.match('.*_model_idx_(\d+).pdb', path).groups()[0]
+        model_idxs.append(int(model_idx))
+
+    df_stack = []
+    for model_idx in model_idxs:
+        pdb_path = os.path.join(head, 'chai1/out', f'pred.{tail}_model_idx_{model_idx}.pdb')
+        scores_path = os.path.join(head, 'chai1/out', f'scores.{tail}_model_idx_{model_idx}.json')
+        assert os.path.exists(pdb_path), f'{pdb_path} does not exist'
+        assert os.path.exists(scores_path), f'{scores_path} does not exist'
+        df_tmp = pd.read_json(scores_path)
+        df_tmp['model_idx'] = model_idx
+        df_tmp['pdb_path'] = pdb_path
+        df_stack.append(df_tmp)
+
+    return pd.concat(df_stack)
+
+def has_chai1(row):
+    mpnn_pdb = get_mpnn_pdb(row)
+    head, tail = os.path.split(mpnn_pdb)
+    tail = tail.split('.')[0]
+    pdb_path = os.path.join(head, 'chai1/out', f'pred.{tail}_model_idx_0.pdb')
+    print(f'has_chai1: {pdb_path=}')
+    return os.path.exists(pdb_path)
+
+def get_best_chai1(row, key='aggregate_score'):
+
+    if not has_chai1(row):
+        return None, False
+    
+    df = get_chai1_df(row)
+    best = df.nlargest(1, key)
+    return best, True
+
+def get_best_chai1_path(row, key='aggregate_score'):
+    best, has_chai1 = get_best_chai1(row, key)
+    if not has_chai1:
+        return None, False
+    return best['pdb_path'].iloc[0], True
 
 def get_af2(row):
 
@@ -653,7 +706,7 @@ def flatten_dict(dd, separator ='.', prefix =''):
              for k, v in flatten_dict(vv, separator, kk).items()
              } if isinstance(dd, dict) else { prefix : dd }
 
-def make_row_from_traj(traj_prefix):
+def make_row_from_traj(traj_prefix, use_trb=True):
     synth_row = {}
     pdb_path = traj_prefix
     if not pdb_path.endswith('.pdb'):
@@ -672,12 +725,13 @@ def make_row_from_traj(traj_prefix):
         synth_row['name'] = '_'.join(synth_row['name'].split('_')[:-1])
         
     synth_row['mpnn'] = True
-    trb = get_trb(synth_row)
-    rundir = synth_row['rundir']
-    config = trb.get('config', {})
-    config = flatten_dict(config)
-    synth_row.update(config)
-    synth_row['rundir'] = rundir
+    if use_trb:
+        trb = get_trb(synth_row)
+        rundir = synth_row['rundir']
+        config = trb.get('config', {})
+        config = flatten_dict(config)
+        synth_row.update(config)
+        synth_row['rundir'] = rundir
     return synth_row
 
 def show_row(row, traj_name, traj_type='X0'):
@@ -1616,3 +1670,7 @@ def center_object(obj):
 
 def get_trb_path(row):
     return os.path.join(row['rundir'], f'{row["name"]}.trb')
+
+def translate(pymol_name, dxyz):
+    dxyz = [e for e in dxyz]
+    cmd.translate(dxyz, pymol_name, -1, 0)

@@ -50,9 +50,14 @@ def main(conf: HydraConfig) -> None:
     ic(conf.outdir)
 
     if step_in_scope(conf.start_step, conf.stop_step, 'sweep'):
-        jobid_sweep = main_sweep(conf.sweep)
-        print('Waiting for design jobs to finish...', jobid_sweep)
-        wait_for_jobs(jobid_sweep)
+        for i in range(conf.sweep.retries + 1):
+            jobid_sweep = main_sweep(conf.sweep)
+            print(f'Attempt {i}/{conf.sweep.retries}: Waiting for design jobs to finish...', jobid_sweep)
+            wait_for_jobs(jobid_sweep)
+            if len(jobid_sweep) == 0:
+                break
+        else:
+            raise Exception(f'Failed to complete sweep after {conf.sweep.retries=} retries')
 
     if step_in_scope(conf.start_step, conf.stop_step, 'foldseek') and 'foldseek' not in conf.skip_steps:
         # Move "orphan" pdbs that somehow lack a trb file
