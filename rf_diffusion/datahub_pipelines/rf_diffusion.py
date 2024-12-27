@@ -1,6 +1,7 @@
-
+import sys
 import numpy as np
 from cifutils.constants import AF3_EXCLUDED_LIGANDS
+import omegaconf
 
 from datahub.encoding_definitions import RF2AA_ATOM36_ENCODING
 from datahub.transforms.atom_array import (
@@ -28,6 +29,7 @@ from datahub.transforms.encoding import EncodeAtomArray
 
 from datahub.transforms.symmetry import AddPostCropMoleculeEntityToFreeFloatingLigands
 from rf_diffusion.datahub_dataset_interface import BackwardCompatibleDataLoaderProcessOut
+
 
 # def make_forward_compatible_with_datahub(object):
 """
@@ -60,6 +62,8 @@ def build_rf_diffusion_transform_pipeline(
     # Diffusion parameters
     loader_params = None,
     # Miscellaneous parameters
+    extra_pre_crop_transforms: omegaconf.dictconfig.DictConfig | dict = {},
+    conditions_dict_atom_array_keys: list[str] = [],
 ) -> Compose:
     """
     Creates a transformation pipeline for the RF2AA model, applying a series of transformations to the input data.
@@ -186,6 +190,9 @@ def build_rf_diffusion_transform_pipeline(
         AddGlobalTokenIdAnnotation(),
     ]
 
+    for name, transform in extra_pre_crop_transforms.items():
+        transforms += [transform]
+
     if crop_contiguous_probability > 0 or crop_spatial_probability > 0:
         contiguous_crop_transform = CropContiguousLikeAF3(crop_size=crop_size, keep_uncropped_atom_array=True)
         spatial_crop_transform = CropSpatialLikeAF3(
@@ -224,7 +231,7 @@ def build_rf_diffusion_transform_pipeline(
         # ============================================
         # 9. Aggregate features into RF_Diffusion Indep and atom mask
         # ============================================
-        BackwardCompatibleDataLoaderProcessOut(),
+        BackwardCompatibleDataLoaderProcessOut(conditions_dict_atom_array_keys=conditions_dict_atom_array_keys),
 
     ]
     

@@ -1842,7 +1842,7 @@ class DistilledDatasetUnnoisedDatahub(DistilledDatasetUnnoised):
                 'item_context': item_context,
                 'mask_gen_seed': processed_output['mask_gen_seed'],
                 'params': self.params,
-                'conditions_dict': {}
+                'conditions_dict': processed_output['conditions_dict']
         }
 
 
@@ -2014,6 +2014,7 @@ class DistilledDataset(data.Dataset):
     def __len__(self):
         return len(self.dataset)
 
+
 class DatasetWithNextExampleRetry(data.Dataset):
     '''
     A dataset that allows one to throw NextExampleException in order to retry the train loader with a different example
@@ -2050,6 +2051,65 @@ class DatasetWithNextExampleRetry(data.Dataset):
 
     def __len__(self):
         return len(self.dataset)
+
+    def get_dataset_bounds_from_index(self, index):
+        return self.dataset.get_dataset_bounds_from_index(index)
+
+class DatasetFromMultipleDatasets(data.Dataset):
+    '''
+    A dataset that allows one to combine multiple datasets
+    '''
+
+    def __init__(self,
+                 datasets,
+                 dataset_configss,
+                 dataset_optionss,
+                 dataset_probs
+        ):
+
+        assert len(dataset_configss) == len(datasets)
+        assert len(dataset_optionss) == len(datasets)
+        assert len(dataset_probs) == len(datasets)
+
+        self.datasets = datasets
+
+        dataset_lengths = torch.tensor([len(x) for x in datasets], dtype=int)
+        self.dataset_starts = torch.cat((torch.tensor([0], dtype=int), torch.cumsum(dataset_lengths, 0)[:-1]))
+
+        # We're not going to allow people to have the same dataset names otherwise we'd have to internally rename them which is bad
+        self.dataset_configs = {}
+        for dataset_configs in dataset_configss:
+            for key in dataset_configs:
+                assert key not in self.dataset_configs, f'A dataset name was duplicated between datahub and old: {key}'
+                self.dataset_configs[key] = dataset_configs[key]
+
+
+        # Split on commas, turn into catted list, rejoin on commas. Protects against empty lists
+        parsed_dataset_options = list(itertools.chain(*[x.split(',') for x in dataset_optionss]))
+        self.dataset_options = ','.join(parsed_dataset_options)
+
+        # Turn everything into a list. Cat lists. Turn it back into a tensor
+        self.dataset_prob = torch.tensor(list(itertools.chain(*[list(x) for x in dataset_probs])), dtype=float)
+
+
+    def __getitem__(self, index):
+        i_dataset, local_index = self._index_to_local_index(index)
+        return self.datasets[i_dataset][local_index]
+
+    def __len__(self):
+        return sum(len(x) for x in self.datasets)
+
+
+    def _index_to_local_index(self, index):
+        i_dataset = torch.searchsorted(self.dataset_starts, index, right=True)-1
+        local_index = index - self.dataset_starts[i_dataset]
+        return int(i_dataset), int(local_index)
+
+    def get_dataset_bounds_from_index(self, index):
+        i_dataset, local_index = self._index_to_local_index(index)
+        return self.datasets[i_dataset].get_dataset_bounds_from_index(local_index)
+
+
 
 class DatasetWithFallback(data.Dataset):
 
@@ -2121,7 +2181,7 @@ class DistributedWeightedSampler(data.Sampler):
         if dataset_prob is None:
             dataset_prob = [1.0/num_datasets]*num_datasets
         else:
-            assert math.isclose(sum(dataset_prob), 1.0)
+            assert math.isclose(sum(dataset_prob), 1.0), dataset_prob
             assert len(dataset_prob) == len(dataset_options)
         for idx,dset in enumerate(dataset_options):
             if not idx == num_datasets-1:
@@ -2179,22 +2239,51 @@ def no_batch_collate_fn(data):
     assert len(data) == 1
     return data[0]
 
-def get_dataset_and_sampler(dataset_configs, dataset_options, dataset_prob, conf, diffuser, num_example_per_epoch, world_size, rank, homo, use_datahub_if_available=False):
-    if use_datahub_if_available and 'datahub' in conf:
-        unnoised_dataset = DistilledDatasetUnnoisedDatahub(conf_datahub=conf.datahub, params=conf.dataloader)
-        dataset_prob = unnoised_dataset.dataset_probabilities
-        dataset_configs = unnoised_dataset.dataset_configs
-        dataset_options = unnoised_dataset.dataset_options
-    
+def get_dataset_and_sampler(dataset_configs, dataset_options, dataset_prob, conf, diffuser, num_example_per_epoch, world_size, rank, homo, datahub_mode='OLD'):
+
+    datasets = []
+    dataset_configss = []
+    dataset_optionss = []
+    dataset_probs = []
+
+    assert datahub_mode in ['DATAHUB', 'BOTH', 'OLD', 'DATAHUB_IF_AVAILABLE']
+
+    if datahub_mode == 'DATAHUB_IF_AVAILABLE':
+        # This mode mimics the way this was initially implemented where the presense of the datahub conf enables it
+        use_datahub = 'datahub' in conf
+        use_old = not use_datahub
     else:
-        unnoised_dataset = DistilledDatasetUnnoised(
+        # These are the "new" ones that assert the presense
+        use_datahub = datahub_mode in ['DATAHUB', 'BOTH']
+        use_old = not datahub_mode in ['OLD', 'BOTH']
+
+        if use_datahub:
+            assert 'datahub' in conf, f'DATASET.DATAHUB_MODE={datahub_mode} but datahub conf not yaml'
+
+    if use_old:
+        datasets.append( DistilledDatasetUnnoised(
                 dataset_configs=dataset_configs,
                 params=conf.dataloader,
                 preprocess_param=conf.preprocess,
                 conf=conf,
                 homo=homo,
                 )
+        )
+        dataset_configss.append(dataset_configs)
+        dataset_optionss.append(dataset_options)
+        dataset_probs.append(dataset_prob)
 
+    if use_datahub:
+        dhub_dataset = DistilledDatasetUnnoisedDatahub(conf_datahub=conf.datahub, params=conf.dataloader)
+        datasets.append(dhub_dataset)
+        dataset_configss.append(dhub_dataset.dataset_configs)
+        dataset_optionss.append(dhub_dataset.dataset_options)
+        dataset_probs.append(dhub_dataset.dataset_probabilities)
+
+    unnoised_dataset = DatasetFromMultipleDatasets(datasets, dataset_configss, dataset_optionss, dataset_probs)
+    dataset_configs = unnoised_dataset.dataset_configs
+    dataset_options = unnoised_dataset.dataset_options
+    dataset_prob = unnoised_dataset.dataset_prob
 
     dataset = DistilledDataset(
         dataset=unnoised_dataset,
@@ -2233,7 +2322,7 @@ def get_fallback_dataset_and_dataloader(conf, diffuser, num_example_per_epoch, w
         world_size=world_size, 
         rank=rank,
         homo=homo,
-        use_datahub_if_available=True
+        datahub_mode=conf.dataloader.get('DATAHUB_MODE', 'DATAHUB_IF_AVAILABLE')
     )
 
     # Make secondary dataset
@@ -2248,6 +2337,7 @@ def get_fallback_dataset_and_dataloader(conf, diffuser, num_example_per_epoch, w
         world_size=world_size, 
         rank=rank,
         homo=homo,
+        datahub_mode='OLD'
     )
 
     # Combine primary and secondary datasets to make the fallbacks
