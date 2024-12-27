@@ -157,6 +157,49 @@ class BackwardCompatibleDataLoaderProcessOut(Transform):
             'conditions_dict': conditions_dict
         }
 
+class ReorderChains(Transform):
+
+    def check_input(self, data: dict):
+        check_contains_keys(data, ["atom_array"])
+        check_contains_keys(data['extra_info'], ["reorder_chains"])
+        check_is_instance(data, "atom_array", AtomArray)
+        check_atom_array_annotation(
+            data,
+            ["chain_iid"],
+        )
+
+    def __init__(self):
+        pass
+
+    def forward(self, data: dict) -> dict:
+
+        reorder_string = data['extra_info']['reorder_chains']
+        if reorder_string == 'None':
+            return data
+
+        reorder_map = torch.tensor([int(x) for x in reorder_string.split(',')])
+
+        known_chain_iids = set()
+        for iid in data['atom_array'].chain_iid:
+            known_chain_iids.add(iid)
+
+        known_chain_iids = list(known_chain_iids)
+
+        assert len(reorder_map) == len(known_chain_iids), f"ReorderChains reorder_chains length ({reorder_string}) doesn't match chain_iids ({known_chain_iids})"
+
+        chain_masks = []
+        for iid in known_chain_iids:
+            chain_masks.append( data['atom_array'].chain_iid == iid )
+
+        new_atom_array = data['atom_array'][chain_masks[reorder_map[0]]]
+        for i_mask in reorder_map[1:]:
+            new_atom_array += data['atom_array'][chain_masks[i_mask]]
+
+        data['atom_array'] = new_atom_array
+
+        return data
+
+
 class Load1DAtomArrayFeatures(Transform):
     def check_input(self, data: dict):
         check_contains_keys(data, ["atom_array", "extra_info"])
