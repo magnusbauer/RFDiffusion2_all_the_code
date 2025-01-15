@@ -36,6 +36,7 @@ upstream_inference_transforms: # These transforms don't do anything unless speci
     - AutogenerateTargetSSADJTransform
     - LoadTargetSSADJTransform
     - RenumberCroppedInput
+    - SSSprinkleTransform
   configs:
     HotspotAntihotspotResInferenceTransform: {}
     ExposedTerminusTransform: {}
@@ -43,6 +44,23 @@ upstream_inference_transforms: # These transforms don't do anything unless speci
     LoadTargetSSADJTransform: {}
     RenumberCroppedInput:
       enabled: True
+    SSSprinkleTransform:
+      active: False
+      background: MASK
+      helix_chunk_size: 3
+      strand_chunk_size: 3
+      loop_chunk_size: 3
+      mask_chunk_size: 3
+      min_helix: 0
+      max_helix: 0
+      min_strand: 0
+      max_strand: 0
+      min_loop: 0
+      max_loop: 0
+      min_mask: 0
+      max_mask: 0
+      spread_efficiency: 0.7
+      chain0_only: True
 
 
 transforms:

@@ -29,7 +29,7 @@ from rf_diffusion.conditions.util import expand_1d_atomized_ok_gp_not
 
 ######## Group all imported transforms together ###########
 
-from rf_diffusion.conditions.ss_adj.sec_struct_adjacency import LoadTargetSSADJTransform, AutogenerateTargetSSADJTransform, GenerateSSADJTrainingTransform  # noqa: F401
+from rf_diffusion.conditions.ss_adj.sec_struct_adjacency import LoadTargetSSADJTransform, AutogenerateTargetSSADJTransform, GenerateSSADJTrainingTransform,SSSprinkleTransform  # noqa: F401
 from rf_diffusion.ppi import (PPITrimTailsChain0ComplexTransform, PPIRejectUnfoldedInterfacesTransform, PPIJoeNateDatasetRadialCropTransform,  # noqa: F401
                                     FindHotspotsTrainingTransform, HotspotAntihotspotResInferenceTransform, ExposedTerminusTransform, RenumberCroppedInput)
 from rf_diffusion.conditions.ideal_ss import AddIdealSSTrainingTransform, AddIdealSSInferenceTransform  # noqa: F401

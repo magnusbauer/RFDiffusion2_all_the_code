@@ -17,6 +17,9 @@ SS_MASK = 3
 SS_SM = 4 # SS_SM != structure.ELSE so that we maintain compatibility with old ss files
 N_SS = 5
 
+SS_oneletter = 'HEL-?'
+SS_oneletter_np = np.array(list(SS_oneletter))
+
 ADJ_FAR = 0
 ADJ_CLOSE = 1
 ADJ_MASK = 2
@@ -785,13 +788,38 @@ def user_wants_ss_adj_scaffold(conf):
     return bool(conf.scaffoldguided.scaffold_list) or bool(conf.scaffoldguided.scaffold_dir) or bool(conf.scaffoldguided.scaffold_arc)
 
 
+def user_wants_ss_adj(conf):
+    '''
+    The ss_adj stuff is turned on via the presence of any of 3 flags:
+        - scaffoldguided.scaffold_list
+        - scaffoldguided.scaffold_dir
+        - scaffoldguided.scaffold_arc
+
+    Args:
+        conf (OmegaConf): The config
+
+    Returns:
+        user_wants_ss_adj (bool): Are they trying to use it?
+    '''
+
+    scaffold_guided = user_wants_ss_adj_scaffold(conf)
+
+    ss_sprinkle = ( 'SSSprinkleTransform' in conf.upstream_inference_transforms.names
+                    and 'SSSprinkleTransform' in conf.upstream_inference_transforms.configs
+                    and conf.upstream_inference_transforms.configs.SSSprinkleTransform.get('active', False)
+        )
+
+    return scaffold_guided or ss_sprinkle
+
+
+
 def validate_ss_adj_strategy(conf):
     '''
     Makes sure that the checkpoint is capable of doing ss/adj if requested
         and that the proper transforms are in place
     '''
 
-    wants_ss_adj = user_wants_ss_adj_scaffold(conf)
+    wants_ss_adj = user_wants_ss_adj(conf)
 
     if bool(conf.scaffoldguided.target_ss) or bool(conf.scaffoldguided.target_ss):
         assert 'LoadTargetSSADJTransform' in conf.upstream_inference_transforms.names, ('To use scaffoldguided.target_ss and scaffoldguided.target_adj,'
@@ -813,6 +841,249 @@ def validate_ss_adj_strategy(conf):
 
     return
 
+
+
+def randomly_insert_A_into_B_spaced(A, B):
+    '''
+    Insert the shorter vector A into the longer vector B making sure than no two A are next to each other
+    Additionally, unless len(A) == len(B), the first and last elements will always come from B
+
+    The order of A and B are preserved
+
+    Args:
+        A (torch.Tensor[type]): the shorter vector that no two shall be next to each other
+        B (torch.Tensor[type]): the longer vector that we are going to insert into
+    '''
+
+    assert len(A) <= len(B)
+
+    output = torch.zeros(len(A) + len(B), dtype=A.dtype)
+
+    # special case of simply every-other (can't use below algorithm because there's a 0 at the start or end)
+    if len(A) == len(B):
+        A_first = torch.rand(1) < 0.5
+        torch.as_strided(output, (len(A),), (2,), 0 if A_first else 1)[:] = A
+        torch.as_strided(output, (len(A),), (2,), 1 if A_first else 0)[:] = B
+        return output
+
+
+    # Start by ensuring there is at least 1 B between every A and a B at the start and end
+    spans_of_B = torch.ones(len(A)+1, dtype=int)
+
+    # Now randomly divy the extra B into the gaps
+    extra_B = len(B) - spans_of_B.sum()
+    if extra_B.sum() > 0:
+        spans_of_B += divy_among_weighted_bins( extra_B, torch.rand(len(spans_of_B)) + 0.0001 )
+
+    # Store into output. I can't think of a way to do this without a for-loop
+    out_offset = 0
+    B_offset = 0
+    for i in range(len(spans_of_B)):
+        span_size = spans_of_B[i]
+        output[out_offset:out_offset+span_size] = B[B_offset:B_offset+span_size]
+        out_offset += span_size
+        B_offset += span_size
+        if i < len(A):
+            output[out_offset] = A[i]
+            out_offset += 1
+
+    assert out_offset == len(output) and B_offset == len(B)
+
+    return output
+
+
+
+def try_to_shuffle_chunks_no_consecutive_loops_masks(input_chunks):
+    '''
+    Shuffle chunks but make sure that SS_LOOP and SS_MASK tokens are not next to themselves or each other
+    Or do the best we can
+
+    Args:
+        input_chunks (torch.Tensor[int]): The chunks we are going to shuffle
+
+    Returns:
+        output_chunks (torch.Tensor[int]): The shuffled chunks
+    '''
+
+    # First separate out the two classes and shuffle them separately
+    not_loop_mask = input_chunks[(input_chunks != SS_LOOP) & (input_chunks != SS_MASK)]
+    loop_mask = input_chunks[(input_chunks == SS_LOOP) | (input_chunks == SS_MASK)]
+
+    not_loop_mask = ppi.torch_rand_choice_noreplace(not_loop_mask, len(not_loop_mask))
+    loop_mask = ppi.torch_rand_choice_noreplace(loop_mask, len(loop_mask))
+
+    # Either it's possible to do this or it's not
+    #  In either case, we insert the smaller vector into the larger vector
+    if len(not_loop_mask) >= len(loop_mask):
+        return randomly_insert_A_into_B_spaced(loop_mask, not_loop_mask)
+    else:
+        return randomly_insert_A_into_B_spaced(not_loop_mask,loop_mask)
+
+
+def divy_among_weighted_bins(N, weights):
+    '''
+    Allocate N elements among weighted bins such that the number of elements in each bin
+      correlates with weights but such that the sum == N
+
+    Like out = N * weights but where it handles the quantized natured of integers
+
+    Args:
+        N (int): Number of elements to divy
+        weights (torch.tensor[float]): The weight of each bin
+    '''
+
+    weights = weights / weights.sum()
+
+    # First assign the whole-number parts
+    output = torch.floor( N * weights ).long()
+
+    remaining = N - output.sum()
+    assert remaining >= 0
+
+    # Now figure out who most deserves the few extra slots
+    weight_remaining = weights - output / N
+    arg_most_remaining = torch.argsort(-weight_remaining)
+
+    # Store the remaining N to the most deserving bins
+    output[arg_most_remaining[:remaining]] += 1
+
+    return output
+
+
+class SSSprinkleTransform:
+    '''
+    A transform that constructs on-the-fly SS tensors to bias the output towards different folds
+
+    The SS mask is fully initialized to "background" and then chunks of helix, strand, loop, and mask are injected into the
+      space. The chunks are spaced out somewhat evenly depending on spread_efficiency
+    '''
+
+    def __init__(self, active=False, background='MASK', helix_chunk_size=3, strand_chunk_size=3, loop_chunk_size=3, mask_chunk_size=3, min_helix=0, max_helix=0,
+            min_strand=0, max_strand=0, min_loop=0, max_loop=0, min_mask=0, max_mask=0, spread_efficiency=0.7, chain0_only=True,
+            use_this_ss_ordering=None, no_consecutive_loops_masks=True):
+        '''
+        Args:
+            active (bool): Whether or not this transform does anything at all
+            background (str): The default value for the SS that we insert chunks into ['HELIX', 'STRANd', 'LOOP', 'MASK']
+            helix_chunk_size (int): Size of the chunk of helix to insert into the SS
+            strand_chunk_size (int): Size of the chunk of strand to insert into the SS
+            loop_chunk_size (int): Size of the chunk of loop to insert into the SS
+            mask_chunk_size (int): Size of the chunk of mask to insert into the SS
+            min_helix (int): Minimum number of helix sections to insert
+            max_helix (int): Maximum number of helix sections to insert
+            min_strand (int): Minimum number of strand sections to insert
+            max_strand (int): Maximum number of strand sections to insert
+            min_loop (int): Minimum number of loop sections to insert
+            max_loop (int): Maximum number of loop sections to insert
+            min_mask (int): Minimum number of mask sections to insert
+            max_mask (int): Maximum number of mask sections to insert
+            spread_efficiency (float): 0-1 How balanced the gaps between chunks should be. 1 = perfectly balanced. 0 = could be side-by-side
+            chain0_only (bool): Only apply this transform to the first chain
+            use_this_ss_ordering (str): Instead of randomly inserting chunks from the max_ and min_ variables. Directly use this string (HEEHE for instance)
+            no_consecutive_loops_masks (bool): If possible, ensure that no LOOP or MASK chunks are inserted next to each other
+        '''
+
+        background_keys = {'HELIX':SS_HELIX, 'STRAND':SS_STRAND, 'LOOP':SS_LOOP, 'MASK':SS_MASK}
+
+        assert background in background_keys
+        self.background = background_keys[background]
+        self.active = active
+        self.min_helix = min_helix
+        self.max_helix = max_helix
+        self.min_strand = min_strand
+        self.max_strand = max_strand
+        self.min_loop = min_loop
+        self.max_loop = max_loop
+        self.min_mask = min_mask
+        self.max_mask = max_mask
+        self.spread_efficiency = spread_efficiency
+        self.chain0_only = chain0_only
+        self.use_this_ss_ordering = use_this_ss_ordering
+        self.no_consecutive_loops_masks = no_consecutive_loops_masks
+
+        self.chunk_sizes = torch.zeros(N_SS, dtype=int)
+        self.chunk_sizes[SS_HELIX] = helix_chunk_size
+        self.chunk_sizes[SS_STRAND] = strand_chunk_size
+        self.chunk_sizes[SS_LOOP] = loop_chunk_size
+        self.chunk_sizes[SS_MASK] = mask_chunk_size
+
+        if self.use_this_ss_ordering:
+            for letter in self.use_this_ss_ordering:
+                assert letter in SS_oneletter, f'SSSprinkleTransform use_this_ss_ordering: Error! Valid ss choices are {SS_oneletter} and you picked {letter}'
+            assert self.min_helix + self.max_helix + self.min_strand + self.max_strand + self.min_loop + self.max_loop + self.min_mask + self.max_mask == 0, (
+                "SSSprinkleTransform use_this_ss_ordering: Error! If you specify use_this_ss_ordering you can't specify any of the min_ or max_ settings")
+
+        assert self.spread_efficiency >= 0 and self.spread_efficiency <= 1, 'SSSprinkleTransform spread_efficiency must be between 0 and 1 (inclusive)'
+
+    def __call__(self, indep, conditions_dict, **kwargs):
+
+        if self.active:
+
+            # Figure out which positions we want to assign
+            store_mask = ~indep.is_sm
+            if self.chain0_only:
+                store_mask[~torch.tensor(indep.chain_masks()[0])] = False
+
+            # Build our lists of chunks to insert
+            if self.use_this_ss_ordering:
+                # User directly specified the order
+                chunks = torch.tensor([SS_oneletter.index(s) for s in self.use_this_ss_ordering], dtype=int)
+            else:
+                # Build a list of chunks and then shuffle them
+                chunks = []
+                chunks.extend( [SS_HELIX]*random.randint(self.min_helix, self.max_helix))
+                chunks.extend( [SS_STRAND]*random.randint(self.min_strand, self.max_strand))
+                chunks.extend( [SS_LOOP]*random.randint(self.min_loop, self.max_loop))
+                chunks.extend( [SS_MASK]*random.randint(self.min_mask, self.max_mask))
+                if self.no_consecutive_loops_masks:
+                    chunks = try_to_shuffle_chunks_no_consecutive_loops_masks(torch.tensor(chunks, dtype=int))
+                else:
+                    random.shuffle(chunks)
+                    chunks = torch.tensor(chunks, dtype=int)
+
+            # Assign the sizes of each gap. Start with perfectly even assignment and add randomness based on spread_efficiency
+            gap_weights = torch.ones(len(chunks)+1)
+            gap_weights -= (torch.rand(len(chunks)+1) + 0.01) * (1.0-self.spread_efficiency*0.99999) # make sure there is some slight randomness
+            gap_weights /= gap_weights.sum()
+
+            # Figure out the exact sizes of the gaps
+            chunk_sizes = self.chunk_sizes[chunks]
+
+            if chunk_sizes.sum() > store_mask.sum():
+                print('SSSprinkleTransform: Warning! Chunk sizes sum to more than available amino acids in protein')
+                gap_sizes = torch.zeros(len(gap_weights), dtype=int)
+            else:
+                remaining = store_mask.sum() - chunk_sizes.sum()
+                gap_sizes = divy_among_weighted_bins(remaining, gap_weights)
+                assert gap_sizes.sum() + chunk_sizes.sum() == store_mask.sum()
+
+            # Generate the final ss tensor spacing the chunks out by the gaps
+            inner_ss = torch.full((store_mask.sum(),), self.background)
+            for i_chunk in range(len(chunks)):
+                start_idx = chunk_sizes[:i_chunk].sum() + gap_sizes[:i_chunk+1].sum()
+                end_idx = start_idx + chunk_sizes[i_chunk]
+                inner_ss[start_idx:end_idx] = chunks[i_chunk]
+
+            # Expand the final ss tensor to the full indep size
+            new_ss = torch.full((indep.length(),), SS_MASK)
+            new_ss[store_mask] = inner_ss
+
+            print("SSSprinkleTransform:", ''.join(SS_oneletter_np[new_ss.numpy()]))
+
+            # Generate the ss_adj object to merge into conditions dict
+            ss_adj = SecStructAdjacency(full_mask_length=indep.length())
+            ss_adj.ss[:] = new_ss
+
+            if 'ss_adj' not in conditions_dict:
+                conditions_dict['ss_adj'] = ss_adj
+            else:
+                conditions_dict['ss_adj'].merge_other_into_this(ss_adj, store_mask, torch.zeros((indep.length(), indep.length()), dtype=bool))
+
+
+        return kwargs | dict(
+            indep=indep,
+            conditions_dict=conditions_dict,
+            )
 
 
 

@@ -31,6 +31,7 @@ from rf_diffusion.dev import show_bench
 from rf_diffusion.inference.model_runners import Sampler
 from rf_diffusion import noisers
 from rf_diffusion.frame_diffusion.rf_score.model import RFScore
+from rf_diffusion.conditions.ss_adj.sec_struct_adjacency import SS_HELIX, SS_STRAND, SS_LOOP, SS_MASK, N_SS
 from omegaconf import OmegaConf
 
 
@@ -863,6 +864,110 @@ class TestRegression(unittest.TestCase):
 
 
 
+    @pytest.mark.generates_golden
+    def test_inference_rfi_SSSprinkle(self):
+        # Tests the SSSprinkle inference condition
+        run_inference.make_deterministic()
+        conf = construct_conf([
+            'diffuser.T=1',
+            'inference.num_designs=1',
+            'inference.input_pdb=test_data/two_chain.pdb',
+            'contigmap.contigs=["30-30,0_B121-130"]',
+            'inference.output_prefix=tmp/test_ss_sprinkle',
+            '++inference.zero_weights=True',
+            'contigmap.has_termini=[True,True]',
+            '++extra_tXd=[ss_adj_cond]',
+            '++extra_tXd_params.ss_adj_cond={}',
+
+            '++upstream_training_transforms.names=[GenerateSSADJTrainingTransform]',
+            '++upstream_training_transforms.configs.GenerateSSADJTrainingTransform={p_is_ss_example:1,p_is_adj_example:1}',
+
+            '++upstream_inference_transforms.names=[SSSprinkleTransform]',
+            '++upstream_inference_transforms.configs.SSSprinkleTransform.active=True',
+            '++upstream_inference_transforms.configs.SSSprinkleTransform.background=HELIX',
+            '++upstream_inference_transforms.configs.SSSprinkleTransform.helix_chunk_size=1',
+            '++upstream_inference_transforms.configs.SSSprinkleTransform.strand_chunk_size=1',
+            '++upstream_inference_transforms.configs.SSSprinkleTransform.loop_chunk_size=1',
+            '++upstream_inference_transforms.configs.SSSprinkleTransform.mask_chunk_size=1',
+            '++upstream_inference_transforms.configs.SSSprinkleTransform.min_strand=2',
+            "++upstream_inference_transforms.configs.SSSprinkleTransform.max_strand=2",
+            '++upstream_inference_transforms.configs.SSSprinkleTransform.min_loop=3',
+            "++upstream_inference_transforms.configs.SSSprinkleTransform.max_loop=3",
+            '++upstream_inference_transforms.configs.SSSprinkleTransform.min_mask=4',
+            "++upstream_inference_transforms.configs.SSSprinkleTransform.max_mask=4",
+
+            '++transforms.names=["AddConditionalInputs","CenterPostTransform","ExpandConditionsDict"]',
+            '++transforms.configs.AddConditionalInputs.p_is_guidepost_example=0',
+            '++transforms.configs.ExpandConditionsDict={}',
+            '++transforms.configs.CenterPostTransform.center_type=is_not_diffused',
+
+        ])
+
+        mapped_calls = get_rfi(conf)
+        assert mapped_calls[0]['t1d'].shape[-1] == 80 + N_SS, "If this throws, the ss_adj isnt being written to t1d"
+        assert mapped_calls[0]['t2d'].shape[-1] == 72, "If this throws, the ss_adj isnt being written to t2d"
+
+        ss_t1d = mapped_calls[0]['t1d'][0,0,:,-N_SS:]
+
+        assert ss_t1d[:,SS_STRAND].sum() == 2
+        assert ss_t1d[:,SS_HELIX].sum() == 30 - 2 - 3 - 4
+        assert ss_t1d[:,SS_LOOP].sum() == 3
+        assert ss_t1d[:,SS_MASK].sum() == 4 + 10
+
+        cmp = partial(tensor_util.cmp, atol=5e-2, rtol=0)
+        test_utils.assert_matches_golden(self, 'rfi_ss_sprinkle', mapped_calls, rewrite=REWRITE, custom_comparator=cmp)
+
+
+    @pytest.mark.generates_golden
+    def test_inference_rfi_SSSprinkle_explicit(self):
+        # Tests the SSSprinkle inference condition when using use_this_ss_ordering
+        run_inference.make_deterministic()
+        conf = construct_conf([
+            'diffuser.T=1',
+            'inference.num_designs=1',
+            'inference.input_pdb=test_data/two_chain.pdb',
+            'contigmap.contigs=["30-30,0_B121-130"]',
+            'inference.output_prefix=tmp/test_ss_sprinkle',
+            '++inference.zero_weights=True',
+            'contigmap.has_termini=[True,True]',
+            '++extra_tXd=[ss_adj_cond]',
+            '++extra_tXd_params.ss_adj_cond={}',
+
+            '++upstream_training_transforms.names=[GenerateSSADJTrainingTransform]',
+            '++upstream_training_transforms.configs.GenerateSSADJTrainingTransform={p_is_ss_example:1,p_is_adj_example:1}',
+
+            '++upstream_inference_transforms.names=[SSSprinkleTransform]',
+            '++upstream_inference_transforms.configs.SSSprinkleTransform.active=True',
+            '++upstream_inference_transforms.configs.SSSprinkleTransform.background=MASK',
+            '++upstream_inference_transforms.configs.SSSprinkleTransform.helix_chunk_size=1',
+            '++upstream_inference_transforms.configs.SSSprinkleTransform.strand_chunk_size=1',
+            '++upstream_inference_transforms.configs.SSSprinkleTransform.loop_chunk_size=1',
+            '++upstream_inference_transforms.configs.SSSprinkleTransform.mask_chunk_size=1',
+            '++upstream_inference_transforms.configs.SSSprinkleTransform.use_this_ss_ordering="HEEHEL"',
+
+            '++transforms.names=["AddConditionalInputs","CenterPostTransform","ExpandConditionsDict"]',
+            '++transforms.configs.AddConditionalInputs.p_is_guidepost_example=0',
+            '++transforms.configs.ExpandConditionsDict={}',
+            '++transforms.configs.CenterPostTransform.center_type=is_not_diffused',
+
+        ])
+
+        mapped_calls = get_rfi(conf)
+        assert mapped_calls[0]['t1d'].shape[-1] == 80 + N_SS, "If this throws, the ss_adj isnt being written to t1d"
+        assert mapped_calls[0]['t2d'].shape[-1] == 72, "If this throws, the ss_adj isnt being written to t2d"
+
+        ss_t1d = mapped_calls[0]['t1d'][0,0,:,-N_SS:]
+
+        assert ss_t1d[:,SS_STRAND].sum() == 3
+        assert ss_t1d[:,SS_HELIX].sum() == 2
+        assert ss_t1d[:,SS_LOOP].sum() == 1
+        assert ss_t1d[:,SS_MASK].sum() == 30 - 6 + 10
+
+        cmp = partial(tensor_util.cmp, atol=5e-2, rtol=0)
+        test_utils.assert_matches_golden(self, 'rfi_ss_sprinkle_explicit', mapped_calls, rewrite=REWRITE, custom_comparator=cmp)
+
+
+
 class TestWriteTrajs(unittest.TestCase):
 
     T=2
@@ -1631,6 +1736,34 @@ class TestInference(unittest.TestCase):
 
         pdb_contents = inference.utils.parse_pdb(pdb)
         assertpy.assert_that(pdb_contents['xyz'].shape[0]).is_equal_to(12)
+
+    def test_only_guidepost_positions(self):
+        '''
+        Tests that only_guidepost_positions works and that the inference code still assigns motifs correctly
+        '''
+
+        leading_free = 5
+        run_inference.make_deterministic()
+        pdb, conf = infer([
+            'diffuser.T=1',
+            'inference.input_pdb=test_data/1qys.pdb',
+            'inference.contig_as_guidepost=True',
+            'inference.only_guidepost_positions="A62,A64"',
+            "+contigmap.contig_atoms=\"{'A64':'CB','A65':'CB'}\"",
+            f"contigmap.contigs=['{leading_free},A62-65,5']",
+            'contigmap.length=null',
+            'inference.guidepost_xyz_as_design=True'
+        ])
+
+        trb = get_trb(conf)
+        assert assertpy.assert_that(trb['indep']['is_gp'].sum()).is_equal_to(2)
+
+        # The guideposts could technically be swapped, but 2 residues were motifs and we know they can't swap
+        assert trb['con_hal_idx0'][1] == leading_free + 1
+        assert trb['con_hal_idx0'][3] == leading_free + 3
+
+        # We know this guy got atomized so it must be in this array
+        assert leading_free + 3 in trb['atomize_indices2atomname']
 
 
 if __name__ == '__main__':

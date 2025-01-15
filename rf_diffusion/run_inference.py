@@ -321,6 +321,7 @@ def sample_one(sampler, i_des=0, simple_logging=False):
     denoised_xyz_stack = torch.flip(denoised_xyz_stack, [0,])
     px0_xyz_stack = torch.stack(px0_xyz_stack)
     px0_xyz_stack = torch.flip(px0_xyz_stack, [0,])
+    ts = torch.flip(ts, [0,])
 
     for k, v in traj_stack.items():
         traj_stack[k] = torch.flip(torch.stack(v), [0,])

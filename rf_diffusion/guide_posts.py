@@ -580,8 +580,11 @@ def get_infered_mappings(motif_by_gp: dict, infered_by_gp: dict, original_mappin
         con_hal_pdb_idx = [ch_idx[i] for i in con_hal_idx0]  # Assumes we diffused one chain.
     atomize_indices2atomname = {}
     for i, v in original_mappings['atomize_indices2atomname'].items():
-        gp_i = gp_by_motif[i]
-        infered_i = infered_by_gp[gp_i]
+        if i in gp_by_motif:
+            gp_i = gp_by_motif[i]
+            infered_i = infered_by_gp[gp_i]
+        else:
+            infered_i = i
         atomize_indices2atomname[infered_i] = v
     
     return {
