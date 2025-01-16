@@ -13,6 +13,7 @@ upstream_inference_transforms: # These transforms don't do anything unless speci
     - LoadTargetSSADJTransform
     - RenumberCroppedInput
     - SSSprinkleTransform
+    - ADJSprinkleTransform
     - AddIdealSSInferenceTransform
   configs:
     AddIdealSSInferenceTransform:

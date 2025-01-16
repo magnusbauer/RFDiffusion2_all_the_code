@@ -1085,5 +1085,168 @@ class SSSprinkleTransform:
             conditions_dict=conditions_dict,
             )
 
+class ADJSprinkleTransform:
+    '''
+    A transform that constructs on-the-fly ADJ matrices to bias the output towards different things
+
+    '''
+
+    def __init__(self, active=False, use_existing_ss=False, use_existing_mode='full', use_existing_chunk_size=4, use_existing_loop_is_mask=True,
+                      from_scratch_chunk_size=4, from_scratch_off_diag_min=8, from_scratch_off_diag_max=12,
+                      from_scratch_coverage=0.5, from_scratch_spread_efficiency=0.7, chain0_only=True):
+
+        self.active = active
+        self.use_existing_ss = use_existing_ss
+        self.use_existing_mode = use_existing_mode
+        self.use_existing_chunk_size = use_existing_chunk_size
+        self.use_existing_loop_is_mask = use_existing_loop_is_mask
+        self.from_scratch_chunk_size = from_scratch_chunk_size
+        self.from_scratch_off_diag_min = from_scratch_off_diag_min
+        self.from_scratch_off_diag_max = from_scratch_off_diag_max
+        self.from_scratch_coverage = from_scratch_coverage
+        self.from_scratch_spread_efficiency = from_scratch_spread_efficiency
+        self.chain0_only = chain0_only
+
+        assert use_existing_mode in ['junction', 'distal', 'middle', 'full', 'random']
 
 
+    def __call__(self, indep, conditions_dict, **kwargs):
+
+        if self.active:
+
+            if self.chain0_only:
+                use_mask = torch.tensor(indep.chain_masks()[0])
+            else:
+                use_mask = torch.ones(indep.length(), dtype=bool)
+
+            adj_to_store = torch.full((use_mask.sum(), use_mask.sum()), ADJ_MASK)
+
+            if self.use_existing_ss:
+
+                assert 'ss_adj' in conditions_dict, 'ADJSprinkleTransform: If you wish to use use_existing_ss, there must actually be an SS'
+                prev_ss = conditions_dict['ss_adj'].ss[use_mask].clone()
+
+                assert not (prev_ss == SS_MASK).all(), ('ADJSprinkleTransform: If you wish to use use_existing_ss, there must actually be an SS.'
+                                " (Technically there is one. But it's all SS_MASK which probably means it's not initialized)" )
+
+                if self.use_existing_loop_is_mask:
+                    prev_ss[prev_ss == SS_LOOP] = SS_MASK
+
+
+                segments = [x for x in ss_to_segments(prev_ss) if x[0] != SS_MASK]
+
+                for iseg in range(len(segments)-1):
+                    tp1, start1, end1 = segments[iseg]
+                    tp2, start2, end2 = segments[iseg+1]
+
+                    size1 = end1-start1+1
+                    size2 = end2-start2+1
+
+                    N = self.use_existing_chunk_size
+
+                    mode = self.use_existing_mode
+                    if mode == 'random':
+                        modes = ['junction', 'distal', 'middle', 'full']
+                        mode = modes[random.randint(0, len(modes)-1)]
+
+                    if mode == 'junction':
+                        # at the junction
+                        left_edge = [end1-N+1, start2]
+                        right_edge = [end1+1, start2+N]
+                    elif mode == 'distal':
+                        # at the distal tips
+                        left_edge = [start1, end2-N+1]
+                        right_edge = [start1+N, end2+1]
+                    elif mode == 'middle':
+                        # in the middle
+                        c1 = int(size1 //2) + start1
+                        c2 = int(size2 //2) + start2
+                        left_N = int(N//2)
+                        right_N = N - left_N
+                        left_edge = [c1-left_N, c2-left_N]
+                        right_edge = [c1+right_N, c2+right_N]
+                    elif mode == 'full':
+                        left_edge = [start1, start2]
+                        right_edge = [end1+1, end2+1]
+                    else:
+                        assert False, f'unknown mode {mode}'
+
+                    left_edge = torch.tensor(left_edge)
+                    right_edge = torch.tensor(right_edge)
+
+                    stacked_edges = torch.stack([left_edge, right_edge])
+                    stacked_edges[:,0] = torch.clip(stacked_edges[:,0], start1, end1+1)
+                    stacked_edges[:,1] = torch.clip(stacked_edges[:,1], start2, end2+1)
+
+                    ((l1, l2), (r1, r2)) = stacked_edges
+
+                    adj_to_store[l1:r1,l2:r2] = ADJ_CLOSE
+                    adj_to_store[l2:r2,l1:r1] = ADJ_CLOSE
+
+            else:
+
+                N_total = len(adj_to_store)
+
+                N_chunks = int(N_total * self.from_scratch_coverage / self.from_scratch_chunk_size)
+
+                N_close = N_chunks * self.from_scratch_chunk_size
+
+                N_excess = N_total - N_close
+
+                N_gaps = N_chunks + 1
+
+                gap_weights = torch.ones(N_gaps)
+                gap_weights -= (torch.rand(N_gaps) + 0.01) * (1.0-self.from_scratch_spread_efficiency*0.99999)
+                gap_weights /= gap_weights.sum()
+
+                gap_sizes = divy_among_weighted_bins(N_excess, gap_weights)
+
+
+                for ichunk in range(N_chunks):
+                    offset_from_chunks = self.from_scratch_chunk_size * ichunk
+                    offset_from_gaps = gap_sizes[:ichunk+1].sum()
+
+                    l1 = offset_from_gaps + offset_from_chunks
+                    r1 = l1 + self.from_scratch_chunk_size
+
+                    l2 = l1 + random.randint(self.from_scratch_off_diag_min, self.from_scratch_off_diag_max)
+                    r2 = l2 + self.from_scratch_chunk_size
+
+                    adj_to_store[l1:r1,l2:r2] = ADJ_CLOSE
+                    adj_to_store[l2:r2,l1:r1] = ADJ_CLOSE
+
+
+            full_adj = torch.full((indep.length(), indep.length()), ADJ_MASK)
+            full_store_mask = torch.ones((indep.length(), indep.length()), dtype=bool)
+
+            full_store_mask[~use_mask] = False
+            full_store_mask[:,~use_mask] = False
+
+            full_adj[full_store_mask] = adj_to_store.reshape(-1)
+
+            # Generate the ss_adj object to merge into conditions dict
+            ss_adj = SecStructAdjacency(full_mask_length=indep.length())
+            ss_adj.adj[:] = full_adj
+
+            if 'ss_adj' not in conditions_dict:
+                conditions_dict['ss_adj'] = ss_adj
+            else:
+                conditions_dict['ss_adj'].merge_other_into_this(ss_adj, torch.zeros(indep.length(), dtype=bool), full_adj != ADJ_MASK)
+
+
+            print('adj sprinkle active')
+            import matplotlib.pyplot as plt
+            import seaborn as sns
+            to_plot = torch.nn.functional.pad(adj_to_store, [0, 1, 0, 1])
+            prev_ss = conditions_dict['ss_adj'].ss[use_mask].clone()
+            to_plot[-1,:-1] = prev_ss
+            to_plot[:-1,-1] = prev_ss
+            sns.heatmap(to_plot)
+            plt.savefig('my_adj.png')
+
+
+
+        return kwargs | dict(
+            indep=indep,
+            conditions_dict=conditions_dict,
+            )

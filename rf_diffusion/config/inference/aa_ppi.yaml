@@ -37,6 +37,7 @@ upstream_inference_transforms: # These transforms don't do anything unless speci
     - LoadTargetSSADJTransform
     - RenumberCroppedInput
     - SSSprinkleTransform
+    - ADJSprinkleTransform
   configs:
     HotspotAntihotspotResInferenceTransform: {}
     ExposedTerminusTransform: {}
@@ -60,6 +61,18 @@ upstream_inference_transforms: # These transforms don't do anything unless speci
       min_mask: 0
       max_mask: 0
       spread_efficiency: 0.7
+      chain0_only: True
+    ADJSprinkleTransform:
+      active: False
+      use_existing_ss: False
+      use_existing_mode: 'full'
+      use_existing_chunk_size: 4
+      use_existing_loop_is_mask: True
+      from_scratch_chunk_size: 4
+      from_scratch_off_diag_min: 8
+      from_scratch_off_diag_max: 12
+      from_scratch_coverage: 0.5
+      from_scratch_spread_efficiency: 0.7
       chain0_only: True
 
 
