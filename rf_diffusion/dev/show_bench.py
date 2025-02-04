@@ -61,6 +61,22 @@ def parse_traj(traj_path, n=None):
 # traj_path = os.path.join(row['rundir'], f'traj/{row["name"]}_pX0_traj.pdb')
 # parsed = parse_traj(traj_path)
 # parsed['xyz'].shape
+def get_last_px0(row):
+    px0_traj_path = analyze.get_traj_path(row, 'X0')
+    if not os.path.exists(px0_traj_path):
+        px0_traj_path = analyze.get_traj_path(row, 'x0')
+
+    parsed = parse_traj(px0_traj_path, n=1)[0]
+    n_prot, n_heavy, _ = parsed['xyz'].shape
+    n_het, _ = parsed['xyz_het'].shape
+
+    xyz = np.full((n_prot + n_het, n_heavy, 3), float('nan'))
+    xyz[:n_prot] = parsed['xyz']
+    xyz[n_prot:, 1] = parsed['xyz_het']
+    is_het = np.zeros((n_prot + n_het)).astype(bool)
+    is_het[n_prot:] = True
+    return xyz, is_het
+
 
 # def motif_backbone_dists(px0, inferred_atom_names_by_i, gp_atom_names_by_i):
 def motif_backbone_dists(px0_xyz, inferred_i, gp_i):

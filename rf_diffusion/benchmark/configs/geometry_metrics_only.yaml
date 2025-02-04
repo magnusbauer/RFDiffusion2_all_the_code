@@ -1,0 +1,15 @@
+defaults:
+  - pipeline
+  - _self_
+
+outdir: null # To be specified by the user
+
+skip_steps: ['score', 'foldseek', 'graft', 'thread_mpnn', 'mpnn', 'tm_align']
+start_step: metrics
+
+metrics:
+  invalidate_cache: 1
+  design_metrics: [ geometry ]
+  sequence_metrics: []
+score:
+  run: []

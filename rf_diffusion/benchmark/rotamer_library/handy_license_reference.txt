@@ -1,0 +1,28 @@
+2010 Backbone-dependent Rotamer Library Licensing Notice
+
+UPDATE
+======
+
+The license for the 2010 backbone-dependent rotamer library became less restrictive. Now it is same for both acadimia and industry. The library is free, redistributable and modifiable as long as you acknowledge us. See details below. For any questions, please contact Dr. Roland Dunbrack, Roland.Dunbrack@fccc.edu
+
+LICENSE AGREEMENT FOR 2010 BACKBONE-DEPENDENT ROTAMER LIBRARY
+=============================================================
+
+The 2010 Backbone-Dependent Rotamer Library (hereafter referred to as BBDEP2010 or the Database) is distributed under an Open Data Commons Attribution License (ODC-BY) (https://www.opendatacommons.org/licenses/by/1.0/). The full license text for the BBDEP2010 license is located at http://dunbrack.fccc.edu/bbdep2010/license/bbdep2010_license.txt or stored in bbdep2010_license.txt of the same directory. See the disclaimer below.
+
+You are free:
+
+   To Share: To copy, distribute, and use the Database.
+   To Create: To produce works from the Database.
+   To Adapt: To modify, transform, and build upon the Database.
+
+As long as you:
+
+Attribute:
+----------
+You must attribute any public use of the Database, or works produced from the Database, in the manner specified in the license. That is, in software or in papers, you must acknowledge the source of BBDEP2010 either by a link to the webpage (http://dunbrack.fccc.edu/bbdep2010) or by citation of the paper (https://doi.org/10.1016/j.str.2011.03.019). For any use or redistribution of the Database, or works produced from it, you must make clear to others the license of the Database and keep intact any notices on the original Database.
+
+Disclaimer:
+-----------
+This is not a license. It is simply a handy reference for understanding the ODC-BY 1.0 - it is a human-readable expression of some of its key terms. Read the full BBDEP2010 license at http://dunbrack.fccc.edu/bbdep2010/license/bbdep2010_license.txt or in bbdep2010_license.txt of the same directory for the exact terms that apply.
+

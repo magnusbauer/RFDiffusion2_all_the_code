@@ -708,9 +708,12 @@ def flatten_dict(dd, separator ='.', prefix =''):
 
 def make_row_from_traj(traj_prefix, use_trb=True):
     synth_row = {}
-    pdb_path = traj_prefix
-    if not pdb_path.endswith('.pdb'):
-        pdb_path += '.pdb'
+    
+    # Minor fix: handles pdbs as traj_prefix for ease of use
+    if traj_prefix.endswith('.pdb'):
+        traj_prefix = traj_prefix[:-4]
+    pdb_path = traj_prefix 
+    pdb_path += '.pdb'
     
     synth_row['pdb_path'] = pdb_path
     

@@ -21,6 +21,7 @@ from tqdm import tqdm
 import torch
 import numpy as np
 import scipy
+from pathlib import Path
 
 from ipd.dev import safe_eval
 from rf_diffusion import aa_model
@@ -29,7 +30,6 @@ from rf_diffusion.inference import utils
 import rf_diffusion.dev.analyze
 from rf_diffusion.chemical import ChemicalData as ChemData
 from rf_diffusion.dev import benchmark as bm
-from rf_diffusion import loss
 import rf_diffusion.atomization_primitives
 from rf2aa.util import rigid_from_3_points
 
@@ -38,6 +38,20 @@ from Bio.PDB.SASA import ShrakeRupley
 from Bio import PDB
 from rf_diffusion.dev import biotite_tools as bt
 import biotite
+
+from rf_diffusion.dev.show_bench import get_last_px0
+from rf_diffusion.benchmark.util import geometry_metrics_utils
+from rf_diffusion.benchmark.util.geometry_metrics_utils import (
+    geometry_inner, 
+    compile_geometry_dict, 
+    junction_bond_len_inner, 
+    rmsd
+)
+
+from rf_diffusion.parsers import parse_pdb_lines_target
+from rf_diffusion.dev import show_bench
+
+script_dir = os.path.dirname(os.path.realpath(__file__))
 
 
 pdb_parser = PDBParser(PERMISSIVE=0, QUIET=1)
@@ -77,15 +91,6 @@ def get_aligner(
         return f_aligned[:, 0, :]
 
     return T_flat
-
-def rmsd(V, W, eps=1e-6):
-    assert V.ndim == 2, V.ndim
-    assert W.ndim == 2, V.ndim
-    L = V.shape[0]
-    # dist = np.linalg.norm(V-W, axis=1)
-    # ic( torch.sqrt(torch.sum((V-W)*(V-W), dim=1) / L + eps))
-    # ic(torch.sum((V-W)*(V-W), dim=(1,2)).shape)
-    return torch.sqrt(torch.sum((V-W)*(V-W), dim=(0,1)) / L + eps)
 
 def catalytic_constraints_mpnn_packed(pdb):
     out = catalytic_constraints_inner(pdb, mpnn_packed=True)
@@ -255,7 +260,7 @@ def catalytic_constraints_inner(pdb, mpnn_packed: bool):
     # In AF2 prediction: Design model will be aligned (Cα) to AF2 prediction. If any backbone atom is < 2.0 Å 
     #    from a ligand atom, the AF2 prediction is clashing.
     T = get_aligner(motif_des, motif_af2)
-    ligand_des =xyz('des', get_ligand)
+    ligand_des = xyz('des', get_ligand)
     af2_aligned_ligand_des = T(ligand_des)
     ligand_bb_dist = scipy.spatial.distance.cdist(af2_aligned_ligand_des, backbone_des)
     out['des_af2_motif_aligned_ligand_bb_dist'] = ligand_bb_dist.min()
@@ -294,6 +299,7 @@ def catalytic_constraints_inner(pdb, mpnn_packed: bool):
 
 def default(pdb):
     record = {}
+
     row = analyze.make_row_from_traj(pdb[:-4])
     # ic(row['mpnn_index'])
     record['name'] = row['name']
@@ -347,26 +353,6 @@ def default(pdb):
     mpnn_motif_dist = ((flat_des - flat_diff) ** 2).sum(dim=-1) ** 0.5
     record['motif_ideality_diff'] = mpnn_motif_dist.mean().item()
     return record
-
-
-from rf_diffusion.dev.show_bench import parse_traj
-def get_last_px0(row):
-    px0_traj_path = analyze.get_traj_path(row, 'X0')
-    if not os.path.exists(px0_traj_path):
-        px0_traj_path = analyze.get_traj_path(row, 'x0')
-
-    # get_pdb_lines_traj(px0_traj_path)
-    parsed = parse_traj(px0_traj_path, n=1)[0]
-    print(f"{parsed.keys()=}")
-    n_prot, n_heavy, _ = parsed['xyz'].shape
-    n_het, _ = parsed['xyz_het'].shape
-
-    xyz = np.full((n_prot + n_het, n_heavy, 3), float('nan'))
-    xyz[:n_prot] = parsed['xyz']
-    xyz[n_prot:, 1] = parsed['xyz_het']
-    is_het = np.zeros((n_prot + n_het)).astype(bool)
-    is_het[n_prot:] = True
-    return xyz, is_het
 
 def guidepost(pdb):
     row = analyze.make_row_from_traj(pdb[:-4])
@@ -435,32 +421,6 @@ def guidepost_af2_rmsd(pdb):
     o['mpnn_index'] = row['mpnn_index']
     return o
 
-def junction_bond_len(xyz, is_motif, idx):
-    '''
-        Args:
-            xyz: [L, 14, 3] protein only xyz
-            is_motif: [L] boolean motif mask
-            idx: [L] pdb index
-    '''
-    sig_len=0.02
-    ideal_NC=1.329
-    blen_CN  = loss.length(xyz[:-1,2], xyz[1:,0])
-    CN_loss = torch.clamp( torch.abs(blen_CN - ideal_NC) - sig_len, min=0.0 )
-
-    pairsum = is_motif[:-1].double() + is_motif[1:].double()
-    pairsum[idx[:-1] - idx[1:] != -1] = -1
-
-    junction = pairsum == 1
-    intra_motif = pairsum == 2
-    intra_diff = pairsum == 0
-
-    return {
-        'junction_CN_loss': CN_loss[junction].mean().item(),
-        'intra_motif_CN_loss': CN_loss[intra_motif].mean().item(),
-        'intra_diff_CN_loss': CN_loss[intra_diff].mean().item()
-    }
-
-
 def junction_cn(pdb):
     row = analyze.make_row_from_traj(pdb[:-4])
     trb = analyze.get_trb(row)
@@ -468,8 +428,8 @@ def junction_cn(pdb):
     indep = aa_model.make_indep(des_pdb, row['inference.ligand'])
     is_motif = torch.zeros(indep.length()).bool()
     is_motif[trb['con_hal_idx0']] = True
-    ic(is_motif)
-    o = junction_bond_len(
+    # ic(is_motif)
+    o = junction_bond_len_inner(
         indep.xyz[~indep.is_sm],
         is_motif[~indep.is_sm],
         indep.idx[~indep.is_sm])
@@ -1234,7 +1194,7 @@ def get_pocket_aligned_ligand_rmsds(pdb, chai1_pdbs, aligned_pdb_dir=None):
     pocket_rmsd = biotite.structure.rmsd(atoms_true_pocket, atoms_pred_stack_pocket_aligned[:, pocket_i])
 
     pocket_aligned_ligand_rmsds = biotite.structure.rmsd(atoms_true_het, atoms_pred_stack_pocket_aligned_het)
-    for i, rmsd in enumerate(pocket_aligned_ligand_rmsds):
+    for i in range(len(pocket_aligned_ligand_rmsds)):
         out[f'pocket_aligned_model_{i}_total_ligand_rmsd'] = pocket_aligned_ligand_rmsds[i]
         out[f'pocket_aligned_model_{i}_pocket_rmsd'] = pocket_rmsd[i]
     
@@ -1313,6 +1273,106 @@ def chai1_pocket_aligned_ligand(pdb):
     pocket_metrics = get_pocket_aligned_ligand_rmsds(design_pdb, chai1_pdbs, aligned_pdb_dir=None)
     out.update(pocket_metrics)
     return out
+
+####################
+# Geometry Metrics
+####################
+def geometry(pdb, pdb_idx=None, idx=None, t_step=0):
+    """
+    Calculates geometrically intuitive metrics for guideposted and non-guideposted designs.
+    Can also be used for trajectory files by passing t_step > 0.
+    Can be used on native or non-trajectory pdbs by passing the pdb index.
+    
+    Args:
+        pdb (str): path to pdb file (w or w/o trbs)
+        pdb_idx (list): pdb indices of the motif residues
+        idx (list): list of indices (idx0) of the motif residues
+        t_step (int): time step of the trajectory to analyze (default 0), requires inference.write_trajectory=True if > 0
+
+    NB: this function is made more complex because of handling different arguments (trajectory, native / raw pdb or designs w trbs) 
+        see geometry_inner for the the computation 
+    """
+
+    o = {}
+
+    if pdb_idx is None and idx is None: # Assume pdb is a trajectory pdb
+
+        row = analyze.make_row_from_traj(pdb)
+        trb = analyze.get_trb(row)
+        config = trb['config']
+
+        o['name'] = row['name']
+
+        motif_idxs = trb['con_hal_pdb_idx']
+        parsed = parse_pdb_lines_target(open(pdb, 'r').readlines(), parse_hetatom=True)
+        motif_idxs = [parsed['pdb_idx'].index(idx) for idx in motif_idxs]
+
+        # Get Ca-Ca dislocations by using trajectory files if present
+        if t_step > 0:
+            o, parsed = traj_geometry_precompute(row, trb, config, parsed, motif_idxs, o, t_step)
+        elif config['inference'].get('write_trajectory') and t_step <= 0:
+            o = o | geometry_metrics_utils.dislocated_ca(pdb)
+        else: # otherwise you can't compute them:
+            o['gp.ca_dists'] = [0.0] * len(motif_idxs)
+    else:
+        parsed = parse_pdb_lines_target(open(pdb,'r').readlines(), parse_hetatom=True)
+        motif_idxs = [parsed['pdb_idx'].index(idx) for idx in pdb_idx] if idx is None else idx
+        o['name'] = Path(pdb).stem
+    o = o | geometry_inner(parsed, motif_idxs)
+    o = compile_geometry_dict(o)
+    return o
+
+def traj_geometry_precompute(row, trb, config, parsed, motif_idxs, o={}, t_step=0):
+    """
+    Handles geometry pre-calculation for trajectory files
+    Loads trajecty and handles guidepost dislocation metric
+    
+    Args:
+        row (dict): design row
+        trb (dict): design trb
+        config (dict): inference config
+        parsed (dict): parsed pdb
+        motif_idxs (list): motif indices
+        o (dict): output dictionary to append to
+        t_step (int): time step of the trajectory to analyze (default 0), requires inference.write_trajectory=True
+
+    Returns:
+        o (dict): updated output dictionary
+        parsed (dict): updated parsed pdb dictionary
+
+    """
+
+    assert config['inference'].get('write_trajectory'), "write_trajectory must be enabled to compute geometry metrics"
+    assert config['inference']['contig_as_guidepost'] 
+
+    ts = trb['t']
+    o['t'] = ts[t_step]
+    o['1_minus_t'] = 1 - ts[t_step]
+
+    px0_traj_path = analyze.get_traj_path(row, 'X0')
+    if not os.path.exists(px0_traj_path): px0_traj_path = analyze.get_traj_path(row, 'x0')
+    parsed_t = show_bench.parse_traj(px0_traj_path, t_step=t_step)
+    assert not isinstance(parsed_t, list), f"parsed_t is a list: {parsed_t}"
+    gp_idxs = np.arange(parsed_t['xyz'].shape[0])[-len(motif_idxs):]
+
+    motif_mask = torch.zeros(parsed_t['xyz'].shape[0]).bool()
+    motif_mask[motif_idxs] = True
+    gp_mask = torch.zeros(parsed_t['xyz'].shape[0]).bool()
+    gp_mask[gp_idxs] = True
+
+    o = o | geometry_metrics_utils.dislocated_ca_inner(parsed_t['xyz'], bb_i=motif_idxs, gp_i=gp_idxs)
+    
+    # Also overwrite motif coordinates in the parsed structure as the guidepost coordinates 
+    # (for metrics: junctions, rotamer probability, angle deviation, tyr contortion etc.)
+    xyz = parsed_t['xyz'][~gp_mask]
+    xyz[motif_idxs] = parsed_t['xyz'][gp_idxs]
+    parsed['xyz'] = xyz  # sequence will be the same (since motif_idxs are the same)
+    
+    return o, parsed
+
+####################
+#
+####################
 
 
 # For debugging, can be run like:
