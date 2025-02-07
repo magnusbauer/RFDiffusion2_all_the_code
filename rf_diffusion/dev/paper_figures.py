@@ -358,8 +358,10 @@ def show_rfflow_trajectory_snapshots(show, struct='Xt', ts=[100, 30, 1], start_g
     # for s in states:
     #     cmd.delete(s)
     states = []
+    if suffix == '':
+        suffix = xt.name
     for i in ts:
-        state = f'{struct}{suffix}_state_{i}'
+        state = f'{suffix}_{struct}_state_{i}'
         cmd.create(state, xt.name, i, 1)
         states.append(state)
     # for i, name in enumerate(states + [entities['unidealized'].name], start=start_grid_slot):
@@ -445,6 +447,20 @@ def get_sidechain_palette():
     cmap = mpl.colormaps[cmap_name]
     return show_tip_row.PymolPalette(cmd, cmap_name, 0, cmap.N)
 
+def get_intercalating_palette():
+    # Red purple blue
+    # cmap_name = register_subsampled_colormap('Pastel1', [0,3,1])
+    # Yellow green blue
+    cmap_name = register_subsampled_colormap('Pastel2', [5,4,2])
+    # mpl.colormaps[cmap_name]
+    cmap = mpl.colormaps[cmap_name]
+    return show_tip_row.PymolPalette(cmd, cmap_name, 0, cmap.N)
+
+def get_subsampled_palette(matplotlib_cmap_name, I):
+    cmap_name = register_subsampled_colormap(matplotlib_cmap_name, I)
+    cmap = mpl.colormaps[cmap_name]
+    return show_tip_row.PymolPalette(cmd, cmap_name, 0, cmap.N)
+
 # Entry point
 def show_submotif_fitting_comparison(show, ts=[100, 95, 90], motif_i=[0,3], grid_slot_iterator=iter_grid_slot(), hide_style='hide', display_x0_style='cartoon'):
 
@@ -471,12 +487,29 @@ def show_submotif_fitting_comparison(show, ts=[100, 95, 90], motif_i=[0,3], grid
 
     return grouped_entities
 
+# Entry point
+def show_entire_motif_fitting_comparison(show, ts=[100, 95, 90], motif_i=[0,3], grid_slot_iterator=iter_grid_slot(), hide_style='hide', display_x0_style='cartoon'):
+    grouped_entities = show_trajectory_with_input(show, ts, grid_slot_iterator)
+    cmd.set('grid_mode', 1)
+
+    for e in get_x0_entities(grouped_entities):
+        hide_X0_cartoon(e)
+    
+    for e in get_x0_entities(grouped_entities):
+        cmd.cartoon('tube', e.name)
+
+    is_bb = 'backbone' in show.iloc[0]['sweep']
+    if is_bb:
+        show_motif_bb(grouped_entities)
+
+    return grouped_entities
+
 def show_trajectory_with_input(show, ts, grid_slot_iterator,diffused_sidechain_palette = None):
     if diffused_sidechain_palette is None:
         diffused_sidechain_palette = get_sidechain_palette()
 
     entity_by_grid_slot = show_rfflow_trajectory_snapshots(show, ts=ts, struct='X0',
-        diffused_sidechain_palette=diffused_sidechain_palette, suffix=show.iloc[0]['sweep'])
+        diffused_sidechain_palette=diffused_sidechain_palette, suffix='')
     # entity_by_grid_slot = show_rfflow_trajectory_snapshots(show, ts=ts, struct='X0',
     #     diffused_sidechain_palette=diffused_sidechain_palette)
     
@@ -517,6 +550,26 @@ def get_x0_entities(grouped_entities):
             if '_state' in e.name:
                 o.append(e)
     return o
+
+
+def color_intercalating_regions(e, row, intercalating_palette=None):
+    if intercalating_palette is None:
+        intercalating_palette = get_intercalating_palette()
+
+    trb = analyze.get_trb(row)
+    traj_motif_idx = tuple(i for _, i in trb['con_hal_pdb_idx'])
+
+    e.selectors['matched_motif'] = "resi " + "+".join(f"{i}" for i in traj_motif_idx)
+
+    motif_resi = (0,) + traj_motif_idx + (9989,)
+
+    for i, (res_start, res_end) in enumerate(itertools.pairwise(motif_resi)):
+        sel = f"resi {res_start+1}-{res_end-1}"
+        # print(f"coloring {e.name} and {sel}")
+        e.selectors[f'intercalating_{i}'] = sel
+
+        cmd.color(intercalating_palette.name(i), f"{e.name} and {sel}")
+
 
 def hide_not_m1m2(e, row, motif_i=[0,3], hide_style='hide', display_x0_style='cartoon'):
     trb = analyze.get_trb(row)
@@ -576,10 +629,6 @@ def hacky_get_guidepost_resi(selector):
     return [f"resi {i}" for i in resi if i != placeholder_resi]
 
 def show_motif_comparison(e, coarse_grained=True):
-    print(f"{e.selectors.keys()=}")
-    print(f"{e.selectors['sidechains_motif']=}")
-    print(f"{e.selectors['residue_motif']=}")
-    print(f"{e.selectors['residue_gp_motif']=}")
 
     motif_selector = ' OR '.join(e.selectors[s] for s in ['residue_motif', 'residue_gp_motif', 'sidechains_motif'])
     motif_selector = f"{e.name} AND ({motif_selector})"
@@ -593,7 +642,7 @@ def show_motif_comparison(e, coarse_grained=True):
         cmd.color('paper_teal', motif_backbone_selector)
 
         motif_cb_selector = f"{e.name} AND ({motif_selector}) AND (name CB)"
-        cmd.do(f"alter ({motif_cb_selector}), vdw=3.5")
+        cmd.do(f"alter ({motif_cb_selector}), vdw=3.0")
         cmd.show('spheres', motif_cb_selector)
 
         motif_ca_selector = f"{e.name} AND ({motif_selector}) AND (name CA)"
@@ -615,3 +664,21 @@ def show_motif_bb(grouped_entities):
     cmd.show('cartoon', f"{final_e.name}")
     cmd.show_as('cartoon', f"{final_e.name} AND (name N or name C)")
     cmd.hide('spheres', f"{final_e.name} AND name CA")
+
+def set_guidepost_fit_selector(e, row, n_around=1):
+    trb = analyze.get_trb(row)
+    traj_motif_idx = tuple(i for _, i in trb['con_hal_pdb_idx'])
+    
+    resi_ranges = []
+    for i in traj_motif_idx:
+        resi_ranges.append(f"resi {i-1}-{i+1}")
+    
+    e.selectors['guidepost_fit'] = '(' + ' OR '.join(resi_ranges) + ')'
+    e.selectors['sidechains_all'] = '(' + e['sidechains_diffused'] + ' OR ' + e['sidechains_motif'] +')'
+
+
+def show_guidepost_fit(e, row, n_around=1):
+    set_guidepost_fit_selector(e, row, n_around=n_around)
+    cmd.hide('everything', f"{e.name} and not ({e.selectors['guidepost_fit']} or {e.selectors['sidechains_all']})")
+    cmd.set('cartoon_transparency', 0.5, e['guidepost_fit'])
+    cmd.show('licorice', f"{e['guidepost_fit']}")

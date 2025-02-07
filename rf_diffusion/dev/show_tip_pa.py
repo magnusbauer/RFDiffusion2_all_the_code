@@ -333,6 +333,9 @@ class PymolObj:
     def __getitem__(self, k):
         return f'({self.name} and {self.selectors[k]})'
     
+    def NOT(self, k):
+        return f'{self.name} and not ({self.selectors[k]})'
+    
     def inverse(self, k):
         return f'{self.name} and not ({self[k]})'
     
@@ -340,4 +343,10 @@ class PymolObj:
         o = {}
         for k, _ in self.selectors.items():
             o[k] = self[k]
+        return o
+    
+    def copy(self, new_name):
+        cmd.copy(new_name, self.name)
+        o = copy.deepcopy(self)
+        o.name = new_name
         return o

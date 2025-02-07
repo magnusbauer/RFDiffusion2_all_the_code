@@ -207,6 +207,13 @@ def get_pymol_palette(palette_json):
 def color_spectrum(colors, name):
     cmd.do(f'spectrum count, {" ".join(colors)}, {name}')
 
+
+def color_spectrum_pymol_palette(name, palette, palette_indices=None):
+    color_names = palette.all()
+    if palette_indices:
+        color_names = [palette.name(i) for i in palette_indices]
+    color_spectrum(color_names, name)
+
 default_palette_json = {
     "Charcoal":"264653",
     "Burnt sienna":"e76f51",
@@ -218,10 +225,7 @@ default_palette_json = {
 
 def color_spectrum_palette(name, palette_indices=None, palette_json=default_palette_json):
     palette = get_pymol_palette(palette_json)
-    color_names = palette.all()
-    if palette_indices:
-        color_names = [palette.name(i) for i in palette_indices]
-    color_spectrum(color_names, name)
+    color_spectrum_pymol_palette(name, palette, palette_indices)
 
 def color_backbone(
         e,
