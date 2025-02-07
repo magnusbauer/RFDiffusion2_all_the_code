@@ -7,6 +7,7 @@ import rf_diffusion.conditions.ss_adj.sec_struct_adjacency as sec_struct_adjacen
 from rf_diffusion.train_data.exceptions import NextExampleException
 from rf_diffusion import aa_model
 from rf_diffusion import sasa
+from rf_diffusion.conditions.util import pop_conditions_dict
 
 def Cb_or_atom(indep, xyz=None):
     '''
@@ -411,10 +412,10 @@ class PPITrimTailsChain0ComplexTransform:
         self.verbose = verbose
 
 
-    def __call__(self, indep, atom_mask, chosen_dataset, metadata, **kwargs):
+    def __call__(self, indep, atom_mask, chosen_dataset, metadata, conditions_dict, **kwargs):
 
         # The input arguments unchanged if we decide not to do anthing
-        do_nothing_return = dict(indep=indep, atom_mask=atom_mask, chosen_dataset=chosen_dataset, metadata=metadata, **kwargs)
+        do_nothing_return = dict(indep=indep, atom_mask=atom_mask, chosen_dataset=chosen_dataset, metadata=metadata, conditions_dict=conditions_dict, **kwargs)
 
         # Only operate on the datasets we're told to
         if not ('all' in self.operate_on_datasets or chosen_dataset in self.operate_on_datasets):
@@ -509,12 +510,14 @@ class PPITrimTailsChain0ComplexTransform:
         aa_model.pop_mask(indep, keep_mask)
         atom_mask = atom_mask[keep_mask]
         metadata['covale_bonds'] = aa_model.reindex_covales(metadata['covale_bonds'], keep_mask)
+        pop_conditions_dict(conditions_dict, keep_mask)
 
         return dict(
             indep=indep,
             atom_mask=atom_mask,
             chosen_dataset=chosen_dataset,
             metadata=metadata,
+            conditions_dict=conditions_dict,
             **kwargs
             )
 
@@ -626,10 +629,10 @@ class PPIJoeNateDatasetRadialCropTransform:
         self.operate_on_datasets = operate_on_datasets
         self.CROP = CROP
 
-    def __call__(self, indep, atom_mask, chosen_dataset, metadata, **kwargs):
+    def __call__(self, indep, atom_mask, chosen_dataset, metadata, conditions_dict, **kwargs):
 
         # The input arguments unchanged if we decide not to do anthing
-        do_nothing_return = dict(indep=indep, atom_mask=atom_mask, chosen_dataset=chosen_dataset, metadata=metadata, **kwargs)
+        do_nothing_return = dict(indep=indep, atom_mask=atom_mask, chosen_dataset=chosen_dataset, metadata=metadata, conditions_dict=conditions_dict, **kwargs)
 
         # Only operate on the datasets we're told to
         if not ('all' in self.operate_on_datasets or chosen_dataset in self.operate_on_datasets):
@@ -681,12 +684,14 @@ class PPIJoeNateDatasetRadialCropTransform:
         aa_model.pop_mask(indep, keep_mask)
         atom_mask = atom_mask[keep_mask]
         metadata['covale_bonds'] = aa_model.reindex_covales(metadata['covale_bonds'], keep_mask)
+        pop_conditions_dict(conditions_dict, keep_mask)
 
         return dict(
             indep=indep,
             atom_mask=atom_mask,
             chosen_dataset=chosen_dataset,
             metadata=metadata,
+            conditions_dict=conditions_dict,
             **kwargs
             )
 

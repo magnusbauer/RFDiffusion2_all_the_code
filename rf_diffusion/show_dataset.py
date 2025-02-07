@@ -20,6 +20,7 @@ from rf_diffusion.dev import show_tip_pa
 from rf_diffusion.frame_diffusion.data import se3_diffuser
 from rf_diffusion import aa_model
 from rf_diffusion.conditions.ss_adj.sec_struct_adjacency import SS_HELIX, SS_STRAND, SS_LOOP, SS_SM, ADJ_STRAND_PAIR
+from rf_diffusion.conditions import hbond_satisfaction
 
 import rf_diffusion.dev.show_tip_row
 # from rf_diffusion.dev.show_tip_row import OR, AND, NOT
@@ -188,6 +189,17 @@ def run(conf: DictConfig) -> None:
 
                     mask_by_name['hotspots'] = hotspots
                     mask_by_name['antihotspots'] = antihotspots
+
+                if conf.show_dataset.get('show_target_hbond_satisfaction', False):
+                    satisfaction_t1d_offset = conf.show_dataset.target_hbond_satisfaction_t1d_offset
+                    keys = hbond_satisfaction.get_target_hbond_satisfaction_keys_for_t1d()
+
+                    for key in conf.show_dataset.target_hbond_satisfaction_shown_keys:
+                        assert key in keys, f'{key} not in target_hbond_satisfaction keys: {keys}'
+
+                        value_index = satisfaction_t1d_offset + keys.index(key) * 2 + 1
+                        mask_by_name[key] = indep.extra_t1d[:,value_index].bool()
+
 
                 if len(mask_by_name) > 0:
 

@@ -25,7 +25,7 @@ from rf_diffusion import nucleic_compatibility_utils as nucl_utils
 from rf_diffusion import run_inference
 from rf_diffusion import mask_generator
 from rf_diffusion import ppi
-from rf_diffusion.conditions.util import expand_1d_atomized_ok_gp_not
+from rf_diffusion.conditions.util import expand_1d_atomized_ok_gp_not, pop_conditions_dict
 
 ######## Group all imported transforms together ###########
 
@@ -34,6 +34,7 @@ from rf_diffusion.conditions.ss_adj.sec_struct_adjacency import (LoadTargetSSADJ
 from rf_diffusion.ppi import (PPITrimTailsChain0ComplexTransform, PPIRejectUnfoldedInterfacesTransform, PPIJoeNateDatasetRadialCropTransform,  # noqa: F401
                                     FindHotspotsTrainingTransform, HotspotAntihotspotResInferenceTransform, ExposedTerminusTransform, RenumberCroppedInput)
 from rf_diffusion.conditions.ideal_ss import AddIdealSSTrainingTransform, AddIdealSSInferenceTransform  # noqa: F401
+from rf_diffusion.conditions.hbond_satisfaction import HBondTargetSatisfactionTrainingTransform, HBondTargetSatisfactionInferenceTransform  # noqa: F401
 
 ###########################################################
 
@@ -49,7 +50,7 @@ LEGACY_TRANSFORMS_TO_IGNORE = ['PopMask']
 
 
 class PopMask:
-    def __call__(self, indep: Indep, metadata: dict, masks_1d: torch.Tensor, **kwargs):
+    def __call__(self, indep: Indep, metadata: dict, masks_1d: torch.Tensor, conditions_dict: dict, **kwargs):
         
         aa_model.pop_mask(indep, masks_1d['pop'])
         masks_1d['input_str_mask'] = masks_1d['input_str_mask'][masks_1d['pop']]
@@ -58,6 +59,7 @@ class PopMask:
         masks_1d['can_be_gp'] = masks_1d['can_be_gp'][masks_1d['pop']]
         metadata['covale_bonds'] = aa_model.reindex_covales(metadata['covale_bonds'], masks_1d['pop'])
         metadata['ligand_names'] = np.array(['LIG']*indep.length(),  dtype='<U3')
+        pop_conditions_dict(conditions_dict, masks_1d['pop'])
         # is_atom_str_shown = masks_1d['is_atom_motif']
         # Pop atom_mask if exists
         if 'atom_mask' in kwargs:
@@ -67,6 +69,7 @@ class PopMask:
             indep=indep,
             metadata=metadata,
             masks_1d=masks_1d,
+            conditions_dict=conditions_dict,
             **kwargs
         )
 
@@ -697,6 +700,11 @@ class ExpandConditionsDict:
             'avg_scn', # torch.Tensor[float]: A number 0 to 1 describing the sidechain neighbors of this piece of protein
             'loop_frac', # torch.Tensor[float]: A number 0 to 1 describing fraction of this chain that is loop by dssp
             'topo_spec', # torch.Tensor[float]: A class label of which of the topo_spec_choices this chain fits into (int but allows nan)
+
+
+            # Conditions dict elements that kinda break the rules and do more calculations than they should (because they need atomized indeps)
+            'target_hbond_satisfaction', # Enters: HBondSatisfactionApplierBase
+                                         # Exists: dict[string,torch.Tensor[float]]: Various metrics related to h-bond satisfaction
         ])
 
         post_idx_from_pre_idx, is_atomized = aa_model.generate_pre_to_post_transform_indep_mapping(indep, atomizer, contig_map.gp_to_ptn_idx0)
@@ -731,6 +739,10 @@ class ExpandConditionsDict:
 
             elif key == 'topo_spec':
                 new_conditions_dict['topo_spec'] = expand_1d_atomized_ok_gp_not(indep, conditions_dict['topo_spec'], post_idx_from_pre_idx, np.nan, 'topo_spec')
+
+            elif key == 'target_hbond_satisfaction':
+                # I know this isn't great. But how do we fullfill Woody's dream of "same calculations after the transforms" when we need an atomized indep?
+                new_conditions_dict['target_hbond_satisfaction'] = conditions_dict['target_hbond_satisfaction'].generate_conditions_on_atomized_indep(indep, post_idx_from_pre_idx, is_atomized)
 
             else:
                 assert False, f'Key {key}: not processed in ExpandConditionsDict'

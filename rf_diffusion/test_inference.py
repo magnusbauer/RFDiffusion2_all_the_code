@@ -24,6 +24,7 @@ import rf2aa.loss.loss
 from rf_diffusion.inference import model_runners
 from rf_diffusion import aa_model
 from rf_diffusion import inference
+from rf_diffusion.conditions import hbond_satisfaction
 import rf_diffusion.frame_diffusion.data.utils as du
 import rf_diffusion
 from rf_diffusion.dev import analyze
@@ -864,6 +865,109 @@ class TestRegression(unittest.TestCase):
 
 
 
+    @pytest.mark.generates_golden
+    def test_inference_rfi_target_hbond_satisfaction(self):
+        '''
+        Test the 15 features of target_hbond_satisfaction
+        '''
+        run_inference.make_deterministic()
+        conf = construct_conf([
+            'diffuser.T=1',
+            'inference.num_designs=1',
+            'inference.input_pdb=test_data/1qys.pdb',
+            'contigmap.contigs=["A49-60"]',
+            "+contigmap.contig_atoms=\"{'A49':'all','A59':'N,C,OE1,OE2'}\"",
+            'inference.output_prefix=tmp/test_hbond_target_satisfaction',
+            '++inference.zero_weights=True',
+            'contigmap.has_termini=[True]',
+            '+extra_tXd=["target_hbond_satisfaction_cond"]',
+            '+extra_tXd_params.target_hbond_satisfaction_cond={}',
+            '++upstream_inference_transforms.names=[HBondTargetSatisfactionInferenceTransform]',
+            '++upstream_inference_transforms.configs.HBondTargetSatisfactionInferenceTransform.binder_bb_donates_to_target_bb=A50',#0
+            '++upstream_inference_transforms.configs.HBondTargetSatisfactionInferenceTransform.binder_bb_accepts_from_target_bb=A52',#1
+            '++upstream_inference_transforms.configs.HBondTargetSatisfactionInferenceTransform.binder_sc_donates_to_target_bb=A54',#2
+            '++upstream_inference_transforms.configs.HBondTargetSatisfactionInferenceTransform.binder_sc_accepts_from_target_bb=A60',#3
+            '++upstream_inference_transforms.configs.HBondTargetSatisfactionInferenceTransform.binder_bb_donates_to_target_sc=A51',#4
+            '++upstream_inference_transforms.configs.HBondTargetSatisfactionInferenceTransform.binder_bb_accepts_from_target_sc=A53',#5
+            '++upstream_inference_transforms.configs.HBondTargetSatisfactionInferenceTransform.binder_sc_donates_to_target_sc=A56',#6
+            '++upstream_inference_transforms.configs.HBondTargetSatisfactionInferenceTransform.binder_sc_accepts_from_target_sc=A57',#7
+            '++upstream_inference_transforms.configs.HBondTargetSatisfactionInferenceTransform.binder_bb_donates_to_target_atom=A59:OE2',#8
+            '++upstream_inference_transforms.configs.HBondTargetSatisfactionInferenceTransform.binder_bb_accepts_from_target_atom=A49:NE',#9
+            '++upstream_inference_transforms.configs.HBondTargetSatisfactionInferenceTransform.binder_sc_donates_to_target_atom=A59:OE1',#A
+            '++upstream_inference_transforms.configs.HBondTargetSatisfactionInferenceTransform.binder_sc_accepts_from_target_atom=A49:NH1',#B
+            '++upstream_inference_transforms.configs.HBondTargetSatisfactionInferenceTransform.binder_HIS_accepts_from_target_bb=A55',#C
+            '++upstream_inference_transforms.configs.HBondTargetSatisfactionInferenceTransform.binder_HIS_accepts_from_target_sc=A58',#D
+            '++upstream_inference_transforms.configs.HBondTargetSatisfactionInferenceTransform.binder_HIS_accepts_from_target_atom=A49:NH2',#E
+ 
+            '++transforms.names=["AddConditionalInputs","CenterPostTransform","ExpandConditionsDict"]',
+            '++transforms.configs.AddConditionalInputs.p_is_guidepost_example=0',
+            '++transforms.configs.ExpandConditionsDict={}',
+            '++transforms.configs.CenterPostTransform.center_type=is_not_diffused',
+        ])
+        N_cond = len(hbond_satisfaction.get_target_hbond_satisfaction_keys_for_t1d())
+        assert N_cond == 15
+        mapped_calls = get_rfi(conf)
+        print(mapped_calls[0]['t1d'].shape[-1])
+        assert mapped_calls[0]['t1d'].shape[-1] == 80 + N_cond * 2, "If this throws, the target_hbond_satisfaction_cond isn't being written to t1d"
+
+        # 0 'binder_bb_donates_to_target_bb',
+        # 1 'binder_bb_accepts_from_target_bb',
+        # 2 'binder_sc_donates_to_target_bb',
+        # 3 'binder_sc_accepts_from_target_bb',
+        # 4 'binder_bb_donates_to_target_sc',
+        # 5 'binder_bb_accepts_from_target_sc',
+        # 6 'binder_sc_donates_to_target_sc',
+        # 7 'binder_sc_accepts_from_target_sc',
+        # 8 'binder_bb_donates_to_target_atom',
+        # 9 'binder_bb_accepts_from_target_atom',
+        # A 'binder_sc_donates_to_target_atom',
+        # B 'binder_sc_accepts_from_target_atom',
+        # C 'binder_HIS_accepts_from_target_bb',
+        # D 'binder_HIS_accepts_from_target_sc',
+        # E 'binder_HIS_accepts_from_target_atom',
+ 
+        # 45         6
+        # 9012345678901234567890
+        # RISITARTKKEAEKFAAILIKVFA
+        # 904152C67DA3
+        # B         8
+        # E
+
+        n = None
+        conditions_in_order = [
+            #atomized
+            0, 4, 1, 5, 2, 12, 6, 7, 13,
+            #atomized
+            3,
+            # N,CA,C,O,CB,CG,CD,NE,CZ,NH1,NH2 # arg
+              n, n,n,n, n, n, n, 9, n, 11, 14,
+            # N,CA,C,O,CB,CG,CD,OE1,OE2 #glu
+              n, n,n,n, n, n, n, 10,  8
+        ]
+
+        assert len(conditions_in_order) == mapped_calls[0]['t1d'].shape[-2]
+
+        t1d = mapped_calls[0]['t1d'][0,0].clone()
+        offset = t1d.shape[-1] - N_cond *2
+
+        for icond in range(N_cond):
+            idx0 = conditions_in_order.index(icond)
+
+            mask = t1d[:,offset + icond*2]
+            value = t1d[:,offset + icond*2 + 1]
+
+            assert torch.isclose(mask[idx0], torch.tensor(1.0))
+            mask[idx0] = 0
+            assert torch.allclose(mask, torch.tensor(0.0))
+
+            assert torch.isclose(value[idx0], torch.tensor(1.0)) 
+            value[idx0] = 0
+            assert torch.allclose(mask, torch.tensor(0.0))
+
+        cmp = partial(tensor_util.cmp, atol=5e-2, rtol=0)
+        test_utils.assert_matches_golden(self, 'target_hbond_sat', mapped_calls, rewrite=False, custom_comparator=cmp)
+
+        
     @pytest.mark.generates_golden
     def test_inference_rfi_SSSprinkle(self):
         # Tests the SSSprinkle inference condition

@@ -64,6 +64,7 @@ inference:
     ss_adj_cond: {}
     ppi_hotspots_antihotspots: {}
     ideal_ss_cond: {}
+    target_hbond_satisfaction_cond: {}
   safety:
     # Indicates that a user is carefully performing sidechain partial diffusion.
     # We require this to be set, as unless a user is careful this causes undefined behavior.

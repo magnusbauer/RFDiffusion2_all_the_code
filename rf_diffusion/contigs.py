@@ -1,5 +1,6 @@
 import random
 import sys
+from collections import defaultdict
 
 import numpy as np
 import torch
@@ -273,22 +274,26 @@ class ContigMap():
             deterministic=self.deterministic
         )
 
-    def res_list_to_mask(self, res_list):
+    def res_list_to_mask(self, res_list, allow_atomized_residues=False):
         '''
         Using self.ref as the guide (which refers to the numbering in the input pdb)
         Return a mask of residues specified by res_list. Think ppi hotspot list
         res_list should be comma separated and have chain letters for all residues
         Ligand residues can also be specified with LIGNAME:ATOM. Atom ranges are allowed and are in pdb order. Drop spaces from ligand names
+        Atomized residues are specified in the same way as ligands. B53:NE2
 
         Args:
-            res_list (str): comma separated list to select, must have chain letters for all residues (A5,A6-10,B12 etc). Ligands like LG1:C1-C9
+            res_list (str): comma separated list to select, must have chain letters for all residues (A5,A6-10,B12 etc). Ligands like LG1:C1-C9. Atomized like A45:NZ
 
         Returns:
             mask (torch.Tensor[bool]): Which residues were selected
+            (optional) atomized_residues (dict[int,List[str]]): The idx0 and atom names of to-be-atomized residue atom selections
         '''
         mask = torch.zeros((len(self.ref),), dtype=bool)
+        atomized_residues = defaultdict(list)
 
         ref_stripped = [(x.strip() if isinstance(x, str) else x, y.strip() if isinstance(y, str) else y) for x,y in self.ref]
+        lig_names = set([x for x,y in ref_stripped if x != ''])
 
         for part in res_list.split(','):
             if ':' in part:
@@ -297,11 +302,19 @@ class ContigMap():
                     start,stop = atom_part.split('-')
                 else:
                     start = stop = atom_part
-                assert (lig_name, start) in ref_stripped, f'Atom {lig_name}:{start} not found. From residue list: {res_list}'
-                start_idx = ref_stripped.index((lig_name, start))
-                assert (lig_name, stop) in ref_stripped, f'Atom {lig_name}:{stop} not found. From residue list: {res_list}'
-                stop_idx = ref_stripped.index((lig_name, stop))
-                mask[start_idx:stop_idx+1] = True
+
+                if allow_atomized_residues and lig_name not in lig_names:
+                    atomized_mask = self.res_list_to_mask(lig_name)
+                    wh = torch.where(atomized_mask)[0]
+                    assert len(wh) == 1, f"Don't specify dashes in the index when specifying atomized residue selections {lig_name}"
+                    assert start == stop, 'Atom ranges not allowed when specifying atomized residue selections {part}'
+                    atomized_residues[int(wh[0])].append(start) # int to drop tensor
+                else:
+                    assert (lig_name, start) in ref_stripped, f'Atom {lig_name}:{start} not found. From residue list: {res_list}'
+                    start_idx = ref_stripped.index((lig_name, start))
+                    assert (lig_name, stop) in ref_stripped, f'Atom {lig_name}:{stop} not found. From residue list: {res_list}'
+                    stop_idx = ref_stripped.index((lig_name, stop))
+                    mask[start_idx:stop_idx+1] = True
             else:
                 goal_chain = part[0]
                 assert goal_chain.isalpha(), f'Residue list: {res_list} missing chain identifier on this part: {part}'
@@ -317,4 +330,8 @@ class ContigMap():
                             found = True
                             break
                     assert found, f'Residue {goal_chain}{goal_num} not found. From residue list: {res_list}'
-        return mask
+
+        if allow_atomized_residues:
+            return mask, {k:v for k,v in atomized_residues.items()}
+        else:
+            return mask

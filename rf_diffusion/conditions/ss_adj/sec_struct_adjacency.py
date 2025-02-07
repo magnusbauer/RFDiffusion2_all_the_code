@@ -192,7 +192,23 @@ class SecStructAdjacency:
         self.adj = expand_2d_atomized_ok_gp_not(indep, self.adj, post_idx_from_pre_idx, ADJ_MASK, key='ss_adj-adj')
         return self
 
+    def pop_mask(self, pop):
+        '''
+        Remove positions from indep and subsequently this ss/adj object
 
+        Args:
+            pop (torch.Tensor[bool]): Positions to keep [L]
+
+        Returns:
+            None
+        '''
+        if self.ss is not None:
+            assert len(self.ss) == len(pop), f'SecStructAdjacency.pop_mask() called but ss {len(self.ss)} does not match pop {len(pop)}'
+            self.ss = self.ss[pop]
+
+        if self.adj is not None:
+            assert len(self.adj) == len(pop), f'SecStructAdjacency.pop_mask() called but adj {len(self.adj)} does not match pop {len(pop)}'
+            self.adj = self.adj[pop]
 
 
 def mask_adj_from_masked_ss(ss, adj):

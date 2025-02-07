@@ -8,6 +8,8 @@ from rf_diffusion import aa_model
 from rf_diffusion import structure
 import rf_diffusion.conditions.ss_adj.sec_struct_adjacency as sec_struct_adj
 import rf_diffusion.conditions.ideal_ss as ideal_ss
+from rf_diffusion.conditions import hbond_satisfaction
+
 from rf_diffusion import ppi
 
 from typing import TYPE_CHECKING
@@ -483,6 +485,7 @@ featurizers = {
     'ss_adj_cond': sec_struct_adj.get_ss_adj_conditioning,
     'ppi_hotspots_antihotspots': ppi.get_hotspots_antihotspots_conditioning,
     'ideal_ss_cond': ideal_ss.get_ideal_ss_conditioning,
+    'target_hbond_satisfaction_cond': hbond_satisfaction.get_hbond_target_satisfaction_conditioning,
 }
 
 # Add user specific featurizers to this dictionary for inference
@@ -499,6 +502,7 @@ inference_featurizers = {
     'ss_adj_cond': sec_struct_adj.get_ss_adj_conditioning_inference,
     'ppi_hotspots_antihotspots': ppi.get_hotspots_antihotspots_conditioning_inference,
     'ideal_ss_cond': ideal_ss.get_ideal_ss_conditioning_inference,
+    'target_hbond_satisfaction_cond': hbond_satisfaction.get_hbond_target_satisfaction_conditioning_inference,
 }
 
 # Add user specific featurizer initializer functions to this dictionary (optional) for inference

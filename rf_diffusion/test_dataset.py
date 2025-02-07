@@ -692,6 +692,39 @@ class Dataloader(unittest.TestCase):
 
         test_utils.assert_matches_golden(self, golden_name, indep, rewrite=REWRITE, custom_comparator=self.cmp)
 
+
+    def test_target_hbond_satisfaction(self):
+        '''
+        This tests the ideal_ss training code
+        '''
+        dataset = 'compl'
+        mask = 'get_PPI_random_motif_no_crop'
+        loader_out = self.indep_for_dataset(dataset, mask, overrides=[
+            '+extra_tXd=["target_hbond_satisfaction_cond"]',
+            '+extra_tXd_params.target_hbond_satisfaction_cond={}',
+            '++transforms.names=["AddConditionalInputs","ExpandConditionsDict"]',
+            '++transforms.configs.AddConditionalInputs.p_is_guidepost_example=0',
+            '++transforms.configs.ExpandConditionsDict={}',
+            '++upstream_training_transforms.names=["GenerateMasks","PopMask","HBondTargetSatisfactionTrainingTransform"]',
+            '++upstream_training_transforms.configs.HBondTargetSatisfactionTrainingTransform.p_bb_sc_cats_shown=1',
+            '++upstream_training_transforms.configs.HBondTargetSatisfactionTrainingTransform.hb_score_to_count=-0.01',
+            '++upstream_training_transforms.configs.HBondTargetSatisfactionTrainingTransform.p_tiny_labeling=1',
+            '++dataloader.mask.only_first_chain_ppi_binders=True'
+            ])
+        indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context, conditions_dict = loader_out
+        indep.metadata = None
+
+        golden_name = f'indep_{dataset}-{mask}_target_hbond_sat'
+
+        if self.show_in_pymol:
+            name, names = show.one(indep, None)
+            show.cmd.do('util.cbc')
+            show.diffused(indep, is_diffused, 'true')
+
+
+        test_utils.assert_matches_golden(self, golden_name, indep, rewrite=REWRITE, custom_comparator=self.cmp)
+
+
     def test_get_diffusion_mask_islands_w_tip_w_seq_islands(self):
         '''
         This test tests two things:

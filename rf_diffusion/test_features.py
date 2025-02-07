@@ -4,6 +4,8 @@ import unittest
 from rf_diffusion import aa_model
 import rf_diffusion.structure as structure
 from rf_diffusion import sasa
+from rf_diffusion import calc_hbonds
+from rf_diffusion.chemical import ChemicalData as ChemData
 
 
 class TestSSComp(unittest.TestCase):
@@ -124,6 +126,108 @@ class TestSSComp(unittest.TestCase):
                     mask = torch.tensor(mask)
                     saw_sasa = sasa_per_res[mask]
                     assert torch.allclose(saw_sasa, goal_sasa, atol=3.), f'Order: {order} forwards_order: {forwards_order}'
+
+
+    def test_hbond_protein_don_acc(self):
+        '''
+        This test ensures that the hbond machinery correctly assigns donors and acceptors to the canonical 20 amino acids
+        '''
+
+        indep = aa_model.indep_from_sequence('ACDEFGHIKLMNPQRSTVWY')
+
+        polar_dict = calc_hbonds.find_polymer_polar_atoms(indep)
+
+        donor_dict = {
+            'A':['N',],
+            'C':['N',],
+            'D':['N',],
+            'E':['N',],
+            'F':['N',],
+            'G':['N',],
+            'H':['N','ND1','NE2'],
+            'I':['N',],
+            'K':['N','NZ'],
+            'L':['N',],
+            'M':['N',],
+            'N':['N','ND2'],
+            'P':[],
+            'Q':['N','NE2'],
+            'R':['N','NE','NH1','NH2'],
+            'S':['N','OG'],
+            'T':['N','OG1'],
+            'V':['N',],
+            'W':['N','NE1'],
+            'Y':['N','OH'],
+        }
+        acceptor_dict = {
+            'A':['O',],
+            'C':['O',],
+            'D':['O','OD1','OD2'],
+            'E':['O','OE1','OE2'],
+            'F':['O',],
+            'G':['O',],
+            'H':['O','ND1','NE2'],
+            'I':['O',],
+            'K':['O',],
+            'L':['O',],
+            'M':['O',],
+            'N':['O','OD1'],
+            'P':['O',],
+            'Q':['O','OE1'],
+            'R':['O',],
+            'S':['O','OG'],
+            'T':['O','OG1'],
+            'V':['O',],
+            'W':['O',],
+            'Y':['O','OH'],
+        }
+
+        polar_idx0 = polar_dict['polar_idx0']
+        polar_iatom = polar_dict['polar_iatom']
+        is_donor = polar_dict['is_donor']
+        is_acceptor = polar_dict['is_acceptor']
+        is_carbonyl_O = polar_dict['is_carbonyl_O']
+        is_sp2 = polar_dict['is_sp2']
+
+        for idx0 in range(indep.length()):
+
+            seq0 = indep.seq[idx0]
+            one_letter= ChemData().one_letter[seq0]
+            short_names = [x.strip() if x is not None else '' for x in ChemData().aa2long[seq0][:ChemData().NHEAVY]]
+
+            real_donors = torch.sort(torch.tensor([short_names.index(x) for x in donor_dict[one_letter]])).values.long()
+            real_acceptors = torch.sort(torch.tensor([short_names.index(x) for x in acceptor_dict[one_letter]])).values.long()
+
+            don_mask = (polar_idx0 == idx0) & is_donor
+            acc_mask = (polar_idx0 == idx0) & is_acceptor
+
+            our_donors = torch.sort(polar_iatom[don_mask]).values.long()
+            our_acceptors = torch.sort(polar_iatom[acc_mask]).values.long()
+
+            assert torch.allclose(real_donors, our_donors), f'{one_letter}, {real_donors}, {our_donors}'
+            assert torch.allclose(real_acceptors, our_acceptors), f'{one_letter}, {real_acceptors}, {our_acceptors}'
+
+            both_don_acc = set([int(x) for x in our_donors]) & set([int(x) for x in our_acceptors])
+
+            # Make sure everything besides lysine and the hydroxyls are sp2
+            for idon in torch.where(don_mask)[0]:
+                iatom = polar_iatom[idon]
+                if one_letter != 'H' and int(iatom) in both_don_acc:
+                    assert one_letter in 'STY'
+                    continue
+                if one_letter == 'K':
+                    continue
+                assert is_sp2[idon]
+
+            # Make sure all of the "pure acceptors" are sp2 and marked as carbonyls
+            for iacc in torch.where(acc_mask)[0]:
+                iatom = polar_iatom[iacc]
+                if int(iatom) in both_don_acc:
+                    assert one_letter in 'STYH'
+                    continue
+                assert is_sp2[iacc]
+                assert is_carbonyl_O[iacc], f'{one_letter} {iatom}'
+
 
 
 REWRITE = False
