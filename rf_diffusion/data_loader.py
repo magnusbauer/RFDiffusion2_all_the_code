@@ -2255,7 +2255,7 @@ def get_dataset_and_sampler(dataset_configs, dataset_options, dataset_prob, conf
     else:
         # These are the "new" ones that assert the presense
         use_datahub = datahub_mode in ['DATAHUB', 'BOTH']
-        use_old = not datahub_mode in ['OLD', 'BOTH']
+        use_old = datahub_mode in ['OLD', 'BOTH']
 
         if use_datahub:
             assert 'datahub' in conf, f'DATASET.DATAHUB_MODE={datahub_mode} but datahub conf not yaml'
