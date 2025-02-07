@@ -768,7 +768,7 @@ def make_row_from_traj(traj_prefix, use_trb=True):
     
     synth_row['rundir'], synth_row['name'] = os.path.split(traj_prefix)
     synth_row['mpnn_index'] = 0
-    if 'packed/' in synth_row['rundir']:
+    if 'packed' in synth_row['rundir']:
         synth_row['rundir'] = os.path.dirname(synth_row['rundir'])
         synth_row['name'] = re.sub(r'_\d+$', '', synth_row['name'])
     if 'mpnn/' in traj_prefix:
