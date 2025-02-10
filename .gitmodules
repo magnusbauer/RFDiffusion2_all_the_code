@@ -9,10 +9,10 @@
 	url = git@github.com:baker-laboratory/fused_mpnn.git
 [submodule "lib/datahub"]
 	path = lib/datahub
-	url = git@git.ipd.uw.edu:ai/datahub.git
+	url = git@github.com:baker-laboratory/datahub.git
 [submodule "lib/cifutils"]
 	path = lib/cifutils
-	url = git@git.ipd.uw.edu:ai/cifutils.git
+	url = git@github.com:baker-laboratory/cifutils.git
 [submodule "lib/ipd"]
 	path = lib/ipd
 	url = https://github.com/baker-laboratory/ipd.git
