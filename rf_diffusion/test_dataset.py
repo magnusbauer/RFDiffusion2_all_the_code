@@ -693,6 +693,37 @@ class Dataloader(unittest.TestCase):
         test_utils.assert_matches_golden(self, golden_name, indep, rewrite=REWRITE, custom_comparator=self.cmp)
 
 
+
+
+    def test_dhub_pdb_dataset(self):
+        '''
+        This tests the datahub dataset loading as well as the ReorderChains dhub transform and the
+            machinery that loads dhub values into conditions dict
+        '''
+        dataset = None
+        mask = 'get_diffusion_mask_simple'
+        loader_out = self.indep_for_dataset(dataset, mask, overrides=[
+            '++datahub.test_dhub_dataset.probability=1.0',
+            '++dataloader.DATASET_PROB=[0.0]',
+            '++transforms.configs.AddConditionalInputs.p_is_guidepost_example=0',
+            ], config_name='debug_dhub')
+        indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context, conditions_dict = loader_out
+        indep.metadata = None
+
+
+        assert torch.allclose(conditions_dict['my_arange_condition'].long(), torch.cat([torch.arange(10, 20), torch.arange(10)]))
+
+        golden_name = f'indep_dhub-{mask}_reorder_arange_test'
+
+        if self.show_in_pymol:
+            name, names = show.one(indep, None)
+            show.cmd.do('util.cbc')
+            show.diffused(indep, is_diffused, 'true')
+
+
+        test_utils.assert_matches_golden(self, golden_name, indep, rewrite=True, custom_comparator=self.cmp)
+
+
     def test_target_hbond_satisfaction(self):
         '''
         This tests the ideal_ss training code

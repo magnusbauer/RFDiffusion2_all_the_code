@@ -1,0 +1,87 @@
+# Configuration for inference on SE(3) diffusion experiments.
+defaults:
+  - debug
+
+dataloader:
+  DATAHUB_MODE: BOTH
+  DATAPKL_AA: aa_dataset_256_subsampled_10.pkl
+  DATASETS: sm_complex
+  DATASET_PROB: [0.5]
+  CROP: 60
+
+
+transforms:
+  names:
+    - AddConditionalInputs
+    - ExpandConditionsDict
+    - CenterPostTransform
+    - RejectOutOfMemoryHazards
+
+  configs:
+    AddConditionalInputs:
+      p_is_guidepost_example: ${dataloader.P_IS_GUIDEPOST_EXAMPLE}
+      guidepost_bonds: ${guidepost_bonds}
+    ExpandConditionsDict:
+        extra_expand_1d_atomized_ok_gp_not_conditions:
+            - my_arange_condition
+    CenterPostTransform:
+      jitter: 5.0
+      jitter_clip: 20.0
+      center_type: 'all'
+    RejectOutOfMemoryHazards:
+      max_size: 364
+
+datahub:
+  test_dhub_dataset:
+    probability: 0.5
+    dataset:
+      _target_: datahub.datasets.base.StructuralDatasetWrapper
+      save_failed_examples_to_dir: null
+      cif_parser:
+        _target_: cifutils.CIFParser
+      cif_parser_args:
+        load_from_cache: False
+        save_to_cache: False
+      dataset_parser:
+        _target_: rf_diffusion.datahub_dataset_interface.SimplePathParser
+      dataset:
+        _target_: datahub.datasets.base.PandasDataset
+        name: debug_dataset
+        id_column: example_id
+        data: test_data/test_dataset/test_dataset.parquet
+        filters:
+          - "cluster.notnull()"
+        columns_to_load:
+          # columns required for identification, filtering & weighting
+          - example_id
+          - cluster
+          - path
+          - reorder_chains
+          - n_prot
+          - n_nuc
+          - n_ligand
+          - my_arange_condition
+      transform:
+        _target_: rf_diffusion.datahub_pipelines.rf_diffusion.build_rf_diffusion_transform_pipeline
+        crop_size: 3000
+        crop_contiguous_probability: 0.9
+        crop_spatial_probability: 0.1
+        conditions_dict_atom_array_keys:
+          - my_arange_condition
+        extra_pre_crop_transforms:
+          Load1DAtomArrayFeatures: # This must before ReorderChains
+            _target_: rf_diffusion.datahub_dataset_interface.Load1DAtomArrayFeatures
+            features:
+                - my_arange_condition
+          ReorderChains:
+            _target_: rf_diffusion.datahub_dataset_interface.ReorderChains
+
+    weights:
+      _target_: datahub.samplers.calculate_weights_for_pdb_dataset_df
+      beta: 0.5
+      alphas:
+        a_prot: 3.0
+        a_nuc: 3.0
+        a_ligand: 1.0
+
+

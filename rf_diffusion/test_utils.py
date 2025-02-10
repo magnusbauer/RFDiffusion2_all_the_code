@@ -13,7 +13,7 @@ from omegaconf import DictConfig, OmegaConf
 
 from rf2aa import tensor_util
 from rf_diffusion.data_loader import (
-    default_dataset_configs,
+    default_dataset_configs, get_dataset_and_sampler,
     DistilledDataset, DistributedWeightedSampler, DatasetWithNextExampleRetry, DistilledDatasetUnnoised
 )
 from torch.utils import data
@@ -326,25 +326,12 @@ def get_dataloader(conf: DictConfig, epoch=0) -> None:
     dataset_configs, homo = default_dataset_configs(conf.dataloader, debug=conf.debug)
 
     print('Making train sets')
-    unnoised_dataset = DistilledDatasetUnnoised(
-                dataset_configs=dataset_configs,
-                params=conf.dataloader,
-                preprocess_param=conf.preprocess,
-                conf=conf,
-                homo=homo,
-                )
-    
-    train_set = DistilledDataset(dataset=unnoised_dataset,
-                                    params=conf.dataloader, diffuser=diffuser,
-                                    preprocess_param=conf.preprocess, conf=conf, homo=homo)
 
-    train_set = DatasetWithNextExampleRetry(train_set)
-    
-    train_sampler = DistributedWeightedSampler(dataset_configs,
-                                                dataset_options=conf.dataloader['DATASETS'],
-                                                dataset_prob=conf.dataloader['DATASET_PROB'],
-                                                num_example_per_epoch=conf.epoch_size,
-                                                num_replicas=1, rank=0, replacement=True)
+    train_set, train_sampler = get_dataset_and_sampler(dataset_configs, conf.dataloader['DATASETS'], conf.dataloader['DATASET_PROB'], conf, diffuser,
+                conf.epoch_size, 1, 0, homo,
+                datahub_mode=conf.dataloader.get('DATAHUB_MODE', 'DATAHUB_IF_AVAILABLE')
+                )
+
     train_sampler.epoch = epoch
     
     # mp.cpu_count()-1
@@ -373,18 +360,36 @@ def loader_out_from_conf_datahub(conf, epoch=0):
 
 
 def loader_out_for_dataset(dataset, mask, overrides=[], epoch=0, config_name='debug'):
+    '''
+    Generate the output from the dataloader for a given dataset, mask, overrides, and config
+
+    Args:
+        dataset (str or None): The dataset to pull from. None if you want to rely on the config's default probabilities
+        mask (str): The diffusion mask to use
+        overrides (list[str]): Additional configs to pass through
+        epoch (int): The epoch to pass into the loader
+        config_name (str): The name of the config to use in configs/training/*.yaml
+
+    Returns:
+        loader_out (tuple): The standard return value from the dataloader
+    '''
+    if dataset is None:
+        dataset_prob_part = []
+    else:
+        dataset_prob_part = [
+            f'dataloader.DATASETS={dataset}',
+            'dataloader.DATASET_PROB=[1.0]',
+        ]
     conf = construct_conf([
         'dataloader.DATAPKL_AA=aa_dataset_256_subsampled_10.pkl',
         '+dataloader.ligands_to_remove=[]', # Remove this line when the subsampled dataset is remade
         '+dataloader.min_metal_contacts=0', # Remove this line when the subsampled dataset is remade        
         'dataloader.CROP=256',
-        f'dataloader.DATASETS={dataset}',
-        'dataloader.DATASET_PROB=[1.0]',
         'dataloader.DIFF_MASK_PROBS=null',
         f'dataloader.DIFF_MASK_PROBS={{{mask}:1.0}}',
         'debug=True',
         'spoof_item=null',
-    ] + overrides, config_name=config_name)
+    ] + dataset_prob_part + overrides, config_name=config_name)
     
     return loader_out_from_conf(conf, epoch=epoch)
 
