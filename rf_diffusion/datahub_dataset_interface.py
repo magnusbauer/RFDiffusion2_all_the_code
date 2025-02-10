@@ -179,9 +179,9 @@ class ReorderChains(Transform):
 
         reorder_map = torch.tensor([int(x) for x in reorder_string.split(',')])
 
-        known_chain_iids = set()
+        known_chain_iids = dict() # Sets aren't ordered which is the dumbest thing ever
         for iid in data['atom_array'].chain_iid:
-            known_chain_iids.add(iid)
+            known_chain_iids[iid] = True
 
         known_chain_iids = list(known_chain_iids)
 
