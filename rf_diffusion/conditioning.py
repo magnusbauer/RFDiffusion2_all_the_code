@@ -680,7 +680,8 @@ class ExpandConditionsDict:
 
     Also asserts the contents of conditions_dict
     '''
-    def __init__(self):
+    def __init__(self, extra_expand_1d_atomized_ok_gp_not_conditions=[]):
+        self.extra_expand_1d_atomized_ok_gp_not_conditions = extra_expand_1d_atomized_ok_gp_not_conditions
         pass
 
     def __call__(self, indep, atomizer, conditions_dict, contig_map, **kwargs):
@@ -709,7 +710,7 @@ class ExpandConditionsDict:
             # Conditions dict elements that kinda break the rules and do more calculations than they should (because they need atomized indeps)
             'target_hbond_satisfaction', # Enters: HBondSatisfactionApplierBase
                                          # Exists: dict[string,torch.Tensor[float]]: Various metrics related to h-bond satisfaction
-        ])
+        ] + self.extra_expand_1d_atomized_ok_gp_not_conditions)
 
         post_idx_from_pre_idx, is_atomized = aa_model.generate_pre_to_post_transform_indep_mapping(indep, atomizer, contig_map.gp_to_ptn_idx0)
 
@@ -747,6 +748,11 @@ class ExpandConditionsDict:
             elif key == 'target_hbond_satisfaction':
                 # I know this isn't great. But how do we fullfill Woody's dream of "same calculations after the transforms" when we need an atomized indep?
                 new_conditions_dict['target_hbond_satisfaction'] = conditions_dict['target_hbond_satisfaction'].generate_conditions_on_atomized_indep(indep, post_idx_from_pre_idx, is_atomized)
+
+            elif key in self.extra_expand_1d_atomized_ok_gp_not_conditions:
+                # For "temporary" values in the conditions_dict that could perhaps come from datahub
+                fill_value = torch.nan if torch.is_floating_point(conditions_dict[key]) else 0
+                new_conditions_dict[key] = expand_1d_atomized_ok_gp_not(indep, conditions_dict[key], post_idx_from_pre_idx, fill_value, key)
 
             else:
                 assert False, f'Key {key}: not processed in ExpandConditionsDict'
