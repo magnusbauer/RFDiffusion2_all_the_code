@@ -721,7 +721,7 @@ class Dataloader(unittest.TestCase):
             show.diffused(indep, is_diffused, 'true')
 
 
-        test_utils.assert_matches_golden(self, golden_name, indep, rewrite=True, custom_comparator=self.cmp)
+        test_utils.assert_matches_golden(self, golden_name, indep, rewrite=REWRITE, custom_comparator=self.cmp)
 
 
     def test_target_hbond_satisfaction(self):

@@ -35,17 +35,15 @@ datahub:
   test_dhub_dataset:
     probability: 0.5
     dataset:
-      _target_: datahub.datasets.base.StructuralDatasetWrapper
+      _target_: datahub.datasets.datasets.StructuralDatasetWrapper
       save_failed_examples_to_dir: null
-      cif_parser:
-        _target_: cifutils.CIFParser
       cif_parser_args:
         load_from_cache: False
         save_to_cache: False
       dataset_parser:
         _target_: rf_diffusion.datahub_dataset_interface.SimplePathParser
       dataset:
-        _target_: datahub.datasets.base.PandasDataset
+        _target_: datahub.datasets.datasets.PandasDataset
         name: debug_dataset
         id_column: example_id
         data: test_data/test_dataset/test_dataset.parquet
@@ -77,11 +75,7 @@ datahub:
             _target_: rf_diffusion.datahub_dataset_interface.ReorderChains
 
     weights:
-      _target_: datahub.samplers.calculate_weights_for_pdb_dataset_df
-      beta: 0.5
-      alphas:
-        a_prot: 3.0
-        a_nuc: 3.0
-        a_ligand: 1.0
+      _target_: datahub.samplers.calculate_weights_by_inverse_cluster_size
+
 
 

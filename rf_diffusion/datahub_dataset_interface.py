@@ -6,7 +6,7 @@ from typing import Any
 from pathlib import Path
 
 from datahub.transforms.base import Transform
-from datahub.transforms.atomize import AtomizeResidues, FlagNonPolymersForAtomization
+from datahub.transforms.atomize import AtomizeByCCDName, FlagNonPolymersForAtomization
 from datahub.transforms.bonds import AddTokenBondAdjacency, AddRF2AABondFeaturesMatrix
 from datahub.utils.token import get_token_starts
 from datahub.transforms.encoding import atom_array_to_encoding
@@ -18,7 +18,7 @@ from datahub.transforms._checks import (
     check_is_instance,
 )
 from datahub.utils.token import spread_token_wise
-from datahub.datasets.dataframe_parsers import MetadataRowParser
+from datahub.datasets.parsers.base import MetadataRowParser
 from rf_diffusion.conditions.util import pop_conditions_dict
 
 from rf_diffusion.aa_model import Indep, N_TERMINUS, C_TERMINUS, is_occupied, pop_mask, deatomize_covales
@@ -26,7 +26,7 @@ class BackwardCompatibleDataLoaderProcessOut(Transform):
     requires_previous_transforms = [
         FlagNonPolymersForAtomization,
         AddProteinTerminiAnnotation,
-        AtomizeResidues,
+        AtomizeByCCDName,
         AddTokenBondAdjacency,
         AddRF2AABondFeaturesMatrix
     ]

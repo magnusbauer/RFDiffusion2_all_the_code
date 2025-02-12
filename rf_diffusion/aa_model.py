@@ -2365,6 +2365,8 @@ class AtomizeResidues:
             # rf2aa.util.atomize_protein(res_idx, indep_deatomized.seq[None], xyz, atom_mask, n_res_atomize=1)
             r,a = ra.T
             C_index = torch.all(ra==torch.tensor([r[-1],2]),dim=1).nonzero()
+            assert len(C_index) == 1
+            C_index = int(C_index[0])
             
             natoms = seq_atomize.shape[0]
             # update the chirals to be after all the other residues
@@ -2389,15 +2391,15 @@ class AtomizeResidues:
                 bond_feats_new[L, res_idx-1] = 6 # protein (backbone)-atom bond 
             # add bond between protein and C, assumes every residue is being atomized one at a time (eg n_res_atomize=1)
             if C_resolved:
-                bond_feats_new[res_idx+1, L+int(C_index.numpy())] = 6 # protein (backbone)-atom bond 
-                bond_feats_new[L+int(C_index.numpy()), res_idx+1] = 6 # protein (backbone)-atom bond 
+                bond_feats_new[res_idx+1, L+C_index] = 6 # protein (backbone)-atom bond 
+                bond_feats_new[L+C_index, res_idx+1] = 6 # protein (backbone)-atom bond 
             # handle drawing peptide bond between contiguous atomized residues
             res_is_na = nucl_utils.get_resi_type_mask(residue, 'na')  # Do not include if it is a nucleic acid
             if indep_deatomized.idx[res_idx]-indep_deatomized.idx[prev_res_idx] == 1 and prev_res_idx > -1 and not res_is_na:
                 bond_feats_new[prev_C_index, L] = 1 # single bond
                 bond_feats_new[L, prev_C_index] = 1 # single bond
             prev_res_idx = res_idx
-            prev_C_index =  L+int(C_index.numpy())
+            prev_C_index =  L+C_index
             #update same_chain every iteration
             same_chain_new = torch.zeros((L+natoms, L+natoms))
             same_chain_new[:L, :L] = indep_deatomized.same_chain

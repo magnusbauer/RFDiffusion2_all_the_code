@@ -9,15 +9,9 @@ from datahub.transforms.atom_array import (
     AddGlobalTokenIdAnnotation,
     AddProteinTerminiAnnotation,
     AddWithinPolyResIdxAnnotation,
-    HandleUndesiredResTokens,
-    RemoveHydrogens,
-    RemoveTerminalOxygen,
-    RemoveUnresolvedPNUnits,
-    RemoveUnsupportedChainTypes,
-    # RemoveUnresolvedLigandAtomsIfTooMany,
     SortLikeRF2AA,
 )
-from datahub.transforms.atomize import AtomizeResidues, FlagNonPolymersForAtomization
+from datahub.transforms.atomize import AtomizeByCCDName, FlagNonPolymersForAtomization
 from datahub.transforms.base import Compose, ConvertToTorch, RandomRoute
 from datahub.transforms.bonds import (
     AddRF2AABondFeaturesMatrix,
@@ -26,6 +20,13 @@ from datahub.transforms.bonds import (
 from datahub.transforms.covalent_modifications import FlagAndReassignCovalentModifications
 from datahub.transforms.crop import CropContiguousLikeAF3, CropSpatialLikeAF3
 from datahub.transforms.encoding import EncodeAtomArray
+from datahub.transforms.filters import (
+    HandleUndesiredResTokens,
+    RemoveHydrogens,
+    RemoveTerminalOxygen,
+    RemoveUnresolvedPNUnits,
+    RemoveUnsupportedChainTypes
+)
 
 from datahub.transforms.symmetry import AddPostCropMoleculeEntityToFreeFloatingLigands
 from rf_diffusion.datahub_dataset_interface import BackwardCompatibleDataLoaderProcessOut
@@ -180,7 +181,7 @@ def build_rf_diffusion_transform_pipeline(
         # ...flag non-polymers for atomization (in case there are polymer tokens outside of a polymer)
         FlagNonPolymersForAtomization(),
         # ...atomize
-        AtomizeResidues(
+        AtomizeByCCDName(
             atomize_by_default=True,
             res_names_to_atomize=res_names_to_atomize,
             res_names_to_ignore=encoding.tokens,

@@ -14,16 +14,16 @@ epoch_size: 24000
 prob_self_cond: 0.5
 seq_self_cond: False
 sequence_decode: True
-rundir: /net/scratch/ptkim/new_dataloader_redux
+rundir: /net/scratch/bcov/new_dataloader_redux
 interactive: False
 batch_size: 1
 verbose_checks: False
 lr: 0.001
 l2_coeff: 0.01
 model_name: RFD
-ckpt_load_path: /home/ptkim/netlink/new_dataloader_redux/center_all_from_pretrained_weights_new_dataloader_redux2024-10-30_10:50:15.943906/rank_0/models/RFD_3.pt
-resume: True
-resume_scheduler: True
+# ckpt_load_path: /home/ptkim/netlink/new_dataloader_redux/center_all_from_pretrained_weights_new_dataloader_redux2024-10-30_10:50:15.943906/rank_0/models/RFD_3.pt
+resume: False
+resume_scheduler: False
 reinitialize_missing_params: False
 zero_weights: False
 n_epoch: 500
@@ -44,18 +44,16 @@ datahub:
   pdb:
     probability: 0.5
     dataset:
-      _target_: datahub.datasets.base.StructuralDatasetWrapper
+      _target_: datahub.datasets.datasets.StructuralDatasetWrapper
       save_failed_examples_to_dir: null
-      cif_parser:
-        _target_: cifutils.CIFParser
       cif_parser_args:
         load_from_cache: True
         save_to_cache: True
-        cache_dir: /net/scratch/ptkim/datahub_pn_units_cache
+        cache_dir: /net/scratch/bcov/datahub_pn_units_cache
       dataset_parser:
-        _target_: datahub.datasets.dataframe_parsers.PNUnitsDFParser
+        _target_: datahub.datasets.parsers.default_metadata_row_parsers.PNUnitsDFParser
       dataset:
-        _target_: datahub.datasets.base.PandasDataset
+        _target_: datahub.datasets.datasets.PandasDataset
         name: pn_unit
         id_column: example_id
         data: /projects/ml/RF2_allatom/datasets/pdb/2024_09_10/pn_units_df.parquet
@@ -85,28 +83,22 @@ datahub:
         crop_contiguous_probability: 0.9
         crop_spatial_probability: 0.1
     weights:
-      _target_: datahub.samplers.calculate_weights_for_pdb_dataset_df
-      beta: 0.5
-      alphas:
-        a_prot: 3.0
-        a_nuc: 3.0
-        a_ligand: 1.0
+      _target_: datahub.samplers.calculate_weights_by_inverse_cluster_size
+
 
   pdb_interface:
     probability: 0.5
     dataset:
-      _target_: datahub.datasets.base.StructuralDatasetWrapper
+      _target_: datahub.datasets.datasets.StructuralDatasetWrapper
       save_failed_examples_to_dir: null
-      cif_parser:
-        _target_: cifutils.CIFParser
       cif_parser_args:
         load_from_cache: True
         save_to_cache: True
-        cache_dir: /net/scratch/ptkim/datahub_interface_cache
+        cache_dir: /net/scratch/bcov/datahub_interface_cache
       dataset_parser:
-        _target_: datahub.datasets.dataframe_parsers.InterfacesDFParser
+        _target_: datahub.datasets.parsers.default_metadata_row_parsers.InterfacesDFParser
       dataset:
-        _target_: datahub.datasets.base.PandasDataset
+        _target_: datahub.datasets.datasets.PandasDataset
         name: interface
         id_column: example_id
         data: /projects/ml/RF2_allatom/datasets/pdb/2024_09_10/interfaces_df.parquet
@@ -141,12 +133,7 @@ datahub:
         crop_contiguous_probability: 0.0
         crop_spatial_probability: 1.0
     weights:
-      _target_: datahub.samplers.calculate_weights_for_pdb_dataset_df
-      beta: 0.5
-      alphas:
-        a_prot: 3.0
-        a_nuc: 3.0
-        a_ligand: 1.0
+      _target_: datahub.samplers.calculate_weights_by_inverse_cluster_size
 
     # monomer_distillation: TODO figure out how to make this work - turn off atomization here
     #   probability: 0.5
