@@ -14,16 +14,16 @@ epoch_size: 24000
 prob_self_cond: 0.5
 seq_self_cond: False
 sequence_decode: True
-rundir: /net/scratch/bcov/new_dataloader_redux
+rundir: /net/scratch/ptkim/new_dataloader_redux
 interactive: False
 batch_size: 1
 verbose_checks: False
 lr: 0.001
 l2_coeff: 0.01
 model_name: RFD
-# ckpt_load_path: /home/ptkim/netlink/new_dataloader_redux/center_all_from_pretrained_weights_new_dataloader_redux2024-10-30_10:50:15.943906/rank_0/models/RFD_3.pt
-resume: False
-resume_scheduler: False
+ckpt_load_path: /home/ptkim/netlink/new_dataloader_redux/center_all_from_pretrained_weights_new_dataloader_redux2024-10-30_10:50:15.943906/rank_0/models/RFD_3.pt
+resume: True
+resume_scheduler: True
 reinitialize_missing_params: False
 zero_weights: False
 n_epoch: 500
@@ -49,7 +49,7 @@ datahub:
       cif_parser_args:
         load_from_cache: True
         save_to_cache: True
-        cache_dir: /net/scratch/bcov/datahub_pn_units_cache
+        cache_dir: /net/scratch/ptkim/datahub_pn_units_cache
       dataset_parser:
         _target_: datahub.datasets.parsers.default_metadata_row_parsers.PNUnitsDFParser
       dataset:
@@ -94,7 +94,7 @@ datahub:
       cif_parser_args:
         load_from_cache: True
         save_to_cache: True
-        cache_dir: /net/scratch/bcov/datahub_interface_cache
+        cache_dir: /net/scratch/ptkim/datahub_interface_cache
       dataset_parser:
         _target_: datahub.datasets.parsers.default_metadata_row_parsers.InterfacesDFParser
       dataset:

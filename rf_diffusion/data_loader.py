@@ -2014,7 +2014,6 @@ class DistilledDataset(data.Dataset):
     def __len__(self):
         return len(self.dataset)
 
-
 class DatasetWithNextExampleRetry(data.Dataset):
     '''
     A dataset that allows one to throw NextExampleException in order to retry the train loader with a different example

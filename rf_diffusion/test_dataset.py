@@ -724,6 +724,31 @@ class Dataloader(unittest.TestCase):
         test_utils.assert_matches_golden(self, golden_name, indep, rewrite=REWRITE, custom_comparator=self.cmp)
 
 
+
+
+    def test_dhub_pdb_dataset_both(self):
+        '''
+        This tests that the DATAHUB_MODE=BOTH actually works. If it doesn't there will be an error about the probabilities not summing to 1
+        '''
+        dataset = None
+        mask = 'get_diffusion_mask_simple'
+        loader_out = self.indep_for_dataset(dataset, mask, overrides=[
+            ], config_name='debug_dhub')
+        indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context, conditions_dict = loader_out
+        indep.metadata = None
+
+
+        golden_name = f'indep_dhub-{mask}_both'
+
+        if self.show_in_pymol:
+            name, names = show.one(indep, None)
+            show.cmd.do('util.cbc')
+            show.diffused(indep, is_diffused, 'true')
+
+
+        test_utils.assert_matches_golden(self, golden_name, indep, rewrite=REWRITE, custom_comparator=self.cmp)
+
+
     def test_target_hbond_satisfaction(self):
         '''
         This tests the ideal_ss training code

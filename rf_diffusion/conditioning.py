@@ -681,6 +681,10 @@ class ExpandConditionsDict:
     Also asserts the contents of conditions_dict
     '''
     def __init__(self, extra_expand_1d_atomized_ok_gp_not_conditions=[]):
+        '''
+        Args:
+            extra_expand_1d_atomized_ok_gp_not_conditions (list[str]): List of items in conditions dict that are specified in yaml
+        '''
         self.extra_expand_1d_atomized_ok_gp_not_conditions = extra_expand_1d_atomized_ok_gp_not_conditions
         pass
 
@@ -716,7 +720,8 @@ class ExpandConditionsDict:
 
         new_conditions_dict = {}
         for key in conditions_dict:
-            assert key in conditions_dict_contents, f'Please add {key} to ExpandConditionsDict!'
+            assert key in conditions_dict_contents, (f'Please add {key} to ExpandConditionsDict! (or ExpandConditionsDict.extra_expand_1d_atomized_ok_gp_not_conditions '
+                            'if you are pulling your values in a purely yaml way (like via datahub))' )
 
             if key == 'ss_adj':
                 new_conditions_dict['ss_adj'] = conditions_dict['ss_adj'].expand_for_atomization_and_gp(indep, post_idx_from_pre_idx)

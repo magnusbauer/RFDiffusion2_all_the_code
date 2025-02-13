@@ -1,4 +1,4 @@
-# Configuration for inference on SE(3) diffusion experiments.
+# Debug configuration for testing datahub stuff
 defaults:
   - debug
 
@@ -55,9 +55,6 @@ datahub:
           - cluster
           - path
           - reorder_chains
-          - n_prot
-          - n_nuc
-          - n_ligand
           - my_arange_condition
       transform:
         _target_: rf_diffusion.datahub_pipelines.rf_diffusion.build_rf_diffusion_transform_pipeline

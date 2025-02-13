@@ -1,4 +1,3 @@
-import sys
 import numpy as np
 from cifutils.constants import AF3_EXCLUDED_LIGANDS
 import omegaconf
@@ -30,7 +29,6 @@ from datahub.transforms.filters import (
 
 from datahub.transforms.symmetry import AddPostCropMoleculeEntityToFreeFloatingLigands
 from rf_diffusion.datahub_dataset_interface import BackwardCompatibleDataLoaderProcessOut
-
 
 # def make_forward_compatible_with_datahub(object):
 """
@@ -70,14 +68,6 @@ def build_rf_diffusion_transform_pipeline(
     Creates a transformation pipeline for the RF2AA model, applying a series of transformations to the input data.
 
     Args:
-        - protein_msa_dirs (list[dict]): The directories containing the protein MSAs and their associated file types,
-            as a list of dictionaries. If multiple directories are provided, we will search all of them. Note that:
-            (a) the directory structure must be flat (i.e., no subdirectories), (b) the files must be named using the
-            SHA-256 hash of the sequence (see `hash_sequence` in `utils/misc`), and (c) order matters - we will search the
-            directories in the order they are provided, and return the first match
-        - rna_msa_dirs (list[dict]): The directories containing the RNA MSAs and their associated file types, as a list
-            of dictionaries. See `protein_msa_dirs` for directory structure details.
-        - n_recycles (int, optional): Number of recycles for the MSA featurization. Defaults to 5.
         - crop_size (int, optional): Size of the crop for spatial and contiguous cropping (in number of tokens).
             Defaults to 384.
         - crop_center_cutoff_distance (float, optional): Cutoff distance for the center of the crop (in Angstroms).
@@ -88,50 +78,14 @@ def build_rf_diffusion_transform_pipeline(
             many unresolved atoms has its atoms removed. If None, all atoms are kept, if between 0 and 1, the number of
             atoms is capped at that percentage of the crop size. If an integer >= 1, the number of unresolved atoms is
             capped at that number. Defaults to 0.1.
+        - undesired_res_names (list[str]): res_names to drop. Defaults to AF3_EXCLUDED_LIGANDS
         - res_names_to_atomize (list[str], optional): List of residue names to *always* atomize. Note that RF2AA already
             atomizes all residues that are not in the encoding (i.e. that are not standard AA, RNA, DNA or special masks).
             Therefore only specify this if you want to deterministically atomize certain standard tokens. Defaults to None.
-        - max_msa_sequences (int, optional): Maximum number of MSA sequences to load. Defaults to 10,000.
-        - dense_msa (bool, optional): Whether to use dense MSA pairing. Defaults to True.
-        - n_msa_cluster_representatives (int, optional): Number of MSA cluster representatives to select. Defaults to 100.
-        - msa_n_extra_rows (int, optional): Number of extra rows for MSA. Defaults to 100.
-        - msa_mask_probability (float, optional): Probability of masking MSA sequences according to `msa_mask_behavior_probs`.
-            Defaults to 0.15.
-        - msa_mask_behavior_probs (dict[str, float], optional): Probabilities for different MSA mask behaviors.
-            Defaults to {"replace_with_random_aa": 0.1, "replace_with_msa_profile": 0.1, "do_not_replace": 0.1},
-            which is the BERT style masking.
-        - order_independent_atom_frame_prioritization (bool, optional): Whether to prioritize order-independent atom frames.
-            Defaults to True.
-        - n_template (int, optional): Number of templates to use. Defaults to 5.
-        - pick_top_templates (bool, optional): Whether to pick the top templates if there are more than `n_template`. If
-            False, the templates are selected randomly among all templates. Defaults to False.
-        - template_max_seq_similarity (float, optional): Maximum sequence similarity cutoff for templates.
-            Defaults to 60.0.
-        - template_min_seq_similarity (float, optional): Minimum sequence similarity cutoff for templates.
-            Defaults to 10.0.
-        - template_min_length (int, optional): Minimum length cutoff for templates. Defaults to 10.
-        - max_automorphs (int, optional): Maximum number of automorphs after which to cap small molecule ligand
-            symmetry resolution. Defaults to 1,000.
-        - max_isomorphs (int, optional): Maximum number of polymer isomorphs after which to cap symmetry resolution.
-            Defaults to 1,000.
-        - use_negative_interface_examples (bool, optional): Whether to use negative interface examples. Defaults to False.
-        - unclamp_loss_probability (float, optional): Probability of unclamping the loss during training. Defaults to 0.1.
-        - black_hole_init (bool, optional): Whether to use black hole initialization. Defaults to True.
-        - black_hole_init_noise_scale (float, optional): Noise scale for black hole initialization. Defaults to 5.0.
-        - msa_cache_dir (PathLike | str | None, optional): Directory to cache the MSAs. Defaults to None.
-        - assert_rf2aa_assumptions (bool, optional): Whether to assert the RF2AA assumptions that need to be true
-            to guarantee a successful forward & backward pass. Defaults to True.
-        - convert_feats_to_rf2aa_input_tuple (bool, optional): Whether to convert the features to the RF2AAInputs format.
-            Defaults to True.
-        - p_is_ss_example (float): Probability we show any secondary structure at all.
-        - p_is_adj_example (float): Probability we show any adjacency matrix at all.
-        - ss_min_mask (float): Minimum fraction of ss that will be converted to SS_MASK.
-        - ss_max_mask (float): Maximum fraction of ss that will be converted to SS_MASK.
-        - adj_min_mask (float): Minimum fraction of adj that will be directly converted to ADJ_MASK.
-        - adj_max_mask (float): Maximum fraction of adj that will be directly converted to ADJ_MASK.
-
-
-    For more details on the parameters, see the RF2AA paper and the documentation for the respective Transforms.
+        - loader_params: unused
+        - extra_pre_crop_transforms (omegaconf.dictconfig.DictConfig | dict ): Additional Transforms to run before the crop
+            Should be initialized like all the other datahub stuff with _target_
+        - conditions_dict_atom_array_keys (list[str]): Fields from AtomArray to put into conditions_dict
 
     Returns:
         Compose: A composed transformation pipeline.

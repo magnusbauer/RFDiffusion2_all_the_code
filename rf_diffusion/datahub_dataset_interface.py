@@ -81,6 +81,9 @@ class BackwardCompatibleDataLoaderProcessOut(Transform):
         if indep.is_sm.any():
             print("WARNING! Your example has atoms but the datahub loader doesn't support chirals yet! You can be the one to fix this!")
 
+        # Build the idx of the indep using the standard diffusion notation of +33 for chainbreaks
+        # This code will respect gaps in the input numbering
+
         # idx is easier to do once we have access to chain_masks
         CHAIN_GAP = 33
         original_resid = token_wise_atom_array.res_id
@@ -158,6 +161,18 @@ class BackwardCompatibleDataLoaderProcessOut(Transform):
         }
 
 class ReorderChains(Transform):
+    '''
+    A datahub transform to transpose the order of chains based on the 'reorder_chains' field
+
+    The string 'None' causes this to do nothing
+    Otherwise the string should contain comma separated values starting at 0 to describe a new order
+    Examples:
+        0,1 -- Don't actually change the order
+        1,0 -- Flip/flop a 2-chain examples
+        2,1,0 -- Reverse a 3-chain example
+
+    See config/training/debug_dhub.yaml for example usage
+    '''
 
     def check_input(self, data: dict):
         check_contains_keys(data, ["atom_array"])
@@ -173,12 +188,15 @@ class ReorderChains(Transform):
 
     def forward(self, data: dict) -> dict:
 
+        # Check for magic string None and return if found
         reorder_string = data['extra_info']['reorder_chains']
         if reorder_string == 'None':
             return data
 
+        # Get the new chain order
         reorder_map = torch.tensor([int(x) for x in reorder_string.split(',')])
 
+        # Figure out how many chains we have
         known_chain_iids = dict() # Sets aren't ordered which is the dumbest thing ever
         for iid in data['atom_array'].chain_iid:
             known_chain_iids[iid] = True
@@ -187,37 +205,52 @@ class ReorderChains(Transform):
 
         assert len(reorder_map) == len(known_chain_iids), f"ReorderChains reorder_chains length ({reorder_string}) doesn't match chain_iids ({known_chain_iids})"
 
+        # Make our own chain masks
         chain_masks = []
         for iid in known_chain_iids:
             chain_masks.append( data['atom_array'].chain_iid == iid )
 
+        # AtomArrays behave like lists so just += them
         new_atom_array = data['atom_array'][chain_masks[reorder_map[0]]]
         for i_mask in reorder_map[1:]:
             new_atom_array += data['atom_array'][chain_masks[i_mask]]
 
+        # Store modified AtomArray
         data['atom_array'] = new_atom_array
 
         return data
 
 
 class Load1DAtomArrayFeatures(Transform):
+    '''
+    A datahub transform to load 1D features stored in your parquet into the AtomArray at a per-residue level
+
+    Features are specified via Load1DAtomArrayFeatures.features
+
+    Often used with build_rf_diffusion_transform_pipeline.conditions_dict_atom_array_keys to get these values into conditions_dict
+
+    See config/training/debug_dhub.yaml for example usage
+    '''
     def check_input(self, data: dict):
         check_contains_keys(data, ["atom_array", "extra_info"])
         check_contains_keys(data['extra_info'], self.features)
         check_is_instance(data, "atom_array", AtomArray)
-        # check_atom_array_annotation(
-        #     data,
-        #     ["chain_entity"],
-        # )
+
 
     def __init__(self, features=[]):
+        '''
+        Args:
+            features (list[str]): The list of columns from your parquet to turn into AtomArray fields
+        '''
         self.features = features
 
     def forward(self, data: dict) -> dict:
 
+        # Figure out the "residues"
         token_starts = get_token_starts(data['atom_array'])
         token_wise_atom_array = data['atom_array'][token_starts]
 
+        # Load each feature into the atom array
         for key in self.features:
             to_store = data['extra_info'][key]
             assert len(to_store) == len(token_wise_atom_array), (f'Load1DAtomArrayFeatures length mismatch: atom_array has {len(token_starts)} tokens'
@@ -229,6 +262,8 @@ class Load1DAtomArrayFeatures(Transform):
 
 class SimplePathParser(MetadataRowParser):
     """
+    A straightforward way to load PDBs with datahub
+
     In addition to standard fields (example_id, path), this parser also includes:
         - Any extra information from the DataFrame, which is stored in the `extra_info` field.
     """
@@ -239,7 +274,6 @@ class SimplePathParser(MetadataRowParser):
     def _parse(self, row: pd.Series) -> dict[str, Any]:
         assert 'example_id' in row
         assert 'path' in row
-
 
         # Put the full row in the extra info dictionary
         extra_info = row.to_dict()
