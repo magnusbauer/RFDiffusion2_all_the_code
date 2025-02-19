@@ -1,0 +1,8 @@
+defaults: 
+  - RFdiffusion_CA_inference
+
+hydra:
+  job:
+    num: 42
+  runtime:
+    output_dir: './tmp_outdir/'

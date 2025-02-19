@@ -18,6 +18,8 @@ def get(noiser_conf):
         return se3_diffuser.SE3Diffuser(noiser_conf)
     elif noiser_conf.type == 'legacy': 
         return FwdMargYieldsTMinusOne( legacy_diffuser.LegacyDiffuser(noiser_conf) )
+    elif noiser_conf.type == 'refine': 
+        return legacy_diffuser.RefineDiffuser(noiser_conf)
     elif noiser_conf.type == 'flow_matching':
         return NormalizingFlow(cfg=noiser_conf)
     else:

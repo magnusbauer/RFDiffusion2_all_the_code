@@ -16,9 +16,12 @@ from rf2aa.data import parsers
 from dataclasses import dataclass
 from rf2aa.kinematics import get_chirals
 from rf2aa.util_module import XYZConverter
+
 import rf2aa.tensor_util
 import copy
 import numpy as np
+import os 
+import pickle
 import rf_diffusion.kinematics
 import rf_diffusion.util as util
 from rf_diffusion.parsers import parse_pdb_lines_target
@@ -30,8 +33,11 @@ import rf_diffusion.atomize as atomize
 from rf_diffusion import write_file
 from rf_diffusion.contigs import ContigMap
 
+
 from rf_diffusion.atomization_primitives import AtomizedLabel, AtomizerSpec  # noqa: F401
 from rf_diffusion import build_coords
+
+import rf_diffusion.contigs as contigs
 
 import rf_diffusion.frame_diffusion.data.utils as du
 from rf_diffusion.frame_diffusion.data import all_atom
@@ -575,9 +581,48 @@ class RFO:
     def get_xyz(self):
         return self.xyz_allatom[0]
 
+
 class SymAdaptRFO(ipd.sym.SymAdaptDataClass):
     "Symmetrize RFO with the default dataclass SymAdaptor; uses add_tensor_dim_names"
     adapts = RFO
+
+
+def get_refinement_metadata(meta, conf):
+    """
+    Retrives information about the original diffusion run for refinement. 
+    E.g., grab original motif coordinates, ij_visible info, etc. 
+
+    Parameters: 
+        meta (dict): metadata from the original diffusion run
+        conf (OmegaConf.DictConfig): run config
+    """
+    pdb = conf.inference.input_pdb
+    trb = pdb.replace('.pdb', '.trb')
+    assert os.path.exists(trb), f"Must have .trb file for refinement, but trb file not found: {trb}"
+    with open(trb, 'rb') as fp: 
+        trb_dict = pickle.load(fp)
+
+    og_conf = trb_dict['config']
+    ref_dict = {'config'         : trb_dict['config'],
+                'con_hal_idx0'   : trb_dict['con_hal_idx0'],
+                'con_ref_idx0'   : trb_dict['con_ref_idx0'],
+                'ij_visible'     : trb_dict['config']['inference']['ij_visible']
+                }
+
+    # get the original motif coordinates/seq
+    motif_pdb = og_conf['inference']['input_pdb']
+    motif_ligand = og_conf['inference']['ligand']
+    motif_indep = make_indep(motif_pdb, motif_ligand, return_metadata=False)
+
+    ref_dict['motif_indep'] = motif_indep
+    meta['ref_dict'] = ref_dict
+
+    # Make a contig string which encodes a contig map that 
+    # has motifs in the same location that diffusion run had them. 
+    ref = trb_dict['contigmap_ref']
+    hal = trb_dict['contigmap_hal']
+    conf.contigmap.contigs = contigs.get_refinement_contigs_from_ref_and_hal(ref, hal)
+
 
 def get_ligands(pdb_lines):
     ligands = set()
@@ -992,6 +1037,7 @@ def make_indep(pdb, ligand='', return_metadata=False, pdb_stream=None):
         same_chain=same_chain,
         terminus_type=terminus_type,
     )
+
     if return_metadata:
         ligand_name_arr = []
         for l, name in zip(Ls, N_poly * [''] + ligands):
@@ -1006,6 +1052,7 @@ def make_indep(pdb, ligand='', return_metadata=False, pdb_stream=None):
             'ligand_atom_names': np.array(ligand_atom_names_arr,  dtype='<U4'),
         }
         return indep, metadata
+    
     return indep
 
 def add_fake_frame_legs(xyz, is_atom, generator=None):

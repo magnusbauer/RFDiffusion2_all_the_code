@@ -1,0 +1,40 @@
+defaults:
+  - RFdiffusion_CA_inference
+
+inference: 
+  ckpt_path: '/mnt/home/davidcj/projects/merge/rf_diffusion_repo/rf_diffusion/tmp_models/trained/refinement/BFF_3_w_new_conf.pt' 
+  refine: true
+  input_pdb: ./test_data/refinement_test_input.pdb
+  cautious: false
+  output_prefix: ./test_data/refine_input_refined.pdb
+  ligand: mu2
+
+
+diffuser:
+  type: refine
+  T: 1 
+
+  r3:
+    T: ${..T}
+    refine_variance: 1.5
+
+  so3:
+    T: ${..T}
+
+#### Transforms ####    
+transforms: 
+  names:
+    - ComputeMotifTemplateRefine
+    - CenterOnCA # since we are doing motif_only_2d, center on all
+    - AddConditionalInputs
+  configs:
+    ComputeMotifTemplateRefine:
+        use_cb: ${preprocess.use_cb_to_get_pair_dist}
+        omit_frame_permutation: ${preprocess.omit_atom_frame_permutation}
+
+hydra:
+  job:
+    num: 42
+  runtime:
+    output_dir: './tmp_outdir/'
+

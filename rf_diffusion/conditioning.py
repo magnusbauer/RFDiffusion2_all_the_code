@@ -148,11 +148,33 @@ def compute_token_pair_mask(is_motif_w_chunk_id, coarse_ij_matrix):
     stacks = torch.stack(stacks+[t.T for t in stacks]) 
     return torch.any(stacks, dim=0) # combine them all
 
+def get_coarse_ij_matrix(ij_visible: str): 
+    """
+    Computes the coarse matrix of motif chunk pairs that can see each other.
+    1 indicating chunks are constrained w.r.t each other, 0 otherwise.
+    """
 
-abet = 'abcdefghijklmnopqrstuvwxyz'
-abet = abet + abet.upper()
-abet = [a for a in abet]
-abet2num = {a:i for i,a in enumerate(abet)}
+    abet = 'abcdefghijklmnopqrstuvwxyz'
+    abet = abet + abet.upper()
+    abet = [a for a in abet]
+    abet2num = {a:i for i,a in enumerate(abet)}
+
+    # compute 1D array designating which tokens correspond to each motif chunk in contig map
+    motif_visibility_groupings = ij_visible.split('-')
+    motif_visibility_groupings_int = [tuple([abet2num[a] for a in s]) for s in motif_visibility_groupings]
+    
+    # total motif chunks, supplied by the user, including ligand
+    nchunk_total = len( set( [i for S in motif_visibility_groupings_int for i in S] ) )
+
+    # Make a 2D array designating which motif chunks can see each other 
+    coarse_ij_visibility = torch.eye(nchunk_total)
+    for S in motif_visibility_groupings_int:
+        for i in S:
+            for j in S:
+                coarse_ij_visibility[i,j] = 1
+
+    return coarse_ij_visibility
+
 class GetTemplatedMotifMasks:
     """
     Given contig map and indep, compute the 2D and 1D masks used for motif template addition. 
@@ -168,20 +190,9 @@ class GetTemplatedMotifMasks:
                  masks_1d: dict, 
                  metadata: dict, 
                  **kwargs):
-        # compute 1D array designating which tokens correspond to each motif chunk in contig map
-        motif_visibility_groupings = self.ij_visible.split('-')
-        motif_visibility_groupings_int = [tuple([abet2num[a] for a in s]) for s in motif_visibility_groupings]
-        
-        # total motif chunks, supplied by the user, including ligand
-        nchunk_total = len( set( [i for S in motif_visibility_groupings_int for i in S] ) )
 
-        # Make a 2D array designating which motif chunks can see each other 
-        coarse_ij_visibility = torch.eye(nchunk_total)
-        for S in motif_visibility_groupings_int:
-            for i in S:
-                for j in S:
-                    coarse_ij_visibility[i,j] = 1
-
+        coarse_ij_visibility = get_coarse_ij_matrix(self.ij_visible)
+        nchunk_total = coarse_ij_visibility.shape[0]
 
         # 1D feature designating motif tokens 
         is_motif = torch.zeros(indep.length(), dtype=torch.bool)
@@ -260,7 +271,92 @@ class ComputeMotifTemplate:
                 'motif_template': motif_template,
                 'metadata'      : metadata,
                 **kwargs}
+
+
+class ComputeMotifTemplateRefine: 
+    """
+    Computes the motif template during refinement. The reason we must have a separate 
+    transform from ComputeMotifTemplate is because we don't have access to an indep 
+    which contains the perfect motif information at refinement time. So, we use the 
+    perfect motif information collected in metadata, along with the unnoised indep 
+    to compute the motif template. 
+    """
+    def __init__(self, use_cb: bool, omit_frame_permutation: bool):
+        self.use_cb = use_cb
+        self.omit_frame_permutation = omit_frame_permutation
+
+    def __call__(self, 
+                 indep: Indep, 
+                 metadata: dict,
+                 masks_1d: dict,
+                 **kwargs): 
+        """
+        Parameters: 
+            indep (aa_model.Indep): Should be unnoised version of backbone,
+                potentially with ligand, to be noised and refined.
+            
+            metadata (dict): Metadata dict, but we will use it for access
+                to original contig info and original motif structure.
+        """
+        ref_dict = metadata['ref_dict']
+        motif_indep  = ref_dict['motif_indep']
+        ij_visible   = ref_dict['ij_visible']
+        con_hal_idx0 = torch.from_numpy(ref_dict['con_hal_idx0'])
+        con_ref_idx0 = torch.from_numpy(ref_dict['con_ref_idx0'])
+
+        ### Compute 1D/2D mask information ### 
+        ######################################
+
+        # hal structure (design from diffusion)
+        L_sm = indep.is_sm.sum()
+        L_hal_w_ligand = indep.length()
+        add_con_hal0 = torch.arange(L_hal_w_ligand-L_sm, L_hal_w_ligand)
+        con_hal_idx0 = torch.cat((con_hal_idx0, add_con_hal0))
+        # reference structure (original motif pdb)
+        L_ref_w_ligand = motif_indep.length()
+        add_con_ref0 = torch.arange(L_ref_w_ligand-L_sm, L_ref_w_ligand)
+        con_ref_idx0 = torch.cat((con_ref_idx0, add_con_ref0))
+
+
+        # Get constraints between motif chunks - coarse
+        coarse_ij_visibility = get_coarse_ij_matrix(ij_visible)
+
+        is_motif = torch.zeros(L_hal_w_ligand, dtype=torch.bool)
+        is_motif[con_hal_idx0] = True # contains protein motif + ligand motif
         
+        is_motif_w_chunk_id = label_true_islands(is_motif)
+        token_pair_is_revealed = compute_token_pair_mask(is_motif_w_chunk_id, coarse_ij_visibility)
+
+        masks_1d['input_str_mask'] = is_motif
+        masks_1d['is_motif_2d'] = token_pair_is_revealed
+        metadata['masks_1d'] = masks_1d 
+
+        ### Compute motif template ###
+        ##############################
+
+        # Need a new set of crds with same size as indep.xyz, 
+        # but with original motif crds sliced in.
+        hal_motif_template_xyz = torch.zeros_like(indep.xyz)
+        hal_motif_template_xyz[con_hal_idx0] = motif_indep.xyz[con_ref_idx0] # <fire emoji>
+
+        ### t2d ###
+        t2d_motif, _ = rf_diffusion.util.get_t2d(hal_motif_template_xyz[None],
+                                                 indep.is_sm, 
+                                                 indep.get_atom_frames(self.omit_frame_permutation),
+                                                 use_cb     = self.use_cb,
+                                                 mask_t_2d  = token_pair_is_revealed[None])
+
+        xyz_t_out = hal_motif_template_xyz[:,1] # CA's of motif residues
+        motif_template = {'t2d': t2d_motif, 'xyz_t': xyz_t_out}
+        metadata['motif_template'] = motif_template
+
+        masks_1d['input_str_mask'] = torch.zeros_like(is_motif) # ensure it gets diffused in 3D
+
+
+        return {'indep'     : indep,
+                'masks_1d'  : masks_1d,
+                'metadata'  : metadata,
+                **kwargs}
 
 class GenerateMasks:
     """

@@ -5,6 +5,7 @@ import torch
 import copy 
 import os 
 from icecream import ic 
+from scipy.spatial.transform import Rotation as scipy_R
 
 # this package 
 from rf_diffusion.frame_diffusion.data import so3_diffuser, r3_diffuser
@@ -352,10 +353,10 @@ class LegacyDiffuser(SE3Diffuser):
         # spoof no R3 diffusion since we did it above 
         orig_diffuse_trans  = self._diffuse_trans
         self._diffuse_trans = False
-        so3_outs = super().forward_marginal(  rigids_0,
-                                            t,
-                                            diffuse_mask,
-                                            as_tensor_7
+        so3_outs = super().forward_marginal(    rigids_0,
+                                                t,
+                                                diffuse_mask,
+                                                as_tensor_7
                                          )
         self._diffuse_trans = orig_diffuse_trans # reset 
 
@@ -437,4 +438,168 @@ class FwdMargYieldsTMinusOne():
         copied_wrapper = FwdMargYieldsTMinusOne(copied_base)
         # Return the copied wrapper
         return copied_wrapper
+    
 
+class SingleGaussian(r3_diffuser.R3Diffuser):
+    # class for perturbing points with a fixed amount of gaussian noise (not diffusion)
+
+    def __init__(self,
+                 conf
+                 ):
+        
+        # ignore all classic diffusion parameters
+        self.T          = conf.T
+        self.variance   = conf.refine_variance
+
+        r3_diffuser.R3Diffuser.__init__(self, conf)
+
+    def diffuse_translations(self, xyz, diffusion_mask=None, crd_scale=1.0):
+        assert len(xyz.shape) == 3, 'xyz must be (L,3,3)'
+        return self.apply_gaussian_noise(xyz, diffusion_mask, crd_scale)
+
+    def apply_gaussian_noise(self, xyz, diffusion_mask, crd_scale):
+        """
+        Applies gaussian noise to the points in x according to 
+        self.mu and self.sigma
+
+        Parameters: 
+
+        xyz (torch.tensor, required): (L,3,3) set of backbone coordinates
+
+        diffusion_mask (torch.tensor, optional):
+        """
+        mean = xyz[:,1,:]
+        var = torch.ones_like(mean)*self.variance
+
+        # variance is in A^2, given from command line 
+        # --> scale to crd_scale because crds are already scaled
+        sampled = torch.normal(mean, torch.sqrt(var)*crd_scale)
+        delta = sampled - mean
+
+        if diffusion_mask != None:
+            delta[diffusion_mask,...] = 0
+
+        out_crds = xyz + delta[:,None,:].expand_as(xyz)
+
+        return out_crds, delta
+    
+
+class RandomFrames(so3_diffuser.SO3Diffuser):
+    """
+    Produces completely random frames for all residues 
+    """
+
+    def __init__(self, conf):
+        self.T = conf.T
+        # self.use_cached_score=False
+        # self.num_sigma=10
+        # self.schedule='logarithmic'
+        # self.max_sigma = 1.5
+        # self.min_sigma = 0.1
+        # self.cache_dir: './cache/'
+        so3_diffuser.SO3Diffuser.__init__(self, conf)
+
+    def diffuse_frames(self, xyz, t_list, diffusion_mask=None):
+        return self.random_frames(xyz, diffusion_mask)
+    
+    def _get_random_rotations(self, L):
+        """
+        Get a random rotation matrix for each residue
+        """
+        return scipy_R.random(L)
+
+    def random_frames(self, xyz, diffusion_mask=None):
+        """
+        produces a random frame for all AAs 
+        """
+        assert len(xyz.shape) == 3, 'xyz must be (L,3,3)'
+        if torch.is_tensor(xyz):
+            xyz = xyz.numpy()
+
+        # R_rand = scipy_R.random(len(xyz))
+        R_rand = self._get_random_rotations(len(xyz))
+
+        # N  = torch.from_numpy(  xyz[None,:,0,:]  )
+        Ca = torch.from_numpy(  xyz[None,:,1,:]  )
+        # C  = torch.from_numpy(  xyz[None,:,2,:]  )
+
+        rotated_crds = np.einsum('lij,laj->lai', 
+                                 R_rand.as_matrix(), 
+                                 xyz[:,:3,:] - Ca.squeeze()[:,None,...].numpy()) + Ca.squeeze()[:,None,...].numpy()
+        
+        rotated_crds = np.stack([rotated_crds]*self.T, axis=1)
+
+        return rotated_crds
+    
+
+class RefineDiffuser(SE3Diffuser):
+    """
+    Diffuser for refinement.
+    """
+
+    def __init__(self, se3_conf):
+        self._log           = logging.getLogger(__name__)
+        self._se3_conf      = se3_conf
+
+        self._diffuse_rot   = se3_conf.diffuse_rot
+        self._so3_diffuser  = RandomFrames(self._se3_conf.so3)
+
+        self._diffuse_trans = se3_conf.diffuse_trans
+        self._r3_diffuser   = SingleGaussian(self._se3_conf.r3)
+
+        self.crd_scale = se3_conf.r3.coordinate_scaling
+
+
+    def forward_marginal(self,
+                         rigids_0       : ru.Rigid, 
+                         t              : float,
+                         diffuse_mask   : np.ndarray=None,
+                         as_tensor_7    : bool=True):
+        """
+        Applies a single step of fixed noise to the input coordinates.
+
+        Parameters:
+            rigids_0 (openfold.utils.rigid_utils.Rigid): Series of openfold rigid objects 
+            t (float): continuous time in [0, 1].
+            diffuse_mask (np.ndarray): Mask denoting which tokens are subject to noising, and which are not. 
+                                       NOTE: 1/True means 'revealed' (not diffused), 0/False means 'hidden' (diffused)
+        """
+
+        #### Translations #### 
+        ######################
+
+        # Only the CAs matter--spoof N/C
+        L = len(rigids_0.get_trans())
+        bb_crds = torch.zeros(L,3,3, dtype=torch.float) # (L,3,3) N,CA,C
+        bb_crds[:,1] = rigids_0.get_trans()
+        var_scale = self._se3_conf.r3.var_scale
+
+        # scale the coordinates 
+        bb_crds = bb_crds * self.crd_scale
+
+        noised_crds, delta = self._r3_diffuser.diffuse_translations(bb_crds, 
+                                                                    ~(diffuse_mask.bool()), 
+                                                                    var_scale)
+
+        bb_crds = bb_crds / self.crd_scale # scale back
+
+        ####################################
+        #### SO3 noise -- random frames ####
+        rots_t = self._so3_diffuser._get_random_rotations(L).as_rotvec()
+
+        trans_t = bb_crds[:,1] + delta
+
+        # assemble output rigid 
+        rigids_t = _assemble_rigid(rots_t, trans_t)
+
+
+        if as_tensor_7:
+            rigids_t = rigids_t.to_tensor_7()
+
+        outs = {'rigids_t'            :rigids_t,
+                'trans_score'         :float('nan'),
+                'rot_score'           :float('nan'),
+                'trans_score_scaling' :float('nan'),
+                'rot_score_scaling'   :float('nan')}
+
+        return outs

@@ -2,6 +2,10 @@ import random
 import sys
 from collections import defaultdict
 
+from itertools import zip_longest 
+from typing import List
+
+
 import numpy as np
 import torch
 
@@ -434,3 +438,148 @@ class ContigMap():
         return mol_classes
         
 
+
+def find_chain_breaks(hal): 
+    """
+    Helper fxn to find breaks in a chain. Assumes breaks are >1 index jump. 
+    """
+    breaks = []
+    for i in range(1,len(hal)): 
+        if hal[i][0] != hal[i-1][0]: 
+            breaks.append(i)
+    return breaks
+
+
+def find_true_islands(arr):
+    """
+    Written by Grok 
+    Find where the array changes from False to True
+    """
+    diff = np.diff(np.concatenate(([False], arr, [False])).astype(int))
+    starts = np.where(diff > 0)[0]  # Start indices of islands
+    ends = np.where(diff < 0)[0] - 1 # End indices of islands (subtract 1 because of how diff works)
+    
+    # If there are islands
+    if len(starts) > 0 and len(ends) > 0:
+        return list(zip(starts, ends))
+    else:
+        return []
+    
+
+def process_islands(islands: List[tuple], island_markers: List[bool], chainbreaks: List[int]):
+    """
+    Iterates through islands and splits islands based on chainbreaks. 
+    
+    Parameters: 
+        islands (list): list of tuples of islands start and end indices 
+        
+        island_markers (list): list of bools. True is diffused chunk, False is motif chunk.
+        
+        chainbreaks (list): list of ints 
+    """
+    if not len(chainbreaks): 
+        return islands, island_markers, [False]*len(islands)
+    
+    
+    processed_islands = []
+    processed_markers = []
+    break_indicators = []
+    
+    for i,island in enumerate(islands):
+        marker = island_markers[i]
+        
+        for cb in chainbreaks:
+            if (cb >= island[0]) and (cb <= island[1]): 
+                # the break is within this island
+                # the break index is the start of the new chain
+                # so break index onward needs to be part of new island
+                new_A = (island[0], cb-1)
+                new_B = (cb, island[1])
+
+                to_add = [new_A, new_B]
+                to_add_marker = [marker, marker]
+                break_indicator = [False, True]
+            else: 
+                to_add = [island]
+                to_add_marker = [marker]
+                break_indicator = [False]
+
+            processed_islands += to_add
+            processed_markers += to_add_marker
+            break_indicators  += break_indicator
+            break
+                
+    return processed_islands, processed_markers, break_indicators 
+
+
+def get_refinement_contigs_from_ref_and_hal(ref:list, hal:list): 
+    """
+    Given the ref and hal lists, construct a new contig string which would create a 
+    contigs.ContigMap that would encode hal/ref motif locations that are BOTH the same 
+    as the hal location of the original diffusion run. 
+    
+    Parameters:
+        ref (list): ref list from diffusion contigmap 
+        hal (list): hal list from diffusion contigmap
+    """
+    ref_arr = np.array(ref)
+    hal_arr = np.array(hal)
+    
+    # get coarse chunks of diffused/non-diffused
+    was_diffused = (ref_arr == ('_','_')).any(-1)
+    was_diffused_islands = find_true_islands(was_diffused)
+    was_contig_islands = find_true_islands(~was_diffused)
+    
+    # keep track of which islands are motif/nonmotif
+    diffused_markers = [True]*len(was_diffused_islands)
+    contig_markers = [False]*len(was_contig_islands)
+
+    
+    # zip together -- order of zip depends on whether we started 
+    # with a diffused token or a motif token
+    if was_diffused[0]: 
+        # first residue was a diffused (non motif)
+        all_islands = zip_longest(was_diffused_islands, was_contig_islands) # diffused first
+        all_markers = zip_longest(diffused_markers, contig_markers)
+    else:
+        # first residue was motif
+        all_islands = zip_longest(was_contig_islands, was_diffused_islands)
+        all_markers = zip_longest(contig_markers, diffused_markers)
+        
+    # flatten
+    unzip = lambda zipped: [item for pair in zipped for item in pair if item is not None]
+    all_islands = unzip(all_islands)
+    all_markers = unzip(all_markers)
+    assert len(all_islands) == len(all_markers)
+    
+    # get chainbreaks to not assume everything is single chain
+    chainbreaks = find_chain_breaks(hal_arr)
+    
+    # break the islands where appriopriate 
+    processed_islands,\
+    processed_markers,\
+    break_indicators = process_islands(all_islands, all_markers, chainbreaks)
+
+    
+    # Now create the new string -- islands of diffused 
+    # interlaced with the constrained regions 
+    cstr = ''
+    Z = zip(processed_islands, processed_markers, break_indicators)
+    for idx0, (island, marker, newchain) in enumerate(Z): 
+        
+        if not marker:
+            # it's a motif chunk all from one chain
+            chain = hal[idx0][0]
+            cstr += f'{chain}{island[0]+1}-{island[1]+1},'
+        else:
+            # its a diffused chunk - just get the length and add it on
+            length = island[1]+1-island[0]
+            
+            if not newchain:
+                cstr += f'{length},'
+            else: 
+                cstr = cstr.strip(',') # get rid of current trailing comma 
+                cstr += f' {length},'
+                
+    return cstr.strip(',').split() # return as list of strings
+>>>>>>> e13af62c (Add goldens, tests, yamls for carfdiffusion)

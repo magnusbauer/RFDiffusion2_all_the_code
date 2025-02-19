@@ -764,9 +764,16 @@ def save_outputs(sampler, out_prefix, indep, contig_map, atomizer, t_step_input,
             is_diffused=sampler.is_diffused,
             point_types=aa_model.get_point_types(sampler.indep_orig, atomizer),
             atomizer_spec=None if atomizer is None else rf_diffusion.atomization_primitives.AtomizerSpec(atomizer.deatomized_state, atomizer.residue_to_atomize),
+            con_hal_idx0=contig_map.get_mappings()['con_hal_idx0'],
+            con_ref_idx0=contig_map.get_mappings()['con_ref_idx0'],
+            contigmap_ref=contig_map.ref, 
+            contigmap_hal=contig_map.hal,
+
         )
+
         if len(scores) > 0 and sampler._conf.inference.write_scores_to_trb:
             trb['scores'] = scores
+
         # The trajectory and the indep are big and contributed to the /net/scratch crisis of 2024
         if sampler._conf.inference.write_trb_trajectory:
             trb['px0_xyz_stack'] = raw[0].detach().cpu()[stack_mask].numpy()

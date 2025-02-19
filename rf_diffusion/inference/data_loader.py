@@ -15,7 +15,7 @@ import torch
 import numpy as np
 import torch.utils.data
 from rf_diffusion.inference import utils as iu
-
+import pdb as pydb
 from typing import Tuple
 
 logger = logging.getLogger(__name__)
@@ -51,14 +51,19 @@ class PDBLoaderDataset(torch.utils.data.Dataset):
         conf = self.conf
 
         # Create contig map from the conf
-        L = len(self.target_feats['pdb_idx'])
-        contig_map = ContigMap(self.target_feats, **(contig_conf or conf.contigmap))               
+        L = len(self.target_feats['pdb_idx'])              
 
         # Create the indep from the pdb file along with ligand metadata   
         indep_orig, metadata = aa_model.make_indep(self.pdb_fp, 
                                                    conf.inference.ligand, 
                                                    return_metadata=True)
         
+        # If doing refinement, add OG motif coordinates to metadata
+        if conf.inference.refine:
+            aa_model.get_refinement_metadata(metadata, conf)
+
+        contig_map = ContigMap(self.target_feats, **(contig_conf or conf.contigmap))
+
         # Calculate centering context and validate
         if origin_override is None:
             origin = centering.extract_centering_origin(indep_orig, self.pdb_fp, for_partial_diffusion(conf))
