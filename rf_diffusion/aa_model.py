@@ -1111,6 +1111,12 @@ class Model:
 
         o.xyz[contig_map.hal_idx0] = indep.xyz[contig_map.ref_idx0]
         o.seq = torch.full((L_mapped,), ChemData().MASKINDEX)
+
+        assert len(contig_map.mol_classes)==len(chain_start_end), f"contig error: number of mol_classes ({len(contig_map.mol_classes)}) must match number of chains ({len(chain_start_end)})."
+        
+        for mol_class, (chain_start, chain_end) in zip(contig_map.mol_classes, chain_start_end):
+            o.seq[chain_start:chain_end] = nucl_utils.mask_ind_by_class[mol_class]
+
         o.seq[contig_map.hal_idx0] = indep.seq[contig_map.ref_idx0]
         o.same_chain = torch.tensor(chain_id[None, :] == chain_id[:, None])
         if not for_partial_diffusion:
@@ -1967,16 +1973,9 @@ def mask_seq(indep: Indep, is_seq_masked: torch.Tensor) -> torch.Tensor:
         indep with sequence diffused
     """
     indep = indep.clone()
-    # Give masks to each polymer type to do polymer specific diffusion
-    is_seq_masked_dna = is_seq_masked * nucl_utils.get_resi_type_mask(indep.seq, 'dna')    
-    is_seq_masked_rna = is_seq_masked * nucl_utils.get_resi_type_mask(indep.seq, 'rna')
-    is_seq_masked_prot_and_other = is_seq_masked * ~nucl_utils.get_resi_type_mask(indep.seq, 'rna') * ~nucl_utils.get_resi_type_mask(indep.seq, 'dna')
-
-    # Give corresponding mask types
-    indep.seq[is_seq_masked_dna] = ChemData().MASKINDEXDNA
-    indep.seq[is_seq_masked_rna] = ChemData().MASKINDEXRNA
-    indep.seq[is_seq_masked_prot_and_other] = ChemData().MASKINDEX    
+    mask_indep(indep, is_seq_masked)
     return indep
+
 
 
 def add_fake_peptide_frame(indep, generator=None):
@@ -2034,7 +2033,8 @@ def forward(model, rfi, **kwargs):
     return RFO(*model(**{**rfi_dict, **kwargs}))
 
 def mask_indep(indep, is_diffused):
-    indep.seq[is_diffused] = ChemData().MASKINDEX
+    fully_masked_seq = nucl_utils.get_full_mask_seq(indep.seq)
+    indep.seq[is_diffused] = fully_masked_seq[is_diffused]
 
 def self_cond_new(indep, rfi, rfo, use_cb=False):
     # RFI is already batched
@@ -2762,7 +2762,6 @@ def transform_indep(
     is_res_str_shown = is_res_str_shown.clone()  # e.g. tensor([False, False, True, False, ...]), shape [L]
     is_res_seq_shown = is_res_seq_shown.clone()  # e.g. tensor([False, False, True, False, ...]), shape [L]
     use_atomize = is_atom_str_shown is not None
-
     atomizer = None
     gp_to_ptn_idx0 = None
 

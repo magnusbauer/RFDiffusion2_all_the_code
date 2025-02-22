@@ -22,11 +22,11 @@ import re
 import torch
 import torch.nn as nn
 from omegaconf import DictConfig, OmegaConf
-
 from rf_diffusion.chemical import ChemicalData as ChemData
 from rf_diffusion.chemical import reinitialize_chemical_data
 import rf2aa.data.data_loader
 import rf2aa.util
+from rf2aa.util_module import XYZConverter
 import rf2aa.loss.loss
 import rf2aa.tensor_util
 from rf_diffusion.metrics import MetricManager
@@ -172,6 +172,7 @@ class Trainer():
         self.ti_flip = ChemData().torsion_can_flip
         self.ang_ref = ChemData().reference_angles
         self.l2a = ChemData().long2alt
+        self.allatom_converter = XYZConverter()
 
         self.hbtypes = ChemData().hbtypes
         self.hbbaseatoms = ChemData().hbbaseatoms
@@ -448,6 +449,38 @@ class Trainer():
             dist_mat_loss /= dist_mat_loss_normalization
         dist_mat_loss *= t < self._exp_conf.dist_mat_loss_t_filter
         loss_dict['dist_mat'] = dist_mat_loss
+
+        # Auxillary losses to help with full-atom (nucleic) coordinate generation:
+        if 'fa_disp_loss_weight' in self.conf.experiment:
+            # Full-atom displacement loss (necessary for learning/remembering how to predict good alphas):
+            # (this matters for nucleic acids, since the sugar backbone needs torsions for generation)
+            # Define mask: compute for defined atoms (all if known seq, just backbone if diffused)
+            mask_seq = nucl_utils.get_full_mask_seq(label_aa_s[0,0,:])[None,None,:]
+            seq_for_scoring = torch.where(~mask_aa_s, label_aa_s, mask_seq)
+            unk_crds_mask = ChemData().allatom_mask.to(seq_for_scoring.device)[seq_for_scoring[0,0,:]]
+            unk_crds_mask[:, ChemData().NHEAVY:].fill_(False)
+            unk_crds_mask = torch.tile(unk_crds_mask[None,:,:,None], (1,1,1,3))
+
+            I, B, L, _, _ = pred_in.shape
+            _, pred_xyz_fa = self.allatom_converter.compute_all_atom(
+                                torch.tile(seq_for_scoring[:,0,:], (I,1)), 
+                                pred_in[:,0,:,:,:], 
+                                pred_tors[:,0,:,:,:]
+                                )
+            pred_fa_crds = pred_xyz_fa * self.conf.diffuser.r3.coordinate_scaling
+            gt_fa_crds = torch.where(
+                                ~torch.isnan(true), true, torch.zeros_like(true)
+                                ) * self.conf.diffuser.r3.coordinate_scaling
+            fa_crds_loss_mask = unk_crds_mask * loss_mask[:,:,None,None]
+            # calc displacement, and mask accordingly:
+            fa_disp_loss = torch.sum(
+                ((gt_fa_crds - pred_fa_crds) ** 2) * fa_crds_loss_mask,
+                dim=(-1, -2, -3)
+            ) / (torch.sum(fa_crds_loss_mask) + eps)
+            # Add full-atom loss to dict, weight only if at low t:
+            fa_disp_loss *= t < self._exp_conf.bb_atom_loss_t_filter
+            loss_dict['fa_disp'] = fa_disp_loss
+
 
 
         # C6D loss
@@ -749,6 +782,7 @@ class Trainer():
         self.ti_dev = self.ti_dev.to(gpu)
         self.ti_flip = self.ti_flip.to(gpu)
         self.ang_ref = self.ang_ref.to(gpu)
+        self.allatom_converter = self.allatom_converter.to(gpu)
        
         # define model
         print('Making model...')
@@ -880,6 +914,8 @@ class Trainer():
             'fm_dist_mat': self._exp_conf.fm_dist_mat,
             'i_fm_translation': self._exp_conf.i_fm_translation_loss_weight if 'i_fm_translation_loss_weight' in self._exp_conf else 0.0,   
             'i_fm_rotation': self._exp_conf.i_fm_rotation_loss_weight if 'i_fm_rotation_loss_weight' in self._exp_conf else 0.0,            
+            # Extras:
+            'fa_disp': self._exp_conf.fa_disp_loss_weight if 'fa_disp_loss_weight' in self._exp_conf else 0.0,       
         }
 
         print('Entering self.train_cycle')
@@ -900,6 +936,7 @@ class Trainer():
         for loader_out in train_loader:
             timer.checkpoint('data loading')
             indep, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context, conditions_dict = loader_out
+
             context_msg = f'rank: {rank}: {item_context} Size: {rfi.xyz.shape} Mask: {masks_1d["mask_name"]}'
             with error.context(context_msg):
                 N_cycle = np.random.randint(1, self.conf.maxcycle+1) # number of recycling

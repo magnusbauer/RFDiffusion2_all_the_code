@@ -1876,7 +1876,7 @@ class TransformedDataset(data.Dataset):
         for T in self.transforms:
             feats_before = set(feats.keys()) if isinstance(feats, dict) else set()
             feats = T(**feats)
-            
+
             # Logger information to track changes
             feats_after = set(feats.keys()) if isinstance(feats, dict) else set()
             new_feats = feats_after - feats_before

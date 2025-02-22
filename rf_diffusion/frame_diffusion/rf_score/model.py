@@ -263,7 +263,6 @@ class RFScore(nn.Module):
         rfi_dict = dataclasses.asdict(rfi)
 
         rfo = rf_diffusion.aa_model.RFO(*self.model(**{**rfi_dict, 'use_checkpoint':use_checkpoint, 'return_raw':return_raw}))
-
         # # Traj writing
         # rfo_cpy = tensor_util.apply_to_tensors(rfo, lambda x:x.detach().cpu())
         # os.makedirs(self.log_dir, exist_ok=True)

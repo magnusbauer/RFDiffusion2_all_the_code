@@ -7,6 +7,7 @@ import torch
 
 import ipd
 from rf_diffusion.chemical import ChemicalData as ChemData
+from rf_diffusion.nucleic_compatibility_utils import inds_to_mol_class
 
 
 class ContigMap():
@@ -35,6 +36,7 @@ class ContigMap():
             shuffle=False,
             intersperse=None,
             reintersperse=False,
+            mol_classes=None,
             ):
         
         self.deterministic = True
@@ -79,6 +81,7 @@ class ContigMap():
         self.inpaint_str_tensor=inpaint_str_tensor
         self.parsed_pdb = parsed_pdb
         self.topo=topo
+        self.mol_classes=mol_classes
         if ref_idx is None:
             #using default contig generation, which outputs in rosetta-like format
             self.contigs=contigs
@@ -125,6 +128,7 @@ class ContigMap():
         #get 0-indexed input/output (for trb file)
         self.ref_idx0,self.hal_idx0, self.ref_idx0_inpaint, self.hal_idx0_inpaint=self.get_idx0()
         self.con_ref_pdb_idx=[i for i in self.ref if i != ('_','_')]
+        self.mol_classes = self.get_contig_mol_classes()
 
 
     def get_sampled_mask(self):
@@ -335,3 +339,78 @@ class ContigMap():
             return mask, {k:v for k,v in atomized_residues.items()}
         else:
             return mask
+
+
+    def get_contig_mol_classes(self):
+        """
+        Each contiguous substructure should have the same mol class identity.
+        This function checks compatibility between mol classes of motifs and user-specification.
+        Mol. class identity corresponds to the type of molecules that are available in contigs:
+         * 'protein' (default)
+         * 'dna'
+         * 'rna'
+         * 'unknown' (for hybrid-chains)
+        Note: 'sm' and 'atom' mol. classes technically exist, but those 
+              are not currently used in contigs or diffused regions.
+
+        Returns: 
+            mol_classes (list): corrected or auto-populated mol_classes list, with length=number of chains.
+        """
+
+        # At this point mol_classes attribute has only been defined by user spec (or is None by default)
+        user_mol_class_spec = self.mol_classes
+        
+        # If we have user specification for mol classes, and one specification per chain, then use that:
+        if user_mol_class_spec is not None:
+            assert len(user_mol_class_spec)==len(self.sampled_mask), "length of contigmap.mol_classes must match number of chains in contigmap.contigs"
+            use_arg_spec = True
+        else:
+            use_arg_spec = False
+
+        # initialize the list of correct mol classes that we will use for diffusion (structure and sequence design)
+        mol_classes = []
+        # initialize dict for storing motif data within each chain
+        motif_mol_classes = {chn_ind:[] for chn_ind in range(len(self.sampled_mask))}
+
+        # (1). Check for mol classes given input pdb:
+        # Iterate through each position in diffused structure and check mol class of motif source in input pdb:
+        for hal_spec, ref_spec in zip(self.hal, self.ref):
+            # Check class at motif positions:
+            if ref_spec[0].isalpha(): 
+                # Access reference motif from ref chain:
+                parsed_ref_ind = self.parsed_pdb['pdb_idx'].index(ref_spec)
+                parsed_ref_res = self.parsed_pdb['seq'][parsed_ref_ind]
+                parsed_ref_mol_class = inds_to_mol_class[parsed_ref_res.item()]
+                # Add this to the list of mol classes in hal chain:
+                hal_chn_ind = self.chain_order.index(hal_spec[0])
+                motif_mol_classes[hal_chn_ind].append(parsed_ref_mol_class)
+
+        # (2). Check for mol classes given user specification, and compare against motifs:
+        for chn_ind_i, contig_str_i in enumerate(self.sampled_mask):
+
+            # Now that we have gone through all motifs within this contig/hal-chain, we can check for single mol class presence:
+            motif_mol_classes[chn_ind_i] = list(set(motif_mol_classes[chn_ind_i]))
+
+            if len(motif_mol_classes[chn_ind_i])==0: # No motifs in this contig:
+                # Diffuse user-specified mol class if given, otherwise default to protein
+                mol_classes.append(user_mol_class_spec[chn_ind_i] if use_arg_spec else 'protein')
+            elif len(motif_mol_classes[chn_ind_i])==1: # one distinct type of mol class for all motifs in contig
+                # Diffuse user-specified mol class if given, otherwise use mol class of motifs placed in that chain
+                mol_classes.append(user_mol_class_spec[chn_ind_i] if use_arg_spec else motif_mol_classes[chn_ind_i][0])
+            else:
+                # motifs of multiple different mol classes in same chain -> unknown mol class (for hybrids)
+                mol_classes.append(user_mol_class_spec[chn_ind_i] if use_arg_spec else 'unknown')
+
+        # (3). Check for situations where user specification contradicts motif placement, and issue warnings if necessary:
+        if user_mol_class_spec is not None:
+            for i,class_spec_i in enumerate(user_mol_class_spec):
+                # can only compare for chains where we actually have a motif
+                if len(motif_mol_classes[i]) > 0:
+                    chain_i = self.chain_order[chn_ind_i]  # We would usually want user-specified mol classes to match the motifs in a given chain,
+                    motif_classes_i = motif_mol_classes[i] # but technically hybrid chains do exist, and we will default to user choice,
+                    spec_classes_i = [class_spec_i]        # so we just warn the user that the motif and diffused regions do not match.
+                    print(f"WARNING: Mol. classes of motifs in chain {chain_i} ({motif_classes_i}) do not match specified mol.class for that chain ({spec_classes_i}).")
+
+        return mol_classes
+        
+

@@ -173,7 +173,7 @@ class Sampler:
         self.recycle_schedule = iu.recycle_schedule(self.diffuser_conf.T, recycle_schedule, self.inf_conf.num_recycles)
 
         self.dataset = rf_diffusion.inference.data_loader.InferenceDataset(self._conf, self.diffuser)
-    
+        
     def sample_init(self, i_des=0):
         """Initial features to start the sampling process.
         
@@ -273,7 +273,12 @@ class NRBStyleSelfCond(Sampler):
         trans_score = du.move_to_np(model_out['trans_score'][:,-1])
         rot_score = du.move_to_np(model_out['rot_score'][:,-1])
 
-        px0 = model_out['atom37'][0, -1]
+        # Allow control over px0 selection, keeping this if-statement outside of function for back-compatability
+        if 'px0_source' in self._conf.inference.keys(): 
+            px0 = iu.conf_select_px0(model_out, px0_source=self._conf.inference.px0_source)
+        else:
+            px0 = model_out['atom37'][0, -1] # Default behavior (fine for proteins only)
+
         px0 = px0.cpu()
 
         # ic(self._conf.denoiser.noise_scale, do_self_cond)

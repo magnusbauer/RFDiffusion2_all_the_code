@@ -238,7 +238,6 @@ def sample_one(sampler, i_des=0, simple_logging=False):
     # For intermediate output logging
     indep, contig_map, atomizer, t_step_input = sampler.sample_init(i_des)
     log = logging.getLogger(__name__)
-
     traj_stack = defaultdict(list)
     denoised_xyz_stack = []
     px0_xyz_stack = []
@@ -302,7 +301,6 @@ def sample_one(sampler, i_des=0, simple_logging=False):
         #     print(e)
         #     import ipdb
         #     ipdb.set_trace()
-
         px0_xyz_stack.append(px0)
         denoised_xyz_stack.append(x_t)
         seq_stack.append(seq_t)
@@ -420,10 +418,17 @@ def add_implicit_side_chain_atoms(seq, act_on_residue, xyz, xyz_with_sc):
     assert len(act_on_residue) == L
 
     replace_sc_atom = ChemData().allatom_mask[seq][:, :n_atoms]
-    is_prot = nucl_utils.get_resi_type_mask(seq, 'prot_and_mask')
-    replace_sc_atom[is_prot, :5] = False  # Does not add cb, since that can be calculated from N, CA and C for proteins
-    replace_sc_atom[~act_on_residue] = False
+    # is_prot = nucl_utils.get_resi_type_mask(seq, 'prot_and_mask')
+    # replace_sc_atom[is_prot, :5] = False  # Does not add cb, since that can be calculated from N, CA and C for proteins
 
+    # Mask seq tokens give just backbone atoms, so we can access the correct atom indices per position
+    # This generalizes the previous implementation to all molecule types, not just proteins.
+    mask_seq = torch.tensor([nucl_utils.inds_to_mol_class_mask[int(s)] for s in seq]) 
+    backbone_atom_mask = ChemData().allatom_mask[mask_seq][:, :n_atoms] 
+    backbone_atom_mask[:, ChemData().NHEAVY:].fill_(False)
+    replace_sc_atom *= ~backbone_atom_mask
+
+    replace_sc_atom[~act_on_residue] = False
     xyz[..., replace_sc_atom, :] = xyz_with_sc[replace_sc_atom]
 
     return xyz
@@ -520,7 +525,6 @@ def match_guideposts_and_generate_mappings(indep, is_diffused, contig_map, denoi
 
     return match_idx, gp_idx, gp_contig_mappings
 
-
 def save_outputs(sampler, out_prefix, indep, contig_map, atomizer, t_step_input, denoised_xyz_stack, px0_xyz_stack, seq_stack, is_diffused_in, raw, traj_stack, ts):
     log = logging.getLogger(__name__)
 
@@ -530,18 +534,24 @@ def save_outputs(sampler, out_prefix, indep, contig_map, atomizer, t_step_input,
 
     final_seq = seq_stack[-1]
 
+
+    # Get default output file tokens for diffused sequence positions and which tokens are considered masks
+    default_seq, mask_aas = nucl_utils.get_default_mask_seq(indep, contig_map, sampler._conf.inference)
+
     if sampler._conf.seq_diffuser.seqdiff is not None:
         # When doing sequence diffusion the model does not make predictions beyond category 19
         #final_seq = final_seq[:,:20] # [L,20]
         # Cannot do above code for NA, but instead get rid of mask tokens
-        final_seq = final_seq[20:22] = 0 
+        # final_seq = final_seq[20:22] = 0 
+        final_seq[:,mask_aas] = 0 
+
 
     # All samplers now use a one-hot seq so they all need this step, get rid of non polymer residues
     final_seq[~indep.is_sm, ChemData().NNAPROTAAS:] = 0 
     final_seq = torch.argmax(final_seq, dim=-1)
 
-    # replace mask and unknown tokens in the final seq with alanine
-    final_seq = torch.where((final_seq == 20) | (final_seq==21), 0, final_seq)
+    # replace mask and unknown tokens in the final seq with alanine, or the corresponding tokens for NAs
+    final_seq = torch.where(torch.isin(final_seq, mask_aas), default_seq, final_seq)
 
     # determine lengths of protein and ligand for correct chain labeling in output pdb
     chain_Ls = rf2aa.util.Ls_from_same_chain_2d(indep.same_chain)
@@ -602,7 +612,6 @@ def save_outputs(sampler, out_prefix, indep, contig_map, atomizer, t_step_input,
                 xyz_design[None, is_atomized],
                 seq_design[None, is_atomized]
             )
-
         # Create pdb, idealize the backbone, and rename ligand atoms
         idealized_pdb_stream = aa_model.write_traj(None, xyz_design_idealized, seq_design, indep.bond_feats, ligand_name_arr=contig_map.ligand_names, chain_Ls=chain_Ls, idx_pdb=indep.idx)
         idealized_pdb_stream = idealize_backbone.rewrite(None, None, pdb_stream=idealized_pdb_stream)

@@ -40,6 +40,48 @@ rna_base_complement = {
     26: 26
 }
 
+# Mol class management code: can possibly move to ChemData() if people agree on the logic.
+mask_ind_by_class = {
+                    'protein': ChemData().num2aa.index('MAS'), # prot mask is MAS
+                    'dna':     ChemData().num2aa.index(' DX'), # dna mask is  DX
+                    'rna':     ChemData().num2aa.index(' RX'), # rna mask is  RX
+                    'unknown': ChemData().num2aa.index('UNK'), # unknown mask is UNK, (used for hybrid chain class assumption)
+                    'atom':    ChemData().num2aa.index('ATM'), # if we want to mask small mol or atom (currently unused, and probably undesireable)
+                    }
+
+# Define mol_class_indices via 3-letter code specification and reference index used in ChemData().
+mol_class_3letter = {
+    'protein': ['ALA','ARG','ASN','ASP','CYS','GLN','GLU','GLY','HIS','ILE','LEU','LYS','MET','PHE','PRO', # prot resis,
+                'SER','THR','TRP','TYR','VAL','UNK','MAS','MEN','HIS_D'], # unk, mask, N-methyl asparagine, his_D
+    'dna':     [' DA',' DC',' DG',' DT',' DX'], # DNA bases and unk_DNA
+    'rna':     [' RA',' RC',' RG',' RU',' RX'], # RNA bases and unk_RNA
+    'atom':   ['Al', 'As', 'Au', 'B','Be', 'Br', 'C', 'Ca', 'Cl','Co', 'Cr', 'Cu', 'F', 'Fe','Hg', 'I', # atoms and unk_ATM
+                'Ir', 'K', 'Li', 'Mg','Mn', 'Mo', 'N', 'Ni', 'O','Os', 'P', 'Pb', 'Pd', 'Pr','Pt', 'Re', 
+                'Rh', 'Ru', 'S','Sb', 'Se', 'Si', 'Sn', 'Tb','Te', 'U', 'W', 'V', 'Y', 'Zn', 'ATM'], 
+    }
+# Get all token indices for a given molecule class
+mol_class_inds = {mol_class: [ChemData().aa2num[aa_code] for aa_code in mol_class_3letter[mol_class]] for mol_class in mol_class_3letter.keys()}
+
+# Given a token ind, see what mol class it belongs to:
+inds_to_mol_class = {ind: mol_class for mol_class in mol_class_inds.keys() for ind in mol_class_inds[mol_class]}
+
+# Given a token ind, return the associated mask for that mol_class
+inds_to_mol_class_mask = {ind: mask_ind_by_class[mol_class] for mol_class in mol_class_inds.keys() for ind in mol_class_inds[mol_class]}
+
+
+
+
+def get_full_mask_seq(seq):
+    """
+    input:
+        seq: 1d-tensor of length (L), containing sequence tokens in integer form
+    returns:
+        mask_seq: 1d-tensor of length (L), containing the mask token for the mol_class at input positions.
+    """
+    mask_seq = torch.full(seq.shape, ChemData().MASKINDEX, device=seq.device)
+    for i,s_i in enumerate(seq):
+        mask_seq[i] = mask_ind_by_class[inds_to_mol_class[int(s_i)]]
+    return mask_seq
 
 def find_protein_dna_chains(idx_pdb, seq):
     """
@@ -79,6 +121,63 @@ def find_protein_dna_chains(idx_pdb, seq):
             is_protein_chain.append(True)
 
     return Ls, np.array(is_protein), np.array(is_protein_chain)
+
+def get_default_mask_seq(indep, contig_map, inf_conf,
+    mol_classes = ['protein','rna','dna']
+    ):
+    """
+    Generates a vector containing the default output tokens for the full sequence, 
+    given the polymer/molecule class in a chain.
+    Example (standard) 3-letter codes placed in diffused regions of a sequence when saving pdb files:
+     * diffused prot -> ALA
+     * diffused rna  ->  RX
+     * diffused dna  ->  DX
+    This vector is then used to determine what to replace the mask tokens with 
+    when saving as a pdb file.
+    Args:
+        indep      (indep):     used to check seq positions and their corresponding chains (and therefore mol_class)
+        contig_map (ContigMap): contains info about mol_class identity (if computed) and assign appropriate mask labels.
+        inf_conf   (OmegaConf): allows users to control which output 3letter codes each diffused seq token should map to.
+            Example:
+             * inf_conf.diffused_mask_codes=['UNK','MAS',..] -> detect these tokens in indep.seq
+             * inf_conf.output_mask_codes.protein='ALA', etc -> save diffused-prot positions as 'ALA'
+
+    Output:
+        default_seq (torch.Tensor[int]): the seq to use at each diffused position when writing output file [L]
+        mask_aas    (torch.Tensor[int]): tensor containing all mask aa tokens to replace in output seq [num_mask_tokens]
+    """
+    letter2ind = {alpha_i : i for i, alpha_i in enumerate(aa_model.alphabet)}
+    # Initialize mask tokens based on given config:
+    if 'output_mask_codes' in inf_conf.keys():
+        default_3letter_by_class = {
+            # check for config spec of default codes, otherwise default back to ALA.
+            # also add leading spaces if dict values have less than 3 characters 
+            #    (artifact of argument parsing for NA codes)
+            mc: inf_conf['output_mask_codes'].get(mc,'ALA').rjust(3)
+            for mc in mol_classes
+        }
+    else:
+        default_3letter_by_class = {mc: 'ALA' for mc in mol_classes}
+
+    # Get list of diffused seq mask codes:
+    if 'diffused_mask_codes' in inf_conf.keys():
+        diffused_mask_codes = inf_conf.diffused_mask_codes
+    else:
+        diffused_mask_codes = ['UNK','MAS']
+
+    mask_aas = torch.tensor([ChemData().aa2num[code] for code in diffused_mask_codes])
+    default_ind_by_class     = {mc: ChemData().aa2num[aa] for mc,aa in default_3letter_by_class.items()}
+    default_seq = torch.zeros_like(indep.seq)
+    
+    # iterate through contig_map data and update sequence and mask according to mol class:
+    if hasattr(contig_map, 'mol_classes'):
+        for i, chn_i in enumerate(indep.chains()):
+            # Only update default seq for specific mol class if we have mol_class data for that chain in the contigs
+            if (letter2ind[chn_i] < len(contig_map.mol_classes)) and (not indep.is_sm[i]):
+                default_seq[i] = default_ind_by_class[contig_map.mol_classes[letter2ind[chn_i]]]
+
+    return default_seq, mask_aas
+
 
 
 def get_resi_type_mask(seq: Union[np.array, torch.Tensor, int, float], nuc_type: str) -> Union[np.array, torch.Tensor, bool]:
