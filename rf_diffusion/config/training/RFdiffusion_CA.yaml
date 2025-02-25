@@ -35,7 +35,7 @@ upstream_training_transforms:
 transforms: 
   names:
     - ComputeMotifTemplate
-    - CenterOnCA # since we are doing motif_only_2d, center on all
+    - CenterOnCA # since we are doing motif_only_2d, centers on all
     - AddConditionalInputs
   
   configs:

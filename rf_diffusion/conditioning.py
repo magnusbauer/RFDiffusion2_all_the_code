@@ -264,7 +264,7 @@ class ComputeMotifTemplate:
         metadata['motif_template'] = motif_template
 
         masks_1d['input_str_mask'] = torch.zeros_like(is_motif) # ensure it gets diffused in 3D 
-
+        masks_1d['is_templated_motif'] = is_motif # use this later inside of preprocess.add_motif_template
 
         return {'indep'         : indep,
                 'masks_1d'      : masks_1d,
@@ -360,7 +360,7 @@ class ComputeMotifTemplateRefine:
 
 class GenerateMasks:
     """
-    Non-public class for generating masks. Is not a traditional tranform
+    Non-public class for generating masks. Is not a traditional transform
     because it uses configurations from many places in the configuration file
     and also relies on hard coded functions and their names within mask_generator.py
 
@@ -387,6 +387,7 @@ class GenerateMasks:
 
         # Mask the independent inputs.
         run_inference.seed_all(mask_gen_seed) # Reseed the RNGs for test stability.
+        
         masks_1d = mask_generator.generate_masks(
             indep=indep, 
             task=task, 
@@ -397,6 +398,7 @@ class GenerateMasks:
             metadata=metadata,  # holds e.g. `covale_bonds`
             datahub_config=self.datahub_config
         )
+
         # Pop masks_1d if exists since it is being overwritten
         if 'masks_1d' in kwargs: 
             logger.warning('`masks_1d` is being overwritten by GenerateMasks. Was: %s', kwargs['masks_1d'])

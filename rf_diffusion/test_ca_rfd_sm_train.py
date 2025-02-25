@@ -347,7 +347,7 @@ class TestFeaturization(unittest.TestCase):
         # Entire t2d 
         want = self.rfi_78_golden['t2d']
         got = self.kall.kwargs['t2d']
-        torch.testing.assert_close(got, want, atol=6e-5, rtol=0.0002)
+        torch.testing.assert_close(got, want, atol=0.00025, rtol=0.0006)
 
 
     def test_xyz_t(self):

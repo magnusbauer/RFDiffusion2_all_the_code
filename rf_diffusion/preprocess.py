@@ -2,7 +2,7 @@ import torch
 import aa_model 
 
 from rf_diffusion.chemical import ChemicalData as ChemData
-
+import pdb
 
 def add_motif_template(rfi: aa_model.RFI, motif_template: dict, masks_1d: dict) -> aa_model.RFI:
     """
@@ -17,14 +17,15 @@ def add_motif_template(rfi: aa_model.RFI, motif_template: dict, masks_1d: dict) 
     Returns:
         rfi (aa_model.RFI): RoseTTAFold input features with the motif template added.
     """
-    # unpack stuff
+    # unpack
     t1d     = rfi.t1d
     t2d     = rfi.t2d
     mask_t  = rfi.mask_t
     alpha_t = rfi.alpha_t
     xyz_t   = rfi.xyz_t
 
-    is_motif    = masks_1d['input_str_mask']
+    # is_motif    = masks_1d['input_str_mask']
+    is_motif = masks_1d['is_templated_motif']
     is_motif_2d = masks_1d['is_motif_2d']
 
     t2d_motif   = motif_template['t2d']
