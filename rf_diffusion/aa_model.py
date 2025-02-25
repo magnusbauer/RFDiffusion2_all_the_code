@@ -1,5 +1,4 @@
 from __future__ import annotations
-from itertools import groupby
 import logging
 import torch
 import contextlib
@@ -987,17 +986,11 @@ def make_indep(pdb, ligand='', return_metadata=False, pdb_stream=None):
         ligand_atom_names_arr = ['']*sum(Ls[:N_poly])
         if ligand:
             ligand_atom_names_arr.extend(sm_atom_names)
-        
-        # ligand_info is wrong in the case of multiple ligands. TODO: fix this, add a test.
-        ligand_info_ligand_order = [d['name'].strip() for d in target_feats['info_het']]
-        ligand_info_ligand_order = [key for key, _group in groupby(ligand_info_ligand_order)]
-        assert ligands == ligand_info_ligand_order, f'{ligands} != {ligand_info_ligand_order}'
 
         metadata = {
             'covale_bonds': covale_bonds,
             'ligand_names': np.array(ligand_name_arr,  dtype='<U3'),
             'ligand_atom_names': np.array(ligand_atom_names_arr,  dtype='<U4'),
-            'ligand_info': target_feats['info_het'],
         }
         return indep, metadata
     return indep
@@ -1953,7 +1946,12 @@ def diffuse(conf, diffuser, indep, is_diffused, t):
     # Only update heavy atoms from diffused positions
     if conf.diffuser.preserve_motif_sidechains:
         # Only 'is_diffused' motifs get replaced, should be more correct in general
-        indep.xyz[is_diffused,:ChemData().NTOTAL] = xT[is_diffused,:ChemData().NTOTAL]
+        # Training datasets are returning 23 atoms, so this line breaks.
+        # TODO: unify this such that we are always in either atom36 or atom23
+        # indep.xyz[is_diffused,:ChemData().NTOTAL] = xT[is_diffused,:ChemData().NTOTAL]
+        indep_n_atoms = indep.xyz.shape[1]
+        assert indep_n_atoms in [23, 36, 37]
+        indep.xyz[is_diffused,:indep_n_atoms] = xT[is_diffused,:indep_n_atoms]
         indep.xyz = indep.xyz[:, :ChemData().NTOTAL]
     else:
         # In this case, all motif atoms are replaced with idealized frames from rigids

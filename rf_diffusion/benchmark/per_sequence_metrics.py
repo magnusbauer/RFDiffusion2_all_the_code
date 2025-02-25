@@ -608,7 +608,12 @@ def sidechain(pdb, resolve_symmetry=False):
         heavy_atom_names = aa_model.get_atom_names(aa)
         heavy_motif_atoms[f'{ref_chain}{ref_idx_pdb}'] = heavy_atom_names
 
-    contig_atoms = row['contigmap.contig_atoms']
+    # Parse contig atoms
+    contig_atoms = None
+    if 'metrics_meta.contig_atoms' in row:
+        contig_atoms = row['metrics_meta.contig_atoms']
+    elif 'contigmap.contig_atoms' in row:
+        contig_atoms = row['contigmap.contig_atoms']
     if contig_atoms is not None:
         contig_atoms = eval(contig_atoms)
         contig_atoms = {k:v.split(',') for k,v in contig_atoms.items()}
@@ -650,10 +655,6 @@ def sidechain(pdb, resolve_symmetry=False):
             for a in atom_names:
                 pids.append(f'A{hal_i}-{a}')
         return pids
-
-    def get_backbone(pids):
-        return [pid for pid in pids if pid.startswith('A') and
-                (pid.endswith('-CA') or pid.endswith('-C') or pid.endswith('-N') or pid.endswith('-O'))]
     
     heavy_motif_atoms_by_subset = {'all': heavy_motif_atoms}
     empty = {k: [] for k in heavy_motif_atoms.keys()}
@@ -662,45 +663,67 @@ def sidechain(pdb, resolve_symmetry=False):
         residue_subset[ref_residue_id] = motif_atoms
         heavy_motif_atoms_by_subset[f'residue_{ref_residue_id}'] = residue_subset
 
-    for align_to_whole_motif in [True, False]:
-        for subset_name, subset_heavy_motif_atoms in heavy_motif_atoms_by_subset.items():
-            pairs_to_compare = [
-                    ('des', 'unideal'),
-                    ('packed', 'unideal'),
-                ]
-            if has_chai:
-                for chai_name in chai_names:
-                    pairs_to_compare.append((chai_name, 'unideal'))
-                    pairs_to_compare.append((chai_name, 'packed'))
-                    pairs_to_compare.append((chai_name, 'ref'))
-            if has_af2:
-                pairs_to_compare.append(('af2', 'unideal'))
-                pairs_to_compare.append(('af2', 'packed'))
-                pairs_to_compare.append(('af2', 'ref'))
+    atom_by_residue_by_subset = {}
+    atom_by_residue_by_subset['backbone'] = {k: ['N', 'CA', 'C', 'O'] for k,v in heavy_motif_atoms.items()}
+    atom_by_residue_by_subset['allatom'] = {k: v for k,v in heavy_motif_atoms.items()}
+    atom_by_residue_by_subset['contigatom'] = contig_atoms
 
-            for source, target in pairs_to_compare:
-                def get_motif_coords(tag):
-                    get_motif_allatom = partial(get_motif, ref=tag=='ref', contig_atoms=subset_heavy_motif_atoms)
-                    get_motif_backbone = lambda x: get_backbone(get_motif_allatom(x))
-                    if align_to_whole_motif:
-                        get_motif_backbone = partial(get_motif, ref=tag=='ref', contig_atoms=subset_heavy_motif_atoms)
-                    motif_backbone_xyz = xyz(tag, get_motif_backbone)
-                    motif_allatom_xyz = xyz(tag, get_motif_allatom)
-                    return motif_backbone_xyz, motif_allatom_xyz
+    # Dictionary of alignment atoms subset to rmsd atoms subset. e.g.:
+    # {
+    #     'motif_bb': 'motif_bb',
+    #     'motif_bb': 'motif_atoms'
+    # }
+    rmsd_by_align = (
+        ('backbone', 'backbone'),
+        ('backbone', 'allatom'),
+        ('backbone', 'contigatom'),
+        ('allatom', 'allatom'),
+        ('allatom', 'contigatom'),
+        ('contigatom', 'contigatom'),
+    )
 
-                motif_source_backbone, motif_source_allatom = get_motif_coords(source)
-                motif_target_backbone, motif_target_allatom = get_motif_coords(target)
-                T = get_aligner(motif_source_backbone, motif_target_backbone)
-                motif_source_allatom_backbone_aligned = T(motif_source_allatom)
-                whole_motif_str = 'constellation_' if align_to_whole_motif else ''
+    for align_to, rmsd_to in rmsd_by_align:
+        ic(align_to, rmsd_to)
+        pairs_to_compare = [
+                ('des', 'unideal'),
+                ('packed', 'unideal'),
+            ]
+        if has_chai:
+            for chai_name in chai_names:
+                pairs_to_compare.append((chai_name, 'unideal'))
+                pairs_to_compare.append((chai_name, 'packed'))
+                pairs_to_compare.append((chai_name, 'ref'))
+        if has_af2:
+            pairs_to_compare.append(('af2', 'unideal'))
+            pairs_to_compare.append(('af2', 'packed'))
+            pairs_to_compare.append(('af2', 'ref'))
 
-                chai_model_suffix = ''
-                if 'chai' in source:
-                    source, chai_model_index = source.split('_')
-                    chai_model_suffix = f'_chaimodel_{chai_model_index}'
+        for source, target in pairs_to_compare:
+            def get_motif_coords(tag):
+                is_ref = tag=='ref'
+                align_atom_by_residue = atom_by_residue_by_subset[align_to]
+                rmsd_atom_by_residue = atom_by_residue_by_subset[rmsd_to]
+                get_alignment_atoms = partial(get_motif, ref=is_ref, contig_atoms=align_atom_by_residue)
+                get_rmsd_atoms = partial(get_motif, ref=is_ref, contig_atoms=rmsd_atom_by_residue)
+                return xyz(tag, get_alignment_atoms), xyz(tag, get_rmsd_atoms)
 
-                out[f'{whole_motif_str}backbone_aligned_allatom_rmsd_{source}_{target}_{subset_name}{chai_model_suffix}'] = rmsd(motif_source_allatom_backbone_aligned, motif_target_allatom).item()
+            motif_source_backbone, motif_source_allatom = get_motif_coords(source)
+            motif_target_backbone, motif_target_allatom = get_motif_coords(target)
+            T = get_aligner(motif_source_backbone, motif_target_backbone)
+            motif_source_allatom_backbone_aligned = T(motif_source_allatom)
 
+            chai_model_suffix = ''
+            if 'chai' in source:
+                source, chai_model_index = source.split('_')
+                chai_model_suffix = f'_chaimodel_{chai_model_index}'
+
+            out[f'{align_to}_aligned_{rmsd_to}_rmsd_{source}_{target}{chai_model_suffix}'] = rmsd(motif_source_allatom_backbone_aligned, motif_target_allatom).item()
+
+    # Attach common names for backwards compatibility
+    if has_chai:
+        for chai_model_idx in range(n_chai):
+            out[f'backbone_aligned_allatom_rmsd_chai_unideal_all_chaimodel_{chai_model_idx}'] = out[f'backbone_aligned_allatom_rmsd_chai_unideal_chaimodel_{chai_model_idx}']
+            out[f'constellation_backbone_aligned_allatom_rmsd_chai_unideal_all_chaimodel_{chai_model_idx}'] = out[f'allatom_aligned_allatom_rmsd_chai_unideal_chaimodel_{chai_model_idx}']
     return out
 
 
@@ -1004,8 +1027,8 @@ def assert_arrays_equal(a, b):
     fraction_matched = np.mean(a == b)
     raise Exception(f'{fraction_matched=}, mismatched (i, got, want): {list(zip(i_mismatch, a[i_mismatch], b[i_mismatch]))}')
 
-def get_atom_id(atom_array):
-    np.array([f'{res_name}_{res_id}_{atom_name}' for res_name, res_id, atom_name in zip(atom_array.chain_id, atom_array.res_name, atom_array.res_id, atom_array.atom_name)])
+def get_atom_id(a):
+    return (a.chain_id, a.res_id, a.atom_name)
 
 def set_res_name_occurance_old(atom_array):
     new_id_by_res_name_res_id = {}
@@ -1448,13 +1471,11 @@ def atom_by_id(atoms, get_id=get_atom_id):
 
 from collections import OrderedDict
 def get_atom_by_reference_atom_id(
-    contig_atoms, # str
+    contig_atoms, # dict of lists
     con_ref_pdb_idx,
     con_hal_pdb_idx,
     ref = False,
 ):
-    contig_atoms = eval(contig_atoms)
-    contig_atoms = {k:v.split(',') for k,v in contig_atoms.items()}
 
     current_by_ref = OrderedDict()
 
@@ -1465,17 +1486,24 @@ def get_atom_by_reference_atom_id(
 
     return current_by_ref
 
+def make_atom_array_safe(atom_list):
+    '''
+    Constructor for biotite.structure.AtomArray that handles empty lists.
+    '''
+    if len(atom_list) == 0:
+        return biotite.structure.AtomArray(0)
+    return biotite.structure.array(atom_list)
+
 def get_motif_atoms(
     atoms,
-    contig_atoms, # str
+    contig_atoms, # dict of lists
     con_ref_pdb_idx,
     con_hal_pdb_idx,
     ref = False,
 ):
     current_by_ref = get_atom_by_reference_atom_id(contig_atoms, con_ref_pdb_idx, con_hal_pdb_idx, ref=ref)
     atoms_by_id = atom_by_id(atoms, get_atom_id)
-
-    atoms = biotite.structure.array([atoms_by_id[v] for v in current_by_ref.values()])
+    atoms = make_atom_array_safe([atoms_by_id[v] for v in current_by_ref.values()])
     return atoms    
 
 def biotite_aligned_rmsd(atoms_true, atoms_pred):
@@ -1484,6 +1512,49 @@ def biotite_aligned_rmsd(atoms_true, atoms_pred):
     '''
     fitted, transformation = biotite.structure.superimpose(atoms_true, atoms_pred)
     return biotite.structure.rmsd(atoms_true, fitted)
+
+
+def get_all_heavy_motif_atoms(seq, con_ref_idx0, con_ref_pdb_idx):
+    heavy_motif_atoms = {}
+    for ref_idx0, (ref_chain, ref_idx_pdb) in zip(con_ref_idx0, con_ref_pdb_idx):
+        aa = seq[ref_idx0]
+        heavy_atom_names = aa_model.get_atom_names(aa)
+        heavy_motif_atoms[f'{ref_chain}{ref_idx_pdb}'] = heavy_atom_names
+    return heavy_motif_atoms
+
+def get_implied_contig_backbone_atoms(contig_atoms, con_ref_pdb_idx):
+    '''
+    Adds N Ca C for con_ref_pdb_idx entries without a corresponding entry in contig_atoms to contig_atoms.
+    '''
+    implied_contig_atoms = {}
+    for (chain, idx_pdb) in con_ref_pdb_idx:
+        key = f'{chain}{idx_pdb}'
+        if key not in contig_atoms:
+            implied_contig_atoms[key] = ['N', 'CA', 'C']
+        else:
+            implied_contig_atoms[key] = contig_atoms[key]
+    return implied_contig_atoms
+
+def get_implied_contig_atoms(contig_atoms, con_ref_pdb_idx, con_ref_idx0, seq):
+    '''
+    Adds all heavy atoms for con_ref_pdb_idx entries without a corresponding entry in contig_atoms to contig_atoms.
+    '''
+    implied_contig_atoms = {}
+    heavy_motif_atoms = get_all_heavy_motif_atoms(seq, con_ref_idx0, con_ref_pdb_idx)
+    for (chain, idx_pdb) in con_ref_pdb_idx:
+        key = f'{chain}{idx_pdb}'
+        if key not in contig_atoms:
+            implied_contig_atoms[key] = heavy_motif_atoms[key]
+        else:
+            implied_contig_atoms[key] = contig_atoms[key]
+    return implied_contig_atoms
+
+def parse_contig_atoms(contig_atoms):
+    if contig_atoms is None:
+        return {}
+    assert isinstance(contig_atoms, str), f'expected string, but {type(contig_atoms)=} != str: {contig_atoms=}'
+    contig_atoms = eval(contig_atoms)
+    return {k:v.split(',') for k,v in contig_atoms.items()}
 
 def rmsd_to_input(
         pdb,
@@ -1499,12 +1570,48 @@ def rmsd_to_input(
     atoms_output = bt.atom_array_from_pdb(output_pdb)
 
     trb = analyze.get_trb(row)
-    atoms_input = get_motif_atoms(atoms_input, row['contigmap.contig_atoms'], trb['con_ref_pdb_idx'], trb['con_hal_pdb_idx'], ref=True)
-    atoms_output = get_motif_atoms(atoms_output, row['contigmap.contig_atoms'], trb['con_ref_pdb_idx'], trb['con_hal_pdb_idx'], ref=False)
+    indep = aa_model.make_indep(input_pdb, ligand=None)
 
-    assert_arrays_equal(atoms_input.res_name, atoms_output.res_name)
-    assert_arrays_equal(atoms_input.atom_name, atoms_output.atom_name)
-    out['motif_rmsd_to_input'] = biotite_aligned_rmsd(atoms_input, atoms_output)
+    all_contig_atoms = get_implied_contig_atoms(parse_contig_atoms(row.get('contigmap.contig_atoms')), trb['con_ref_pdb_idx'], trb['con_ref_idx0'], indep.seq)
+    all_contig_atoms_minus_backbone_oxygen = {}
+    for k,v in all_contig_atoms.items():
+        all_contig_atoms_minus_backbone_oxygen[k] = [a for a in v if a != 'O']
+
+    contig_heavy = get_implied_contig_atoms(parse_contig_atoms(None), trb['con_ref_pdb_idx'], trb['con_ref_idx0'], indep.seq)
+    contig_heavy_minus_backbone_oxygen = {}
+    for k,v in contig_heavy.items():
+        contig_heavy_minus_backbone_oxygen[k] = [a for a in v if a != 'O']
+    contig_NCaCO = {}
+    for k,v in contig_heavy.items():
+        contig_NCaCO[k] = ['N', 'CA', 'C', 'O']
+    contig_NCaC = {}
+    for k,v in contig_heavy.items():
+        contig_NCaC[k] = ['N', 'CA', 'C']
+
+    meta_contig_atoms = {}
+    if 'metrics_meta.contig_atoms' in row:
+        meta_contig_atoms = row['metrics_meta.contig_atoms']
+    elif 'contigmap.contig_atoms' in row:
+        meta_contig_atoms = row['contigmap.contig_atoms']
+    all_contig_atoms_metrics_meta = get_implied_contig_atoms(parse_contig_atoms(meta_contig_atoms), trb['con_ref_pdb_idx'], trb['con_ref_idx0'], indep.seq)
+    
+    for cohort, contig_atoms_cohort in {
+        # 'NCaC': 
+        'all': all_contig_atoms,
+        'all_minus_backbone_oxygen': all_contig_atoms_minus_backbone_oxygen,
+        'heavy': contig_heavy,
+        'heavy_minus_backbone_oxygen': contig_heavy_minus_backbone_oxygen,
+        'NCaCO': contig_NCaCO,
+        'NCaC': contig_NCaC,
+        'metrics_meta': all_contig_atoms_metrics_meta,
+    }.items():
+        atoms_input_cohort = get_motif_atoms(atoms_input, contig_atoms_cohort, trb['con_ref_pdb_idx'], trb['con_hal_pdb_idx'], ref=True)
+        atoms_output_cohort = get_motif_atoms(atoms_output, contig_atoms_cohort, trb['con_ref_pdb_idx'], trb['con_hal_pdb_idx'], ref=False)
+        assert_arrays_equal(atoms_input_cohort.res_name, atoms_output_cohort.res_name)
+        assert_arrays_equal(atoms_input_cohort.atom_name, atoms_output_cohort.atom_name)
+        out[f'{cohort}_rmsd_to_input'] = biotite_aligned_rmsd(atoms_input_cohort, atoms_output_cohort)
+
+    out['motif_rmsd_to_input'] = out['all_rmsd_to_input']
     return out
 
 # For debugging, can be run like:

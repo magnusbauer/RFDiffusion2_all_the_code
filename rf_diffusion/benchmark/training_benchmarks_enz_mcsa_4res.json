@@ -1,0 +1,7 @@
+{
+    "unconditional": "inference.input_pdb=ra_5an7_no_cov_ORI_cm1.pdb ++transforms.configs.CenterPostTransform.center_type='all' contigmap.contigs=[\\'150\\'] contigmap.length=150-150",
+    "M0315_1ey3_tip_unindexed": "inference.contig_as_guidepost=True inference.input_pdb=mcsa_41/M0315_1ey3.pdb inference.ligand=\\'DAK\\' contigmap.contigs=[\\'56,A98-98,42,A141-141,2,A144-144,19,A164-164,57\\'] contigmap.contig_atoms=\"'{\\'A98\\':\\'N,CA\\',\\'A141\\':\\'N,CA\\',\\'A144\\':\\'OE1,CD,CG,OE2\\',\\'A164\\':\\'OE2,CD\\'}'\" contigmap.length=180-180",
+    "M0315_1ey3_tip_indexed": "inference.contig_as_guidepost=False inference.input_pdb=mcsa_41/M0315_1ey3.pdb inference.ligand=\\'DAK\\' contigmap.contigs=[\\'56,A98-98,42,A141-141,2,A144-144,19,A164-164,57\\'] contigmap.contig_atoms=\"'{\\'A98\\':\\'N,CA\\',\\'A141\\':\\'N,CA\\',\\'A144\\':\\'OE1,CD,CG,OE2\\',\\'A164\\':\\'OE2,CD\\'}'\" contigmap.length=180-180",
+    "M0315_1ey3_backbone_unindexed": "inference.contig_as_guidepost=True inference.input_pdb=mcsa_41/M0315_1ey3.pdb inference.ligand=\\'DAK\\' contigmap.contigs=[\\'56,A98-98,42,A141-141,2,A144-144,19,A164-164,57\\'] contigmap.length=180-180",
+    "M0315_1ey3_backbone_indexed": "inference.contig_as_guidepost=False inference.input_pdb=mcsa_41/M0315_1ey3.pdb inference.ligand=\\'DAK\\' contigmap.contigs=[\\'56,A98-98,42,A141-141,2,A144-144,19,A164-164,57\\'] contigmap.length=180-180"
+}

@@ -88,6 +88,7 @@ contigmap:
   has_termini: [True]
   intersperse: null
   reintersperse: False
+  shuffle_and_random_partition: False
 
 rf:
   model:

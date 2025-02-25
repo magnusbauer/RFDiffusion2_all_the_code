@@ -132,10 +132,18 @@ class TestBenchmark(unittest.TestCase):
         # ''',
         # ['error']
         # ),
+        ('''
+        a=1
+        b=2
+        *benchmark/test_benchmarks.txt
+        ''',
+        [
+            {'a':'1', 'b':'2', 'c':'3'},
+            {'a':'1', 'b':'2', 'c':'4'},
+        ]),
         ]:
             with error.context(f'{arg_str=} {want=}'):
-                arg_str = benchmark.sweep_hyperparam.process_post(arg_str)
-                got = benchmark.sweep_hyperparam.get_arg_combos(arg_str)
+                got = benchmark.sweep_hyperparam.parse_arg_str(arg_str)
                 ic(got, want)
                 self.assertEqual(got, want)
 
@@ -174,7 +182,7 @@ class TestBenchmark(unittest.TestCase):
         df = pd.read_csv(expected_metrics_csv_path)
         assertpy.assert_that(df.shape[0]).is_equal_to(expected_number_of_sequences)
 
-        af2_success_metric = 'backbone_aligned_allatom_rmsd_af2_unideal_all_sym_resolved'
+        af2_success_metric = 'backbone_aligned_allatom_rmsd_af2_unideal_sym_resolved'
         assert df[af2_success_metric].notna().all(), f'expected non nans: {df[af2_success_metric]=}'
 
 

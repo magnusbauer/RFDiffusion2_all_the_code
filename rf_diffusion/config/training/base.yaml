@@ -49,6 +49,7 @@ diffuser:
   t_distribution: uniform
   type: diffusion
   preserve_motif_sidechains: false  # Default behavior (set to false) is to diffuse all atoms and restore rigids of the frame for position that are not diffused (meaning side chain information is lost). When set to true, diffusion and frames addition are only performed on positions that are set to diffuse via the is_diffused boolean mask
+  center_noise_sample: true # Set the center of the noise sample 0,0,0
 experiment:
   trans_loss_weight: 1.0
   rot_loss_weight: 1.0

@@ -1,0 +1,54 @@
+defaults:
+  - fm_tip_center_all_from_scratch_enz_finetune_resume_140
+
+rundir: /net/scratch/ahern/se3_diffusion/training/center_all_from_scratch_enz_finetune_resume_140_rebalance
+wandb_prefix: 'center_all_from_scratch_enz_finetune_resume_140_rebalance'
+
+pseudobatch: 72
+diffuser:
+  preserve_motif_sidechains: true
+  center_noise_sample: false
+
+dataloader:
+  P_IS_GUIDEPOST_EXAMPLE: 0.5
+  DIFF_MASK_PROBS:
+    # SIMPLE
+    # get_unconditional_diffusion_mask_free_ligand: 0.1
+    # get_tip_mask: 0.405 # (1-p_uncond)* p_tip * 0.9
+    # get_tip_mask_unconditional_free_ligand: 0.045 # (1-p_uncond) * p_tip * 0.1
+    # get_tip_mask_bb_only: 0.45
+
+    # PARTIAL LIGAND MASKING
+    # p_uncond=0.1
+    # p_tip=0.5         Probability of tip
+    # p_gp=0.5          Probability of guidepost
+    # p_cfg_uncond=0.1  Probability of CFG-enabling analog of tip-atom (no motif, tip atom atomization, guideposts)
+    # p_whole=0.7       Probability of whole ligand
+    # p_partial=0.2     Probability of partial ligand
+    # p_free=0.1        Probability of free ligand
+    # Reset previously set mask values
+    get_tip_mask: 0
+
+    get_unconditional_diffusion_mask_free_ligand: 0.1    # p_uncond
+    get_tip_mask_unconditional_free_ligand: 0.045        # (1-p_uncond) * p_tip * 0.1
+    get_tip_mask_whole_ligand: 0.2835            # (1-p_uncond) * (1-p_cfg_uncond) * p_tip * p_whole
+    get_tip_mask_partial_ligand: 0.081           # (1-p_uncond) * (1-p_cfg_uncond) * p_tip * p_partial
+    get_tip_mask_free_ligand: 0.0405             # (1-p_uncond) * (1-p_cfg_uncond) * p_tip * p_free
+    get_tip_mask_bb_only_whole_ligand: 0.315             # (1-p_uncond) * (1-p_tip) * p_whole
+    get_tip_mask_bb_only_partial_ligand: 0.09            # (1-p_uncond) * (1-p_tip) * p_partial
+    get_tip_mask_bb_only_free_ligand: 0.045              # (1-p_uncond) * (1-p_tip) * p_free
+
+    # TESTING 
+    # get_unconditional_diffusion_mask_free_ligand: 0.0
+    # get_tip_mask_unconditional_free_ligand: 0.0
+    # get_tip_mask_bb_only_whole_ligand: 1.0            # (1-p_uncond) * (1-p_cfg_uncond) * p_tip * p_whole
+    # get_tip_mask_partial_ligand: 0.5            # (1-p_uncond) * (1-p_cfg_uncond) * p_tip * p_whole
+
+
+# Do not resume the wandb session, fork the training run instead
+resume: false
+  
+benchmark:
+  run_early_validation: true
+  inference_yaml: aa_validation
+  pipeline_yaml: training_benchmarks_enz.yaml

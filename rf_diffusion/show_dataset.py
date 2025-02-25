@@ -16,8 +16,8 @@ pymol.init(pymol_url='http://chesaw.dhcp.ipd:9123')
 cmd = pymol.cmd
 
 from rf_diffusion import show
+from rf_diffusion import noisers
 from rf_diffusion.dev import show_tip_pa
-from rf_diffusion.frame_diffusion.data import se3_diffuser
 from rf_diffusion import aa_model
 from rf_diffusion.conditions.ss_adj.sec_struct_adjacency import SS_HELIX, SS_STRAND, SS_LOOP, SS_SM, ADJ_STRAND_PAIR
 from rf_diffusion.conditions import hbond_satisfaction
@@ -93,8 +93,7 @@ def run(conf: DictConfig) -> None:
 
     if conf.debug:
         ic.configureOutput(includeContext=True)
-    diffuser = se3_diffuser.SE3Diffuser(conf.diffuser)
-    diffuser.T = conf.diffuser.T
+    noiser = noisers.get(conf.diffuser)
     
     # mp.cpu_count()-1
     LOAD_PARAM = {
@@ -107,7 +106,7 @@ def run(conf: DictConfig) -> None:
     # Get the fallback dataset and dataloader
     train_set, train_loader = get_fallback_dataset_and_dataloader(
         conf=conf,
-        diffuser=diffuser,
+        diffuser=noiser,
         num_example_per_epoch=conf.epoch_size,
         world_size=1,
         rank=0,
@@ -132,7 +131,7 @@ def run(conf: DictConfig) -> None:
             chosen_dataset, _index = item_context['chosen_dataset'], item_context['index']
             for xyz_label, xyz in [
                     ('true', indep.xyz),
-                    # ('input', rfi.xyz[0,:,:14])
+                    ('input', rfi.xyz[0,:,:14])
             ]:
                 indep.xyz = xyz
                 bonds = indep.metadata['covale_bonds']

@@ -164,15 +164,17 @@ def glob_re(pattern, strings):
     return filter(re.compile(pattern).match, strings)
 
 # '/mnt/home/ahern/projects/dev_rf_diffusion/debug/no_so3_0_*.pdb'a
-def get_sdata(path, pattern=None):
+def get_sdata(path, pattern=None, progress=False):
     traj_paths = glob.glob(path)
     if pattern:
         traj_paths = glob_re(pattern, traj_paths)
     traj_paths = [p[:-4] for p in traj_paths]
     traj_paths = sorted(traj_paths)
-    srows = [analyze.make_row_from_traj(traj_path) for traj_path in traj_paths]
+    srows = []
+    for traj_path in tqdm(traj_paths, disable=not progress):
+        srows.append(analyze.make_row_from_traj(traj_path))
     data = pd.DataFrame.from_dict(srows)
-    data['des_color'] = pd.NA
+    data['des_color'] = 'rainbow'
     try:
         data['seed'] = data.name.apply(lambda x: int(x.split('_cond')[1].split('_')[1].split('-')[0]))
     except Exception as e:
@@ -284,6 +286,8 @@ def add_pymol_name(data, keys):
                 v = v.split('/')[-1]
             if k == 'inference.input_pdb':
                 v = v.split('/')[-1]
+            if k == 'inference.ckpt_override_path':
+                v = v.split('/')[-1]
             if k == 'pdb_path':
                 v = v.split('/')[-1]
             k_str = k.replace('.', '_')
@@ -387,7 +391,9 @@ def main(path,
     logger.debug(f'{sweeps=}')
     if len(sweeps):
         if key:
-            keys = [key]
+            keys = key
+            if isinstance(key, str):
+                keys = key.split(',')
         else:
             keys = [k for k in sweeps.keys() if k not in ['contigmap.contig_atoms']]
         ic(keys)
@@ -396,6 +402,9 @@ def main(path,
         show_tip_pa.clear()
     if extra:
         data['extra'] = extra
+    
+    if 'pymol' in data.columns:
+        data.sort_values('pymol', inplace=True)
     ic(extra)
     all_entities = show_df(
             data,

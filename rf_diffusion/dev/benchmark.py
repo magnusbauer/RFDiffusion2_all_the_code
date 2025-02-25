@@ -756,6 +756,23 @@ def get_n_contiguous_motif(row):
             n_contiguous += 1
     return n_contiguous
 
+def get_n_motif_contig_residues(row):
+    contigs = eval(row['contigmap.contigs'])
+    assert len(contigs) == 1
+    contigs =  contigs[0]
+    # print(f'{contigs=}')
+    contigs = contigs.split(',')
+    # print(f'{contigs=}')
+
+    n_res = 0
+    for c in contigs:
+        if c[0].isalpha():
+            # re.match(r'[A-Z]([0-9]+)-([0-9]+)', c)
+            m = re.match(r'[A-Z]([0-9]+)-([0-9]+)', c)
+            contig_start, contig_end = int(m.group(1)), int(m.group(2))
+            n_res += contig_end - contig_start + 1
+    return n_res
+
 def motif_has_backbone_atom(row):
     backbone_atoms = ['N', 'CA', 'C', 'O']
     d = eval(row['contigmap.contig_atoms'])
@@ -950,3 +967,380 @@ def melt_all_chai_models(df):
     return out
 
 
+### Subprocess compiled_metrics.csv loading utilities
+
+import psutil
+import multiprocessing
+
+def get_memory_usage():
+    process = psutil.Process()
+    return process.memory_info().rss / 1024**3
+
+def print_memory_usage():
+    print(f'{get_memory_usage()} GB')
+
+
+def load_data(path_by_name):
+    print('START load_data')
+    print_memory_usage()
+
+    df = analyze.combine(
+        *list(path_by_name.values()),
+        names=list(path_by_name.keys()),
+        low_memory=False
+    )
+
+    # Drop the expensive columns -- the residue specific RMSDs
+    uneeded_columns = columns_with_substring(df, '_residue_')
+    df.drop(columns=uneeded_columns, inplace=True)
+
+    print(f'pre-dict {df.shape=}')
+    df = pd.DataFrame.from_dict(df.reset_index(drop=True).to_dict())
+    print(f'post-dict {df.shape=}')
+
+    print_memory_usage()
+    print('END load_data')
+    return df
+
+def load_data_multiprocess(path_by_name):    
+        
+    print_memory_usage()
+    p = multiprocessing.Pool(1) 
+    df = p.map(load_data, [path_by_name])[0] 
+    # df = df.convert_dtypes()
+    p.terminate() 
+    p.join() 
+    print_memory_usage()
+    print(f'{df.shape=}')
+    return df
+
+### Chai melting utilities
+
+
+def add_motif_length_metrics(df):
+    # per_benchmark = df[df['is_rfd']].drop_duplicates(['benchmark'])
+    per_benchmark = df[df['source'] == 'rfd_shuffled'].drop_duplicates(['benchmark'])
+    per_benchmark['n_contiguous_motif'] = per_benchmark.apply(lambda r: get_n_contiguous_motif(r), axis=1)
+
+    n_before = len(df)
+    df_tmp = safe_merge(
+        df,
+        per_benchmark[['benchmark', 'n_contiguous_motif']],
+        how='left',
+        left_on='benchmark',
+        right_on='benchmark',
+        validate='m:1',
+        suffixes=('_left', None),
+        merge_assert=None,
+    )
+    n_after = len(df_tmp)
+    assert n_before == n_after
+    print(f"AFTER:  {df_tmp.iloc[0]['benchmark']=}")
+    assert not df_tmp['benchmark'].isna().any()
+    return df_tmp
+
+def add_n_motif_metrics(df):
+    per_benchmark = df[~df['is_rfd']].drop_duplicates(['benchmark'])
+    per_benchmark['n_motif'] = per_benchmark.apply(lambda r: get_n_motif(r), axis=1)
+
+    n_before = len(df)
+    df_tmp = safe_merge(
+        df,
+        per_benchmark[['benchmark', 'n_motif']],
+        how='left',
+        left_on='benchmark',
+        right_on='benchmark',
+        validate='m:1',
+        suffixes=('_left', None),
+        merge_assert=None,
+    )
+    n_after = len(df_tmp)
+    assert n_before == n_after
+    print(f"AFTER:  {df_tmp.iloc[0]['benchmark']=}")
+    assert not df_tmp['benchmark'].isna().any()
+    return df_tmp
+
+def add_per_benchmark_metric(df, metric_names, per_benchmark):
+    n_before = len(df)
+    df_tmp = safe_merge(
+        df,
+        per_benchmark[['benchmark'] + metric_names],
+        how='left',
+        left_on='benchmark',
+        right_on='benchmark',
+        validate='m:1',
+        suffixes=('_left', None),
+        merge_assert=None,
+    )
+    n_after = len(df_tmp)
+    assert n_before == n_after
+    print(f"AFTER:  {df_tmp.iloc[0]['benchmark']=}")
+    assert not df_tmp['benchmark'].isna().any()
+    return df_tmp
+
+def filter_incomplete_benchmarks(df, assert_fraction_complete=1.0):
+
+    # Drop any incomplete benchmarls
+    val_counts = sorted_value_counts(df, 'benchmark')
+    n_benchmarks = len(val_counts)
+    n_rows_expected = val_counts.max().values[0]
+    # len(val_counts[val_counts[0] == n_rows_expected])
+    df_filt = df[df['benchmark'].isin(val_counts[val_counts[0] == n_rows_expected].index)]
+
+    n_benchmarks_filtered = len(df_filt['benchmark'].drop_duplicates())
+    assert n_benchmarks_filtered >= assert_fraction_complete * n_benchmarks
+    assert df_filt.shape[0] == n_rows_expected * n_benchmarks_filtered
+    return df_filt
+
+def add_motif_metrics(df, n_contiguous_method = 'same_within_benchmark'):
+    if n_contiguous_method == 'same_within_benchmark':
+        for benchmark, group in df.groupby('benchmark'):
+            # contig_strings = df[df['benchmark'] == benchmark]['contigmap.contigs']
+            contigs = group['contigmap.contigs'].drop_duplicates()
+            print(f'{benchmark=} {contigs=}')
+            assert len(contigs) == 1
+        per_benchmark = df.drop_duplicates(['benchmark'])
+    elif n_contiguous_method == 'from_rfd':
+        per_benchmark = df[df['is_rfd']].drop_duplicates(['source', 'benchmark'])
+        # per_benchmark['n_contiguous_motif'] = per_benchmark.apply(lambda r: get_n_contiguous_motif(r), axis=1)
+        # per_benchmark[['benchmark', 'source', 'n_contiguous_motif']].sort_values(['benchmark', 'source', 'n_contiguous_motif'], ascending=False)
+    else:
+        raise Exception(f'Unknown n_contiguous_method: {n_contiguous_method=}')
+
+    per_benchmark['n_contiguous_motif'] = per_benchmark.apply(lambda r: get_n_contiguous_motif(r), axis=1)
+    per_benchmark['n_motif'] = per_benchmark.apply(lambda r: get_n_motif_contig_residues(r), axis=1)
+    return add_per_benchmark_metric(df, ['n_motif', 'n_contiguous_motif'], per_benchmark)
+
+def index_check(df):
+    print(f'{"id" in df.columns=}')
+    print(f'{"design_id" in df.columns=}')
+    print(f'{"seq_id" in df.columns=}')
+    print(f'{"chai_model_idx" in df.columns=}')
+    print(f'{df.index.name=}')
+
+def get_chai_melt_dataframe(compiled_metrics_df, n_contiguous_method='same_within_benchmark'):
+    df = compiled_metrics_df
+
+    # Normalize inverse rotamer benchmark names
+    df['benchmark_raw'] = df['benchmark']
+    sorted_value_counts(df, ['source', 'benchmark'])
+    df['benchmark'] = df['benchmark'].apply(lambda x: '_'.join(x.split('_')[:2]))
+    sorted_value_counts(df, ['source', 'benchmark']).groupby('source').count()
+
+    # Set 'is_rfd' (whether the design comes from vanilla RFDiffusion)
+    df['is_rfd'] = df.apply(analyze.is_rfd, axis=1)
+
+    # # Set 'n_contiguous_motif' and 'n_motif'
+    # df = add_motif_length_metrics(df)
+    # df = add_n_motif_metrics(df)
+    # Set 'n_contiguous_motif' and 'n_motif'
+    df = add_motif_metrics(df, n_contiguous_method=n_contiguous_method)
+
+    # SHOULD BE UNNEEDED
+    # df_filt = get_scored_designs(df)
+    df = filter_incomplete_benchmarks(df)
+
+    # Add the sequence ID index
+    set_sequence_id_unique_index(df)
+
+    # Drop sym resolved suffixes
+    df = df.copy()
+    trim_all_sym_resolved_suffixes(df)
+
+    # # SHOULD BE UNNEEDED
+    # # Assert indexes are as expected.
+    # index_check(df)
+
+    # Create a row for each chai model idx
+    print('BEFORE MELT')
+    index_check(df)
+    chai_melt = melt_all_chai_models(df)
+    print('AFTER MELT 0')
+    index_check(chai_melt)
+
+    # Assert all rows turned into 'n_chai_models' rows
+    n_chai_models = 5 # 5 chai models per sequence
+    assert chai_melt.shape[0] == df.shape[0] * n_chai_models
+    assert 'chai_model_idx' in chai_melt.columns
+
+    # Assert that the reference motif is fully present in the design.
+    # This is important for the validity of following metrics that measure
+    # rmsd between the design and the prediction.
+
+    # DEBUG:
+    # return chai_melt
+    # set_chai_motif_goal(chai_melt, 
+    if (~chai_melt['is_rfd']).any():
+        keys_to_check = [
+            ('metrics_meta_rmsd_to_input', 1e-3),
+            ('all_minus_backbone_oxygen_rmsd_to_input', 0.1)
+        ]
+        for key, threshold in keys_to_check:
+            motif_rmsds_to_input = chai_melt[~chai_melt['is_rfd']][key]
+            assert not motif_rmsds_to_input.isna().any()
+            assert motif_rmsds_to_input.max() < threshold, f'for {key=}: {motif_rmsds_to_input.max()=} > {threshold}'
+            del motif_rmsds_to_input
+        # motif_rmsds_to_input = chai_melt[~chai_melt['is_rfd']]['motif_rmsd_to_input']
+        # assert not motif_rmsds_to_input.isna().any()
+        # assert motif_rmsds_to_input.max() < 0.05
+        # del motif_rmsds_to_input
+    
+    # Make the RMSD to input the goal metric for RFD, and the RMSD to the design the goal metric for the rest.
+    # This is valid due to the preceding step in which we assert that the motif is fully present in the design for non-RFD designs.
+    # The comparable metric created here is chai_motif_goal.
+    chai1_motif_goal_rfflow = 'allatom_aligned_allatom_rmsd_chai_unideal'
+    chai1_motif_goal_rfd = 'allatom_aligned_allatom_rmsd_chai_ref'
+    chai1_motif_goal = 'allatom_aligned_allatom_rmsd_chai_motif'
+    # chai1_motif_goal_rfflow = 'backbone_aligned_allatom_rmsd_chai_unideal_all'
+    # chai1_motif_goal_rfd = 'backbone_aligned_allatom_rmsd_chai_ref_all'
+    # chai1_motif_goal = 'backbone_aligned_allatom_rmsd_chai_motif'
+    def normalized_chai_motif_goal(row):
+        if row['is_rfd']:
+            return row[chai1_motif_goal_rfd]
+        else:
+            return row[chai1_motif_goal_rfflow]
+
+    chai_melt[chai1_motif_goal] = analyze.fast_apply(chai_melt, normalized_chai_motif_goal, ['is_rfd', chai1_motif_goal_rfflow, chai1_motif_goal_rfd])
+
+    # Define the ligand-in-pocket RMSD goal metric
+    chai1_largest_ligand_goal = 'chai_pocket_aligned_ligand_0_rmsd'
+    chai1_all_ligands_goal = 'chai_pocket_aligned_rmsd_max'
+    ligand_columns = columns_with_substring(chai_melt, 'chai_pocket_aligned_ligand_')
+    ligand_columns = [c for c in chai_melt.columns if re.match(r'^chai_pocket_aligned_ligand_\d+_rmsd$', c)]
+    max_ligands = len(ligand_columns)
+
+    def f(row):
+        return max(row[f'chai_pocket_aligned_ligand_{i}_rmsd'] for i in range(max_ligands))
+
+    cols = [f'chai_pocket_aligned_ligand_{i}_rmsd' for i in range(max_ligands)]
+    chai_melt[chai1_all_ligands_goal] = analyze.fast_apply(chai_melt, f, cols)
+
+    print(chai_melt.info(memory_usage='deep'))
+
+    index_check(chai_melt)
+    set_seq_id(chai_melt)
+    chai_melt = chai_melt.set_index(['seq_id', 'chai_model_idx'])
+
+    fa_rmsd_cutoff = 1.5
+    pocket_rmsd_cutoff = 2.5
+    def chai_motif_pass(df):
+        return df[chai1_motif_goal] < fa_rmsd_cutoff
+
+    def chai_motif_pass_constellation(df):
+        return df[chai1_motif_goal] < fa_rmsd_cutoff
+
+    def no_clash(df, thresh=1.5):
+        return df['ligand_dist_des_ncac_min'] > thresh
+
+    def chai_motif_pass_and_no_clash(df, thresh=1.5):
+        return df[chai_motif_pass.__name__] & df[no_clash.__name__]
+
+    def chai_largest_ligand_pass(df):
+        return df[chai1_largest_ligand_goal] < pocket_rmsd_cutoff
+
+    def chai_all_ligands_pass(df):
+        return df[chai1_all_ligands_goal] < pocket_rmsd_cutoff
+
+    def chai_motif_and_largest_ligand_pass(df):
+        return df[chai_motif_pass.__name__] & df[chai_largest_ligand_pass.__name__]
+
+    def chai_motif_and_all_ligands_pass(df):
+        return df[chai_motif_pass.__name__] & df[chai_all_ligands_pass.__name__]
+
+    filters = []
+    for filter in [
+        chai_motif_pass,
+        chai_motif_pass_constellation,
+        no_clash,
+        chai_motif_pass_and_no_clash,
+        chai_largest_ligand_pass,
+        chai_all_ligands_pass,
+        chai_motif_and_largest_ligand_pass,
+        chai_motif_and_all_ligands_pass,
+    ]:
+        chai_melt[filter.__name__] = filter(chai_melt)
+        filters.append(filter.__name__)
+
+    # Set a unique index.
+    if not chai_melt.index.names == ['seq_id', 'chai_model_idx']:
+        set_seq_id(chai_melt)
+        chai_melt.set_index(['seq_id', 'chai_model_idx'], verify_integrity=True, inplace=True)
+
+    return chai_melt, filters
+
+def get_best_chai_model_per_design_per_filter(chai_melt, filters):
+    # Find the number of designs passing each metric
+    melt_vars = filters
+    var_name='filter'
+    value_name='pass'
+    # variable_namer = {
+    #                         'chai_motif_pass': 'AF2',
+    #                         chai1_goal: 'Chai1'
+    # }.__getitem__
+    # id_col = 'seq_id'
+    id_col = 'design_id'
+
+    print(f'{chai_melt.shape=}')
+    best, _ = get_best_in_group_for_each_metric(
+        chai_melt,
+        melt_vars,
+        var_name=var_name,
+        value_name=value_name,
+        ascending=False,
+        # variable_renamer=variable_namer,
+    )
+
+    n_unique = len(chai_melt[id_col].drop_duplicates()) # number of unique designs
+    assert best.shape[0] == n_unique * len(melt_vars), f'{best.shape[0]=} != {n_unique * len(melt_vars)=} [{n_unique=}*{len(melt_vars)=}]'
+
+    best = safe_merge(
+        best,
+        # df[['benchmark', 'is_rfd', 'n_contiguous_motif', 'source', 'seed', 'mpnn_index']],
+        # df[['benchmark', 'is_rfd', 'n_contiguous_motif', 'n_motif', 'source', 'seed', 'mpnn_index']],
+        chai_melt[['benchmark', 'is_rfd', 'n_contiguous_motif', 'n_motif', 'source', 'seed', 'mpnn_index']].reset_index().drop_duplicates('seq_id').set_index('seq_id').drop(columns='chai_model_idx'),
+        how='left',
+        left_on='seq_id',
+        right_index=True,
+        suffixes=(None, None),
+        validate='m:1',
+    )
+    return best
+
+def add_columns_to_best(best, chai_melt, columns):
+    assert chai_melt.index.names == ['seq_id', 'chai_model_idx'], f"{chai_melt.index.names=} != ['seq_id', 'chai_model_idx']"
+    return safe_merge(
+        best,
+        # df[['benchmark', 'is_rfd', 'n_contiguous_motif', 'source', 'seed', 'mpnn_index']],
+        # df[['benchmark', 'is_rfd', 'n_contiguous_motif', 'n_motif', 'source', 'seed', 'mpnn_index']],
+        chai_melt[columns].reset_index().drop_duplicates('seq_id').set_index('seq_id').drop(columns='chai_model_idx'),
+        how='left',
+        left_on='seq_id',
+        right_index=True,
+        suffixes=(None, None),
+        validate='m:1',
+    )
+
+def default_metrics_melts(path_by_name):
+    '''
+    Parameters:
+        path_by_name: dict mapping run name to path of compiled_metrics.csv
+    '''
+
+    df = load_data_multiprocess(path_by_name)
+    chai_melt, filters = get_chai_melt_dataframe(df)
+    best = get_best_chai_model_per_design_per_filter(chai_melt, filters)
+    return chai_melt, best
+
+
+def default_metrics_melts_assert_no_leak(path_by_name):
+    '''
+    Parameters:
+        path_by_name: dict mapping run name to path of compiled_metrics.csv
+    '''
+
+    print_memory_usage()
+    chai_melt, best = default_metrics_melts(path_by_name)
+    print_memory_usage()
+    chai_melt.info(memory_usage='deep')
+    best.info(memory_usage='deep')
+    return chai_melt, best

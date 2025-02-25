@@ -136,6 +136,58 @@ def process_post(input_str):
     
     return ' '.join([before_post, after_post, in_post])
 
+def parse_arg_str(arg_str):
+    # Process POST groups to be applied AFTER benchmarks, so that they may override benchmark defaults.
+    print(f'BEFORE EXPAND arg_str: {arg_str}')
+    arg_str = expand_star_insertions(arg_str)
+    print(f'AFTER EXPAND arg_str: {arg_str}')
+    arg_str = process_post(arg_str)
+    arg_dicts = get_arg_combos(arg_str)
+    return arg_dicts
+
+def replace_with_function(pattern, text, f):
+    return re.sub(pattern, lambda match: match.group(0).replace(match.group(1), f(match.group(1))), text)
+
+def read_text_contents_after_star(file_path):
+    assert file_path.startswith('*')
+    file_path = file_path[1:]
+    if file_path.endswith('.json'):
+        return json_to_arg_string(file_path)
+    return read_text_contents(file_path)
+
+def json_to_arg_string(path):
+    if not path.startswith('/'):
+        path =f'{PKG_DIR}/benchmark/{path}'
+    with open(path) as f: 
+        benchmarks = json.load(f)
+    input_path = f'{PKG_DIR}/benchmark/input/' # prepend path to input pdbs in current repo
+    benchmark_list = []
+    for bm in benchmarks.keys():
+        benchmark_list.append([
+            f'inference.output_prefix={bm}',
+            re.sub(r'inference.input_pdb=(?!/)', f'inference.input_pdb={input_path}', benchmarks[bm])
+        ])
+
+    # parse names of arguments and their value options to be passed into the design script
+    arg_str = ''
+    if len(benchmark_list) > 0:
+        benchmark_arg_groups = []
+        for benchmark in benchmark_list: # [output path, input pdb, contig spec]
+            benchmark_arg_groups.append(f"({' '.join(benchmark)})")
+        arg_str += ' ' + '|'.join(benchmark_arg_groups)
+    
+    return arg_str
+
+def read_text_contents(file_path):
+    with open(file_path, 'r') as f:
+        return f.read()
+
+def expand_star_insertions(arg_str):
+    '''
+    Expands a string with a * to include all values from a file.
+    '''
+    return replace_with_function(r'\s(\*[\S]*)\s', arg_str, read_text_contents_after_star)
+
 @hydra.main(version_base=None, config_path='configs/', config_name='sweep_hyperparam')
 def main(conf: HydraConfig) -> list[int]:
     '''
@@ -173,36 +225,39 @@ def main(conf: HydraConfig) -> list[int]:
     if conf.command is None:
         conf.command = f'{PKG_DIR}/run_inference.py'
 
-    # parse pre-defined benchmarks
-    print('This is benchmarks json')
-    print(conf.benchmark_json)
-    if not conf.benchmark_json.startswith('/'):
-        conf.benchmark_json =f'{PKG_DIR}/benchmark/{conf.benchmark_json}'
-    with open(conf.benchmark_json) as f: 
-        benchmarks = json.load(f)
-    input_path = f'{PKG_DIR}/benchmark/input/' # prepend path to input pdbs in current repo
-    benchmark_list = []
-    if conf.benchmarks is not None:
-        if conf.benchmarks == 'all':
-            to_run = benchmarks
-        else:
-            to_run = conf.benchmarks.split(',')
-        for bm in to_run:
-            benchmark_list.append([
-                f'inference.output_prefix={bm}',
-                re.sub(r'inference.input_pdb=(?!/)', f'inference.input_pdb={input_path}', benchmarks[bm])
-            ])
-
+    
     # parse names of arguments and their value options to be passed into the design script
     arg_str = ''.join(conf.command_args)
     if '--config-name' in arg_str.split():
         raise Exception('config names must be passed like: --config-name=name_here')
 
-    if len(benchmark_list) > 0:
-        benchmark_arg_groups = []
-        for benchmark in benchmark_list: # [output path, input pdb, contig spec]
-            benchmark_arg_groups.append(f"({' '.join(benchmark)})")
-        arg_str += ' ' + '|'.join(benchmark_arg_groups)
+    if conf.benchmark_json:
+        # parse pre-defined benchmarks
+        print('This is benchmarks json')
+        print(conf.benchmark_json)
+        if not conf.benchmark_json.startswith('/'):
+            conf.benchmark_json =f'{PKG_DIR}/benchmark/{conf.benchmark_json}'
+        with open(conf.benchmark_json) as f: 
+            benchmarks = json.load(f)
+        input_path = f'{PKG_DIR}/benchmark/input/' # prepend path to input pdbs in current repo
+        benchmark_list = []
+        if conf.benchmarks is not None:
+            if conf.benchmarks == 'all':
+                to_run = benchmarks
+            else:
+                to_run = conf.benchmarks.split(',')
+            for bm in to_run:
+                benchmark_list.append([
+                    f'inference.output_prefix={bm}',
+                    re.sub(r'inference.input_pdb=(?!/)', f'inference.input_pdb={input_path}', benchmarks[bm])
+                ])
+        if len(benchmark_list) > 0:
+            benchmark_arg_groups = []
+            for benchmark in benchmark_list: # [output path, input pdb, contig spec]
+                benchmark_arg_groups.append(f"({' '.join(benchmark)})")
+            arg_str += ' ' + '|'.join(benchmark_arg_groups)
+
+    arg_str = expand_star_insertions(arg_str)
 
     # Process POST groups to be applied AFTER benchmarks, so that they may override benchmark defaults.
     arg_str = process_post(arg_str)
@@ -210,6 +265,11 @@ def main(conf: HydraConfig) -> list[int]:
     arg_dicts = get_arg_combos(arg_str)
 
     df = pd.DataFrame.from_dict(arg_dicts, dtype=str)
+
+    if conf.benchmark_regex:
+        filtered_df = df[df['inference.output_prefix'].str.match(conf.benchmark_regex)]
+        print(f'{len(filtered_df)}/{len(df)} rows matched the benchmark regex')
+        df = filtered_df
 
     # make output folder
     os.makedirs(os.path.dirname(conf.out), exist_ok=True) 
@@ -244,15 +304,18 @@ def main(conf: HydraConfig) -> list[int]:
     job_list_file = open(job_fn, 'w') if conf.slurm.submit else sys.stdout
     for _, arg_row in df.iterrows():
         arg_dict = arg_row.dropna().to_dict()
+
+        num_per_condition = int(arg_dict.pop('num_per_condition', conf.num_per_condition))
         combo = []
         for k,v in arg_dict.items():
             combo.append(f'{k}={v}')
         extra_args = ' '.join(combo)
 
-        for istart in np.arange(0, conf.num_per_condition, conf.num_per_job):
+        for istart in np.arange(0, num_per_condition, conf.num_per_job):
+            num_designs = min(conf.num_per_job, num_per_condition-istart)
             log_fn = f'{arg_row["inference.output_prefix"]}_{istart}.log'
             print(f'{conf.command} {extra_args} {write_trajectories_flags} '\
-                  f'inference.num_designs={conf.num_per_job} inference.design_startnum={istart} >> {log_fn}', file=job_list_file)
+                  f'inference.num_designs={num_designs} inference.design_startnum={istart} >> {log_fn}', file=job_list_file)
 
     if conf.slurm.submit or conf.slurm.in_proc:
         job_list_file.close()

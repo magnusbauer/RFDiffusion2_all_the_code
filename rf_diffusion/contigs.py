@@ -7,8 +7,18 @@ import torch
 
 import ipd
 from rf_diffusion.chemical import ChemicalData as ChemData
+from rf_diffusion.contig_shuffler import shuffle_contig_string
 from rf_diffusion.nucleic_compatibility_utils import inds_to_mol_class
 
+def parse_length(length: str):
+    '''
+    Parse the length string like '10-20' --> [10, 21]
+    '''
+    assert length is not None
+    if '-' not in length:
+        return [int(length),int(length)+1]
+    else:
+        return [int(length.split("-")[0]),int(length.split("-")[1])+1]
 
 class ContigMap():
     '''
@@ -37,7 +47,10 @@ class ContigMap():
             intersperse=None,
             reintersperse=False,
             mol_classes=None,
+            shuffle_and_random_partition=False,
             ):
+        
+        assert not ((shuffle or reintersperse) and shuffle_and_random_partition), f"{shuffle_and_random_partition=} and ({shuffle=} or {reintersperse=}) are mutually exclusive"
         
         self.deterministic = True
         if reintersperse or shuffle:
@@ -56,6 +69,13 @@ class ContigMap():
                 shuffled_contig_list[~is_motif] = intersperse
             contigs = [','.join(shuffled_contig_list)]
             print(f'after shuffle: {contigs=}')
+        elif shuffle_and_random_partition:
+            assert len(contigs) == 1, f"Can only shuffle one contig string {contigs=}"
+            contig_list = np.array(contigs[0].strip().split(','))
+            assert length is not None
+            length_min, length_max = parse_length(length)
+            contig_list, _ = shuffle_contig_string(contig_list, length_min, length_max)
+            contigs = [','.join(contig_list)]
 
         #sanity checks
         if contigs is None and ref_idx is None:

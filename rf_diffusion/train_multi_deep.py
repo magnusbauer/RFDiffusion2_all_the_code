@@ -736,6 +736,10 @@ class Trainer():
                     resume = 'allow'
                 else:
                     raise Exception(f'resume=True, but {len(runs)} matching {name} found: {[r.display_name for r in runs]}')
+        
+        if rank == 0 and self.conf.benchmark and self.conf.benchmark.run_early_validation:
+            print(f'Running early validation with config: {self.conf.benchmark}')
+            self.benchmark_model(self.conf.ckpt_load_path, self.conf.benchmark, outdir=self.rundir + '/early_validation')
 
         if WANDB:
             print(f'initializing wandb on rank {rank}')
@@ -803,16 +807,20 @@ class Trainer():
         dist.destroy_process_group()
 
     @staticmethod
-    def benchmark_model(model_path, benchmark_config):
+    def benchmark_model(model_path, benchmark_config, outdir=None):
+        '''
+        If outdir is None, then the benchmark results will be saved in the same directory as the model checkpoint.
+        '''
         # Make dir for benchmark results
         model_dir, model_tail = os.path.split(model_path)
         model_name, _ = os.path.splitext(model_tail)
-        benchmark_dir = os.path.join(model_dir, 'auto_benchmark', model_name, 'out')
+        outdir = outdir or model_dir
+        benchmark_dir = os.path.join(outdir, 'auto_benchmark', model_name, 'out')
         os.makedirs(benchmark_dir, exist_ok=True)
 
         # Make overrides
         overrides=[
-            f'sweep.command_args="--config-name=aa inference.ckpt_path={model_path}"',
+            f'sweep.command_args="--config-name={benchmark_config["inference_yaml"]} inference.ckpt_path={model_path}"',
             f'outdir={benchmark_dir}',
         ]
 
@@ -826,9 +834,11 @@ class Trainer():
 
         # Submit slurm job to run the pipeline
         config_path, config_name = os.path.split(benchmark_yaml)
+        cmd = f'"{PKG_DIR}/benchmark/pipeline.py --config-path={config_path} --config-name={config_name}"'
+        print(f'Running mid-training benchmark of model {model_path} with command: {cmd}')
         cmd_sbatch = (
             f'sbatch -t 96:00:00 -J autobench_{model_name} -o {benchmark_dir}/slurm-%j.out --export PYTHONPATH={REPO_DIR} '
-            f'--wrap "{PKG_DIR}/benchmark/pipeline.py --config-path={config_path} --config-name={config_name}"'
+            f'--wrap {cmd}'
         )
         proc = subprocess.run(cmd_sbatch, shell=True, stdout=subprocess.PIPE)
         slurm_job = re.findall(r'\d+', str(proc.stdout))[0]

@@ -18,6 +18,7 @@ diffuser:
     schedule: logarithmic
     cache_dir: .cache/
   T: 200
+  center_noise_sample: true # Set the center of the noise sample 0,0,0
 experiment:
   trans_loss_weight: 1.0
   rot_loss_weight: 1.0

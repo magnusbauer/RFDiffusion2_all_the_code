@@ -601,6 +601,8 @@ def place_guideposts(indep, is_gp, use_guidepost_coordinates_for=None):
     indep must be deatomized
     """
     indep = copy.deepcopy(indep)
+    if not is_gp.any():
+        return indep
     xyz_design = indep.xyz[:]
     seq_design = indep.seq[:]
 

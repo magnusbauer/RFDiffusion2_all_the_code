@@ -73,7 +73,19 @@ def load_pdbs(pdbs, name_by_pdb):
     for label, pdb in pdbs.items():
         assert os.path.exists(pdb), f'{label}:{pdb} does not exist'
         name = name_by_pdb[pdb]
-        cmd.load(pdb, name)
+        # Input pdbs sometimes are loaded as multi-model.  These options force load them as single-model.
+        if label == 'input':
+            cmd.load(
+                pdb,
+                name,
+                0,
+                'pdb',
+                0,
+                0,
+                0,
+                0)
+        else:
+            cmd.load(pdb, name)
         pymol_objects[label] = name
     return pymol_objects
     return pdbs
@@ -213,7 +225,10 @@ def show(row, structs = {'X0'}, af2=False, chai1_best=False, chai1_index=False, 
         scored.append('chai1_index')
     
     if input:
-        pdbs['input'] = analyze.get_input_pdb(row)
+        if 'spoofed_input_pdb' in row:
+            pdbs['input'] = row['spoofed_input_pdb']
+        else:
+            pdbs['input'] = analyze.get_input_pdb(row)
 
     name = row['name']
     if 'pymol' in row:
@@ -241,6 +256,9 @@ def show(row, structs = {'X0'}, af2=False, chai1_best=False, chai1_index=False, 
         if label == 'input':
             trb = analyze.get_trb(row)
             atom_names_by_res_idx = {resi: 'RES' for ch, resi in trb['con_ref_pdb_idx']}
+            if row.get('inference.contig_as_guidepost'):
+                motif_atoms = eval(row.get('contigmap.contig_atoms', '{}'))
+                atom_names_by_res_idx = {resi: motif_atoms[f"{ch}{resi}"].split(',') for ch, resi in trb['con_ref_pdb_idx']}
         else:
             is_traj = label in structs
             logger.debug(f'{is_rf_diff(row)=}')
@@ -316,19 +334,27 @@ def show(row, structs = {'X0'}, af2=False, chai1_best=False, chai1_index=False, 
         ]:
             if k not in pymol_objects:
                 continue
-            input_selector = entities['input']['residue_motif']
-            design_selector = entities[k]['residue_motif']
-            align(
-                input_selector, design_selector)
+
+            input_selector = f"({entities['input']['residue_motif']}) or ({entities['input']['sidechains_motif']})"
+            design_selector = f"({entities[k]['residue_motif']}) or ({entities[k]['sidechains_motif']})"
+            # design_selector = entities[k]['residue_motif']
+            print(f'{design_selector=}')
+            try:
+                align(
+                    input_selector, design_selector)
+            except Exception as e:
+                print(f'{input_selector=}')
+                print(f'{design_selector=}')
+                print('Failed to align input to design')
             break
 
 
     return entities
 
 class PymolObj:
-    def __init__(self, name, selectors):
+    def __init__(self, name, selectors=None):
         self.name = name
-        self.selectors = selectors
+        self.selectors = selectors or {}
 
     def __getitem__(self, k):
         return f'({self.name} and {self.selectors[k]})'

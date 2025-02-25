@@ -39,6 +39,16 @@ def get_invalid_mask(*args, **kwargs):
     raise InvalidMaskException('This mask always throws InvalidMaskException')
 
 def make_covale_compatible(get_mask):
+    '''
+    This decorator is used to make a mask generator compatible with covalently modified residues.
+
+    Covalently modified residues must be atomized.
+    
+    If a covalently modified residue is NOT motif:
+        - It is atomized but not made motif
+    If a covalently modified residue IS motif
+        - It is atomized and all of its atoms are made motif.
+    '''
     @wraps(get_mask)
     def out_get_mask(indep, atom_mask, *args, **kwargs):
         ret = get_mask(indep, atom_mask, *args, **kwargs)
@@ -1239,7 +1249,7 @@ def atomize_and_diffuse_motif(get_mask):
 def partially_mask_ligand(get_mask, ligand_mask_low=0.0, ligand_mask_high=1.0):
     '''
     Only show a contiguous portion of a ligand.
-    The fraction to mask is sampled from Uniform(ligand_mask_low, ligand_mask_high).
+    The fraction to show is sampled from Uniform(ligand_mask_low, ligand_mask_high).
     '''
     @wraps(get_mask)
     def out_get_mask(indep, atom_mask, *args, **kwargs):
@@ -1265,6 +1275,8 @@ def partially_mask_ligand(get_mask, ligand_mask_low=0.0, ligand_mask_high=1.0):
             is_motif[to_show_abs] = True
         return dict(is_motif=is_motif, **ret)
     return out_get_mask
+
+show_whole_ligand = partial(partially_mask_ligand, ligand_mask_low=1.0, ligand_mask_high=1.0)
 
 def completely_mask_ligand(get_mask):
     @wraps(get_mask)
@@ -1301,7 +1313,7 @@ def no_pop(get_mask):
         return dict(pop=pop, **ret)
     return out_get_mask
 
-def motif_gp(get_mask):
+def motif_gp(get_mask, overwrite=False):
     '''
     Adapter for old masks that don't return can_be_gp
     Applies default behavior of can_be_gp = is_motif + list(is_atom_motif)
@@ -1309,12 +1321,31 @@ def motif_gp(get_mask):
     @wraps(get_mask)
     def out_get_mask(indep, atom_mask, *args, **kwargs):
         ret = get_mask(indep, atom_mask, *args, **kwargs)
+
+        if overwrite:
+            ret.pop('can_be_gp', None)
+        else:
+            assert 'can_be_gp' not in ret, 'can_be_gp has already been computed, set overwrite=True to overwrite'
         is_motif, is_atom_motif = ret.pop('is_motif'), ret.pop('is_atom_motif')
         can_be_gp = is_motif.clone()
         if is_atom_motif is not None:
             can_be_gp[list(is_atom_motif)] = True
 
         return dict(is_motif=is_motif, is_atom_motif=is_atom_motif, can_be_gp=can_be_gp, **ret)
+    return out_get_mask
+
+def bb_only(get_mask):
+    '''
+    Adapter that converts all atomized residues to backbone motif.
+    '''
+    @wraps(get_mask)
+    def out_get_mask(indep, atom_mask, *args, **kwargs):
+        ret = get_mask(indep, atom_mask, *args, **kwargs)
+        is_motif, is_atom_motif = ret.pop('is_motif'), ret.pop('is_atom_motif')
+        for residue_index in is_atom_motif.keys():
+            is_motif[residue_index] = True
+        is_atom_motif = {}
+        return dict(is_motif=is_motif, is_atom_motif=is_atom_motif, **ret)
     return out_get_mask
 
 def no_gp(get_mask):
@@ -1344,7 +1375,7 @@ def protein_gp_only(get_mask):
     
     return out_get_mask
 
-def motif_shows_seq(get_mask):
+def motif_shows_seq(get_mask, overwrite=False):
     '''
     Adapter for old masks that don't return is_res_seq_shown
     Applies default behavior of is_res_seq_shown = is_motif + list(is_atom_motif) + indep.is_sm
@@ -1352,6 +1383,10 @@ def motif_shows_seq(get_mask):
     @wraps(get_mask)
     def out_get_mask(indep, atom_mask, *args, **kwargs):
         ret = get_mask(indep, atom_mask, *args, **kwargs)
+        if overwrite:
+            ret.pop('is_res_seq_shown', None)
+        else:
+            assert 'is_res_seq_shown' not in ret, 'is_res_seq_shown has already been computed, set overwrite=True to overwrite'
         is_motif, is_atom_motif = ret.pop('is_motif'), ret.pop('is_atom_motif')
         is_res_seq_shown = is_motif.clone()
         if is_atom_motif is not None and is_atom_motif:
@@ -1440,6 +1475,14 @@ get_tip_mask_unconditional = motif_shows_seq(motif_gp(no_pop(make_covale_compati
 get_tip_mask_unconditional_free_ligand = motif_shows_seq(motif_gp(no_pop(completely_mask_ligand(make_covale_compatible(partial(_get_tip_mask, unconditional=True))))))
 get_tip_mask_unconditional_partial_ligand = motif_shows_seq(motif_gp(no_pop(partially_mask_ligand(make_covale_compatible(_get_tip_mask)))))
 get_closest_tip_atoms = motif_shows_seq(motif_gp(no_pop(_get_closest_tip_atoms)))
+
+get_tip_mask_free_ligand = get_tip_mask
+get_tip_mask_partial_ligand = partially_mask_ligand(get_tip_mask_free_ligand)
+get_tip_mask_whole_ligand = show_whole_ligand(get_tip_mask_free_ligand)
+
+get_tip_mask_bb_only_free_ligand = motif_shows_seq(motif_gp(bb_only(get_tip_mask), overwrite=True), overwrite=True)
+get_tip_mask_bb_only_partial_ligand = partially_mask_ligand(get_tip_mask_bb_only_free_ligand)
+get_tip_mask_bb_only_whole_ligand = show_whole_ligand(get_tip_mask_bb_only_free_ligand)
 
 get_atomized_islands = motif_gp(no_pop(make_covale_compatible(atomize_and_diffuse_motif(make_sm_compatible(
         partial(_get_diffusion_mask_islands, n_islands_max=2, island_len_min=10, island_len_max=15))))))
@@ -1556,6 +1599,7 @@ def get_diffusion_mask(
     mask_probs = list(diff_mask_probs.items())  # list of (masking_function, probability) tuples
     logger.debug(f'{mask_probs=}')
     logger.debug(f'{[(m.name, p) for m,p in mask_probs]=}')
+    logger.debug(f'{sum([p for _, p in mask_probs])=}')
 
     # Masks can declare that they are incompatible with the example given by throwing InvalidMaskException
     #   Incompatible masks are removed for the next iteration

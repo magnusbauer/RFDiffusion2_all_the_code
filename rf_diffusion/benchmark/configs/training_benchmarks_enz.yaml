@@ -1,0 +1,23 @@
+defaults:
+  - pipeline
+
+sweep:
+  benchmark_json: training_benchmarks_enz_mcsa_4res.json
+  benchmarks: all
+  num_per_condition: 0
+  num_per_job: 2
+  slurm:
+    p: gpu-bf
+    gres: gpu:1
+
+skip_steps:
+  - tm_align
+  - foldseek
+
+metrics:
+  design_metrics:
+    - backbone
+    - rmsd_to_input
+  sequence_metrics:
+    - chai1_pocket_aligned_ligand
+    - sidechain_symmetry_resolved

@@ -148,17 +148,28 @@ def get_selectors_2(atom_names_by_res_idx_0):
         'lig': lig,
         **residue_selectors,
     }
+    selectors.update(get_individual_residue_selectors(motif_resi_selectors, motif_atom_selectors))
     return selectors
+
+def get_individual_residue_selectors(motif_resi_selectors, motif_atom_selectors):
+    individual_residue_selectors = {}
+    for i, (selector) in enumerate(motif_atom_selectors):
+        individual_residue_selectors[f'motif_resi_{i}'] = selector
+    return individual_residue_selectors
 
 def get_atom_selector(obj, ch, idx, atom_names):
     atom_sel = ' or '.join(f'name {a}' for a in atom_names)
     return f'({obj} and chain {ch} and resi {idx} and ({atom_sel}))'
 
 
+def colored_selectors(selectors):
+    return {k: v for k,v in selectors.items() if 'motif_resi_' not in k}
+
 def color_selectors(selectors, carbon=True, verbose=False, des_color=None, hetatm_color=None, palette_name='Pastel1', palette_n_colors=9):
     palette = PymolPalette(cmd, palette_name, 0, palette_n_colors)
     # if not carbon:
     #     selectors = [AND([s, carbon]) for s in selectors]
+    selectors = colored_selectors(selectors)
     for j,sel in enumerate(selectors.values()):
         color = palette.name(j)
         if verbose:

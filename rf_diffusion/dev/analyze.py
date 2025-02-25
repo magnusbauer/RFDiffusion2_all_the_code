@@ -94,11 +94,20 @@ def read_metrics_simple(df_path, **kwargs):
     with ExecutionTimer(f'read_metrics_simple: read_csv(*args, {kwargs=})'):
         df = pd.read_csv(df_path, **kwargs)
 
+    df['rundir'] = os.path.split(df_path)[0]
+    add_derived_values(df)
+    return df
+
+def add_derived_values(df):
+
     with ExecutionTimer('read_metrics_simple: computing derived values'):
         df['method'] = 'placeholder_method'
-        df['rundir'] = os.path.split(df_path)[0]
         df['run'] = df['name'].apply(lambda x: x.split('_')[0])
-        # df = df[df['run'] =='run2'].reset_index()
+        # Parse the cond.
+        try:
+            df['cond'] = df['name'].apply(lambda x: x.split('_cond')[1].split('_')[0])
+        except Exception as e:
+            print('failed to get cond', e)
         try:
             df['benchmark'] = [n[n.index('_')+1:n.index('_cond')] for n in df.name]
         except Exception as e:
@@ -129,7 +138,6 @@ def read_metrics_simple(df_path, **kwargs):
         df['diffuser.type'] = df['diffuser.type'].fillna('diffusion')
         df['mpnn_index'] = df['mpnn_index'].astype(int)
         df['des_color'] = 'rainbow'
-    return df
 
 def read_metrics(df_path, **kwargs):
     df = read_metrics_simple(df_path, **kwargs)
@@ -1731,9 +1739,11 @@ def fast_apply(df, f, input_columns):
     o = []
 
     input_values = {c: df[c] for c in input_columns}
+    for c in input_columns:
+        assert len(input_values[c]) == df.shape[0], f'{c=}, {len(input_values[c])=} != {df.shape[0]=}'
 
     for i in range(df.shape[0]):
-        o.append(f({c: input_values[c][i] for c in input_columns}))
+        o.append(f({c: input_values[c].iloc[i] for c in input_columns}))
     
     return o
 
