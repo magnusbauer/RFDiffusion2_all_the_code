@@ -284,6 +284,51 @@ def main(conf: HydraConfig) -> list[int]:
                 job_ids.append(chai1_job)
             print(f'Submitted array job {chai1_job} with {int(np.ceil(len(filenames)/conf.chunk))} jobs to chai1-predict {len(filenames)} designs')
 
+    if 'af2_initial_guess' in conf.run:
+        job_fn = conf.datadir + '/jobs.score.af2_initial_guess.list'
+        job_list_file = open(job_fn, 'w') if conf.slurm.submit else sys.stdout
+        already_ran = {}
+        filenames_by_i = defaultdict(list)
+        for i in np.arange(0,len(filenames),conf.chunk):
+            tmp_fn = f'{conf.datadir}/{conf.tmp_pre}.af2_initial_guess.{i}'
+            input_filenames = []
+            with open(tmp_fn,'w') as outf:
+                for j in np.arange(i,min(i+conf.chunk, len(filenames))):
+                    input_filenames.append(filenames[j])
+                    print(filenames[j], file=outf)
+                    filenames_by_i[i].append(filenames[j])
+            outdir = f'{conf.datadir}/af2_initial_guess/out'
+            os.makedirs(outdir, exist_ok=True)
+
+            initial_guess_script = '/software/lab/ppi/bcov_scripts/bcov_nate_af2_early_stop/interfaceAF2predict_bcov.py'
+            job = (f'/usr/bin/apptainer run --nv -B /software/lab/ppi/bcov_scripts/bcov_nate_af2_early_stop -B /projects/ml/alphafold -B /mnt/net/databases/alphafold /software/containers/users/bcov/bcov_af2.sif {initial_guess_script} '\
+                  f'-output_prefix {outdir}/job{i}_ '\
+                  f'-pdb_list {tmp_fn}')
+            print(job, file=job_list_file)
+            def outputs_exist(input_filenames=filenames_by_i[i], output_prefix=f'{outdir}/job{i}_'):
+                scorefile = output_prefix + 'out.sc'
+                if not os.path.exists(scorefile):
+                    return False
+                expected_tags = set([os.path.basename(pdb).replace('.pdb', '_af2pred') for pdb in input_filenames])
+                found_tags = set([line.split()[-1] for line in open(scorefile)])
+
+                return len(expected_tags & found_tags) == len(expected_tags)
+
+            already_ran[job] = copy.deepcopy(outputs_exist)
+
+        # submit job
+        if conf.slurm.submit:
+            job_list_file.close()
+            if conf.slurm.J is not None:
+                job_name = conf.slurm.J
+            else:
+                job_name = 'af2_initial_guess_'+os.path.basename(conf.datadir.strip('/'))
+            af2_initial_guess_job, proc = slurm_tools.array_submit(job_fn, p = conf.af2_initial_guess.slurm.p, gres=None if conf.af2_initial_guess.slurm.p=='cpu' else conf.af2_initial_guess.slurm.gres, log=conf.slurm.keep_logs, J=job_name, in_proc=conf.slurm.in_proc, already_ran=already_ran, mem=conf.af2_initial_guess.slurm.mem)
+            if af2_initial_guess_job > 0:
+                job_ids.append(af2_initial_guess_job)
+            print(f'Submitted array job {af2_initial_guess_job} with {int(np.ceil(len(filenames)/conf.chunk))} jobs to af2_initial_guess-predict {len(filenames)} designs')
+
+
     return job_ids
 
 if __name__ == "__main__":

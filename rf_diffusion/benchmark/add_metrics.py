@@ -98,7 +98,7 @@ def main(conf: HydraConfig) -> list[int]:
                                 compute = False
 
                 if compute:
-                    sif_path = '/net/software/containers/users/ahern/rf_diffusion_prod_sifs/SE3nv-20240912.sif'
+                    sif_path = 'apptainer exec -B /net/scratch /net/software/containers/users/ahern/rf_diffusion_prod_sifs/SE3nv-20240912.sif python'
                     print(f'{sif_path} {os.path.join(script_dir, "per_sequence_metrics.py")} '\
                             f'--metric {metric} '\
                             f'--outcsv {conf.datadir}/metrics/per_{cohort}/{metric}/csv.{i} '\

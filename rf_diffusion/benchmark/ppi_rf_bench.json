@@ -1,0 +1,8 @@
+{
+    "il7ra_rf": "inference.input_pdb=ppi/3DI3_clean_relaxed_B.pdb contigmap.contigs=[\\'100-100,0_B1-193\\'] ppi.hotspot_res=\\'B42,B64,B123\\'",
+    "insr_rf": "inference.input_pdb=ppi/insulin_target.pdb contigmap.contigs=[\\'100-100,0_B1-150\\'] ppi.hotspot_res=\\'B59,B83,B91\\'",
+    "fluHA_rf": "inference.input_pdb=ppi/flu_HA.pdb contigmap.contigs=[\\'100-100,0_B1-284\\'] ppi.hotspot_res=\\'B146,B170,B177\\'",
+    "pdl1_rf": "inference.input_pdb=ppi/5o45_pdl1.pdb contigmap.contigs=[\\'100-100,0_B1-115\\'] ppi.hotspot_res=\\'B40,B99,B107\\'",
+    "trka_rf": "inference.input_pdb=ppi/trka_1www_C_optH.pdb contigmap.contigs=[\\'100-100,0_B1-101\\'] ppi.hotspot_res=\\'B13,B15,B52\\'"
+
+}

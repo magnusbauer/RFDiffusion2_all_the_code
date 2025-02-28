@@ -25,9 +25,9 @@ import tree
 import torch
 
 try:
-    api = wandb.Api(timeout=150)
+   api = wandb.Api(timeout=150)
 except Exception as e:
-    print(f'Warning: wandb API failed to instantiate: {e}')
+   print(f'Warning: wandb API failed to instantiate: {e}')
 
 def get_history(run_id, api, n_samples):
     run = api.run(f"bakerlab/fancy-pants/{run_id}")

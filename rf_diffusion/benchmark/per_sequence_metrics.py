@@ -22,6 +22,7 @@ import torch
 import numpy as np
 import scipy
 from pathlib import Path
+import glob
 
 from ipd.dev import safe_eval
 from rf_diffusion import aa_model
@@ -1613,6 +1614,31 @@ def rmsd_to_input(
 
     out['motif_rmsd_to_input'] = out['all_rmsd_to_input']
     return out
+
+def af2_initial_guess_metrics(pdb):
+
+    row_new = analyze.make_row_from_traj(pdb[:-4], use_trb=False)
+    row = row_new
+
+    out = {}
+    out['name'] = row['name']
+    out['mpnn_index'] = row['mpnn_index']
+
+    tag = os.path.basename(pdb)[:-4]
+    af2_dir = os.path.join(os.path.dirname(pdb),"af2_initial_guess/out")
+
+    df = None
+    for file in glob.glob(af2_dir + '/*_out.sc'):
+        if tag in open(file).read():
+            df = pd.read_csv(file, sep='\s+')
+            df = df[df['description'].str.contains(tag)]
+            df = df[['binder_rmsd', 'interface_rmsd', 'pae_interaction', 'plddt_binder']]
+    assert df is not None
+
+    out.update(df.iloc[0].to_dict())
+
+    return out
+
 
 # For debugging, can be run like:
 # exec/bakerlab_rf_diffusion_aa.sif -m fire benchmark/per_sequence_metrics.py single --metric sidechain --pdb=/net/scratch/ahern/se3_diffusion/benchmarks/2024-12-16_08-05-59_enzyme_bench_n41_fixedligand/ligmpnn/packed/run_M0711_2esd_cond32_97-atomized-bb-True_4_1.pdb --log=backbone_aligned_allatom_rmsd_chai_unideal_all_chaimodel_0,constellation_backbone_aligned_allatom_rmsd_chai_unideal_all_chaimodel_0

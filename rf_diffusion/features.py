@@ -471,6 +471,82 @@ def get_nucleic_base_hotspots_inference(indep: Indep,
     
     return hotspots
 
+
+
+
+
+def get_per_res_plddt_pae_int_conditioning_inference(indep, feature_conf, feature_inference_conf, **kwargs):
+    '''
+    See get_per_res_plddt_pae_int_conditioning()
+    '''
+    return get_per_res_plddt_pae_int_conditioning(indep, feature_conf, **kwargs)
+
+def get_per_res_plddt_pae_int_conditioning(indep, feature_conf, per_res_plddt=None, per_res_pae_int=None, per_res_plddt_std=None, per_res_pae_int_std=None, **kwargs):
+    '''
+    Generates the per res plddt and pae interaction conditioning extra t1d
+
+    Args:
+        indep (Indep): indep
+        feature_conf (OmegaConf): The configuration for this feature
+
+    Returns:
+        dict:
+            t1d (torch.Tensor[bool]): The extra t1d [L, 6 + (N_topos)]
+    '''
+
+    plddt_scaling = feature_conf.get('plddt_scaling', 0.01)
+    pae_int_scaling = feature_conf.get('pae_int_scaling', 0.05)
+
+    # Either initialize a blank version of each feature or clone them
+    if per_res_plddt is None:
+        per_res_plddt = torch.full((indep.length(),), torch.nan)
+    else:
+        per_res_plddt = per_res_plddt.clone()
+    if per_res_pae_int is None:
+        per_res_pae_int = torch.full((indep.length(),), torch.nan)
+    else:
+        per_res_pae_int = per_res_pae_int.clone()
+    if per_res_plddt_std is None:
+        per_res_plddt_std = torch.full((indep.length(),), torch.nan)
+    else:
+        per_res_plddt_std = per_res_plddt_std.clone()
+    if per_res_pae_int_std is None:
+        per_res_pae_int_std = torch.full((indep.length(),), torch.nan)
+    else:
+        per_res_pae_int_std = per_res_pae_int_std.clone()
+
+
+    assert len(per_res_plddt) == indep.length(), 'per_res_plddt vector does not match indep.length(). Is ExpandConditionsDict in conf.transforms?'
+    assert len(per_res_pae_int) == indep.length(), 'per_res_pae_int vector does not match indep.length(). Is ExpandConditionsDict in conf.transforms?'
+    assert len(per_res_plddt_std) == indep.length(), 'per_res_plddt_std vector does not match indep.length(). Is ExpandConditionsDict in conf.transforms?'
+    assert len(per_res_pae_int_std) == indep.length(), 'per_res_pae_int_std vector does not match indep.length(). Is ExpandConditionsDict in conf.transforms?'
+
+    # convert nan to 0
+    plddt_mask = ~torch.isnan(per_res_plddt)
+    per_res_plddt[~plddt_mask] = 0
+    per_res_plddt_std[~plddt_mask] = 0
+
+    pae_int_mask = ~torch.isnan(per_res_pae_int)
+    per_res_pae_int[~pae_int_mask] = 0
+    per_res_pae_int_std[~pae_int_mask] = 0
+
+    # Scale the values to roughly 0-1
+    per_res_plddt *= plddt_scaling
+    per_res_plddt_std *= plddt_scaling
+
+    per_res_pae_int *= pae_int_scaling
+    per_res_pae_int_std *= pae_int_scaling
+
+    # print('pae', per_res_pae_int)
+    # print('plddt', per_res_plddt)
+
+    # Generate the feature
+    extra_t1d = torch.stack((plddt_mask, per_res_plddt, per_res_plddt_std, pae_int_mask, per_res_pae_int, per_res_pae_int_std), axis=-1)
+
+    return {'t1d':extra_t1d}
+
+
+
 # Add user specific featurizers to this dictionary for training
 featurizers = {
     'radius_of_gyration': get_radius_of_gyration,
@@ -486,6 +562,7 @@ featurizers = {
     'ppi_hotspots_antihotspots': ppi.get_hotspots_antihotspots_conditioning,
     'ideal_ss_cond': ideal_ss.get_ideal_ss_conditioning,
     'target_hbond_satisfaction_cond': hbond_satisfaction.get_hbond_target_satisfaction_conditioning,
+    'per_res_plddt_pae_int_cond': get_per_res_plddt_pae_int_conditioning,
 }
 
 # Add user specific featurizers to this dictionary for inference
@@ -503,6 +580,7 @@ inference_featurizers = {
     'ppi_hotspots_antihotspots': ppi.get_hotspots_antihotspots_conditioning_inference,
     'ideal_ss_cond': ideal_ss.get_ideal_ss_conditioning_inference,
     'target_hbond_satisfaction_cond': hbond_satisfaction.get_hbond_target_satisfaction_conditioning_inference,
+    'per_res_plddt_pae_int_cond': get_per_res_plddt_pae_int_conditioning_inference,
 }
 
 # Add user specific featurizer initializer functions to this dictionary (optional) for inference

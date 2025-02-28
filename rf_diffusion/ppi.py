@@ -1267,7 +1267,7 @@ class RenumberCroppedInput:
         )
 
 
-def get_origin_target_hotspot(indep, conditions_dict, is_diffused):
+def get_origin_target_hotspot(indep, conditions_dict, is_diffused, only_hotspots=False):
     '''
     A function to emulate center_type: all for PPI.
 
@@ -1296,6 +1296,9 @@ def get_origin_target_hotspot(indep, conditions_dict, is_diffused):
     Cb = Cb_or_atom(indep)
     hotspot_com = Cb[is_hotspot].mean(axis=0)
     target_com = indep.xyz[~is_diffused,1].mean(axis=0)
+
+    if only_hotspots:
+        return hotspot_com
 
     # Calculate CoM by using the relative weights of the two proteins
     target_size = (~is_diffused).sum()

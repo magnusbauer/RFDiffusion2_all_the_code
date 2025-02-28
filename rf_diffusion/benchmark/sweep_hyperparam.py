@@ -86,8 +86,12 @@ def get_arg_combos(arg_str):
         else:
             # base case
             k, vs = arg.split('=')
+            vs = vs.replace('@_@', '\\ ')
             arg_dicts = []
             for v in vs.split('|'):
+                # Strip parentheses from v
+                if v.startswith('(') and v.endswith(')'):
+                    v = v[1:-1]
                 arg_dicts.append({k:v})
         all_arg_dicts.append(arg_dicts)
             
@@ -307,6 +311,9 @@ def main(conf: HydraConfig) -> list[int]:
 
         num_per_condition = int(arg_dict.pop('num_per_condition', conf.num_per_condition))
         combo = []
+        command = conf.command
+        if 'command' in arg_dict:
+            command = arg_dict.pop('command') or command
         for k,v in arg_dict.items():
             combo.append(f'{k}={v}')
         extra_args = ' '.join(combo)
@@ -314,7 +321,7 @@ def main(conf: HydraConfig) -> list[int]:
         for istart in np.arange(0, num_per_condition, conf.num_per_job):
             num_designs = min(conf.num_per_job, num_per_condition-istart)
             log_fn = f'{arg_row["inference.output_prefix"]}_{istart}.log'
-            print(f'{conf.command} {extra_args} {write_trajectories_flags} '\
+            print(f'{command} {extra_args} {write_trajectories_flags} '\
                   f'inference.num_designs={num_designs} inference.design_startnum={istart} >> {log_fn}', file=job_list_file)
 
     if conf.slurm.submit or conf.slurm.in_proc:

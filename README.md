@@ -154,3 +154,15 @@ Run it with:
 
 ## pipeline.py
 If your outdir is `/a/b/c/` then slurm logs appear at: `/a/b/SLURMJOBID_SLURMJOBARRAYINDEX_jobtype.log`
+
+# PPI
+
+You can compare protein-protein binder design between RFDAM and RFDiffusion by generating length 100 binders against the 5 binder design benchmark cases described in the RFDiffusion paper, by running this command:
+
+`./benchmark/pipeline.py -cn ppi_comparison_pilot`
+
+To visualize the trajectories created during the "sweep" step in PYMOL:
+`./dev/show_bench.py --clear=1 'YOUR_OUTPUT_DIR_HERE/*.trb' --key=name --ppi=1 --des=0`
+
+To visualize the designs as cartoons once the MPNN step is complete in PYMOL:
+`./dev/show_bench.py --clear=1 'YOUR_OUTPUT_DIR_HERE/*.trb' --key=name --ppi=1 --mpnn_packed=1 --des=0 --cartoon=1 --structs='{}'`

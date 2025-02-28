@@ -349,6 +349,8 @@ def main(path,
          debug=False,
          filt=None,
          extra=None,
+         ppi=False,
+         cartoon=False,
          ):
     ic(pymol_url)
     if debug:
@@ -429,6 +431,24 @@ def main(path,
         cmd.center(pa)
         cmd.color('red', pa)
         cmd.set('grid_slot', -2, pa)
+
+    # Assume chain B is the target
+    score_names = ['af2', 'chai1']
+    if ppi:
+        for entities in all_entities:
+            for name, e in entities.items():
+                if name in score_names:
+                    continue
+                e.selectors['target'] = "chain B and not hetatm"
+                cmd.color('paper_teal', e['target'])
+                cmd.do(f"mass_paper_rainbow_sel ({e.NOT('target')} and not hetatm)")
+
+    # Show as cartoons:
+    if cartoon:
+        for entities in all_entities:
+            for name, e in entities.items():
+                print(f'{name=} {list(e.selectors.keys())}')
+                cmd.show_as('cartoon', e['protein'])
 
     # cmd.do('mass_paper_rainbow')
 

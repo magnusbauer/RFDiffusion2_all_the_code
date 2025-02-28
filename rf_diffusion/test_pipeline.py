@@ -141,6 +141,13 @@ class TestBenchmark(unittest.TestCase):
             {'a':'1', 'b':'2', 'c':'3'},
             {'a':'1', 'b':'2', 'c':'4'},
         ]),
+        ('''
+        a=(ddd eee fff)
+        b=2
+        ''',
+        [
+            {'a':'ddd eee fff', 'b':'2'}
+        ]),
         ]:
             with error.context(f'{arg_str=} {want=}'):
                 got = benchmark.sweep_hyperparam.parse_arg_str(arg_str)

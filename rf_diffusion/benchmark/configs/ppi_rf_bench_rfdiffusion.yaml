@@ -1,0 +1,38 @@
+defaults:
+  - pipeline
+
+sweep:
+  command: /usr/bin/apptainer run --nv -B /software -B /databases -B /net/databases /software/containers/RF_diffusion.sif -u /software/lab/diffusion/rf_diffusion/run_inference.py
+  command_args: >
+      --config-name=base
+      inference.deterministic=True
+      inference.model_runner=NRBStyleSelfCond
+      +inference.ckpt_override_path=/databases/lab/diffusion/models/hotspot_models/base_complex_finetuned_BFF_9.pt
+      (
+        denoiser.noise_scale_ca=0
+        denoiser.noise_scale_frame=0
+      )
+      potentials.guide_scale=0
+      inference.final_step=1
+      diffuser.T=200
+      ++inference.ligand=''
+  benchmark_json: ppi_rf_bench_rfdiffusion.json
+  benchmarks: all
+  num_per_condition: 1
+  num_per_job: 1
+
+in_proc: 1
+start_step: sweep
+stop_step: end
+
+score:
+  run: af2_initial_guess
+
+metrics:
+  sequence_metrics:
+    - default
+    - af2_initial_guess_metrics
+
+
+#outdir: /net/scratch/bcov/se3_diffusion/benchmarks/2024-12-10_22-12-28_ppi_v1
+outdir: /net/scratch/${oc.env:USER}/se3_diffusion/benchmarks/${now:%Y-%m-%d}_${now:%H-%M-%S}_ppi_v1

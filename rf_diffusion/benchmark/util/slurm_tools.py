@@ -11,7 +11,15 @@ def slurm_submit(cmd, p='cpu', c=1, mem=2, gres=None, J=None, wait_for=[], hold_
     job_name = J if J else os.environ["USER"]+'_auto_submit'
     log_file = f'%A_%a_{J}.log' if log else '/dev/null'
     # The RAM on this gpu is busted, raises ECC errors on torch.load
-    exclude_gpu = "--exclude=gpu135,gpu111,gpu51,gpu53,gpu21,gpu155" if gres and gres.startswith('gpu') else "--exclude=dig193,dig182"
+    exclude_gpu = "--exclude=gpu135,gpu111,gpu51,gpu53,gpu21" if gres and gres.startswith('gpu') else "--exclude=dig193,dig182"
+
+    # Inexplicably, the interfaceAF2predict_bcov.py script does not play
+    # nicely with the 4000Ada Remote GPUs.
+    is_interface_af2_job = 'interfaceAF2predict_bcov.py' in cmd
+    ada4000remote_nodes = 'gpu[142-157]'
+    if is_interface_af2_job:
+        exclude_gpu += f",{ada4000remote_nodes}"
+
     cmd_sbatch = f'sbatch --wrap "{cmd}" -p {p} -c {c} --mem {mem}g '\
         f'-J {job_name} '\
         f'{f"--gres {gres}" if gres else ""} '\

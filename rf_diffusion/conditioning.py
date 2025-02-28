@@ -528,7 +528,7 @@ class CenterPostTransform:
         self.jitter = jitter
         self.jitter_clip = jitter_clip
         self.center_type = center_type
-        assert center_type in ['is_diffused', 'is_not_diffused', 'all', 'target_hotspot'], "must use 'is_diffused' or 'is_not_diffused' for center_type"
+        assert center_type in ['is_diffused', 'is_not_diffused', 'all', 'target_hotspot', 'hotspot'], "must use 'is_diffused' or 'is_not_diffused' for center_type"
 
     def __call__(self,
                      indep: Indep, 
@@ -563,6 +563,8 @@ class CenterPostTransform:
             elif self.center_type == 'target_hotspot':
                 # We are emulating center_type: all except the entire mass of the binder is at the CoM of the hotspot CBs
                 origin = ppi.get_origin_target_hotspot(indep, conditions_dict, is_diffused)
+            elif self.center_type == 'hotspot':
+                origin = ppi.get_origin_target_hotspot(indep, conditions_dict, is_diffused, only_hotspots=True)
 
             # Calculate center of mass
             if origin is None:

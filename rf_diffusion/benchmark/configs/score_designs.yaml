@@ -23,3 +23,10 @@ chai1:
     submit: True
     in_proc: False
     keep_logs: True
+
+af2_initial_guess:
+  slurm:
+    J: null
+    p: gpu
+    gres: gpu:a4000:1
+    mem: 32

@@ -1621,14 +1621,17 @@ def get_method(r):
 def get_condition(row, key='name'):
     return re.match('.*cond\d+', row[key])[0]
 
-
+known_rfd_model_paths = (
+    '/home/ahern/projects/rf_diffusion/models/theo_pdb/BFF_4.pt',
+    '/databases/lab/diffusion/models/hotspot_models/base_complex_finetuned_BFF_9.pt',
+)
 def is_rfd(row):
     """
     Returns True if the row comes from a vanilla RFDiffusion model.
 
     Uses heuristics.
     """
-    return row.get('inference.ckpt_override_path', '') == '/home/ahern/projects/rf_diffusion/models/theo_pdb/BFF_4.pt'
+    return row.get('inference.ckpt_override_path', '') in known_rfd_model_paths
 
 def parse_rfd_aa_df(df, drop_missing_af2=True):
     try:
