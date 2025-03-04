@@ -1266,6 +1266,31 @@ class RenumberCroppedInput:
             masks_1d=masks_1d
         )
 
+def get_origin_normal_to_target_hotspot(indep, conditions_dict, is_diffused, normal_extension=10):
+    assert 'is_hotspot' in conditions_dict or 'hotspot_values' in conditions_dict, 'You must use ppi.hotspot_res or ppi.hotspot_res_values to use center_type: target-hotspot'
+    is_hotspot = torch.zeros(indep.length(), dtype=bool)
+
+    if 'is_hotspot' in conditions_dict:
+        is_hotspot |= conditions_dict['is_hotspot']
+    if 'hotspot_values' in conditions_dict:
+        is_hotspot |= conditions_dict['hotspot_values'] != 0
+
+    assert is_hotspot.sum() > 0, 'You must use ppi.hotspot_res or ppi.hotspot_res_values to use center_type: target-hotspot'
+
+    # use CB for hotspots to get it a little closer to the CoM of the theoretical binder
+    Cb = Cb_or_atom(indep)
+    hotspot_cb_com = Cb[is_hotspot].mean(axis=0)
+    target_ca = indep.xyz[~is_diffused,1]
+    
+    target_ca_near_hotspot = target_ca[(target_ca - hotspot_cb_com).norm(dim=1) < 10]
+    # target_ca_near_hotspot_com = np.mean(target_ca_near_hotspot, axis=0)
+    target_ca_near_hotspot_com = target_ca_near_hotspot.mean(axis=0)
+
+    from_core_to_hotspot = hotspot_cb_com - target_ca_near_hotspot_com
+    from_core_to_hotspot = from_core_to_hotspot / from_core_to_hotspot.norm()
+    
+    return hotspot_cb_com + normal_extension * from_core_to_hotspot
+
 
 def get_origin_target_hotspot(indep, conditions_dict, is_diffused, only_hotspots=False):
     '''

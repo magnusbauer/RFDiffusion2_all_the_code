@@ -347,7 +347,8 @@ def main():
         # out = parse_PDB(fn, {fn: params_fns})
 
         # print(trb)
-        fixed_pos = [f'{ch}{res_idx}' for ch, res_idx in trb['con_hal_pdb_idx']]
+        hal_pdb_idx = trb['con_hal_pdb_idx'] + trb.get('receptor_con_hal_pdb_idx', [])
+        fixed_pos = [f'{ch}{res_idx}' for ch, res_idx in hal_pdb_idx]
         # pdb_dict_list.append(fn)
         fixed_position_dict[fn] = fixed_pos
 

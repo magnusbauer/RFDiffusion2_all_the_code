@@ -905,6 +905,11 @@ def get_ligands(atom_array):
         ligand_by_resname[resname] = atom_array[atom_array.res_name == resname]
     return ligand_by_resname
 
+def atom_array_from_pdb(pdb):
+    atom_array = bt.atom_array_from_pdb(pdb)
+    atom_array = bt.without_hydrogens(atom_array)
+    return atom_array
+    
 def ligands_match(pdb, chai1_pdbs):
     out = {}
 

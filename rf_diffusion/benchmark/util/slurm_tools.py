@@ -15,7 +15,7 @@ def slurm_submit(cmd, p='cpu', c=1, mem=2, gres=None, J=None, wait_for=[], hold_
 
     # Inexplicably, the interfaceAF2predict_bcov.py script does not play
     # nicely with the 4000Ada Remote GPUs.
-    is_interface_af2_job = 'interfaceAF2predict_bcov.py' in cmd
+    is_interface_af2_job = 'jobs.score.af2_initial_guess' in cmd
     ada4000remote_nodes = 'gpu[142-157]'
     if is_interface_af2_job:
         exclude_gpu += f",{ada4000remote_nodes}"

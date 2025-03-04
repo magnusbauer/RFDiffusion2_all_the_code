@@ -638,10 +638,10 @@ def add_cc_columns(df):
         )
 
 
-def best_in_group(df, group_by=['design_id'], cols=['catalytic_constraints.raw.criterion_1'], ascending=[False], unique_column='seq_id'):
+def best_in_group(df, group_by=['design_id'], cols=['catalytic_constraints.raw.criterion_1'], ascending=[False], unique_column='seq_id', n=1):
     assert df[unique_column].is_unique
     df_small  = df[group_by + cols + [unique_column]]
-    grouped = df_small.groupby(group_by).apply(lambda grp: grp.sort_values(cols, ascending=ascending).head(1))
+    grouped = df_small.groupby(group_by).apply(lambda grp: grp.sort_values(cols, ascending=ascending).head(n))
     return pd.merge(df, grouped[unique_column], on=unique_column, how='inner')
 
 
@@ -1267,6 +1267,7 @@ def get_chai_melt_dataframe(compiled_metrics_df, n_contiguous_method='same_withi
         chai_melt.set_index(['seq_id', 'chai_model_idx'], verify_integrity=True, inplace=True)
 
     return chai_melt, filters
+
 
 def get_best_chai_model_per_design_per_filter(chai_melt, filters):
     # Find the number of designs passing each metric

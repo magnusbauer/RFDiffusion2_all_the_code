@@ -433,25 +433,30 @@ def main(path,
         cmd.set('grid_slot', -2, pa)
 
     # Assume chain B is the target
-    score_names = ['af2', 'chai1']
     if ppi:
-        for entities in all_entities:
-            for name, e in entities.items():
-                if name in score_names:
-                    continue
-                e.selectors['target'] = "chain B and not hetatm"
-                cmd.color('paper_teal', e['target'])
-                cmd.do(f"mass_paper_rainbow_sel ({e.NOT('target')} and not hetatm)")
+        format_ppi(all_entities)
 
     # Show as cartoons:
     if cartoon:
-        for entities in all_entities:
-            for name, e in entities.items():
-                print(f'{name=} {list(e.selectors.keys())}')
-                cmd.show_as('cartoon', e['protein'])
+        format_cartoon(all_entities)
+
 
     # cmd.do('mass_paper_rainbow')
+def format_cartoon(all_entities):
+    for entities in all_entities:
+        for name, e in entities.items():
+            print(f'{name=} {list(e.selectors.keys())}')
+            cmd.show_as('cartoon', e['protein'])
 
+def format_ppi(all_entities):
+    score_names = ['af2', 'chai1']
+    for entities in all_entities:
+        for name, e in entities.items():
+            if name in score_names:
+                continue
+            e.selectors['target'] = "chain B and not hetatm"
+            cmd.color('paper_teal', e['target'])
+            cmd.do(f"mass_paper_rainbow_sel ({e.NOT('target')} and not hetatm)")
 
 def pseudoatom(
         cmd,
