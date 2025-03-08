@@ -21,6 +21,10 @@ from typing import Tuple
 logger = logging.getLogger(__name__)
 
 from icecream import ic 
+
+def spy(*args):
+    pass 
+
 class PDBLoaderDataset(torch.utils.data.Dataset):
     """
     Makes indeps from PDBs for inference. Subsequent transforms are applied to complete the indep
@@ -57,6 +61,7 @@ class PDBLoaderDataset(torch.utils.data.Dataset):
         indep_orig, metadata = aa_model.make_indep(self.pdb_fp, 
                                                    conf.inference.ligand, 
                                                    return_metadata=True)
+        spy({'indep_getitem_inner_point_A':copy.deepcopy(indep_orig)})
         
         # If doing refinement, add OG motif coordinates to metadata
         if conf.inference.refine:
@@ -80,9 +85,12 @@ class PDBLoaderDataset(torch.utils.data.Dataset):
         guide_posts.validate_guideposting_strategy(conf)
         sec_struct_adj.validate_ss_adj_strategy(conf)
 
+
         feats = {'contig_map': contig_map, 'indep': indep, 'metadata': metadata, 
                  'masks_1d': masks_1d, 'L': L, 'conf': conf,
                  'origin': origin, 'conditions_dict': {}}
+
+        spy({'indep_getitem_inner_point_B':copy.deepcopy(indep)})
         return feats
 
     def __len__(self):

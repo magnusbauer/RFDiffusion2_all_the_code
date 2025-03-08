@@ -1854,6 +1854,9 @@ def get_class_name(f):
         return None
     return getattr(clas, '__qualname__')
 
+def spy(*args):
+    return None
+
 class TransformedDataset(data.Dataset):
     '''
     Applies transformations to a dataset following the pytorch Transformation paradigm:
@@ -1873,10 +1876,14 @@ class TransformedDataset(data.Dataset):
         
     def getitem_inner(self, index: int, **kwargs):
         # Entry point for dataset iteration
+
         if hasattr(self.dataset, 'getitem_inner'):
             feats = self.dataset.getitem_inner(index, **kwargs)
         else:
             feats = self.dataset[index]  # feats has {'indep', 'atom_mask', 'metadata', 'chosen_dataset', 'sel_item', 'task', 'item_context', 'mask_gen_seed', 'params', 'conditions_dict'}
+
+        spy({'feats_into_transform_stack':copy.deepcopy(feats)})
+
         logger.debug(f'Transform root inputs: {set(feats.keys()) if isinstance(feats, dict) else type(feats)}')
 
         # Iterate through all transforms in order and update the features

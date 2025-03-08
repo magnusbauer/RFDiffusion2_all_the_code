@@ -37,6 +37,9 @@ import sys
 
 logger = logging.getLogger(__name__)
 
+def spy(*args):
+    pass
+
 class Sampler:
 
     def __init__(self, conf: DictConfig, skip_initialization: bool = False, **kwargs):
@@ -202,6 +205,8 @@ class Sampler:
         indep = self.indep_cond.clone()
 
         self.metadata = metadata
+
+        spy(indep, contig_map, self.atomizer, t_step_input)
 
         return indep, contig_map, self.atomizer, t_step_input
 

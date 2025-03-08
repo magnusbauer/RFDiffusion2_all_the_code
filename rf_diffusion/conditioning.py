@@ -50,6 +50,9 @@ def get_center_of_mass(xyz14, mask):
 LEGACY_TRANSFORMS_TO_IGNORE = ['PopMask']
 
 
+def spy(*args):
+    return None
+
 class PopMask:
     def __call__(self, indep: Indep, metadata: dict, masks_1d: torch.Tensor, conditions_dict: dict, **kwargs):
         
@@ -236,11 +239,16 @@ class ComputeMotifTemplate:
                  **kwargs): 
         
         """
-        Parameters: 
-            indep (Indep):              The unnoised indep object
-            masks_1d (dict):            The masks containing 1d and 2d motif info
-            use_cb (bool):              Whether to use cb atoms for t2d calculation
+        Args: 
+            indep: The unnoised indep object
+            masks_1d: The masks containing 1d and 2d motif info
+            use_cb: Whether to use cb atoms for t2d calculation
         """
+        spy({'indep_into_ComputeMotifTemplate':copy.deepcopy(indep),
+             'is_motif':masks_1d['input_str_mask'],
+             'is_motif_2d':masks_1d['is_motif_2d']
+             })
+
         is_motif    = masks_1d['input_str_mask'] 
         is_motif_2d = masks_1d['is_motif_2d']
 
