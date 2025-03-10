@@ -108,25 +108,25 @@ class TestCARFDInference(unittest.TestCase):
         # 
 
     def load_golden_sample_init(self):
-        sample_init_pkl = '/home/davidcj/tmp/og_rfd2template_sample_init_out.pkl'
+        sample_init_pkl = './goldens/ca_rfd_inf_sample_init_out.pkl'
         with open(sample_init_pkl, 'rb') as f:
             want_indep = pickle.load(f)
         return want_indep
     
     def load_golden_indep_orig(self):
-        pkl = '/home/davidcj/tmp/og_indep_orig.pkl'
+        pkl = './goldens/ca_rfd_inf_indep_orig.pkl'
         with open(pkl, 'rb') as f:
             want_indep = pickle.load(f)
         return want_indep
     
     def load_golden_indep_after_insert(self): 
-        pkl = '/home/davidcj/tmp/og_indep_after_insert_contig.pkl'
+        pkl = './goldens/ca_rfd_inf_indep_after_insert_contig.pkl'
         with open(pkl, 'rb') as f:
             want_indep = pickle.load(f)
         return want_indep
     
     def load_golden_compute_motif_template(self):
-        pkl = '/home/davidcj/tmp/og_compute_motif_template_ins_outs.pkl'
+        pkl = './goldens/ca_rfd_inf_compute_motif_template_ins_outs.pkl'
         with open(pkl, 'rb') as f:
             want = pickle.load(f)
         return want
