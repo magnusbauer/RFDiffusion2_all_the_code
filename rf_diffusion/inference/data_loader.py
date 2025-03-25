@@ -16,6 +16,7 @@ import numpy as np
 import torch.utils.data
 from rf_diffusion.inference import utils as iu
 import pdb as pydb
+import sys
 from typing import Tuple
 
 logger = logging.getLogger(__name__)
@@ -61,14 +62,20 @@ class PDBLoaderDataset(torch.utils.data.Dataset):
         indep_orig, metadata = aa_model.make_indep(self.pdb_fp, 
                                                    conf.inference.ligand, 
                                                    return_metadata=True)
+                                                   
         spy({'indep_getitem_inner_point_A':copy.deepcopy(indep_orig)})
         
-        # If doing refinement, add OG motif coordinates to metadata
+        # If doing refinement, add OG motif coordinates to metadata for later templating
         if conf.inference.refine:
             aa_model.get_refinement_metadata(metadata, conf)
 
         contig_map = ContigMap(self.target_feats, **(contig_conf or conf.contigmap))
 
+        
+        if conf.inference.refine:
+            # refinement sanity check - is built contigs identical in length to input pdb? 
+            assert indep_orig.is_sm.sum() + len(contig_map.ref) == len(indep_orig.xyz)
+        
         # Calculate centering context and validate
         if origin_override is None:
             origin = centering.extract_centering_origin(indep_orig, self.pdb_fp, for_partial_diffusion(conf))
@@ -78,7 +85,10 @@ class PDBLoaderDataset(torch.utils.data.Dataset):
 
         # Prepare non atomization contig insertion (pre tranform-indep)
         model_adaptor = aa_model.Model(conf)
-        indep, masks_1d = model_adaptor.insert_contig_pre_atomization(indep_orig, contig_map, metadata, for_partial_diffusion(conf))
+        indep, masks_1d = model_adaptor.insert_contig_pre_atomization(indep_orig, 
+                                                                      contig_map, 
+                                                                      metadata, 
+                                                                      for_partial_diffusion(conf) or conf.inference.refine)
 
         # Validate strategies
         centering.validate_centering_strategy(origin, for_partial_diffusion(conf), conf)    

@@ -16,6 +16,7 @@ from rf2aa.data import parsers
 from dataclasses import dataclass
 from rf2aa.kinematics import get_chirals
 from rf2aa.util_module import XYZConverter
+from omegaconf import DictConfig
 
 import rf2aa.tensor_util
 import copy
@@ -587,14 +588,14 @@ class SymAdaptRFO(ipd.sym.SymAdaptDataClass):
     adapts = RFO
 
 
-def get_refinement_metadata(meta, conf):
+def get_refinement_metadata(meta:dict, conf:DictConfig):
     """
     Retrives information about the original diffusion run for refinement. 
     E.g., grab original motif coordinates, ij_visible info, etc. 
 
-    Parameters: 
-        meta (dict): metadata from the original diffusion run
-        conf (OmegaConf.DictConfig): run config
+    Args: 
+        meta: metadata from the original diffusion run
+        conf: run config
     """
     pdb = conf.inference.input_pdb
     trb = pdb.replace('.pdb', '.trb')
@@ -622,6 +623,13 @@ def get_refinement_metadata(meta, conf):
     ref = trb_dict['contigmap_ref']
     hal = trb_dict['contigmap_hal']
     conf.contigmap.contigs = contigs.get_refinement_contigs_from_ref_and_hal(ref, hal)
+
+
+    # reset the output prefix as the pdb with '_refined' tag
+    conf.inference.output_prefix = pdb.replace('.pdb','_refined.pdb')
+
+    # reset ij_visible to whatever it was in diffusion 
+    conf.inference.ij_visible = og_conf['inference']['ij_visible']
 
 
 def get_ligands(pdb_lines):
@@ -1108,9 +1116,7 @@ class Model:
         self.converter = XYZConverter()
 
     def forward(self, rfi, **kwargs):
-        # ipdb.set_trace()
         rfi_dict = dataclasses.asdict(rfi)
-        # assert set(rfi_dict.keys()) - set()
         return RFO(*self.model(**{**rfi_dict, **kwargs}))
 
     def insert_contig_pre_atomization(self, indep: Indep, contig_map: ContigMap, metadata: dict = None, for_partial_diffusion: bool = False):
@@ -3094,7 +3100,7 @@ def randomly_rotate_frames(xyz):
     rotated += frame_origins
     return rotated
 
-def eye_frames(xyz):
+def eye_frames(xyz, recenter=False):
     """
     replaces frames in xyz with identity frames, this version simply using chemical.INIT_CRDS as frame.
     """
@@ -3107,6 +3113,9 @@ def eye_frames(xyz):
 
     xyz[:,:3,:] = init + T[:,None,:].expand(L,3,3)
 
+    if recenter:
+        xyz = xyz - xyz[:,1:2,:].mean(dim=0, keepdim=True)
+        
     return xyz
 
 

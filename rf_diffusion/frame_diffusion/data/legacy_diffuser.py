@@ -564,7 +564,6 @@ class RefineDiffuser(SE3Diffuser):
             diffuse_mask (np.ndarray): Mask denoting which tokens are subject to noising, and which are not. 
                                        NOTE: 1/True means 'revealed' (not diffused), 0/False means 'hidden' (diffused)
         """
-
         #### Translations #### 
         ######################
 
@@ -579,9 +578,10 @@ class RefineDiffuser(SE3Diffuser):
 
         noised_crds, delta = self._r3_diffuser.diffuse_translations(bb_crds, 
                                                                     ~(diffuse_mask.bool()), 
-                                                                    var_scale)
+                                                                    crd_scale=self.crd_scale)
 
         bb_crds = bb_crds / self.crd_scale # scale back
+        delta = delta / self.crd_scale
 
         ####################################
         #### SO3 noise -- random frames ####

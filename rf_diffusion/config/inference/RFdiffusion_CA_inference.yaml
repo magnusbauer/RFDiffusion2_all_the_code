@@ -13,8 +13,8 @@ diffuser:
     coordinate_scaling: 0.25
     T: ${..T}
     schedule_kwargs: {}
-    var_scale: 1.0
-    noise_scale: 1.0  
+    var_scale: 0.05
+    noise_scale: 0.05 
 
   step_back_via_noiser: true
 
@@ -24,7 +24,7 @@ inference:
   input_pdb: ./test_data/siteC.pdb
   str_self_cond: 1
   ij_visible: 'abcde' # e is the ligand
-  length: 90-165
+  length: 90-125
   ligand: mu2
   write_trajectory: true
   recenter_xt: true 

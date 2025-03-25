@@ -4,6 +4,7 @@ import types
 import pickle
 # Imports for typing only
 from typing import TYPE_CHECKING
+import os 
 if TYPE_CHECKING:
     from rf_diffusion.aa_model import Indep
 
@@ -178,12 +179,14 @@ def get_coarse_ij_matrix(ij_visible: str):
 
     return coarse_ij_visibility
 
+
+
 class GetTemplatedMotifMasks:
     """
     Given contig map and indep, compute the 2D and 1D masks used for motif template addition. 
     """
 
-    def __init__(self, ij_visible: str, template_ligand: bool=True): 
+    def __init__(self, ij_visible: str=None, template_ligand: bool=True): 
         self.ij_visible = ij_visible
         self.template_ligand = template_ligand 
 
@@ -193,6 +196,17 @@ class GetTemplatedMotifMasks:
                  masks_1d: dict, 
                  metadata: dict, 
                  **kwargs):
+        
+        if self.ij_visible is None:
+            # we must be doing refinement and need to compute ij_visible from loaded .trb
+            assert metadata.get('ref_dict', False), 'Did not recieve refinement dictionary in metadata. Did you set the inference.refine flag?'
+            ref_dict = metadata['ref_dict']
+            self.ij_visible = ref_dict['ij_visible']
+            assert (isinstance(self.ij_visible, str)) and (len(self.ij_visible) > 0), f'Got invalid ij_visible from .trb: {self.ij_visible}'
+        else:
+            # it was passed in from config 
+            pass
+        
 
         coarse_ij_visibility = get_coarse_ij_matrix(self.ij_visible)
         nchunk_total = coarse_ij_visibility.shape[0]
@@ -205,7 +219,6 @@ class GetTemplatedMotifMasks:
         is_motif[indep.is_sm] = True # assumes the ligand is motif as well
 
         is_motif_w_chunk_id = label_true_islands(is_motif)
-        
         # make some assertion about how the computed number of motif chunks from 
         # contig map + indep needs to be the same number computed from user supplied ij_visible
         assert nchunk_total == len(set(is_motif_w_chunk_id[is_motif_w_chunk_id != -1].tolist())), f'{nchunk_total=} {is_motif_w_chunk_id=}'
@@ -359,11 +372,12 @@ class ComputeMotifTemplateRefine:
         metadata['motif_template'] = motif_template
 
         masks_1d['input_str_mask'] = torch.zeros_like(is_motif) # ensure it gets diffused in 3D
-
+        masks_1d['is_templated_motif'] = is_motif
 
         return {'indep'     : indep,
                 'masks_1d'  : masks_1d,
                 'metadata'  : metadata,
+                'motif_template': motif_template,
                 **kwargs}
 
 class GenerateMasks:

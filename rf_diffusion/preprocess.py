@@ -2,7 +2,6 @@ import torch
 import aa_model 
 
 from rf_diffusion.chemical import ChemicalData as ChemData
-import pdb
 
 def add_motif_template(rfi: aa_model.RFI, motif_template: dict, masks_1d: dict) -> aa_model.RFI:
     """

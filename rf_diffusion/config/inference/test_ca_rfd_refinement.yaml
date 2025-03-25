@@ -4,10 +4,12 @@ defaults:
 inference: 
   ckpt_path: '/mnt/home/davidcj/projects/merge/rf_diffusion_repo/rf_diffusion/tmp_models/trained/refinement/BFF_3_w_new_conf.pt' 
   refine: true
-  input_pdb: ./test_data/refinement_test_input.pdb
+  input_pdb: ./test_data/to_refine.pdb
   cautious: false
-  output_prefix: ./test_data/refine_input_refined.pdb
-  ligand: mu2
+  ligand: mu1
+  refine_recycles: 4
+  ij_visible: null # has to be overriden from defaults to null/None
+  num_designs: 2 # usually 2 is enough for refinement
 
 
 diffuser:
@@ -16,12 +18,24 @@ diffuser:
 
   r3:
     T: ${..T}
+    var_scale: 0.0 # refinement model used 1.5 A^2 variance
     refine_variance: 1.5
 
   so3:
     T: ${..T}
 
 #### Transforms ####    
+upstream_inference_transforms:
+  names:
+    - GetTemplatedMotifMasks
+  configs:    
+    ij_visible: null
+    template_ligand: true
+
+preprocess:
+  eye_frames: false
+
+
 transforms: 
   names:
     - ComputeMotifTemplateRefine

@@ -10,6 +10,7 @@ import rf2aa.util
 from dataclasses import dataclass
 import dataclasses
 import pdb 
+import aa_model
 
 import rf2aa.model.RoseTTAFoldModel
 from rf2aa.chemical import ChemicalData as ChemData
@@ -21,6 +22,7 @@ from datetime import datetime
 from openfold.utils.rigid_utils import Rotation
 from rf_diffusion.frame_diffusion.data import utils as du
 import logging
+import sys
 logger = logging.getLogger(__name__)
 
 # class AttrDict(dict):
@@ -172,55 +174,119 @@ def rfi_from_input_feats(input_feats):
     indep.seq[is_seq_masked] = ChemData().MASKINDEX
     return aa_model_converter.prepro(indep, input_feats['t'].to('cpu') * T, is_diffused.to('cpu'))
 
-def multi_cycle_forward(model, rfi, N_cycle, **kwargs): 
-    """
-    Function for performing a forward pass with RF recycles. 
-    """
-    model.eval()
-    assert N_cycle > 0
+# def multi_cycle_forward(model, rfi, N_cycle, **kwargs): 
+#     """
+#     Function for performing a forward pass with RF recycles. 
+#     """
+#     model.eval()
+#     assert N_cycle > 0
 
-    if N_cycle == 1: 
-        rfi_dict = dataclasses.asdict(rfi)
-        return rf_diffusion.aa_model.RFO(*model(**{**rfi_dict, **kwargs}))
+#     if N_cycle == 1: 
+#         rfi_dict = dataclasses.asdict(rfi)
+#         return rf_diffusion.aa_model.RFO(*model(**{**rfi_dict, **kwargs}))
     
-    else: 
-        for i in range(N_cycle-1):
+#     else: 
+#         for i in range(N_cycle-1):
 
+#             if i == 0:
+#                 # First cycle - initialize 'prev' inputs 
+#                 rfi_dict = dataclasses.asdict(rfi)
+#                 input = {**rfi_dict, **kwargs}
+#                 input['msa_prev'] = None
+#                 input['pair_prev'] = None
+#                 input['state_prev'] = None
+#                 input['return_raw'] = True
+#                 out = model(**input)
+
+#             else:
+#                 _______,xyz_allatom, _, msa_prev, pair_prev, state, _= out
+#                 rfi_dict = dataclasses.asdict(rfi)
+#                 rfi_dict['msa_prev']    = msa_prev
+#                 rfi_dict['pair_prev']   = pair_prev
+#                 rfi_dict['xyz']         = xyz_prev
+#                 rfi_dict['state_prev']  = state
+
+#                 input = {**rfi_dict, **kwargs}
+#                 input['return_raw'] = True
+#                 out = model(**input)
+
+#             # Do the last recycle, and return RFO 
+#             msa_prev, pair_prev, xyz_prev, state, alpha_prev, _ = out
+#             rfi_dict = dataclasses.asdict(rfi)
+#             rfi_dict['msa_prev']    = msa_prev
+#             rfi_dict['pair_prev']   = pair_prev
+#             rfi_dict['xyz']         = xyz_prev
+#             rfi_dict['state_prev']  = state
+
+#             input = {**rfi_dict, **kwargs}
+#             input['return_raw'] = False
+
+#             # with grad 
+#             return rf_diffusion.aa_model.RFO(*model(**input))
+
+
+def unpack_out_raw_yesquats(o:tuple):
+    """Unpack 'raw' outputs the RF forward pass outputs
+    
+    Args:
+        o: output from LegacyRoseTTAFoldModule
+    """
+    assert len(o) == 13 # it's 13 if model had get_quaternion=True
+    _, _, _, _, _, _, alpha_s, xyz_allatom, _, msa_prev, pair_prev, state_prev, _ = o
+    xyz_last = xyz_allatom[-1].unsqueeze(0)
+    return msa_prev, pair_prev, xyz_last, state_prev, alpha_s[-1]
+
+
+def multi_recycle_prediction(rfi, N_cycle, model, use_checkpoint, return_raw):
+    """Perform a forward pass with multiple recycles
+    
+    Args:
+        rfi (aa_model.RFI): model inputs 
+        N_cycle (int): number of recylces
+        model (rf2aa.RoseTTAFoldModule.LegacyRoseTTAFoldModule): RFdiffusion model
+        use_checkpoint (bool): whether to use checkpointing in forward pass 
+        return_raw (bool): whether to have final output be 'raw' return from LegacyRoseTTAFoldModule
+    """
+    with torch.no_grad():
+
+        # Do the first N-1 recycles
+        for i in range(N_cycle - 1):
+            print('On recycle: ',i)
             if i == 0:
-                # First cycle - initialize 'prev' inputs 
                 rfi_dict = dataclasses.asdict(rfi)
-                input = {**rfi_dict, **kwargs}
-                input['msa_prev'] = None
-                input['pair_prev'] = None
-                input['state_prev'] = None
-                input['return_raw'] = True
-                out = model(**input)
+                model_input = {**rfi_dict}
+                model_input['msa_prev'] = None
+                model_input['pair_prev'] = None
+                model_input['state_prev'] = None
+                model_input['return_raw'] = False
+                out = model(**model_input)
 
             else:
-                _______,xyz_allatom, _, msa_prev, pair_prev, state, _= out
+                msa_prev, pair_prev, xyz_prev, state, alpha_prev = unpack_out_raw_yesquats(out)
+
                 rfi_dict = dataclasses.asdict(rfi)
                 rfi_dict['msa_prev']    = msa_prev
                 rfi_dict['pair_prev']   = pair_prev
                 rfi_dict['xyz']         = xyz_prev
                 rfi_dict['state_prev']  = state
 
-                input = {**rfi_dict, **kwargs}
-                input['return_raw'] = True
-                out = model(**input)
+                model_input = {**rfi_dict}
+                model_input['return_raw'] = False
+                out = model(**model_input)
 
-            # Do the last recycle, and return RFO 
-            msa_prev, pair_prev, xyz_prev, state, alpha_prev, _ = out
-            rfi_dict = dataclasses.asdict(rfi)
-            rfi_dict['msa_prev']    = msa_prev
-            rfi_dict['pair_prev']   = pair_prev
-            rfi_dict['xyz']         = xyz_prev
-            rfi_dict['state_prev']  = state
+        # Do the last recycle, and return RFO
+        msa_prev, pair_prev, xyz_prev, state, alpha_prev = unpack_out_raw_yesquats(out)
 
-            input = {**rfi_dict, **kwargs}
-            input['return_raw'] = False
+        rfi_dict = dataclasses.asdict(rfi)
+        rfi_dict['msa_prev']    = msa_prev
+        rfi_dict['pair_prev']   = pair_prev
+        rfi_dict['xyz']         = xyz_prev
+        rfi_dict['state_prev']  = state
 
-            # with grad 
-            return rf_diffusion.aa_model.RFO(*model(**input))
+        model_input = {**rfi_dict}
+        model_input['return_raw'] = return_raw
+
+        return aa_model.RFO(*model(**model_input))
 
 class RFScore(nn.Module):
     def __init__(self, model_conf, diffuser, device, stopgrad_rotations=True):
@@ -305,20 +371,31 @@ class RFScore(nn.Module):
         model_out['trans_score'] = model_out['trans_score'] * node_mask[:,None,:,None]
         return model_out
 
-    def forward_from_rfi(self, rfi, t, use_checkpoint=True, return_raw=False):
+    def forward_from_rfi(self, rfi, t, use_checkpoint=True, return_raw=False, N_cycle=1):
         device = self.device()
         rf2aa.tensor_util.to_device(rfi, device)
         rigids_t = du.rigid_frames_from_atom_14(rfi.xyz)
         rfi_dict = dataclasses.asdict(rfi)
 
-        rfo = rf_diffusion.aa_model.RFO(*self.model(**{**rfi_dict, 'use_checkpoint':use_checkpoint, 'return_raw':return_raw}))
+        if N_cycle == 1:
+            rfo = rf_diffusion.aa_model.RFO(*self.model(**{**rfi_dict, 'use_checkpoint':use_checkpoint, 'return_raw':return_raw}))
+        else:
+            # recycling for refinement 
+            rfo = multi_recycle_prediction(
+                                           rfi=rfi, 
+                                           N_cycle=N_cycle, 
+                                           model=self.model, 
+                                           use_checkpoint=use_checkpoint, 
+                                           return_raw=return_raw
+                                        )
+
+
         # # Traj writing
         # rfo_cpy = tensor_util.apply_to_tensors(rfo, lambda x:x.detach().cpu())
         # os.makedirs(self.log_dir, exist_ok=True)
         # traj_path = os.path.join(self.log_dir, f't_{input_feats["t"][0].item():.5f}_.pdb')
         # make_traj_from_rfo(rfi, rfo_cpy, traj_path)
         # ic(traj_path)
-
         B, I, L, _  = rfo.quat.shape
 
         # rigids from predictions of X0

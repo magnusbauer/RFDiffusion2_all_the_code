@@ -28,6 +28,7 @@ import pdb
 import rf_diffusion.inference.data_loader
 from rf_diffusion.preprocess import wrap_featurize 
 import pdb
+import pickle
 import sys
 
 # When you import this it causes a circular import due to the changes made in apply masks for self conditioning
@@ -119,7 +120,6 @@ class Sampler:
             self.device = torch.device('cuda')
         else:
             self.device = torch.device('cpu')
-
         # Assign config to Sampler
         self._conf = conf
         # self.initialize_sampler(conf)
@@ -288,7 +288,16 @@ class NRBStyleSelfCond(Sampler):
                 # aa_model.assert_has_coords(rfi.xyz[0], indep)
                 assert not rfi.xyz[0,:,:3,:].isnan().any(), f'{t}: {rfi.xyz[0,:,:3,:]}'
                 # Model does not have side chain outputs
-                model_out = self.model.forward_from_rfi(rfi, torch.tensor([t/self._conf.diffuser.T]).to(rfi.xyz.device), use_checkpoint=False)
+
+                if not self._conf.inference.refine:
+                    N_cycle = 1
+                else:
+                    N_cycle = self._conf.inference.refine_recycles
+
+                model_out = self.model.forward_from_rfi(rfi, 
+                                                        torch.tensor([t/self._conf.diffuser.T]).to(rfi.xyz.device), 
+                                                        use_checkpoint=False,
+                                                        N_cycle=N_cycle)
 
         # self._log.info(
         #         f'{current_time}: Timestep {t}')

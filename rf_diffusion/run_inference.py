@@ -364,7 +364,7 @@ def sample_one(sampler, i_des=0, simple_logging=False):
             indep.xyz = aa_model.randomly_rotate_frames(indep.xyz)
         elif sampler._conf.preprocess.eye_frames: 
             print('Eye frames')
-            indep.xyz = aa_model.eye_frames(indep.xyz)
+            indep.xyz = aa_model.eye_frames(indep.xyz, recenter=True)
         else:
             pass
 
