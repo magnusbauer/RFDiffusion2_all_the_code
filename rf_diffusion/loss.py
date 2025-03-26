@@ -13,13 +13,11 @@ import rf_diffusion.nucleic_compatibility_utils as nucl_util
 from rf_diffusion.chemical import ChemicalData as ChemData
 from rf_diffusion.kinematics import th_kabsch
 from rf2aa.loss.loss import compute_general_FAPE
-import pdb 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from rf_diffusion.aa_model import Indep
     from omegaconf import OmegaConf
 
-from icecream import ic 
 
 def weighted_decay_sum(losses, gamma=0.99):
     assert len(losses.shape) == 1
@@ -64,7 +62,7 @@ def calc_discontiguous_motif_rmsd_atoms(pred, true, is_computed, Ls):
     Assumes the islands of True are independent.
     """
     assert all(is_computed), 'Assuming all atomized regions are computed in rmsd calc'
-    assert type(Ls) == list and all([type(a) == int for a in Ls])
+    assert isinstance(type(Ls), list) and all([isinstance(a,int) for a in Ls])
     assert len(pred.shape) == 5     # (I,B,L,atoms,3)
     pred = pred[-1,0]               # (L,atoms,3)
     assert len(true.shape) == 4     # (B,L,atoms,3)
@@ -206,11 +204,11 @@ def compute_fape_losses(indep           : Indep,
     # create 2d masks for intrachain and interchain fape calculations
     nframes = frame_mask.shape[-1]
     frame_atom_mask_2d_allatom = torch.einsum('bfn,bra->bfnra', frame_mask_BB, mask_crds).bool() # B, L, nframes, L, natoms
-    frame_atom_mask_2d = frame_atom_mask_2d_allatom[:, :, :, :, :3]
+    # frame_atom_mask_2d = frame_atom_mask_2d_allatom[:, :, :, :, :3]
     frame_atom_mask_2d_intra_allatom = frame_atom_mask_2d_allatom * same_chain[:, :,None, :, None].bool().expand(-1,-1,nframes,-1, ChemData().NTOTAL)
     frame_atom_mask_2d_intra = frame_atom_mask_2d_intra_allatom[:, :, :, :, :3]
-    different_chain = ~same_chain.bool()
-    frame_atom_mask_2d_inter = frame_atom_mask_2d*different_chain[:, :,None, :, None].expand(-1,-1,nframes,-1, 3)
+    # different_chain = ~same_chain.bool()
+    # frame_atom_mask_2d_inter = frame_atom_mask_2d*different_chain[:, :,None, :, None].expand(-1,-1,nframes,-1, 3)
 
     # FAPE within ligand
     sm_res_mask = (rf2aa.util.is_atom(seq)*res_mask).squeeze()
@@ -312,6 +310,7 @@ def compute_fape_losses(indep           : Indep,
 
 
     # add rmsds
+    rmsd_dict = {}
     floss_dict['motif_rmsd']    = motif_rmsd
     floss_dict['nonmotif_rmsd'] = non_motif_rmsd
     floss_dict['ligand_rmsd']   = ligand_rmsd

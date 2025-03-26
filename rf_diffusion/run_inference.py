@@ -57,7 +57,6 @@ from rf_diffusion.inference.filters import init_filters, FilterFailedException, 
 from rf_diffusion.inference.t_setup import setup_t_arrays
 from rf_diffusion.inference.mid_run_modifiers import apply_mid_run_modifiers
 ic.configureOutput(includeContext=True)
-import pdb
 import rf_diffusion.nucleic_compatibility_utils as nucl_utils
 from rf_diffusion.kinematics import th_kabsch
 

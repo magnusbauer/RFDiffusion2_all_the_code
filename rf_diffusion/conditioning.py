@@ -4,7 +4,6 @@ import types
 import pickle
 # Imports for typing only
 from typing import TYPE_CHECKING
-import os 
 if TYPE_CHECKING:
     from rf_diffusion.aa_model import Indep
 
@@ -13,7 +12,6 @@ import torch
 import logging
 from icecream import ic
 import copy
-import pdb 
 import rf_diffusion.util
 from rf_diffusion import aa_model
 from rf_diffusion.aa_model import Indep

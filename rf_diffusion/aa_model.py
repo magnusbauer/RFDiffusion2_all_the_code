@@ -44,7 +44,6 @@ import rf_diffusion.frame_diffusion.data.utils as du
 from rf_diffusion.frame_diffusion.data import all_atom
 
 import ipd
-import pdb
 
 logger = logging.getLogger(__name__)
 

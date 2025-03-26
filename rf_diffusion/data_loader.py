@@ -23,7 +23,6 @@ import rf2aa.util
 import rf2aa.tensor_util
 import rf2aa.kinematics
 from rf_diffusion.chemical import ChemicalData as ChemData
-import pdb 
 # for diffusion training
 from icecream import ic
 import pickle

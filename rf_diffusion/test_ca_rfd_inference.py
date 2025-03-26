@@ -1,21 +1,17 @@
 # tests for ca RFdiffusion inference
 import torch 
-import numpy as np 
 import unittest 
 import pickle 
 import hydra 
 from hydra import initialize, compose 
 from unittest import mock 
 import copy
-import types 
 
 import run_inference 
 from rf_diffusion.preprocess import add_motif_template
 from test_ca_rfd_sm_train import ExitMockCall
 from rf2aa.model.RoseTTAFoldModel import LegacyRoseTTAFoldModule
-from rf_diffusion.inference import model_runners
 
-import pdb 
 
 def get_ca_config(overrides=[]):
     """
@@ -67,7 +63,7 @@ class TestCARFDInference(unittest.TestCase):
 
         try: 
             run_inference.main(cls.conf)
-        except ExitMockCall as e: 
+        except ExitMockCall: 
             pass 
             
         # A single call to forward should have been made 
@@ -195,7 +191,7 @@ class TestCARFDInference(unittest.TestCase):
         want_t2d_data = self.load_golden_compute_motif_template()
         want_t2d_motif        = want_t2d_data['t2d_motif']
         want_xyz_t_motif = want_t2d_data['xyz_xt_w_motif']
-        want_is_motif_2d      = want_t2d_data['t2d_is_reavealed']
+        # want_is_motif_2d      = want_t2d_data['t2d_is_reavealed']
 
         ### NOTE: Details
         # The last 7 entries of t2d are 3 angles x 2 sin/cos, followed by 1 bool

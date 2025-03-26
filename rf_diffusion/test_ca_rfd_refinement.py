@@ -1,6 +1,5 @@
 # tests for ca RFdiffusion refinement 
 import torch 
-import numpy as np 
 import unittest 
 import pickle 
 import hydra 
@@ -12,7 +11,6 @@ from rf2aa.model.RoseTTAFoldModel import LegacyRoseTTAFoldModule
 import run_inference 
 from test_ca_rfd_sm_train import ExitMockCall
 
-import pdb
 
 def rfold_side_effect(*args, **kwargs): 
     # mocks the fwd in LegacyRosettaFoldModule 
@@ -50,7 +48,7 @@ class TestCARFDFeaturization(unittest.TestCase):
 
         try: 
             run_inference.main(cls.conf)
-        except ExitMockCall as e: 
+        except ExitMockCall: 
             pass 
 
         # save inputs to live fwd pass

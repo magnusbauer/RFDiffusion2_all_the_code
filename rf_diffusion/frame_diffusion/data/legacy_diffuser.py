@@ -1,10 +1,7 @@
 import numpy as np 
-import pdb
 import logging 
 import torch 
 import copy 
-import os 
-from icecream import ic 
 from scipy.spatial.transform import Rotation as scipy_R
 
 # this package 
@@ -92,7 +89,6 @@ def get_next_ca(xt, px0, t, diffusion_mask, crd_scale, beta_schedule, alphabar_s
         noise_scale: scale factor for the noise being added
 
     """
-    L = len(xt)
 
     # bring to origin after global alignment (when don't have a motif) or replace input motif and bring to origin, and then scale 
     px0 = px0 * crd_scale
@@ -103,7 +99,7 @@ def get_next_ca(xt, px0, t, diffusion_mask, crd_scale, beta_schedule, alphabar_s
     sampled_crds = torch.normal(mu, torch.sqrt(sigma*noise_scale))
     delta = sampled_crds - xt[:,1,:] 
 
-    if not diffusion_mask is None:
+    if diffusion_mask is not None:
         delta[diffusion_mask.squeeze(),...] = 0
 
     out_crds = xt + delta[:, None, :]
@@ -167,7 +163,7 @@ class EuclideanDiffuser():
 
         delta = sampled_crds - ca_xyz
         
-        if not diffusion_mask is None:
+        if diffusion_mask is not None:
             delta[diffusion_mask,...] = 0
 
         out_crds = x + delta[:,None,:]
@@ -476,7 +472,7 @@ class SingleGaussian(r3_diffuser.R3Diffuser):
         sampled = torch.normal(mean, torch.sqrt(var)*crd_scale)
         delta = sampled - mean
 
-        if diffusion_mask != None:
+        if diffusion_mask is not None:
             delta[diffusion_mask,...] = 0
 
         out_crds = xyz + delta[:,None,:].expand_as(xyz)
@@ -571,7 +567,6 @@ class RefineDiffuser(SE3Diffuser):
         L = len(rigids_0.get_trans())
         bb_crds = torch.zeros(L,3,3, dtype=torch.float) # (L,3,3) N,CA,C
         bb_crds[:,1] = rigids_0.get_trans()
-        var_scale = self._se3_conf.r3.var_scale
 
         # scale the coordinates 
         bb_crds = bb_crds * self.crd_scale

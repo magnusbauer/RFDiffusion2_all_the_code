@@ -9,7 +9,6 @@ from rf_diffusion.frame_diffusion.data import all_atom
 import rf2aa.util
 from dataclasses import dataclass
 import dataclasses
-import pdb 
 import aa_model
 
 import rf2aa.model.RoseTTAFoldModel
@@ -22,7 +21,6 @@ from datetime import datetime
 from openfold.utils.rigid_utils import Rotation
 from rf_diffusion.frame_diffusion.data import utils as du
 import logging
-import sys
 logger = logging.getLogger(__name__)
 
 # class AttrDict(dict):

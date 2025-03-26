@@ -4,7 +4,6 @@ import torch
 import numpy as np
 from omegaconf import DictConfig, OmegaConf
 from icecream import ic
-import time 
 from rf_diffusion.chemical import ChemicalData as ChemData
 import rf2aa.util
 import rf2aa.data.data_loader
@@ -24,11 +23,8 @@ from rf_diffusion import noisers
 from rf_diffusion.config import config_format
 from pathlib import Path
 import os
-import pdb
 import rf_diffusion.inference.data_loader
 from rf_diffusion.preprocess import wrap_featurize 
-import pdb
-import pickle
 import sys
 
 # When you import this it causes a circular import due to the changes made in apply masks for self conditioning

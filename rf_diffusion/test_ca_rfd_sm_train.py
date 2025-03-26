@@ -2,23 +2,17 @@
 Tests for CA rfdiffusion and 2d motif templating etc.. Written by DJ 
 """
 import torch 
-import numpy as np 
 import unittest 
 import pickle 
 import hydra 
 from hydra import initialize, compose 
 import unittest.mock as mock
-from functools import wraps 
-from icecream import ic 
-import pdb 
-import math 
 from rf2aa.model.RoseTTAFoldModel import LegacyRoseTTAFoldModule
 import rf_diffusion.frame_diffusion
 from rf_diffusion import data_loader
 import train_multi_deep
 import rf2aa
 import rf_diffusion.aa_model
-import pdb
 from functools import partial 
 
 # Custom tolerance for coordinates with torch.testing.assert_close
@@ -156,7 +150,7 @@ class TestFeaturization(unittest.TestCase):
 
         try:
             cls.trainer.run_model_training(torch.cuda.device_count())
-        except ExitMockCall as e:
+        except ExitMockCall:
             pass
 
         # A single call to forward should have been made
