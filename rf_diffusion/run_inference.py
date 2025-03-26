@@ -57,8 +57,9 @@ from rf_diffusion.inference.filters import init_filters, FilterFailedException, 
 from rf_diffusion.inference.t_setup import setup_t_arrays
 from rf_diffusion.inference.mid_run_modifiers import apply_mid_run_modifiers
 ic.configureOutput(includeContext=True)
-
+import pdb
 import rf_diffusion.nucleic_compatibility_utils as nucl_utils
+from rf_diffusion.kinematics import th_kabsch
 
 logger = logging.getLogger(__name__)
 
@@ -139,6 +140,46 @@ def expand_config(conf):
     else:
         confs = {'': conf}
     return confs
+
+def add_carfd_sidechains(px0: torch.Tensor, ref_dict: dict) -> torch.Tensor:
+    """Computes ideal sidechains aligned onto px0 from original motif
+    
+    Args:
+        px0: final output from model fwd/ refinement prediction
+        ref_dict: contains information on the motif/contigs, and perfect original
+                  motif structure
+    """
+    motif_indep = ref_dict['motif_indep']
+    motif_idx_ref = ref_dict['con_ref_idx0']
+    motif_idx_hal = ref_dict['con_hal_idx0']
+
+    # grab the sequence & structure of non-SM motif residues  
+    motif_seq_ref = motif_indep.seq[motif_idx_ref]
+    motif_crds_ref = motif_indep.xyz[motif_idx_ref]
+
+    # compute sidechain torsions in the original (ref) motif
+    converter = rf2aa.util_module.XYZConverter()
+    tors, tors_alt, tors_mask, tors_planar = converter.get_torsions(motif_crds_ref[None], 
+                                                                    motif_seq_ref[None])
+    
+
+    # grab predicted ("hal") motif backbone coordinates, and extend sidechains onto them 
+    # according to the torsions from perfect motif
+    motif_bb_hal = px0[motif_idx_hal,:3,:]
+    motif_allatom_hal = converter.compute_all_atom(motif_seq_ref[None], motif_bb_hal[None], tors)
+    (RTframes, xyz_full) = motif_allatom_hal 
+    # slice it in
+    px0[motif_idx_hal,:14] = xyz_full[0,:,:14]
+
+    # now align the output to the original motif on backbone
+    motif_bb_ref = motif_crds_ref[:,:3]
+    com_ref = motif_bb_ref.reshape(-1,3).mean(dim=0)
+    com_hal = motif_bb_hal.reshape(-1,3).mean(dim=0)
+    bb_rms, _, R = th_kabsch(motif_bb_ref.reshape(-1,3), motif_bb_hal.reshape(-1,3))
+    # bring to origin, rotate, then translate to reference/native position
+    px0 = torch.einsum('lai,ij->laj', px0 - com_hal, R) + com_ref
+
+    return px0
 
 
 def sampler_i_des_bounds(sampler):
@@ -232,6 +273,7 @@ def checkpoint_i_des(sampler, i_des, nothing_written=False):
             with open(f'{individual_prefix}.trb','wb') as f_out:
                 pickle.dump({}, f_out)
 
+
 def sample(sampler):
     log = logging.getLogger(__name__)
 
@@ -255,6 +297,7 @@ def sample(sampler):
         print(f'making design {i_des} of {i_des_start}:{i_des_end}', flush=True)
         sampler_out = sample_one_w_retry(sampler, i_des)
         log.info(f'Finished design in {(time.time()-start_time)/60:.2f} minutes')
+
         if sampler_out is not None:
             original_conf = copy.deepcopy(sampler._conf)
             confs = expand_config(sampler._conf)
@@ -263,6 +306,8 @@ def sample(sampler):
                 out_prefix_suffixed = out_prefix
                 if suffix:
                     out_prefix_suffixed += f'-{suffix}'
+                if sampler._conf.inference.get('refine', False):
+                out_prefix_suffixed = f'{sampler._conf.inference.output_prefix}_{i_des}'
                 print(f'{out_prefix_suffixed=}, {conf.inference.guidepost_xyz_as_design_bb=}')
                 # TODO: See what is being altered here, so we don't have to copy sampler_out
                 save_outputs(sampler, out_prefix_suffixed, *(copy.deepcopy(o) for o in sampler_out))
@@ -395,6 +440,11 @@ def sample_one(sampler, i_des=0, simple_logging=False):
         #     print(e)
         #     import ipdb
         #     ipdb.set_trace()
+
+
+        if sampler._conf.inference.get('refine', False):
+            px0 = add_carfd_sidechains(px0, sampler.metadata['ref_dict'])
+
         px0_xyz_stack.append(px0)
         denoised_xyz_stack.append(x_t)
         seq_stack.append(seq_t)
@@ -475,6 +525,7 @@ def sample_one(sampler, i_des=0, simple_logging=False):
             xyz=v[..., :ChemData().NHEAVY, :],
             xyz_with_sc=sampler.indep_orig.xyz[..., :ChemData().NHEAVY, :],
         )
+
 
     # Idealize protein backbone
     is_protein = rf2aa.util.is_protein(indep.seq)

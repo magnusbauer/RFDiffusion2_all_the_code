@@ -620,13 +620,13 @@ def get_refinement_metadata(meta:dict, conf:DictConfig):
 
     # Make a contig string which encodes a contig map that 
     # has motifs in the same location that diffusion run had them. 
-    ref = trb_dict['contigmap_ref']
-    hal = trb_dict['contigmap_hal']
+    L_nolig = len(trb_dict['mask_1d'])
+    ref = trb_dict['contigmap_ref'][:L_nolig]
+    hal = trb_dict['contigmap_hal'][:L_nolig]
     conf.contigmap.contigs = contigs.get_refinement_contigs_from_ref_and_hal(ref, hal)
 
-
     # reset the output prefix as the pdb with '_refined' tag
-    conf.inference.output_prefix = pdb.replace('.pdb','_refined.pdb')
+    conf.inference.output_prefix = pdb.replace('.pdb','_refined')
 
     # reset ij_visible to whatever it was in diffusion 
     conf.inference.ij_visible = og_conf['inference']['ij_visible']

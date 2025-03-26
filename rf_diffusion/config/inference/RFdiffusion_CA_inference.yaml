@@ -30,6 +30,7 @@ inference:
   recenter_xt: true 
   num_designs: 15
   cautious: true 
+  guidepost_xyz_as_design: false
 
 contigmap:  
   contigs: ['30,A1-4,40,A5-5,40,A6-6,40,A7-7,40']

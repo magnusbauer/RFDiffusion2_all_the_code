@@ -288,6 +288,16 @@ def multi_recycle_prediction(rfi, N_cycle, model, use_checkpoint, return_raw):
 
         return aa_model.RFO(*model(**model_input))
 
+
+def refinement_return(rfo:aa_model.RFO) -> dict:
+    """Collect outputs from RFO and return to sample_step
+    
+    Args:
+        rfo: output from RoseTTAFold fwd
+    """
+    
+
+
 class RFScore(nn.Module):
     def __init__(self, model_conf, diffuser, device, stopgrad_rotations=True):
         self.diffuser = diffuser
@@ -380,7 +390,7 @@ class RFScore(nn.Module):
         if N_cycle == 1:
             rfo = rf_diffusion.aa_model.RFO(*self.model(**{**rfi_dict, 'use_checkpoint':use_checkpoint, 'return_raw':return_raw}))
         else:
-            # recycling for refinement 
+            # refinement uses recycling 
             rfo = multi_recycle_prediction(
                                            rfi=rfi, 
                                            N_cycle=N_cycle, 
@@ -389,6 +399,8 @@ class RFScore(nn.Module):
                                            return_raw=return_raw
                                         )
 
+            
+            
 
         # # Traj writing
         # rfo_cpy = tensor_util.apply_to_tensors(rfo, lambda x:x.detach().cpu())

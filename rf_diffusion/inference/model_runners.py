@@ -316,6 +316,12 @@ class NRBStyleSelfCond(Sampler):
         else:
             px0 = model_out['atom37'][0, -1] # Default behavior (fine for proteins only)
 
+
+        if self._conf.inference.refine:
+            # px0 is (L,37,3)
+            px0 = torch.zeros_like(px0)
+            px0[:,:5,:] = model_out['rfo'].xyz_allatom[0,:,:5,:]
+
         px0 = px0.cpu()
 
         # ic(self._conf.denoiser.noise_scale, do_self_cond)
