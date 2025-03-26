@@ -1492,8 +1492,8 @@ class Model:
         t2d = torch.zeros(1,2,L,L,68)
 
         use_cb = self.conf.preprocess.use_cb_to_get_pair_dist
-        
-        if not self.conf.preprocess.omit_atom_frame_permutation: 
+
+        if not self.conf.preprocess.get('omit_atom_frame_permutation', False): 
             atom_frames_in = indep.atom_frames # without omit permutation
         else: 
             atom_frames_in = indep.get_atom_frames(True) # with omit permutation

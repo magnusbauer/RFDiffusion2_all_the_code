@@ -407,7 +407,7 @@ def sample_one(sampler, i_des=0, simple_logging=False):
         if sampler._conf.preprocess.randomize_frames:
             print('randomizing frames')
             indep.xyz = aa_model.randomly_rotate_frames(indep.xyz)
-        elif sampler._conf.preprocess.eye_frames: 
+        elif sampler._conf.preprocess.get('eye_frames',False): 
             print('Eye frames')
             indep.xyz = aa_model.eye_frames(indep.xyz, recenter=True)
         else:
