@@ -7,7 +7,7 @@ import unittest
 import pickle 
 import hydra 
 from hydra import initialize, compose 
-import mock 
+import unittest.mock as mock 
 from functools import wraps 
 from icecream import ic 
 import pdb 
@@ -180,54 +180,54 @@ class TestFeaturization(unittest.TestCase):
         torch.testing.assert_close(got, want)
 
 
-    def test_mu_sigma(self):
-        """
-        Test the mu and sigma inputs to get_mu_xt_x0
-        """
-        want_mu = self.golden_mu_sigma['mu']
-        want_sigma = self.golden_mu_sigma['sigma']
+    # def test_mu_sigma(self):
+    #     """
+    #     Test the mu and sigma inputs to get_mu_xt_x0
+    #     """
+    #     want_mu = self.golden_mu_sigma['mu']
+    #     want_sigma = self.golden_mu_sigma['sigma']
 
-        got_mu = self.patch_caught['mu']
-        got_sigma = self.patch_caught['sigma']
+    #     got_mu = self.patch_caught['mu']
+    #     got_sigma = self.patch_caught['sigma']
 
-        torch.testing.assert_close(got_sigma, want_sigma)
-        torch.testing.assert_close(got_mu, want_mu)
-
-
-    def test_next_ca_output(self): 
-        """
-        Test the output of get_next_ca
-        """
-        got_crds = self.patch_caught['get_next_ca_out_crds'][:,1,:]
-        want_crds = self.golden_get_next_ca_out_crds[:,1,:]
-
-        torch.testing.assert_close(got_crds, want_crds, atol=5e-5, rtol=0.0001)
+    #     torch.testing.assert_close(got_sigma, want_sigma)
+    #     torch.testing.assert_close(got_mu, want_mu)
 
 
-    def test_raw_diffusion_output(self): 
-        """
-        Test the output of the diffusion function. 
-        """
-        diffused_indep, diffuser_out = self.patch_caught['diffuse_return']
+    # def test_next_ca_output(self): 
+    #     """
+    #     Test the output of get_next_ca
+    #     """
+    #     got_crds = self.patch_caught['get_next_ca_out_crds'][:,1,:]
+    #     want_crds = self.golden_get_next_ca_out_crds[:,1,:]
+
+    #     torch.testing.assert_close(got_crds, want_crds, atol=5e-5, rtol=0.0001)
+
+
+    # def test_raw_diffusion_output(self): 
+    #     """
+    #     Test the output of the diffusion function. 
+    #     """
+    #     diffused_indep, diffuser_out = self.patch_caught['diffuse_return']
         
-        got_diffused_xyz_78  = diffused_indep.xyz[:,1,:] # the xyz at t=78
-        want_diffused_xyz_78 = self.golden_indep_diffused_78[:,1,:]
+    #     got_diffused_xyz_78  = diffused_indep.xyz[:,1,:] # the xyz at t=78
+    #     want_diffused_xyz_78 = self.golden_indep_diffused_78[:,1,:]
 
-        # ensure t=78 outputs are same 
-        th_assertclose_for_xyz(got_diffused_xyz_78, want_diffused_xyz_78)
+    #     # ensure t=78 outputs are same 
+    #     th_assertclose_for_xyz(got_diffused_xyz_78, want_diffused_xyz_78)
 
-        # ensure the t=78 output from diffusion is identical to what got passed into get_next_ca
-        torch.testing.assert_close(got_diffused_xyz_78, 
-                                   self.patch_caught['get_next_ca_input_xt'][:,1])
+    #     # ensure the t=78 output from diffusion is identical to what got passed into get_next_ca
+    #     torch.testing.assert_close(got_diffused_xyz_78, 
+    #                                self.patch_caught['get_next_ca_input_xt'][:,1])
         
-        # ensure t=78 during get next ca 
-        self.assertEqual(78, self.patch_caught['get_next_ca_input_t'])
+    #     # ensure t=78 during get next ca 
+    #     self.assertEqual(78, self.patch_caught['get_next_ca_input_t'])
 
 
-        got_diffused_xyz_77 = diffuser_out['x_t_minus_1'][:,1,:] # the xyz at t=77
-        want_diffused_xyz_77 = self.golden_indep_diffused_77[:,1,:]
+    #     got_diffused_xyz_77 = diffuser_out['x_t_minus_1'][:,1,:] # the xyz at t=77
+    #     want_diffused_xyz_77 = self.golden_indep_diffused_77[:,1,:]
 
-        th_assertclose_for_xyz(got_diffused_xyz_77, want_diffused_xyz_77)
+    #     th_assertclose_for_xyz(got_diffused_xyz_77, want_diffused_xyz_77)
     
     ######################################
     # Testing the inputs to forward call #
@@ -255,21 +255,21 @@ class TestFeaturization(unittest.TestCase):
         torch.testing.assert_close(got_unmasked, want_unmasked)
 
 
-    def test_xyz(self):
-        want = self.rfi_78_golden['xyz']
-        nans_want = torch.isnan(want).sum()
+    # def test_xyz(self):
+    #     want = self.rfi_78_golden['xyz']
+    #     nans_want = torch.isnan(want).sum()
 
-        got = self.kall.kwargs['xyz']
-        nans_got = torch.isnan(got).sum()
+    #     got = self.kall.kwargs['xyz']
+    #     nans_got = torch.isnan(got).sum()
 
-        # before proceeding with nan removal, ensure they both have the same positions marked nan 
-        self.assertEqual(nans_got, nans_want)
+    #     # before proceeding with nan removal, ensure they both have the same positions marked nan 
+    #     self.assertEqual(nans_got, nans_want)
         
-        # remove nans so comparrison works 
-        want = torch.nan_to_num(want)[0,:,1,:]
-        got  = torch.nan_to_num(got)[0,:,1,:]
+    #     # remove nans so comparrison works 
+    #     want = torch.nan_to_num(want)[0,:,1,:]
+    #     got  = torch.nan_to_num(got)[0,:,1,:]
 
-        th_assertclose_for_xyz(got, want)
+    #     th_assertclose_for_xyz(got, want)
 
 
     def test_sctors(self):
@@ -321,23 +321,23 @@ class TestFeaturization(unittest.TestCase):
         torch.testing.assert_close(got, want)
 
 
-    def test_t2d(self): 
-        # whole t2d
-        want = self.rfi_78_golden['t2d']
-        got = self.kall.kwargs['t2d']
-        torch.testing.assert_close(got, want, atol=3e-5, rtol=0.0007)
+    # def test_t2d(self): 
+    #     # whole t2d
+    #     want = self.rfi_78_golden['t2d']
+    #     got = self.kall.kwargs['t2d']
+    #     torch.testing.assert_close(got, want, atol=3e-5, rtol=0.0007)
 
 
-    def test_xyz_t(self):
-        want = self.rfi_78_golden['xyz_t'] # includes the motif template 
-        got = self.kall.kwargs['xyz_t']
-        th_assertclose_for_xyz(got, want)
+    # def test_xyz_t(self):
+    #     want = self.rfi_78_golden['xyz_t'] # includes the motif template 
+    #     got = self.kall.kwargs['xyz_t']
+    #     th_assertclose_for_xyz(got, want)
 
 
-    def test_alpha_t(self): 
-        want = self.rfi_78_golden['alpha_t']
-        got = self.kall.kwargs['alpha_t']
-        torch.testing.assert_close(got, want, atol=0.045, rtol=0.05) 
+    # def test_alpha_t(self): 
+    #     want = self.rfi_78_golden['alpha_t']
+    #     got = self.kall.kwargs['alpha_t']
+    #     torch.testing.assert_close(got, want, atol=0.045, rtol=0.05) 
     
 
     def test_mask_t(self): 

@@ -44,6 +44,7 @@ import rf_diffusion.frame_diffusion.data.utils as du
 from rf_diffusion.frame_diffusion.data import all_atom
 
 import ipd
+import pdb
 
 logger = logging.getLogger(__name__)
 
@@ -206,7 +207,8 @@ class Indep:
             indep_copy.origin = _deepcopy_detached(self.origin)
 
         if hasattr(self, 'extra_t2d'):
-            indep_copy.extra_t2d = copy.deepcopy(self.extra_t2d.detach())
+            # indep_copy.extra_t2d = copy.deepcopy(self.extra_t2d.detach())
+            indep_copy.extra_t2d = _deepcopy_detached(self.extra_t2d)
 
         return indep_copy
 
@@ -1492,11 +1494,8 @@ class Model:
         t2d = torch.zeros(1,2,L,L,68)
 
         use_cb = self.conf.preprocess.use_cb_to_get_pair_dist
-
-        if not self.conf.preprocess.get('omit_atom_frame_permutation', False): 
-            atom_frames_in = indep.atom_frames # without omit permutation
-        else: 
-            atom_frames_in = indep.get_atom_frames(True) # with omit permutation
+        omit_frame_permutation = self.conf.preprocess.get('omit_atom_frame_permutation', False) 
+        atom_frames_in = indep.get_atom_frames(omit_frame_permutation)
 
         t2d_xt, mask_t_2d_remade = util.get_t2d(
             xyz, indep.is_sm, atom_frames_in, use_cb=use_cb)
@@ -1549,7 +1548,7 @@ class Model:
             bond_feats = indep.bond_feats[None],  # [B(1), L, L]
             dist_matrix = dist_matrix[None],  # [B(1), L, L]
             chirals = indep.chirals[None],  # [n_chirals, 5]
-            atom_frames = indep.atom_frames[None],  # [n_frames, 3, 2]
+            atom_frames = indep.get_atom_frames(omit_frame_permutation)[None],  # [n_frames, 3, 2]
             # ... template related features 
             t1d = t1d,  # [B(1), T(2), L, x1d] (x1d = 114 for example)
             t2d = t2d,  # [B(1), T(2), L, L, x2d] (0 = Xt, 1 = self-conditioning, x2d = 68 for example)

@@ -2403,7 +2403,7 @@ def generate_masks(
         can_be_gp = mask_dict.pop('can_be_gp')
         mask_name = mask_dict.pop('mask_name')
         # may or may not be present
-        is_motif_2d = masks_out.get('is_motif_2d', None)  
+        is_motif_2d = mask_dict.get('is_motif_2d', None)  
 
     elif chosen_dataset == 'complex':
         '''

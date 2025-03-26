@@ -582,4 +582,3 @@ def get_refinement_contigs_from_ref_and_hal(ref:list, hal:list):
                 cstr += f' {length},'
                 
     return cstr.strip(',').split() # return as list of strings
->>>>>>> e13af62c (Add goldens, tests, yamls for carfdiffusion)

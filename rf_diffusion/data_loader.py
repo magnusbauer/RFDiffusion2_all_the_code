@@ -2079,7 +2079,7 @@ class DistilledDataset(data.Dataset):
             indep_t, diffuser_out = aa_model.diffuse(self.conf, self.diffuser, indep, is_diffused, t)
 
 
-            if conf.motif_only_2d:
+            if conf.get('motif_only_2d', False):
                 is_diffused[:] = True
 
             masks_1d['was_noised_in_3d'] = is_diffused
