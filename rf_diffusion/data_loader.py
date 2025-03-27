@@ -2074,9 +2074,6 @@ class DistilledDataset(data.Dataset):
 
             # ... re-seed the RNGs for test stability
             run_inference.seed_all(mask_gen_seed)
-            
-            indep_t, diffuser_out = aa_model.diffuse(self.conf, self.diffuser, indep, is_diffused, t)
-
 
             if conf.get('motif_only_2d', False):
                 is_diffused[:] = True
