@@ -1,9 +1,8 @@
 import torch 
-import aa_model 
-
+from rf_diffusion.aa_model import RFI
 from rf_diffusion.chemical import ChemicalData as ChemData
 
-def add_motif_template(rfi: aa_model.RFI, motif_template: dict, masks_1d: dict) -> aa_model.RFI:
+def add_motif_template(rfi: RFI, motif_template: dict, masks_1d: dict) -> RFI:
     """
     Adds on a third template to the RoseTTAFold input features containing
     the motif structure.

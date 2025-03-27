@@ -9,7 +9,6 @@ from rf_diffusion.frame_diffusion.data import all_atom
 import rf2aa.util
 from dataclasses import dataclass
 import dataclasses
-import aa_model
 
 import rf2aa.model.RoseTTAFoldModel
 from rf2aa.chemical import ChemicalData as ChemData
@@ -284,15 +283,9 @@ def multi_recycle_prediction(rfi, N_cycle, model, use_checkpoint, return_raw):
         model_input = {**rfi_dict}
         model_input['return_raw'] = return_raw
 
-        return aa_model.RFO(*model(**model_input))
+        return rf_diffusion.aa_model.RFO(*model(**model_input))
 
 
-def refinement_return(rfo:aa_model.RFO) -> dict:
-    """Collect outputs from RFO and return to sample_step
-    
-    Args:
-        rfo: output from RoseTTAFold fwd
-    """
     
 
 
