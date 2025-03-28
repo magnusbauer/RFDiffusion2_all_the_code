@@ -51,7 +51,7 @@ from rf_diffusion import test_utils
 from openfold.utils import rigid_utils as ru
 from rf_diffusion.frame_diffusion.data import all_atom
 from se3_flow_matching.data import all_atom as all_atom_fm
-
+import pdb 
 #added for inpainting training
 from icecream import ic
 import random
@@ -494,25 +494,30 @@ class Trainer():
             loss_dict[f'c6d_{label}'] = loss.clone()
 
 
-        # find out the small molecule lengths 
-        # sm_Ls = rf_diffusion.util.get_sm_lengths(indep.is_sm.clone().cpu().detach().numpy(), 
-        #                                          indep.same_chain.clone().cpu().detach().numpy())
         
         
-        # if self.conf.loss.use_fapes:
-        #     # FAPE losses
-        #     fape_kwargs = { 'masks_1d'       : masks_1d,     # dict - masks from mask_generator
-        #                     'pred_in'        : pred_in,
-        #                     'indep'          : indep,        # contains true structure and sequence for scoring 
-        #                     'mask_crds'      : mask_crds,
-        #                     'fi_dev'         : self.fi_dev,
-        #                     'atom_frames'    : atom_frames, 
-        #                     'sm_Ls'          : sm_Ls,  
-        #                     'conf'           : self.conf,       
-        #                     'diffusion_mask' : ~masks_1d['was_noised_in_3d']
-        #               }   
         
-            # fape_loss_dict = compute_fape_losses(**fape_kwargs)
+        if self.conf.loss.use_fapes:
+            # find out the small molecule lengths 
+            sm_Ls = rf_diffusion.util.get_sm_lengths(indep.is_sm.clone().cpu().detach().numpy(), 
+                                                     indep.same_chain.clone().cpu().detach().numpy())
+
+            # FAPE losses
+            fape_kwargs = { 'masks_1d'       : masks_1d,     # dict - masks from mask_generator
+                            'pred_in'        : pred_in,
+                            'indep'          : indep,        # contains true structure and sequence for scoring 
+                            'mask_crds'      : mask_crds,
+                            'fi_dev'         : self.fi_dev,
+                            'atom_frames'    : atom_frames, 
+                            'sm_Ls'          : sm_Ls,  
+                            'conf'           : self.conf,       
+                            'diffusion_mask' : ~masks_1d['was_noised_in_3d']
+                      }   
+
+            # some FAPE losses will often be NaN coming out of this function, b.c.
+            # some fapes are undefined if e.g., no motif (unconditional)
+            fape_loss_dict, rmsd_dict = compute_fape_losses(**fape_kwargs)
+            good_flosses = {k:v for k,v in fape_loss_dict.items() if not torch.isnan(v).any()}
 
         
         # Average over batches
@@ -938,7 +943,7 @@ class Trainer():
     def train_cycle(self, ddp_model, train_loader, optimizer, scheduler, scaler, rank, gpu, world_size, epoch):
 
         loss_weights = {
-            'trans_score': self._exp_conf.trans_loss_weight,
+            'trans_score': self._exp_conf.get('trans_score_weight', self._exp_conf.trans_loss_weight),
             'trans_x0':  self._exp_conf.trans_loss_weight,
             'rot_score': self._exp_conf.rot_loss_weight,
             'bb_atom': self._exp_conf.bb_atom_loss_weight * self._exp_conf.aux_loss_weight,
@@ -957,6 +962,7 @@ class Trainer():
             # Extras:
             'fa_disp': self._exp_conf.fa_disp_loss_weight if 'fa_disp_loss_weight' in self._exp_conf else 0.0,       
         }
+
 
         print('Entering self.train_cycle')
         # Turn on training mode

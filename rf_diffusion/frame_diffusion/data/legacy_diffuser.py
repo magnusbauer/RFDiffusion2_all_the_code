@@ -369,10 +369,10 @@ class LegacyDiffuser(SE3Diffuser):
             rigids_t = rigids_t.to_tensor_7()
 
         outs = {'rigids_t'            :rigids_t,
-                'trans_score'         :float('nan'),
-                'rot_score'           :float('nan'),
-                'trans_score_scaling' :float('nan'),
-                'rot_score_scaling'   :float('nan')}
+                'trans_score'         :torch.tensor(0.0),
+                'rot_score'           :torch.tensor(0.0),
+                'trans_score_scaling' :torch.tensor(1.),
+                'rot_score_scaling'   :torch.tensor(1.)}
 
 
         return outs

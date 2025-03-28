@@ -10,7 +10,7 @@ import rf2aa.kinematics
 import rf2aa.util
 import networkx as nx 
 
-
+import pdb
 
 def any_a_in_b(a: list, b: list): 
     # check if any element in a is in b
@@ -20,18 +20,19 @@ def get_sm_lengths(is_sm: np.array, is_same_chain: np.array):
     """
     Returns the lengths of the small molecules. 
 
-    WARNING: Might need additional logic for atomized sidechains.  
+    Args:
+        is_sm: true if token is small molecule token 
+        is_sam_chain: 2d array designating same chain or not
     """
     where_is_sm = np.where(is_sm)[0]
 
     G = nx.from_numpy_array(is_same_chain)
 
     # make mask denoting which cliques are SM cliques? 
-    cliques      = nx.find_cliques(G)
+    cliques = list(nx.find_cliques(G))
     is_sm_clique = [any_a_in_b(a, where_is_sm) for a in cliques]
-    cliques = [c for c, is_sm in zip(cliques, is_sm_clique) if is_sm]
-
-    return [len(c) for c in cliques]
+    sm_cliques = [c for c, is_sm_c in zip(cliques, is_sm_clique) if is_sm_c]
+    return [len(c) for c in sm_cliques]
     
 
 def generate_Cbeta(N,Ca,C):

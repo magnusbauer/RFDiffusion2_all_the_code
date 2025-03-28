@@ -86,7 +86,9 @@ diffuser:
 
 
 experiment: 
+  gamma: 0.99
   trans_loss_weight: 0.5 
+  trans_score_weight: 0.0
   rot_loss_weight: 0.0
   bb_atom_loss_weight: 0.0
   dist_mat_loss_weight: 0.0
