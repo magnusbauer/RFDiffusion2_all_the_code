@@ -6,6 +6,7 @@ import hydra
 from hydra import initialize, compose 
 from unittest import mock 
 import copy
+from pathlib import Path
 
 import run_inference 
 from rf_diffusion.preprocess import add_motif_template
@@ -60,6 +61,10 @@ class TestCARFDInference(unittest.TestCase):
         
         cls.conf = get_ca_config()
         cls.load_goldens()
+        
+        # modify inference.input_pdb to accomodate working dir
+        current_dir = Path(__file__).parent
+        cls.conf.inference.input_pdb = current_dir / cls.conf.inference.input_pdb
 
         try: 
             run_inference.main(cls.conf)
@@ -98,31 +103,36 @@ class TestCARFDInference(unittest.TestCase):
     def load_goldens(cls):
         """Load inference goldens to compare against"""
         # RFI - siteC motif scaffolding example
-        rfi_siteC = "./goldens/ca_rfd_inference_rfi_t50.pkl" 
+        current_dir = Path(__file__).parent
+        rfi_siteC = current_dir / "goldens/ca_rfd_inference_rfi_t50.pkl" 
         cls.rfi_golden = pickle.load(open(rfi_siteC, 'rb')) # the truth
 
         # 
 
     def load_golden_sample_init(self):
-        sample_init_pkl = './goldens/ca_rfd_inf_sample_init_out.pkl'
+        current_dir = Path(__file__).parent
+        sample_init_pkl = current_dir / 'goldens/ca_rfd_inf_sample_init_out.pkl'
         with open(sample_init_pkl, 'rb') as f:
             want_indep = pickle.load(f)
         return want_indep
     
     def load_golden_indep_orig(self):
-        pkl = './goldens/ca_rfd_inf_indep_orig.pkl'
+        current_dir = Path(__file__).parent
+        pkl = current_dir / 'goldens/ca_rfd_inf_indep_orig.pkl'
         with open(pkl, 'rb') as f:
             want_indep = pickle.load(f)
         return want_indep
     
     def load_golden_indep_after_insert(self): 
-        pkl = './goldens/ca_rfd_inf_indep_after_insert_contig.pkl'
+        current_dir = Path(__file__).parent
+        pkl = current_dir / 'goldens/ca_rfd_inf_indep_after_insert_contig.pkl'
         with open(pkl, 'rb') as f:
             want_indep = pickle.load(f)
         return want_indep
     
     def load_golden_compute_motif_template(self):
-        pkl = './goldens/ca_rfd_inf_compute_motif_template_ins_outs.pkl'
+        current_dir = Path(__file__).parent
+        pkl = current_dir / 'goldens/ca_rfd_inf_compute_motif_template_ins_outs.pkl'
         with open(pkl, 'rb') as f:
             want = pickle.load(f)
         return want

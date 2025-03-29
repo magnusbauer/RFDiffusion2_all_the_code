@@ -5,11 +5,15 @@ import pickle
 import hydra 
 from hydra import initialize, compose 
 from unittest import mock 
+from pathlib import Path 
+import pdb 
+pydb=pdb
 
 # rfdiffusion imports 
 from rf2aa.model.RoseTTAFoldModel import LegacyRoseTTAFoldModule
 import run_inference 
 from test_ca_rfd_sm_train import ExitMockCall
+import aa_model
 
 
 def rfold_side_effect(*args, **kwargs): 
@@ -20,11 +24,26 @@ def rfold_side_effect(*args, **kwargs):
 def get_ca_config(overrides=[]):
     """
     Create a config for testing.
+
+    Args:
+        overrides: list of overrides for config
     """
     hydra.core.global_hydra.GlobalHydra().clear()
     initialize(config_path="config/inference")
     conf = compose(config_name='test_ca_rfd_refinement.yaml', overrides=overrides, return_hydra_config=True)
     return conf
+
+make_indep_saved = aa_model.make_indep
+def make_indep_side_effect(pdb, *args, **kwargs):
+    """Resolve absolute path of pdb
+    
+    Args:
+        pdb (str): path to pdb file
+    """
+    cur_folder = Path(__file__).parent
+    pdb_in = str(cur_folder / pdb)
+    ret = make_indep_saved(pdb_in, *args, **kwargs)
+    return ret
 
 #### Side effects and data catching #### 
 PATCH_SAVE_DICT = {} # save data here 
@@ -36,8 +55,9 @@ class TestCARFDFeaturization(unittest.TestCase):
     """
 
     @classmethod
+    @mock.patch('rf_diffusion.aa_model.make_indep', side_effect=make_indep_side_effect)
     @mock.patch.object(LegacyRoseTTAFoldModule, 'forward', side_effect=rfold_side_effect)
-    def setUpClass(cls, mock_rfold_fwd): 
+    def setUpClass(cls, mock_rfold_fwd, mock_make_indep): 
         """
         Load goldens, get config, run inference all the way up to fwd pass. 
         Then, compare inputs at fwd pass with goldens.
@@ -45,6 +65,9 @@ class TestCARFDFeaturization(unittest.TestCase):
 
         cls.load_goldens() # load goldens 
         cls.conf = get_ca_config() # get config 
+
+        current_folder = Path(__file__).parent
+        cls.conf.inference.input_pdb = str( current_folder / cls.conf.inference.input_pdb )
 
         try: 
             run_inference.main(cls.conf)
@@ -63,10 +86,8 @@ class TestCARFDFeaturization(unittest.TestCase):
         """
         Load goldens to compare with.
         """
-        # goldens_path = './goldens/refinement_rfi_dict_before_fwd.pt'
-        # data = torch.load(goldens_path)
-        # cls.golden_rfi = data
-        goldens_path = '/mnt/home/davidcj/tmp/ca_rfd_refine_rfi_031825.pkl'
+        current_folder = Path(__file__).parent
+        goldens_path = current_folder / 'goldens/ca_rfd_refine_rfi_031825.pkl'
         with open(goldens_path, 'rb') as f:
             cls.golden_rfi = pickle.load(f)
     

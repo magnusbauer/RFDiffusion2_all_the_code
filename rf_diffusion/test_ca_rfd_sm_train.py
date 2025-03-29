@@ -14,10 +14,12 @@ import train_multi_deep
 import rf2aa
 import rf_diffusion.aa_model
 from functools import partial 
+from pathlib import Path
 
 # Custom tolerance for coordinates with torch.testing.assert_close
 th_assertclose_for_xyz = partial(torch.testing.assert_close, atol=5e-5, rtol=0.002)
 
+relative_to_absolute = lambda rel: str(Path(__file__).parent / rel)
 
 class ExitMockCall(Exception):
     # an exception we can look out for during mocking 
@@ -30,6 +32,7 @@ def get_ca_config(overrides=[]):
     hydra.core.global_hydra.GlobalHydra().clear()
     initialize(config_path="config/training")
     conf = compose(config_name='test_ca_rfd_sm_train.yaml', overrides=overrides, return_hydra_config=True)
+    conf.dataloader.DATAPKL_AA = relative_to_absolute(conf.dataloader.DATAPKL_AA)
     return conf
 
 def rfold_side_effect(*args, **kwargs): 
@@ -131,7 +134,9 @@ class TestFeaturization(unittest.TestCase):
     @mock.patch('rf_diffusion.aa_model.diffuse',                                    side_effect=diffuse_side_effect)
     @mock.patch('rf_diffusion.frame_diffusion.data.legacy_diffuser.get_next_ca',    side_effect=get_next_ca_side_effect)
     @mock.patch('rf_diffusion.frame_diffusion.data.legacy_diffuser.get_mu_xt_x0',   side_effect=get_mu_xt_x0_side_effect)
+    @mock.patch('rf2aa.data.data_loader.sample_item')
     def setUpClass(cls, 
+                   mock_sample_item,
                    mock_get_mu_xt_x0, 
                    mock_get_next_ca, 
                    mock_diffuse, 
@@ -174,18 +179,18 @@ class TestFeaturization(unittest.TestCase):
         Load all goldens here.
         """
         # RFIs 
-        cls.rfi_77_golden = pickle.load(open('./goldens/ca_rfd_golden_rfi_t_dict_sm.pkl', 'rb'))
-        cls.rfi_78_golden = pickle.load(open('./goldens/ca_rfd_golden_rfi_tp1_dict_sm.pkl', 'rb'))
+        cls.rfi_77_golden = pickle.load(open(relative_to_absolute('goldens/ca_rfd_golden_rfi_t_dict_sm.pkl'), 'rb'))
+        cls.rfi_78_golden = pickle.load(open(relative_to_absolute('goldens/ca_rfd_golden_rfi_tp1_dict_sm.pkl'), 'rb'))
     
         # diffusion stuff 
-        cls.golden_xyz_into_diffuse     = torch.load('./goldens/ca_rfd_diffuse_xyz_in_sm.pt',        weights_only=True)
-        cls.golden_indep_diffused_78    = torch.load('./goldens/ca_rfd_indep_diffused_tplus1_sm.pt', weights_only=True)
-        cls.golden_indep_diffused_77    = torch.load('./goldens/ca_rfd_indep_diffused_t_sm.pt',      weights_only=True)
-        cls.golden_mu_sigma             = torch.load('./goldens/ca_rfd_mu_sigma_sm.pt',              weights_only=True)
-        cls.golden_get_next_ca_out_crds = torch.load('./goldens/ca_rfd_get_next_ca_out_crds_sm.pt',  weights_only=True)
+        cls.golden_xyz_into_diffuse     = torch.load(relative_to_absolute('goldens/ca_rfd_diffuse_xyz_in_sm.pt'),        weights_only=True)
+        cls.golden_indep_diffused_78    = torch.load(relative_to_absolute('goldens/ca_rfd_indep_diffused_tplus1_sm.pt'), weights_only=True)
+        cls.golden_indep_diffused_77    = torch.load(relative_to_absolute('goldens/ca_rfd_indep_diffused_t_sm.pt'),      weights_only=True)
+        cls.golden_mu_sigma             = torch.load(relative_to_absolute('goldens/ca_rfd_mu_sigma_sm.pt'),              weights_only=True)
+        cls.golden_get_next_ca_out_crds = torch.load(relative_to_absolute('goldens/ca_rfd_get_next_ca_out_crds_sm.pt'),  weights_only=True)
 
         # template computation
-        cls.get_t2d_motif_input = torch.load('./goldens/ca_rfd_input_to_get_t2d_motif_sm.pt', weights_only=True)
+        cls.get_t2d_motif_input = torch.load(relative_to_absolute('goldens/ca_rfd_input_to_get_t2d_motif_sm.pt'), weights_only=True)
 
 
     # def test_diffusion_inputs(self):

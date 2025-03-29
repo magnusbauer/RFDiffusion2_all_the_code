@@ -13,12 +13,12 @@ from rf_diffusion import data_loader
 import train_multi_deep
 import rf2aa 
 import rf_diffusion.aa_model
-
+from pathlib import Path 
 from functools import partial 
 
 # Custom tolerance for coordinates with torch.testing.assert_close
 th_assertclose_for_xyz = partial(torch.testing.assert_close, atol=5e-5, rtol=0.002)
-
+relative_to_absolute = lambda rel: str(Path(__file__).parent / rel)
 
 class ExitMockCall(Exception):
     # an exception we can look out for during mocking 
@@ -31,6 +31,7 @@ def get_ca_config(overrides=[]):
     hydra.core.global_hydra.GlobalHydra().clear()
     initialize(config_path="config/training")
     conf = compose(config_name='test_ca_rfd_unconditional_train.yaml', overrides=overrides, return_hydra_config=True)
+    conf.dataloader.DATAPKL_AA = relative_to_absolute(conf.dataloader.DATAPKL_AA)
     return conf
 
 def rfold_side_effect(*args, **kwargs): 
@@ -122,7 +123,15 @@ class TestFeaturization(unittest.TestCase):
     @mock.patch('rf_diffusion.aa_model.diffuse',                                    side_effect=diffuse_side_effect)
     @mock.patch('rf_diffusion.frame_diffusion.data.legacy_diffuser.get_next_ca',    side_effect=get_next_ca_side_effect)
     @mock.patch('rf_diffusion.frame_diffusion.data.legacy_diffuser.get_mu_xt_x0',   side_effect=get_mu_xt_x0_side_effect)
-    def setUpClass(cls, mock_get_mu_xt_x0, mock_get_next_ca, mock_diffuse, mock_rfold_fwd, mock_wrap_featurize, mock_get_ang, mock_get_dih): 
+    @mock.patch('rf2aa.data.data_loader.sample_item')
+    def setUpClass(cls, mock_sample_item, 
+                        mock_get_mu_xt_x0, 
+                        mock_get_next_ca, 
+                        mock_diffuse, 
+                        mock_rfold_fwd, 
+                        mock_wrap_featurize, 
+                        mock_get_ang,
+                        mock_get_dih): 
         """
         Runs fake model training all the way until the first forward call.
         Analyzes inputs to the forward call and other side effects.
@@ -154,15 +163,15 @@ class TestFeaturization(unittest.TestCase):
         Load all goldens here.
         """
         # RFIs 
-        cls.rfi_77_golden = pickle.load(open('./goldens/ca_rfd_golden_rfi_t_dict.pkl', 'rb'))
-        cls.rfi_78_golden = pickle.load(open('./goldens/ca_rfd_golden_rfi_tp1_dict.pkl', 'rb'))
+        cls.rfi_77_golden = pickle.load(open(relative_to_absolute('goldens/ca_rfd_golden_rfi_t_dict.pkl'), 'rb'))
+        cls.rfi_78_golden = pickle.load(open(relative_to_absolute('goldens/ca_rfd_golden_rfi_tp1_dict.pkl'), 'rb'))
     
         # diffusion stuff 
-        cls.golden_xyz_into_diffuse     = torch.load('./goldens/ca_rfd_diffuse_xyz_in.pt',       weights_only=True)
-        cls.golden_indep_diffused_78    = torch.load('./goldens/ca_rfd_indep_diffused_78.pt',    weights_only=True)
-        cls.golden_indep_diffused_77    = torch.load('./goldens/ca_rfd_indep_diffused_77.pt',    weights_only=True)
-        cls.golden_mu_sigma             = torch.load('./goldens/ca_rfd_mu_sigma.pt',             weights_only=True)
-        cls.golden_get_next_ca_out_crds = torch.load('./goldens/ca_rfd_get_next_ca_out_crds.pt', weights_only=True)
+        cls.golden_xyz_into_diffuse     = torch.load(relative_to_absolute('goldens/ca_rfd_diffuse_xyz_in.pt'),       weights_only=True)
+        cls.golden_indep_diffused_78    = torch.load(relative_to_absolute('goldens/ca_rfd_indep_diffused_78.pt'),    weights_only=True)
+        cls.golden_indep_diffused_77    = torch.load(relative_to_absolute('goldens/ca_rfd_indep_diffused_77.pt'),    weights_only=True)
+        cls.golden_mu_sigma             = torch.load(relative_to_absolute('goldens/ca_rfd_mu_sigma.pt'),             weights_only=True)
+        cls.golden_get_next_ca_out_crds = torch.load(relative_to_absolute('goldens/ca_rfd_get_next_ca_out_crds.pt'), weights_only=True)
 
 
     def test_diffusion_inputs(self):

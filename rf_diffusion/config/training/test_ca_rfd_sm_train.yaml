@@ -6,6 +6,9 @@ zero_weights: True
 diffuser: 
   type: 'legacy'
 
+dataloader:
+  DATAPKL_AA: goldens/tiny_dataset_diffusion_20230214.pkl
+
 spoof_item: "{   'chosen_dataset': 'sm_complex',
                  'mask_gen_seed': 46265381,
                  'sel_item': {   'ASSEMBLY': 1,
