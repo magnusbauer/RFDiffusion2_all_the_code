@@ -16,7 +16,7 @@ motif_only_2d: true
 
 resume_scheduler: false 
 
-pseudobatch: 1 
+pseudobatch: 16 # that is, accumulate gradients until 16 total examples 
 model_name: caBFF
 
 preprocess: 
