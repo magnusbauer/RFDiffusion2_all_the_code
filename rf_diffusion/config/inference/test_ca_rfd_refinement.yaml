@@ -2,7 +2,7 @@ defaults:
   - RFdiffusion_CA_inference
 
 inference: 
-  ckpt_path: '/mnt/home/davidcj/projects/merge/rf_diffusion_repo/rf_diffusion/tmp_models/trained/refinement/BFF_3_w_new_conf.pt' 
+  ckpt_path: 'goldens/tiny_bff3_ckpt' 
   refine: true
   input_pdb: ./test_data/to_refine.pdb
   cautious: false

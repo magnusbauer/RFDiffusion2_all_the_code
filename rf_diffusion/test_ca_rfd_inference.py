@@ -7,12 +7,15 @@ from hydra import initialize, compose
 from unittest import mock 
 import copy
 from pathlib import Path
+import torch.nn as nn
 
 import run_inference 
 from rf_diffusion.preprocess import add_motif_template
 from test_ca_rfd_sm_train import ExitMockCall
 from rf2aa.model.RoseTTAFoldModel import LegacyRoseTTAFoldModule
+from rf_diffusion.inference.model_runners import Sampler
 
+relative_to_absolute = lambda rel: str(Path(__file__).parent / rel)
 
 def get_ca_config(overrides=[]):
     """
@@ -21,6 +24,7 @@ def get_ca_config(overrides=[]):
     hydra.core.global_hydra.GlobalHydra().clear()
     initialize(config_path="config/inference")
     conf = compose(config_name='test_ca_rfd_inference.yaml', overrides=overrides, return_hydra_config=True)
+    conf.inference.ckpt_path = relative_to_absolute(conf.inference.ckpt_path)
     return conf
 
 def rfold_side_effect(*args, **kwargs):
@@ -51,7 +55,9 @@ class TestCARFDInference(unittest.TestCase):
     @mock.patch('rf_diffusion.conditioning.spy', side_effect=spy_side_effect)
     @mock.patch('rf_diffusion.data_loader.spy', side_effect=spy_side_effect)
     @mock.patch('rf_diffusion.preprocess.add_motif_template', side_effect=add_motif_tmplt_side_effect)
-    def setUpClass(cls, mock_add_motif_template, 
+    @mock.patch.object(nn.Module, 'load_state_dict')
+    def setUpClass(cls, mock_load_state_dict,
+                        mock_add_motif_template, 
                         mock_dataloader_spy, 
                         mock_conditioning_spy, 
                         mock_inf_dataloader_spy, 

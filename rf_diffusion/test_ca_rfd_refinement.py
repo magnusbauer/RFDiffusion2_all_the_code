@@ -8,6 +8,7 @@ from unittest import mock
 from pathlib import Path 
 import pdb 
 pydb=pdb
+import torch.nn as nn
 
 # rfdiffusion imports 
 from rf2aa.model.RoseTTAFoldModel import LegacyRoseTTAFoldModule
@@ -15,6 +16,7 @@ import run_inference
 from test_ca_rfd_sm_train import ExitMockCall
 import aa_model
 
+relative_to_absolute = lambda rel: str(Path(__file__).parent / rel)
 
 def rfold_side_effect(*args, **kwargs): 
     # mocks the fwd in LegacyRosettaFoldModule 
@@ -31,6 +33,7 @@ def get_ca_config(overrides=[]):
     hydra.core.global_hydra.GlobalHydra().clear()
     initialize(config_path="config/inference")
     conf = compose(config_name='test_ca_rfd_refinement.yaml', overrides=overrides, return_hydra_config=True)
+    conf.inference.ckpt_path = relative_to_absolute(conf.inference.ckpt_path)
     return conf
 
 make_indep_saved = aa_model.make_indep
@@ -57,7 +60,8 @@ class TestCARFDFeaturization(unittest.TestCase):
     @classmethod
     @mock.patch('rf_diffusion.aa_model.make_indep', side_effect=make_indep_side_effect)
     @mock.patch.object(LegacyRoseTTAFoldModule, 'forward', side_effect=rfold_side_effect)
-    def setUpClass(cls, mock_rfold_fwd, mock_make_indep): 
+    @mock.patch.object(nn.Module, 'load_state_dict')
+    def setUpClass(cls, mock_load_state_dict, mock_rfold_fwd, mock_make_indep): 
         """
         Load goldens, get config, run inference all the way up to fwd pass. 
         Then, compare inputs at fwd pass with goldens.
