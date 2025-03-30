@@ -13,7 +13,6 @@ import run_inference
 from rf_diffusion.preprocess import add_motif_template
 from test_ca_rfd_sm_train import ExitMockCall
 from rf2aa.model.RoseTTAFoldModel import LegacyRoseTTAFoldModule
-from rf_diffusion.inference.model_runners import Sampler
 
 relative_to_absolute = lambda rel: str(Path(__file__).parent / rel)
 

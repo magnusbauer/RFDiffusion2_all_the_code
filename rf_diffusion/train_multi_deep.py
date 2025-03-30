@@ -51,11 +51,10 @@ from rf_diffusion import test_utils
 from openfold.utils import rigid_utils as ru
 from rf_diffusion.frame_diffusion.data import all_atom
 from se3_flow_matching.data import all_atom as all_atom_fm
-import pdb 
 #added for inpainting training
 from icecream import ic
 import random
-
+import pdb
 # added for logging git diff
 import subprocess
 
@@ -496,17 +495,22 @@ class Trainer():
 
         
         
-        
+        # FAPE losses
         if self.conf.loss.use_fapes:
             # find out the small molecule lengths 
             sm_Ls = rf_diffusion.util.get_sm_lengths(indep.is_sm.clone().cpu().detach().numpy(), 
                                                      indep.same_chain.clone().cpu().detach().numpy())
 
-            # FAPE losses
+            L_tot = indep.length()
+            L_prot = L_tot - sum(sm_Ls)
+            fape_mask = torch.zeros_like(mask_crds).to(dtype=torch.bool)
+            fape_mask[:,:L_prot,:3] = True
+            fape_mask[:,L_prot:,1] = True
+
             fape_kwargs = { 'masks_1d'       : masks_1d,     # dict - masks from mask_generator
                             'pred_in'        : pred_in,
                             'indep'          : indep,        # contains true structure and sequence for scoring 
-                            'mask_crds'      : mask_crds,
+                            'mask_crds'      : fape_mask,
                             'fi_dev'         : self.fi_dev,
                             'atom_frames'    : atom_frames, 
                             'sm_Ls'          : sm_Ls,  
@@ -518,8 +522,16 @@ class Trainer():
             # some fapes are undefined if e.g., no motif (unconditional)
             fape_loss_dict, rmsd_dict = compute_fape_losses(**fape_kwargs)
             good_flosses = {k:v for k,v in fape_loss_dict.items() if not torch.isnan(v).any()}
+            nan_flosses = {k:v for k,v in fape_loss_dict.items() if torch.isnan(v)}
+            
+            loss_dict.update(good_flosses)
+            aux_data.update(rmsd_dict)
 
-        
+            # loss_dict will need the NaN losses too for logging, since
+            # the weights are nonzero. 
+            for k,v in nan_flosses.items():
+                aux_data[f'weighted.{k}'] = v # it's nan, weight doesn't matter!
+
         # Average over batches
         for k, loss in loss_dict.items():
             loss_dict[k] = loss.sum(dim=0)
@@ -539,10 +551,6 @@ class Trainer():
             aux_data[f'weighted.{k}'] = weighted_loss
 
             tot_loss += weighted_loss
-
-        
-        # add fape losses 
-        # tot_loss = resolve_fape_losses(tot_loss, fape_loss_dict, loss_weights)
         
         return tot_loss, aux_data
 
@@ -960,7 +968,12 @@ class Trainer():
             'i_fm_translation': self._exp_conf.i_fm_translation_loss_weight if 'i_fm_translation_loss_weight' in self._exp_conf else 0.0,   
             'i_fm_rotation': self._exp_conf.i_fm_rotation_loss_weight if 'i_fm_rotation_loss_weight' in self._exp_conf else 0.0,            
             # Extras:
-            'fa_disp': self._exp_conf.fa_disp_loss_weight if 'fa_disp_loss_weight' in self._exp_conf else 0.0,       
+            'fa_disp': self._exp_conf.fa_disp_loss_weight if 'fa_disp_loss_weight' in self._exp_conf else 0.0,     
+            # FAPEs
+            'motif_fape': self._exp_conf.get('motif_fape_weight'),
+            'nonmotif_fape': self._exp_conf.get('motif_fape_weight'),
+            'ligand_intra_fape': self._exp_conf.get('ligand_intra_fape_weight'),
+            'prot_lig_inter_fape': self._exp_conf.get('prot_lig_inter_fape_weight')
         }
 
 
