@@ -15,7 +15,7 @@ inference:
   recycle_schedule: null
   softmax_T: 1e-5
   output_prefix: samples/design
-  silent_out: False # Write silent files instead of pdbs. Doesn't support small molecules (yet). No trb unless write_trb=FORCE
+  silent_out: False # Write silent files instead of pdbs. Doesn't support small molecules (yet). No trb unless write_trb=FORCE. No scorefile unless write_scorefile=FORCE
   silent_folder_sep: '_-_' # How folders are denoted in silent_file tags. Set to False, null, or '' to disable adding fodler to name
   write_trajectory: False # Boolean. Should the /traj/ video pdb file be generated? Takes up a lot of space in production
   write_trajectory_only_t: [] # list(int). Only write trajectory for these given t steps. Example: [50,40,30,20]
@@ -23,6 +23,9 @@ inference:
   write_trb_indep: False # Boolean. Should the indep be written to the .trb? Adds about 200KB to trb
   write_trb_trajectory: False # Boolean. Should the trajectory be written to the .trb? Adds about 10MB to trb
   write_extra_ts: [] # list[int]. Save the indep from additional t steps (besides the usual final_step)
+  write_scorefile: True # Write a scorefile if there are scores to write
+  scorefile_delimiter: ' ' # ',' implies .csv, ' ' implies .sc
+  write_scores_to_trb: True # If scores are present, write to trb
   scaffold_guided: False
   model_runner: NRBStyleSelfCond
   cautious: True
@@ -182,6 +185,12 @@ denoiser:
   noise_scale_frame: 1
   noise_scale_torsion: 1
   center: False
+
+filters:
+  max_attempts_per_design: 10 # If filters enabled, for a given design, try at most this many times before giving up
+  max_steps_per_design: 100 # If filters enabled, for a given design, take at most this many diffusion steps (cumulative across failures) before giving up
+  names: [] # The names of the filters. Either: FilterType or UserDefinedName:FilterType if you want to have multiple of the same type of filter
+  configs: {} # Configs for each of your filters. Use UserDefinedName if that's how you specified it in names
 
 ppi:
   hotspot_res: null # Which residues on the target should we be within 7A (CB-dist) of? (B10,B15,B20-25)

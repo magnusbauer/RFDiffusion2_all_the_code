@@ -102,7 +102,103 @@ This will make 50 * 2 [+/- sequence position] * 6 [6 different active site descr
 
 All motifs are tip atom motifs for 150 timesteps with no self-conditioning
 
+# Mid-trajectory filters
 
+Sometimes your diffusion goals are hard for the network perform, but easy for you to evaluate. An even better case is where it's easy to tell if the network **is going to get it wrong** very early in the trajectory.
+
+Mid-trajectory filters allow you to detect and restart trajectories that are going poorly.
+
+## Universal filter flags
+
+These flags control the behavior of how your run will progress. `filter.max_steps_per_design` might be the safer of the two since it can give you an upperbound on your runtime.
+```
+filters:
+  max_attempts_per_design: 10 # If filters enabled, for a given design, try at most this many times before giving up
+  max_steps_per_design: 100 # If filters enabled, for a given design, take at most this many diffusion steps (cumulative across failures) before giving up
+```
+
+These flags control the scorefile that is produced from filters. Typically you'll either use the scorefile to save scores so you know which outputs are best or in preparation to figure out how to filter.
+
+```
+inference:
+  write_scorefile: True # Write a scorefile if there are scores to write
+  scorefile_delimiter: ' ' # ',' implies .csv, ' ' implies .sc
+  write_scores_to_trb: True # If scores are present, write to trb
+```
+
+## Filter instantiation
+
+To add filters to your runs, you need to add them to `filters.names` and then configure them through `filters.configs`
+
+Here's an example where we'll add a ChainBreak filter at t=20:
+
+```
+filters:
+  names:
+    - ChainBreak
+  configs:
+    ChainBreak:
+      t: 20
+      C_N_dist_limit: 1.8
+```
+
+If you want to have multiple copies of the same kind of filter. You can use `NewName:ClassName` to rename them in the names.
+
+```
+filters:
+  names:
+    - EarlyBreaks:ChainBreak
+  configs:
+    EarlyBreaks:
+      t: '40,30,25'
+      C_N_dist_limit: 2.5
+```
+
+In general, all filters have the following default fields:
+
+```
+t: # A comma separated list of t steps to activate at
+suffix: # A string suffix to add to this value in the scorefile
+prefix: # A string prefix to add to this value in the scorefile
+verbose: # A bool (default false) as to whether or not this filter should print logging info
+```
+
+## Available Filters
+
+This list will almost certainly be out of date at some point. `rf_diffusion/rf_diffusion/filters.py` will always be up-to-date.
+
+### ChainBreak filter
+
+Finds the largest C->N atom gap in your protein
+
+Configs:
+```
+C_N_dist_limit -- The limit (in angstroms) at which this filter will fail. (1.7 is a pretty good choice)
+monitor_chains -- A string of comma separated numbers (starting at 0) of which chains to monitor. Binder design would use '0'
+use_px0 -- Default True. Use px0 as the structure to look for chainbreak in
+```
+
+Reports:
+```
+max_chain_gap -- The largest C->N atom gap in the chains we are monitoring
+```
+
+### BBGPSatisfaction filter
+
+Determines the satisfaction level of your Backbone Guideposts. Currently assumes all guidepost are backbone.
+
+Configs:
+```
+gp_max_error_cut -- The limit (in angstroms) of the worst CA-CA guidepost mismatch that's allowable
+gp_rmsd_cut -- The limit (in angstroms) of the RMSD of all CA-CA guidepost matches that's allowable
+use_px0 -- Default True. Use px0 as the structure to look for chainbreak in
+```
+
+Reports:
+```
+gp_max_error -- The worst CA-CA guidepost mismatch
+gp_rmsd -- The RMSD of all CA-CA guidepost matches
+```
 
 # Benchmarking guide
 

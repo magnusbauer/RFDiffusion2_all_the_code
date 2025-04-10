@@ -12,6 +12,7 @@ from hydra.core.hydra_config import HydraConfig
 from icecream import ic
 import torch
 import numpy as np
+import pandas as pd
 
 import test_utils
 import run_inference
@@ -34,6 +35,7 @@ from rf_diffusion import noisers
 from rf_diffusion.frame_diffusion.rf_score.model import RFScore
 from rf_diffusion.conditions.ss_adj.sec_struct_adjacency import SS_HELIX, SS_STRAND, SS_LOOP, SS_MASK, N_SS
 from omegaconf import OmegaConf
+from rf_diffusion.inference.filters import TestFilter
 
 
 ic.configureOutput(includeContext=True)
@@ -1868,6 +1870,119 @@ class TestInference(unittest.TestCase):
 
         # We know this guy got atomized so it must be in this array
         assert leading_free + 3 in trb['atomize_indices2atomname']
+
+
+    def test_filters_output(self):
+        '''
+        Tests that the filter system actually works at inference
+
+        We do this by defining a filter that reports the call count
+        The filter will fail until it has been called twice at which point we check the scorefile to ensure it
+        was indeed called twice
+        '''
+
+        # We have to construct our own conf so we can figure out the scorefile name
+        conf = construct_conf([
+                'diffuser.T=1',
+                'inference.input_pdb=test_data/1qys.pdb',
+                "contigmap.contigs=['1-1,A64-64']",
+                'filters.names=["MyFilter:TestFilter"]',
+                '+filters.configs.MyFilter.t=1',
+                '+filters.configs.MyFilter.test_value_threshold=2',
+                '+filters.configs.MyFilter.suffix=_suff',
+                '+filters.configs.MyFilter.prefix=pre_',
+                '+filters.configs.MyFilter.verbose=True',
+            ])
+
+        scorefile_name = conf.inference.output_prefix + '_out.sc'
+        if os.path.exists(scorefile_name):
+            os.remove(scorefile_name)
+
+
+        # TestFilter requires us to overwrite it's get_test_value() function
+        fake_forward = mock.patch.object(TestFilter, "get_test_value", autospec=True)
+
+        def side_effect(self, *args, **kwargs):
+            side_effect.call_count += 1
+            return side_effect.call_count
+        side_effect.call_count = 0
+
+        with fake_forward as mock_forward:
+            mock_forward.side_effect = side_effect
+
+            # Do inference
+            run_inference.make_deterministic()
+            run_inference.main(conf)
+
+        df = pd.read_csv(scorefile_name, sep='\s+')
+        assert 'pre_t-1_test_value_suff' in list(df)
+        assert len(df) == 1
+        assert df['pre_t-1_test_value_suff'].iloc[0] == 2
+
+        trb = get_trb(conf)
+        assert trb['scores']['pre_t-1_test_value_suff'] == 2
+
+    def test_filters_fail(self):
+        '''
+        Tests the behavior when the filters fail to produce an output
+
+        A pdb should not be generated and there should be an empty .trb to prove we tried
+        '''
+
+        for actual_fail_criterion in ['++filters.max_attempts_per_design=2', '++filters.max_steps_per_design=2']:
+
+            # We have to construct our own conf so we can figure out the names
+
+            if hydra.core.global_hydra.GlobalHydra().is_initialized():
+                hydra.core.global_hydra.GlobalHydra().clear()
+
+            conf = construct_conf([
+                    'diffuser.T=1',
+                    'inference.input_pdb=test_data/1qys.pdb',
+                    "contigmap.contigs=['1-1,A64-64']",
+                    'filters.names=["MyFilter:TestFilter"]',
+                    '+filters.configs.MyFilter.t=1',
+                    '+filters.configs.MyFilter.test_value_threshold=10',
+                    '+filters.configs.MyFilter.suffix=_suff',
+                    '+filters.configs.MyFilter.prefix=pre_',
+                    actual_fail_criterion,
+                ])
+
+            # Delete them ahead of time
+            long_trb_name = conf.inference.output_prefix + '_0-atomized-bb-True.trb'
+            short_trb_name = conf.inference.output_prefix + '_0.trb'
+            long_pdb_name = conf.inference.output_prefix + '_0-atomized-bb-True.pdb'
+            if os.path.exists(long_trb_name):
+                os.remove(long_trb_name)
+            if os.path.exists(short_trb_name):
+                os.remove(short_trb_name)
+            if os.path.exists(long_pdb_name):
+                os.remove(long_pdb_name)
+
+
+            # Overwrite the get_test_value() function so we can keep track of how many times this is called
+            fake_forward = mock.patch.object(TestFilter, "get_test_value", autospec=True)
+
+            def side_effect(self, *args, **kwargs):
+                side_effect.call_count += 1
+                return side_effect.call_count
+            side_effect.call_count = 0
+
+            with fake_forward as mock_forward:
+                mock_forward.side_effect = side_effect
+
+                run_inference.make_deterministic()
+                run_inference.main(conf)
+
+
+            assert side_effect.call_count == 2
+            assert not os.path.exists(long_pdb_name)
+            assert not os.path.exists(long_trb_name)
+            assert os.path.exists(short_trb_name)
+
+            trb = np.load(short_trb_name,allow_pickle=True)
+            assert len(trb) == 0
+
 
 
 if __name__ == '__main__':

@@ -52,6 +52,7 @@ from rf_diffusion import silent_files
 import rf_diffusion.inference.utils as iu
 import tqdm
 import rf_diffusion.atomization_primitives
+from rf_diffusion.inference.filters import init_filters, FilterFailedException, do_filtering
 ic.configureOutput(includeContext=True)
 
 import rf_diffusion.nucleic_compatibility_utils as nucl_utils
@@ -102,9 +103,27 @@ def get_sampler(conf):
         design_startnum = max(indices) + 1   
 
     conf.inference.design_startnum = design_startnum
-    # Initialize sampler and target/contig.
-    sampler = model_runners.sampler_selector(conf)
+    # Generate an empty sampler in case every output has already been generated
+    sampler = model_runners.sampler_selector(conf, skip_initialization=True)
     return sampler
+
+def finish_sampler_initialization(sampler):
+    '''
+    For the run_inference.py executable, we don't fully initialize the sampler on load such that the model
+        does not need to be loaded for full-completed runs
+
+    This function finishes the initialization process
+
+    Args:
+        sampler (Sampler): The sampler to finish initializing
+    '''
+    if sampler.initialized:
+        return
+
+    if sampler._conf.inference.deterministic:
+        seed_all()
+    sampler.initialize(sampler._conf)
+
 
 def expand_config(conf):
     confs = {}
@@ -131,7 +150,7 @@ def sampler_i_des_bounds(sampler):
         i_des_end (int): One past the last i_des to sample
     '''
     i_des_start = sampler._conf.inference.design_startnum
-    i_des_end = i_des_start + sampler.inf_conf.num_designs
+    i_des_end = i_des_start + sampler._conf.inference.num_designs
     return i_des_start, i_des_end
 
 def sampler_out_prefix(sampler, i_des=0):
@@ -146,7 +165,7 @@ def sampler_out_prefix(sampler, i_des=0):
         run_prefix (str): A prefix that is general for all outputs from this run
         individual_prefix (str): A prefix for this individual i_des
     '''
-    run_prefix = sampler.inf_conf.output_prefix
+    run_prefix = sampler._conf.inference.output_prefix
     individual_prefix = f'{run_prefix}_{i_des}'
 
     return run_prefix, individual_prefix
@@ -177,7 +196,11 @@ def load_checkpoint_done(sampler):
             _, individual_prefix = sampler_out_prefix(sampler, i_des=i_des)
 
             # Check for 4 output patterns that might exist
-            for pattern in ['[.]trb', '-.*[.]trb']:
+            patterns = ['[.]trb', '-.*[.]trb']
+            if not bool(sampler._conf.inference.write_trb): # trbs can still be written to denote filter-failures
+                patterns += ['[.]pdb', '-.*[.]pdb']
+
+            for pattern in patterns:
                 re_comp = re.compile(individual_prefix + pattern)
 
                 for file in files:
@@ -188,17 +211,23 @@ def load_checkpoint_done(sampler):
 
     return checkpoint_done
 
-def checkpoint_i_des(sampler, i_des):
+def checkpoint_i_des(sampler, i_des, nothing_written=False):
     '''
     Note that a design has finished
 
     Args:
         sampler (Sampler): sampler
         i_des (int): Number of design
+        nothing_written (bool): Indicates that nothing was written to disk for this one but it's still considered done
     '''
     run_prefix, individual_prefix = sampler_out_prefix(sampler, i_des)
     if sampler._conf.inference.silent_out:
         silent_files.silent_checkpoint_design(run_prefix, individual_prefix)
+    else:
+        if nothing_written:
+            # We drop a blank trb to indicate that this design failed
+            with open(f'{individual_prefix}.trb','wb') as f_out:
+                pickle.dump({}, f_out)
 
 def sample(sampler):
     log = logging.getLogger(__name__)
@@ -209,39 +238,93 @@ def sample(sampler):
     # Sample each of the designs
     i_des_start, i_des_end = sampler_i_des_bounds(sampler)
     for i_des in range(i_des_start, i_des_end):
-        if sampler._conf.inference.deterministic:
-            seed_all(i_des + sampler._conf.inference.seed_offset)
 
         start_time = time.time()
         _, out_prefix = sampler_out_prefix(sampler, i_des=i_des)
         log.info(f'Making design {out_prefix}')
-        if sampler.inf_conf.cautious and out_prefix in checkpoint_done:
+        if sampler._conf.inference.cautious and out_prefix in checkpoint_done:
              log.info(f'(cautious mode) Skipping this design because {checkpoint_done[out_prefix]}')
              continue
+        finish_sampler_initialization(sampler)
+        # Set the actual per-design seed if deterministic (critically after sampler_initialization)
+        if sampler._conf.inference.deterministic:
+            seed_all(i_des + sampler._conf.inference.seed_offset)
         print(f'making design {i_des} of {i_des_start}:{i_des_end}', flush=True)
-        sampler_out = sample_one(sampler, i_des)
+        sampler_out = sample_one_w_retry(sampler, i_des)
         log.info(f'Finished design in {(time.time()-start_time)/60:.2f} minutes')
-        original_conf = copy.deepcopy(sampler._conf)
-        confs = expand_config(sampler._conf)
-        for suffix, conf in confs.items():
-            sampler._conf = conf
-            out_prefix_suffixed = out_prefix
-            if suffix:
-                out_prefix_suffixed += f'-{suffix}'
-            print(f'{out_prefix_suffixed=}, {conf.inference.guidepost_xyz_as_design_bb=}')
-            # TODO: See what is being altered here, so we don't have to copy sampler_out
-            save_outputs(sampler, out_prefix_suffixed, *(copy.deepcopy(o) for o in sampler_out))
-            sampler._conf = original_conf
-        checkpoint_i_des(sampler, i_des)
+        if sampler_out is not None:
+            original_conf = copy.deepcopy(sampler._conf)
+            confs = expand_config(sampler._conf)
+            for suffix, conf in confs.items():
+                sampler._conf = conf
+                out_prefix_suffixed = out_prefix
+                if suffix:
+                    out_prefix_suffixed += f'-{suffix}'
+                print(f'{out_prefix_suffixed=}, {conf.inference.guidepost_xyz_as_design_bb=}')
+                # TODO: See what is being altered here, so we don't have to copy sampler_out
+                save_outputs(sampler, out_prefix_suffixed, *(copy.deepcopy(o) for o in sampler_out))
+                sampler._conf = original_conf
+        checkpoint_i_des(sampler, i_des, nothing_written=sampler_out is None)
+
+def sample_one_w_retry(sampler, i_des, **kwargs):
+    '''
+    Wrapper function for sample_one() that handles the case where a failed filter can request a redo
+
+    Args:
+        sampler (Sampler): The sampler
+        i_des (int): The sequential number of this design
+
+    Returns:
+        sampler_out (tuple or None): The ever-growing list of items the sampler returns or None if filters killed this example
+    '''
+    _, prefix = sampler_out_prefix(sampler, i_des=i_des)
+
+    max_attempts = sampler._conf.filters.max_attempts_per_design
+    max_steps = sampler._conf.filters.max_steps_per_design
+
+    cumulative_steps = 0
+    for attempt in range(max_attempts):
+        try:
+            return sample_one(sampler, i_des=i_des, **kwargs)
+
+        except FilterFailedException as e:
+            # Check that we have not taken more steps than we are allowed
+            cumulative_steps += e.n_steps_taken
+            if cumulative_steps >= max_steps:
+                print(f'Aborting {prefix}: Too many steps ({cumulative_steps})')
+                break
+
+            # Print the message to tell the user what is happening
+            if attempt < max_attempts - 1:
+                print(f'Retrying {prefix}: Attempt {attempt + 2} / {max_attempts} ({cumulative_steps} / {max_steps} steps taken)')
+            else:
+                print(f'Aborting {prefix}: Too many attempts ({max_attempts})')
+    return None
+
 
 def sample_one(sampler, i_des=0, simple_logging=False):
-    # For intermediate output logging
+    '''
+    Args:
+        sampler (Sampler): The sampler
+        i_des (int): The sequential number of this design
+        simple_logging (bool): Print out some dots during inference
+
+    Returns:
+        sampler_out (tuple): The ever-growing list of items the sampler returns
+
+    Throws:
+        FilterFailedException: If filters are enabled and one fails
+    '''
+
     indep, contig_map, atomizer, t_step_input = sampler.sample_init(i_des)
     log = logging.getLogger(__name__)
+    filters = init_filters(sampler._conf)
+
     traj_stack = defaultdict(list)
     denoised_xyz_stack = []
     px0_xyz_stack = []
     seq_stack = []
+    scores = {}
 
     rfo = None
     extra = {
@@ -306,6 +389,9 @@ def sample_one(sampler, i_des=0, simple_logging=False):
         seq_stack.append(seq_t)
         for k, v in extra['traj'].items():
             traj_stack[k].append(v)
+
+        # If len(filters) == 0 this immediately returns
+        do_filtering(filters, indep, t, it, px0, scores, contig_map=contig_map, is_diffused=sampler.is_diffused)
 
     if t_step_input == 0:
         # Null-case: no diffusion performed.
@@ -395,7 +481,7 @@ def sample_one(sampler, i_des=0, simple_logging=False):
                 xyz_stack_new.append(indep_deatomized.xyz)
             traj_stack[k] = torch.stack(xyz_stack_new)
 
-    return indep, contig_map, atomizer, t_step_input, denoised_xyz_stack, px0_xyz_stack, seq_stack, is_diffused, raw, traj_stack, ts
+    return indep, contig_map, atomizer, t_step_input, denoised_xyz_stack, px0_xyz_stack, seq_stack, is_diffused, raw, traj_stack, ts, scores
 
 def add_implicit_side_chain_atoms(seq, act_on_residue, xyz, xyz_with_sc):
     '''
@@ -467,65 +553,7 @@ def deatomize_sampler_outputs(atomizer, indep, px0_xyz_stack, denoised_xyz_stack
 
     return indep_deatomized, px0_xyz_stack_new, denoised_xyz_stack_new, seq_stack_new
 
-
-def match_guideposts_and_generate_mappings(indep, is_diffused, contig_map, denoised_xyz):
-    '''
-    Determine which diffused residues map to the guidepost residues
-        Return those paired lists as well as extra contig keys
-
-    Args:
-        indep (indep): Indep with guidepost residues
-        is_diffused (torch.Tensor[bool]): Which residues are diffused [L]
-        contig_map (ContigMap): The contig map
-        denoised_xyz (torch.Tensor[float]): The xyz coordinates to do the matching on
-
-    Returns:
-        match_idx (np.array[int]): The idx of the residue on indep that was closest to the guidepost
-        gp_idx (np.array[int]): The idx of the guidepost residue
-        gp_contig_mappings (dict): Overwrites for some contig_map fields that need to change because of the guideposting
-    '''
-
-    # Only diffused residues that aren't small molecules are elgible to be guidepost residues
-    could_be_gp_corr = is_diffused & ~indep.is_sm & ~indep.is_gp
-
-    # Make where masks for our subsetted arrays
-    could_be_gp_corr_idx = torch.nonzero(could_be_gp_corr)[:,0].numpy()
-    idx_by_gp_sequential_idx = torch.nonzero(indep.is_gp)[:,0].numpy()
-
-    # Generate xyz arrays to match
-    diffused_xyz = denoised_xyz[could_be_gp_corr]
-    gp_alone_xyz = denoised_xyz[indep.is_gp]
-
-    # Do the matching
-    gp_alone_to_diffused_idx0 = gp.greedy_guide_post_correspondence(diffused_xyz, gp_alone_xyz)
-
-    # Translate the local-indexing of the matched dictionary to global indexing
-    match_idx_by_gp_idx = {}
-    for k, v in gp_alone_to_diffused_idx0.items():
-        match_idx_by_gp_idx[idx_by_gp_sequential_idx[k]] = could_be_gp_corr_idx[v]
-
-    # If there were any guidepost residues...
-    if len(gp_alone_to_diffused_idx0) > 0:
-
-        # Turn the dictionary into lists
-        gp_idx, match_idx = zip(*match_idx_by_gp_idx.items())
-        gp_idx = np.array(gp_idx)
-        match_idx = np.array(match_idx)
-
-        # Generate the contig_map overrides
-        gp_contig_mappings = gp.get_infered_mappings(
-            contig_map.gp_to_ptn_idx0,
-            match_idx_by_gp_idx,
-            contig_map.get_mappings()
-        )
-    else:
-        gp_idx = np.array([], dtype=int)
-        match_idx = np.array([], dtype=int)
-        gp_contig_mappings = {}
-
-    return match_idx, gp_idx, gp_contig_mappings
-
-def save_outputs(sampler, out_prefix, indep, contig_map, atomizer, t_step_input, denoised_xyz_stack, px0_xyz_stack, seq_stack, is_diffused_in, raw, traj_stack, ts):
+def save_outputs(sampler, out_prefix, indep, contig_map, atomizer, t_step_input, denoised_xyz_stack, px0_xyz_stack, seq_stack, is_diffused_in, raw, traj_stack, ts, scores):
     log = logging.getLogger(__name__)
 
     # Make the output folder
@@ -582,7 +610,7 @@ def save_outputs(sampler, out_prefix, indep, contig_map, atomizer, t_step_input,
         if sampler._conf.inference.contig_as_guidepost:
             # Use final denoised_xyz for inference unless we aren't at final_step
             match_xyz = denoised_xyz_stack[stack_idx] if write_t is None else px0_xyz_stack[stack_idx]
-            match_idx, gp_idx, gp_contig_mappings = match_guideposts_and_generate_mappings(indep, is_diffused, contig_map, match_xyz)
+            match_idx, gp_idx, gp_contig_mappings = gp.match_guideposts_and_generate_mappings(indep, is_diffused, contig_map, match_xyz)
 
             # Copy guidepost sequence and idx to output if desired
             if sampler._conf.inference.guidepost_xyz_as_design:
@@ -617,6 +645,9 @@ def save_outputs(sampler, out_prefix, indep, contig_map, atomizer, t_step_input,
         idealized_pdb_stream = idealize_backbone.rewrite(None, None, pdb_stream=idealized_pdb_stream)
         idealized_pdb_stream = aa_model.rename_ligand_atoms(sampler._conf.inference.input_pdb, None, pdb_stream=idealized_pdb_stream)
 
+
+        run_prefix, _ = sampler_out_prefix(sampler)
+
         if sampler._conf.inference.silent_out:
             # Tag starts out the same as the pdb name as usual
             tag = out_tail + t_suffix
@@ -625,9 +656,8 @@ def save_outputs(sampler, out_prefix, indep, contig_map, atomizer, t_step_input,
             if bool(sampler._conf.inference.silent_folder_sep):
                 tag = os.path.join(out_head, tag).replace('/', sampler._conf.inference.silent_folder_sep)
 
-            run_prefix, _ = sampler_out_prefix(sampler)
             silent_name = run_prefix + '_out.silent'
-            silent_files.add_pdb_stream_to_silent(silent_name, tag, idealized_pdb_stream)
+            silent_files.add_pdb_stream_to_silent(silent_name, tag, idealized_pdb_stream, scores=scores)
             des_path = f'{silent_name}:{tag}'
         else:
             # Write pdb to disk
@@ -635,6 +665,15 @@ def save_outputs(sampler, out_prefix, indep, contig_map, atomizer, t_step_input,
             des_path = os.path.abspath(out_idealized)
             with open(des_path, 'w') as fh:
                 fh.write(''.join(idealized_pdb_stream))
+
+            tag = out_idealized[:-len('.pdb')]
+
+        if len(scores) > 0 and (
+                (sampler._conf.inference.silent_out and str(sampler._conf.inference.write_scorefile) == 'FORCE')
+                or
+                (not sampler._conf.inference.silent_out and bool(sampler._conf.inference.write_scorefile))
+            ):
+            iu.append_run_to_scorefile(run_prefix, tag, scores, sampler._conf.inference.scorefile_delimiter)
 
     # pX0 last step
     write_unidealized = not sampler._conf.inference.silent_out
@@ -690,6 +729,8 @@ def save_outputs(sampler, out_prefix, indep, contig_map, atomizer, t_step_input,
             point_types=aa_model.get_point_types(sampler.indep_orig, atomizer),
             atomizer_spec=None if atomizer is None else rf_diffusion.atomization_primitives.AtomizerSpec(atomizer.deatomized_state, atomizer.residue_to_atomize),
         )
+        if len(scores) > 0 and sampler._conf.inference.write_scores_to_trb:
+            trb['scores'] = scores
         # The trajectory and the indep are big and contributed to the /net/scratch crisis of 2024
         if sampler._conf.inference.write_trb_trajectory:
             trb['px0_xyz_stack'] = raw[0].detach().cpu()[stack_mask].numpy()

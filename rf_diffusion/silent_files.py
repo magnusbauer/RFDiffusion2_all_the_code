@@ -1,5 +1,7 @@
+import torch
 import os
 import io
+import numpy as np
 from rf_diffusion.chemical import ChemicalData as ChemData
 from rf_diffusion import aa_model
 from rf_diffusion import write_file
@@ -82,12 +84,10 @@ def add_dict_to_silent(struct, d):
         struct (pyrosetta.rosetta.core.io.silent.SilentStruct): The silent struct
         d (dict[float or str]): The dictionary of values to load into the silent file
     '''
+    d = format_scores(d)
+
     for key in d:
-        value = d[key]
-        if ( isinstance(value, str) ):
-            struct.add_string_value(key, value)
-        else:
-            struct.add_energy(key, value)
+        struct.add_string_value(key, value)
 
 
 def load_silent_checkpoint(run_prefix):
@@ -155,3 +155,65 @@ def read_pose_from_silent(silent_path, tag, sfd=None):
 
     return pose, sfd
 
+
+
+
+def format_scores(scores, float_transition_value=0.01):
+    '''
+    Turn a dict of scores into strings that are more human readable
+
+    Args:
+        scores (dict[str,?]): The scores to convert to strings
+        float_transition_value (str): The value to switch from %.3f to %.3g at
+    '''
+    new_scores = {}
+
+    for key, value in scores.items():
+
+        # Torch tensors get converted to their values
+        if torch.is_tensor(value):
+            if torch.numel(value) == 1:
+                value = value.item()
+            else:
+                # If you decide to pass a multi-valued vector to this function I'll let you decide what to do with it
+                new_scores[key] = str(value)
+                continue
+
+        # Numpy arrays get converted to their values
+        if isinstance(value, np.ndarray):
+            if value.size == 1:
+                value = value.item()
+            else:
+                # If you decide to pass a multi-valued vector to this function I'll let you decide what to do with it
+                new_scores[key] = str(value)
+                continue
+
+        # Strings get passed through directly
+        if isinstance(value, str):
+            new_scores[key] = value
+            continue
+
+        try:
+            # ints, bools
+            if int(value) == value:
+                new_scores[key] = '%i'%int(value)
+                continue
+        except (ValueError, TypeError):
+            pass
+
+        try:
+            # floats
+            if float(value) == value or np.isnan(value):
+                value = float(value)
+                if abs(value) > float_transition_value:
+                    new_scores[key] = '%.3f'%value
+                else:
+                    new_scores[key] = '%.3g'%value
+                continue
+        except (ValueError, TypeError):
+            pass
+
+        # Anything else we just cast to string because in theory you could pass anything to this function
+        new_scores[key] = str(value)
+
+    return new_scores

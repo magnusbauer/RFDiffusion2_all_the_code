@@ -38,13 +38,18 @@ logger = logging.getLogger(__name__)
 
 class Sampler:
 
-    def __init__(self, conf: DictConfig):
+    def __init__(self, conf: DictConfig, skip_initialization: bool = False, **kwargs):
         """Initialize sampler.
         Args:
             conf: Configuration.
+            skip_initialization (bool): Don't perform any initialization to speed up fully-completed inference invocations
         """
         self.initialized = False
-        self.initialize(conf)
+
+        if skip_initialization:
+            self._conf = conf
+        else:
+            self.initialize(conf)
     
     def load_model(self):
         """
@@ -103,6 +108,8 @@ class Sampler:
         self.model.to(self.device)        
 
     def initialize(self, conf: DictConfig):
+        if self.initialized:
+            return
         self._log = logging.getLogger(__name__)
         if torch.cuda.is_available():
             self.device = torch.device('cuda')
@@ -189,6 +196,7 @@ class Sampler:
             atomizer (Atomizer): the atomizer,
             t_step_input (torch.tensor): the t_step_input
         """
+        assert self.initialized, 'sampler.initialize() has not been called yet'
         indep_uncond, self.indep_orig, self.indep_cond, metadata, self.is_diffused, self.atomizer, contig_map, t_step_input, self.conditions_dict = self.dataset[i_des % len(self.dataset)]
         indep = self.indep_cond.clone()
         return indep, contig_map, self.atomizer, t_step_input
@@ -424,8 +432,8 @@ class FlowMatching(Sampler):
 
 class DifferentialAtomizedDecoder(FlowMatching):
 
-    def __init__(self, conf):
-        super().__init__(conf)
+    def __init__(self, conf, **kwargs):
+        super().__init__(conf, **kwargs)
         atomized_diffuser_conf = copy.deepcopy(self._conf.diffuser)
         OmegaConf.set_struct(self._conf.diffuser, False)
         OmegaConf.set_struct(self._conf.atomized_diffuser_overrides, False)
@@ -466,23 +474,33 @@ class DifferentialAtomizedDecoder(FlowMatching):
 
     
 
-def sampler_selector(conf: DictConfig):
+def sampler_selector(conf: DictConfig, skip_initialization=False):
+    '''
+    Generate the inference sampler from the config
+
+    Args:
+        conf (DictConfig): The omegaconf config
+        skip_initialization (bool): Return an uninitialized sampler (for speeding up completed, requeued inference runs)
+    '''
+    extra_args = {}
+    extra_args['skip_initialization'] = skip_initialization
+
     if conf.inference.model_runner == 'default':
-        sampler = Sampler(conf)
+        sampler = Sampler(conf, **extra_args)
     elif conf.inference.model_runner == 'NRBStyleSelfCond':
-        sampler = NRBStyleSelfCond(conf)
+        sampler = NRBStyleSelfCond(conf, **extra_args)
     elif conf.inference.model_runner == 'FlowMatching':
-        sampler = FlowMatching(conf)
+        sampler = FlowMatching(conf, **extra_args)
     elif conf.inference.model_runner == 'FlowMatching_make_conditional':
-        sampler = FlowMatching_make_conditional(conf)
+        sampler = FlowMatching_make_conditional(conf, **extra_args)
     elif conf.inference.model_runner == 'NRBStyleSelfCond_debug':
-        sampler = NRBStyleSelfCond_debug(conf)
+        sampler = NRBStyleSelfCond_debug(conf, **extra_args)
     elif conf.inference.model_runner == 'ClassifierFreeGuidance':
-        sampler = ClassifierFreeGuidance(conf)
+        sampler = ClassifierFreeGuidance(conf, **extra_args)
     elif conf.inference.model_runner == 'DifferentialAtomizedDecoder':
-        sampler = DifferentialAtomizedDecoder(conf)
+        sampler = DifferentialAtomizedDecoder(conf, **extra_args)
     elif conf.inference.model_runner in globals():
-        sampler = globals()[conf.inference.model_runner](conf)
+        sampler = globals()[conf.inference.model_runner](conf, **extra_args)
     else:
         raise ValueError(f'Unrecognized sampler {conf.inference.model_runner}')
     return sampler
@@ -546,12 +564,14 @@ class FlowMatching_make_conditional(FlowMatching):
 class FlowMatching_make_conditional_diffuse_all(FlowMatching_make_conditional):
 
     def sample_init(self, i_des=0):
+        assert self.initialized, 'sampler.initialize() has not been called yet'
         indep_uncond, self.indep_orig, self.indep_cond, metadata, self.is_diffused, atomizer, contig_map, t_step_input, self.conditions_dict = self.dataset[i_des % len(self.dataset)]
         return indep_uncond, contig_map, atomizer, t_step_input
 
 class FlowMatching_make_conditional_diffuse_all_xt_unfrozen(FlowMatching):
 
     def sample_init(self, i_des=0):
+        assert self.initialized, 'sampler.initialize() has not been called yet'
         indep_uncond, self.indep_orig, self.indep_cond, metadata, self.is_diffused, atomizer, contig_map, t_step_input, self.conditions_dict = self.dataset[i_des % len(self.dataset)]
         return indep_uncond, contig_map, atomizer, t_step_input
     
@@ -570,6 +590,7 @@ class FlowMatching_make_conditional_diffuse_all_xt_unfrozen(FlowMatching):
 class ClassifierFreeGuidance(FlowMatching):
     # WIP
     def sample_init(self, i_des=0):
+        assert self.initialized, 'sampler.initialize() has not been called yet'
         indep_uncond, self.indep_orig, self.indep_cond, metadata, self.is_diffused, atomizer, contig_map, t_step_input, self.conditions_dict = self.dataset[i_des % len(self.dataset)]
         return indep_uncond, contig_map, atomizer, t_step_input
     

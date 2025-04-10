@@ -13,6 +13,8 @@ import rf2aa.chemical
 import rf2aa.tensor_util
 import rf_diffusion.parsers
 from rf_diffusion.chemical import ChemicalData as ChemData
+import pandas as pd
+from rf_diffusion.silent_files import format_scores
 
 ###########################################################
 #### Functions which can be called outside of Denoiser ####
@@ -875,6 +877,43 @@ def get_custom_t_range(conf):
 
     return ts, n_steps, partially_diffuse_before
 
+
+def append_run_to_scorefile(run_prefix, tag, scores, delimiter):
+    '''
+    Called from run_inference.py
+
+    Append the results of this run to the scorefile
+
+    Args:
+        run_prefix (str): The run prefix from run_inference
+        tag (tag): The name of the design
+        scores (dict[str,?]): The dictionary of scores to output
+        delimiter (str): The delimiter for the scorefile. Typically either ',' or ' '. ',' implies .csv ' ' implies .sc
+    '''
+
+    suffix = '.sc' if delimiter == ' ' else '.csv'
+    score_file_name = run_prefix + '_out' + suffix
+
+    append_to_scorefile(score_file_name, tag, scores, delimiter)
+
+def append_to_scorefile(fname, tag, scores, delimiter):
+    '''
+    Write these scores to a scorefile. Appending to it if it exists
+
+    Args:
+        fname (str): The name of the file
+        tag (str): The name of the design
+        scores (dict[str,?]): The scores to write
+        delimeter (str): The delimiter for the scorefile
+    '''
+    scores['description'] = tag
+
+    write_header = not os.path.exists(fname)
+
+    string_scores = format_scores(scores)
+
+    df = pd.DataFrame([string_scores])
+    df.to_csv(fname, sep=delimiter, header=write_header, index=None, mode='a')
 
 def conf_select_px0(model_out, px0_source='atom37'):
     """

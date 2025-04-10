@@ -595,6 +595,63 @@ def get_infered_mappings(motif_by_gp: dict, infered_by_gp: dict, original_mappin
     }
 
 
+def match_guideposts_and_generate_mappings(indep, is_diffused, contig_map, denoised_xyz):
+    '''
+    Determine which diffused residues map to the guidepost residues
+        Return those paired lists as well as extra contig keys
+
+    Args:
+        indep (indep): Indep with guidepost residues
+        is_diffused (torch.Tensor[bool]): Which residues are diffused [L]
+        contig_map (ContigMap): The contig map
+        denoised_xyz (torch.Tensor[float]): The xyz coordinates to do the matching on
+
+    Returns:
+        match_idx (np.array[int]): The idx of the residue on indep that was closest to the guidepost
+        gp_idx (np.array[int]): The idx of the guidepost residue
+        gp_contig_mappings (dict): Overwrites for some contig_map fields that need to change because of the guideposting
+    '''
+
+    # Only diffused residues that aren't small molecules are elgible to be guidepost residues
+    could_be_gp_corr = is_diffused & ~indep.is_sm & ~indep.is_gp
+
+    # Make where masks for our subsetted arrays
+    could_be_gp_corr_idx = torch.nonzero(could_be_gp_corr)[:,0].numpy()
+    idx_by_gp_sequential_idx = torch.nonzero(indep.is_gp)[:,0].numpy()
+
+    # Generate xyz arrays to match
+    diffused_xyz = denoised_xyz[could_be_gp_corr]
+    gp_alone_xyz = denoised_xyz[indep.is_gp]
+
+    # Do the matching
+    gp_alone_to_diffused_idx0 = greedy_guide_post_correspondence(diffused_xyz, gp_alone_xyz)
+
+    # Translate the local-indexing of the matched dictionary to global indexing
+    match_idx_by_gp_idx = {}
+    for k, v in gp_alone_to_diffused_idx0.items():
+        match_idx_by_gp_idx[idx_by_gp_sequential_idx[k]] = could_be_gp_corr_idx[v]
+
+    # If there were any guidepost residues...
+    if len(gp_alone_to_diffused_idx0) > 0:
+
+        # Turn the dictionary into lists
+        gp_idx, match_idx = zip(*match_idx_by_gp_idx.items())
+        gp_idx = np.array(gp_idx)
+        match_idx = np.array(match_idx)
+
+        # Generate the contig_map overrides
+        gp_contig_mappings = get_infered_mappings(
+            contig_map.gp_to_ptn_idx0,
+            match_idx_by_gp_idx,
+            contig_map.get_mappings()
+        )
+    else:
+        gp_idx = np.array([], dtype=int)
+        match_idx = np.array([], dtype=int)
+        gp_contig_mappings = {}
+
+    return match_idx, gp_idx, gp_contig_mappings
+
 
 def place_guideposts(indep, is_gp, use_guidepost_coordinates_for=None):
     """
