@@ -2054,6 +2054,65 @@ class TestInference(unittest.TestCase):
             os.remove(fname)
 
 
+
+    def test_ORI_guess(self):
+        '''
+        The ORI guess causes a massive difference in output with tiny changes in input structure
+        So instead let's just make sure it's working correctly rather than golden it
+        '''
+
+        if hydra.core.global_hydra.GlobalHydra().is_initialized():
+            hydra.core.global_hydra.GlobalHydra().clear()
+
+        conf = construct_conf([
+                'diffuser.T=1',
+                'inference.input_pdb=test_data/1qys.pdb',
+                "contigmap.contigs=['1-1,A64-64']",
+                'inference.ORI_guess=True',
+                '++transforms.names=["AddConditionalInputs","CenterPostTransform"]',
+                '++transforms.configs.CenterPostTransform.center_type="is_not_diffused"',
+            ])
+
+        # Overwrite the get_test_value() function so we can keep track of how many times this is called
+        og_func = model_runners.NRBStyleSelfCond.sample_step
+        fake_forward = mock.patch.object(model_runners.NRBStyleSelfCond, "sample_step", autospec=True)
+
+        origins = []
+        px0_diffused_locs = []
+        not_diffused_locs = []
+
+        def side_effect(self, *args, **kwargs):
+
+            indep_in = args[1]
+            not_diffused_locs.append(indep_in.xyz[~self.is_diffused,1,:].mean(axis=0))
+            origins.append(self.extra_transform_kwargs['origin'])
+
+            ret = og_func(self, *args, **kwargs)
+
+            px0 = ret[0]
+            px0_diffused_locs.append(px0[self.is_diffused,1,:].mean(axis=0))
+
+            return ret
+
+        with fake_forward as mock_forward:
+            mock_forward.side_effect = side_effect
+
+            run_inference.make_deterministic()
+            run_inference.main(conf)
+
+
+        assert len(origins) == 2, 'Something went wrong in the setup of ORI_guess'
+        origins = torch.stack(origins)
+        px0_diffused_locs = torch.stack(px0_diffused_locs)
+        not_diffused_locs = torch.stack(not_diffused_locs)
+
+        actual_diffused_com = origins[0] + px0_diffused_locs[0]
+        assert torch.allclose(actual_diffused_com, origins[1]), "The origin_override kwarg to the dataloader didn't make it down all the way"
+
+        assert torch.linalg.norm(not_diffused_locs[0]) < 0.1, 'CenterPostTransform failed'
+        assert torch.linalg.norm(not_diffused_locs[1]) > 0.1, "Either you got incredibly unlucky or the origin_override kwarg didn't make it down"
+
+
 class TestInferenceSetup(unittest.TestCase):
 
     def setUp(self) -> None:
