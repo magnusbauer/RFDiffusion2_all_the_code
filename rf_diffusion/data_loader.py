@@ -1866,10 +1866,15 @@ class TransformedDataset(data.Dataset):
             self.transforms = transforms
             self.dataset = dataset
             
-        
     def __getitem__(self, index: int):
+        return self.getitem_inner(index)
+        
+    def getitem_inner(self, index: int, **kwargs):
         # Entry point for dataset iteration
-        feats = self.dataset[index]  # feats has {'indep', 'atom_mask', 'metadata', 'chosen_dataset', 'sel_item', 'task', 'item_context', 'mask_gen_seed', 'params', 'conditions_dict'}
+        if hasattr(self.dataset, 'getitem_inner'):
+            feats = self.dataset.getitem_inner(index, **kwargs)
+        else:
+            feats = self.dataset[index]  # feats has {'indep', 'atom_mask', 'metadata', 'chosen_dataset', 'sel_item', 'task', 'item_context', 'mask_gen_seed', 'params', 'conditions_dict'}
         logger.debug(f'Transform root inputs: {set(feats.keys()) if isinstance(feats, dict) else type(feats)}')
 
         # Iterate through all transforms in order and update the features

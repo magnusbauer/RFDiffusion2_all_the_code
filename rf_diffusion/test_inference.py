@@ -5,6 +5,7 @@ from unittest import mock
 from pathlib import Path
 from inspect import signature
 import assertpy
+import time
 
 import hydra
 from hydra import compose, initialize
@@ -36,6 +37,8 @@ from rf_diffusion.frame_diffusion.rf_score.model import RFScore
 from rf_diffusion.conditions.ss_adj.sec_struct_adjacency import SS_HELIX, SS_STRAND, SS_LOOP, SS_MASK, N_SS
 from omegaconf import OmegaConf
 from rf_diffusion.inference.filters import TestFilter
+from rf_diffusion.inference.t_setup import setup_t_arrays
+import rf_diffusion.inference.mid_run_modifiers as mrm
 
 
 ic.configureOutput(includeContext=True)
@@ -1929,6 +1932,8 @@ class TestInference(unittest.TestCase):
         A pdb should not be generated and there should be an empty .trb to prove we tried
         '''
 
+        output_prefix = 'debug/aa_small' + str(os.getpid()) + '_%.4f'%(time.time() % 100)
+
         for actual_fail_criterion in ['++filters.max_attempts_per_design=2', '++filters.max_steps_per_design=2']:
 
             # We have to construct our own conf so we can figure out the names
@@ -1938,6 +1943,7 @@ class TestInference(unittest.TestCase):
 
             conf = construct_conf([
                     'diffuser.T=1',
+                    f'inference.output_prefix={output_prefix}',
                     'inference.input_pdb=test_data/1qys.pdb',
                     "contigmap.contigs=['1-1,A64-64']",
                     'filters.names=["MyFilter:TestFilter"]',
@@ -1982,6 +1988,139 @@ class TestInference(unittest.TestCase):
 
             trb = np.load(short_trb_name,allow_pickle=True)
             assert len(trb) == 0
+
+            os.remove(short_trb_name)
+
+
+
+    def test_mid_run_modifiers(self):
+        '''
+        These things are so "protocol level" that there's not really a way to assert they are working
+
+        Instead we make sure they don't crash
+        '''
+
+        output_prefix = 'debug/aa_small' + str(os.getpid()) + '_%.4f'%(time.time() % 100)
+
+        # We have to construct our own conf so we can figure out the names
+
+        if hydra.core.global_hydra.GlobalHydra().is_initialized():
+            hydra.core.global_hydra.GlobalHydra().clear()
+
+        conf = construct_conf([
+                'diffuser.T=2',
+                f'inference.output_prefix={output_prefix}',
+                'inference.input_pdb=test_data/1qys.pdb',
+                "contigmap.contigs=['1-1,A64-64']",
+                'inference.contig_as_guidepost=True',
+
+                'inference.custom_t_range=[2,-2,1]',
+                'inference.final_step=1',
+                'inference.start_str_self_cond_at_t=1',
+                'inference.write_extra_ts=[2]',
+                # 'inference.ORI_guess=True', # ORI_guess has too much stochasticity with floating point errors
+                'inference.fast_partial_trajectories=[[1,2]]',
+                'inference.fpt_drop_guideposts=True',
+                'inference.fpt_diffuse_chains=0',
+
+            ])
+
+        expected_suffixes = [
+            '_0-atomized-bb-True_fpt-1-2.pdb',
+            '_0-atomized-bb-True.pdb',
+            '_0-atomized-bb-True_t2.pdb',
+            '_0-atomized-bb-True.trb',
+        ]
+
+        # Delete them ahead of time
+        for suffix in expected_suffixes:
+            fname = conf.inference.output_prefix + suffix
+            if os.path.exists(fname):
+                os.remove(fname)
+
+        run_inference.make_deterministic()
+        run_inference.main(conf)
+
+        # Make sure no one accidentally breaks these things
+        indep = aa_model.make_indep(conf.inference.output_prefix + expected_suffixes[0])
+
+        cmp = partial(tensor_util.cmp, atol=5e-2, rtol=0)
+        test_utils.assert_matches_golden(self, 'inference_mid_run_modifiers', indep, rewrite=False, custom_comparator=cmp)
+
+        # Make sure all the expected files are there
+        for suffix in expected_suffixes:
+            fname = conf.inference.output_prefix + suffix
+            assert os.path.exists(fname)
+            os.remove(fname)
+
+
+class TestInferenceSetup(unittest.TestCase):
+
+    def setUp(self) -> None:
+        # Some other test is leaving a global hydra initialized, so we clear it here.
+        if hydra.core.global_hydra.GlobalHydra().is_initialized():
+            hydra.core.global_hydra.GlobalHydra().clear()
+        return super().setUp()
+
+    def tearDown(self):
+        hydra.core.global_hydra.GlobalHydra.instance().clear()
+    
+
+    def test_t_setups(self):
+        '''
+        Blanket test of all the t_setups added in the first iteration
+        '''
+        conf = construct_conf([
+                'diffuser.T=8',
+                'inference.custom_t_range=[8,-7,6,5,4,1]',
+                'inference.final_step=1',
+                'inference.start_str_self_cond_at_t=4',
+                'inference.write_extra_ts=[7,6,5]',
+                'inference.ORI_guess=True',
+                'inference.fast_partial_trajectories=[[1,8,2],[4,7]]',
+                'inference.fpt_drop_guideposts=True',
+                'inference.fpt_diffuse_chains=1',
+            ])
+
+        (
+            ts,
+            n_steps,
+            self_cond,
+            final_it,
+            addtl_write_its,
+            mid_run_modifiers,
+        ) = setup_t_arrays(conf, 8)
+
+        goal_ts           = torch.tensor([8,8,7,6,5,4,1,8,2,7])
+        goal_n_steps      = torch.tensor([1,1,1,1,1,1,3,1,1,1])
+        goal_self_cond    = torch.tensor([0,0,0,0,0,1,1,0,0,0]).bool()
+        
+        assert torch.allclose(ts, goal_ts), f'{ts} {goal_ts}'
+        assert torch.allclose(n_steps, goal_n_steps), f'{n_steps} {goal_n_steps}'
+        assert torch.allclose(self_cond, goal_self_cond), f'{self_cond} {goal_self_cond}'
+        assert int(final_it) == 6
+
+        look_for = [2,3,4,8,9]
+        found = torch.zeros(len(look_for), dtype=bool)
+        for it, suffix in addtl_write_its:
+            it = int(it)
+            assert it in look_for
+            found[look_for.index(it)] = True
+
+        assert isinstance(mid_run_modifiers[0][0], mrm.ReinitializeWithCOMOri)
+        assert isinstance(mid_run_modifiers[1][0], mrm.PartiallyDiffusePx0Toxt)
+        assert int(mid_run_modifiers[1][0].t) == 7
+        assert isinstance(mid_run_modifiers[6][0], mrm.RemoveGuideposts)
+        assert isinstance(mid_run_modifiers[6][1], mrm.DiffuseChains)
+        assert len(mid_run_modifiers[6][1].diffused_chains) == 1
+        assert mid_run_modifiers[6][1].diffused_chains[0] == 1
+
+        for it, from_it in zip([6, 7, 8], [6, 7, 5]):
+            assert isinstance(mid_run_modifiers[it][-2], mrm.ReplaceXtWithPx0), f'{it}'
+            assert isinstance(mid_run_modifiers[it][-1], mrm.PartiallyDiffusePx0Toxt), f'{it}'
+            assert int(mid_run_modifiers[it][-1].t) == int(ts[it+1]), f'{it} {from_it}, {mid_run_modifiers[it][-1].t} {ts[it+1]}'
+
+
 
 
 

@@ -47,7 +47,7 @@ class PDBLoaderDataset(torch.utils.data.Dataset):
         except IndexError as e:
             raise Exception(f"Failed to access PDBLoaderDataset[{idx}]") from e
 
-    def getitem_inner(self, idx, contig_conf=None):
+    def getitem_inner(self, idx, contig_conf=None, origin_override=None):
         conf = self.conf
 
         # Create contig map from the conf
@@ -60,7 +60,11 @@ class PDBLoaderDataset(torch.utils.data.Dataset):
                                                    return_metadata=True)
         
         # Calculate centering context and validate
-        origin = centering.extract_centering_origin(indep_orig, self.pdb_fp, for_partial_diffusion(conf))        
+        if origin_override is None:
+            origin = centering.extract_centering_origin(indep_orig, self.pdb_fp, for_partial_diffusion(conf))
+        else:
+            print("Overriding origin with:", origin_override)
+            origin = origin_override
 
         # Prepare non atomization contig insertion (pre tranform-indep)
         model_adaptor = aa_model.Model(conf)
@@ -94,9 +98,9 @@ class ScaffoldPDBLoaderDataset(PDBLoaderDataset):
         self.scaffold_loader = scaffold_loader
         self.scaffold_loader.set_target_feats(self.target_feats)
 
-    def getitem_inner(self, idx):
+    def getitem_inner(self, idx, **kwargs):
         contig_conf, ss_adj = self.scaffold_loader[idx]
-        feats = super().getitem_inner(idx, contig_conf=contig_conf)
+        feats = super().getitem_inner(idx, contig_conf=contig_conf, **kwargs)
         feats['conditions_dict']['ss_adj'] = ss_adj
 
         return feats
@@ -236,16 +240,28 @@ class InferenceDataset:
             )
 
         def feature_tuple_from_feature_dict(**kwargs):
+            indep_uncond = kwargs.pop('indep_uncond')
+            indep_orig = kwargs.pop('indep_orig')
+            indep_cond = kwargs.pop('indep_cond')
+            metadata = kwargs.pop('metadata')
+            is_diffused = kwargs.pop('is_diffused')
+            atomizer = kwargs.pop('atomizer')
+            contig_map = kwargs.pop('contig_map')
+            t_step_input = kwargs.pop('t_step_input')
+            conditions_dict = kwargs.pop('conditions_dict')
+            masks_1d = kwargs.pop('masks_1d')
             return (
-                    kwargs['indep_uncond'],
-                    kwargs['indep_orig'],
-                    kwargs['indep_cond'],
-                    kwargs['metadata'],
-                    kwargs['is_diffused'],
-                    kwargs['atomizer'],
-                    kwargs['contig_map'],
-                    kwargs['t_step_input'],
-                    kwargs['conditions_dict']
+                    indep_uncond,
+                    indep_orig,
+                    indep_cond,
+                    metadata,
+                    is_diffused,
+                    atomizer,
+                    contig_map,
+                    t_step_input,
+                    conditions_dict,
+                    masks_1d,
+                    kwargs
             )
 
         # Create dataset from the pdb input and config
@@ -276,7 +292,13 @@ class InferenceDataset:
         self.dataset = data_loader.TransformedDataset(dataset, transforms)
 
     def __getitem__(self, i):
-        return self.dataset[i]
+        return self.getitem_inner(i)
+
+    def getitem_inner(self, i, **kwargs):
+        if hasattr(self.dataset, 'getitem_inner'):
+            return self.dataset.getitem_inner(i, **kwargs)
+        else:
+            return self.dataset[i]
 
     def __len__(self):
         return len(self.dataset)

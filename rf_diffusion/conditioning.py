@@ -586,7 +586,8 @@ class CenterPostTransform:
         return kwargs | dict(
             indep=indep,
             is_diffused=is_diffused,
-            conditions_dict=conditions_dict
+            conditions_dict=conditions_dict,
+            origin=origin
         )
 
 

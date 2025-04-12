@@ -23,7 +23,7 @@ class TestLoss(unittest.TestCase):
 
         # Load the input data during inference
         dataset = rf_diffusion.inference.data_loader.InferenceDataset(conf)
-        _, _, indep_contig, _, is_diffused, atomizer, contig_map, t_step_input, _ = next(iter(dataset))
+        _, _, indep_contig, _, is_diffused, atomizer, contig_map, t_step_input, _, _, _ = next(iter(dataset))
 
         point_types = aa_model.get_point_types(indep_contig, atomizer)
         true = indep_contig.xyz
@@ -60,7 +60,7 @@ class TestLoss(unittest.TestCase):
                                                                     "inference.input_pdb='benchmark/input/gaa.pdb'"])
         # Load the input data during inference
         dataset = rf_diffusion.inference.data_loader.InferenceDataset(conf)
-        _, _, indep_contig, _, is_diffused, atomizer, contig_map, t_step_input, _ = next(iter(dataset))
+        _, _, indep_contig, _, is_diffused, atomizer, contig_map, t_step_input, _, _, _ = next(iter(dataset))
 
         true = indep_contig.xyz
         perturbed = perturbations.se3_perturb(true)

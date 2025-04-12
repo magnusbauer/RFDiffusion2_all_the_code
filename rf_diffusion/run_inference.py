@@ -50,9 +50,12 @@ import rf_diffusion.features as features
 from rf_diffusion.import_pyrosetta import prepare_pyrosetta
 from rf_diffusion import silent_files
 import rf_diffusion.inference.utils as iu
+import rf_diffusion.conditions.util
 import tqdm
 import rf_diffusion.atomization_primitives
 from rf_diffusion.inference.filters import init_filters, FilterFailedException, do_filtering
+from rf_diffusion.inference.t_setup import setup_t_arrays
+from rf_diffusion.inference.mid_run_modifiers import apply_mid_run_modifiers
 ic.configureOutput(includeContext=True)
 
 import rf_diffusion.nucleic_compatibility_utils as nucl_utils
@@ -316,7 +319,7 @@ def sample_one(sampler, i_des=0, simple_logging=False):
         FilterFailedException: If filters are enabled and one fails
     '''
 
-    indep, contig_map, atomizer, t_step_input = sampler.sample_init(i_des)
+    indep, contig_map, _, t_step_input = sampler.sample_init(i_des)
     log = logging.getLogger(__name__)
     filters = init_filters(sampler._conf)
 
@@ -337,11 +340,15 @@ def sample_one(sampler, i_des=0, simple_logging=False):
     extra_tXd_names = getattr(sampler._conf, 'extra_tXd', [])
     features_cache = features.init_tXd_inference(indep, extra_tXd_names, sampler._conf.extra_tXd_params, sampler._conf.inference.conditions)
 
-    ts = torch.arange(int(t_step_input), sampler.inf_conf.final_step-1, -1)
-    n_steps = torch.ones(len(ts), dtype=int)
-    partially_diffuse_before = torch.zeros(len(ts), dtype=bool)
-    if sampler._conf.inference.custom_t_range:
-        ts, n_steps, partially_diffuse_before = iu.get_custom_t_range(sampler._conf)
+    # On a vanilla diffusion run. ts=range(t_step_input,final_step-1,-1). n_steps=ones(), self_cond=[str_self_cond], final_it=len(ts)-1
+    (
+        ts,                 # The "diffusion t" we will use for each step
+        n_steps,            # Number of diffuser.reverse() steps to take
+        self_cond,          # Should we self condition?
+        final_it,           # Which timestep is the normal last output
+        addtl_write_its,    # Are there other timepoints we should write to disc?
+        mid_run_modifiers,  # Trajectory altering movers for specific protocols
+    ) = setup_t_arrays(sampler._conf, t_step_input)
 
     # Loop over number of reverse diffusion time steps.
     for it, t in tqdm.tqdm(list(enumerate(ts))):
@@ -351,14 +358,12 @@ def sample_one(sampler, i_des=0, simple_logging=False):
             if t%10 == 0:
                 e = t
             print(f'{e}', end='')
-        if partially_diffuse_before[it]:
-            indep.xyz[:,:3] = rfo.xyz[-1, 0, :]
-            indep.xyz = indep.xyz.to('cpu')
-            indep, _ = aa_model.diffuse(sampler._conf, sampler.diffuser, indep, sampler.is_diffused, int(t))
+
         if sampler._conf.preprocess.randomize_frames:
             print('randomizing frames')
             indep.xyz = aa_model.randomly_rotate_frames(indep.xyz)
         extra['n_steps'] = n_steps[it]
+        extra['self_cond'] = self_cond[it]
         px0, x_t, seq_t, rfo, extra = sampler.sample_step(
             t, indep, rfo, extra, features_cache)
         # assert_that(indep.xyz.shape).is_equal_to(x_t.shape)
@@ -393,6 +398,32 @@ def sample_one(sampler, i_des=0, simple_logging=False):
         # If len(filters) == 0 this immediately returns
         do_filtering(filters, indep, t, it, px0, scores, contig_map=contig_map, is_diffused=sampler.is_diffused)
 
+        # These mid_run_modifiers are not normally present
+        #   Even though this block of code is scary. It would even scarier if this for-loop was full of 20 if statements
+        (
+            sampler,
+            indep,
+            contig_map,
+            rfo,
+            px0_xyz_stack,
+            denoised_xyz_stack,
+            seq_stack,
+            final_it,
+            stop,
+        ) = apply_mid_run_modifiers(mid_run_modifiers[it],
+                                    i_des,
+                                    sampler,
+                                    indep,
+                                    contig_map,
+                                    rfo,
+                                    px0_xyz_stack,
+                                    denoised_xyz_stack,
+                                    seq_stack,
+                                    final_it,
+                                    )
+        if stop:
+            break
+
     if t_step_input == 0:
         # Null-case: no diffusion performed.
         px0_xyz_stack.append(sampler.indep_orig.xyz)
@@ -406,6 +437,9 @@ def sample_one(sampler, i_des=0, simple_logging=False):
     px0_xyz_stack = torch.stack(px0_xyz_stack)
     px0_xyz_stack = torch.flip(px0_xyz_stack, [0,])
     ts = torch.flip(ts, [0,])
+    seq_stack = list(reversed(seq_stack))
+    final_it = len(ts) - 1 - final_it
+    addtl_write_its = [(len(ts) - 1 - it, suff) for it,suff in addtl_write_its]
 
     for k, v in traj_stack.items():
         traj_stack[k] = torch.flip(torch.stack(v), [0,])
@@ -461,15 +495,15 @@ def sample_one(sampler, i_des=0, simple_logging=False):
 
     is_diffused = sampler.is_diffused.clone()
 
-    if atomizer is not None:
+    if sampler.atomizer is not None:
         indep_atomized = indep.clone()
 
         # deatomize `is_diffused`
-        is_diffused = atomize.deatomize_mask(atomizer, indep_atomized, is_diffused)
+        is_diffused = atomize.deatomize_mask(sampler.atomizer, indep_atomized, is_diffused)
 
         init_seq_stack = copy.deepcopy(seq_stack)
         indep, px0_xyz_stack, denoised_xyz_stack, seq_stack = \
-            deatomize_sampler_outputs(atomizer, indep, px0_xyz_stack, denoised_xyz_stack, seq_stack)
+            deatomize_sampler_outputs(sampler.atomizer, indep, px0_xyz_stack, denoised_xyz_stack, seq_stack)
         
         for k, v in traj_stack.items():
             xyz_stack_new = []
@@ -477,11 +511,11 @@ def sample_one(sampler, i_des=0, simple_logging=False):
                 xyz_i = aa_model.pad_dim(v[i], 1, ChemData().NTOTAL, torch.nan)
                 indep_atomized.seq = init_seq_stack[i].argmax(-1)
                 indep_atomized.xyz = xyz_i
-                indep_deatomized = atomizer.deatomize(indep_atomized)
+                indep_deatomized = sampler.atomizer.deatomize(indep_atomized)
                 xyz_stack_new.append(indep_deatomized.xyz)
             traj_stack[k] = torch.stack(xyz_stack_new)
 
-    return indep, contig_map, atomizer, t_step_input, denoised_xyz_stack, px0_xyz_stack, seq_stack, is_diffused, raw, traj_stack, ts, scores
+    return indep, contig_map, sampler.atomizer, t_step_input, denoised_xyz_stack, px0_xyz_stack, seq_stack, is_diffused, raw, traj_stack, ts, scores, final_it, addtl_write_its
 
 def add_implicit_side_chain_atoms(seq, act_on_residue, xyz, xyz_with_sc):
     '''
@@ -553,14 +587,15 @@ def deatomize_sampler_outputs(atomizer, indep, px0_xyz_stack, denoised_xyz_stack
 
     return indep_deatomized, px0_xyz_stack_new, denoised_xyz_stack_new, seq_stack_new
 
-def save_outputs(sampler, out_prefix, indep, contig_map, atomizer, t_step_input, denoised_xyz_stack, px0_xyz_stack, seq_stack, is_diffused_in, raw, traj_stack, ts, scores):
+
+def save_outputs(sampler, out_prefix, indep, contig_map, atomizer, t_step_input, denoised_xyz_stack, px0_xyz_stack, seq_stack, is_diffused_in, raw, traj_stack, ts, scores, final_it, addtl_write_its):
     log = logging.getLogger(__name__)
 
     # Make the output folder
     out_head, out_tail = os.path.split(out_prefix)
     os.makedirs(out_head, exist_ok=True)
 
-    final_seq = seq_stack[-1]
+    final_seq = seq_stack[final_it]
 
 
     # Get default output file tokens for diffused sequence positions and which tokens are considered masks
@@ -585,16 +620,11 @@ def save_outputs(sampler, out_prefix, indep, contig_map, atomizer, t_step_input,
     chain_Ls = rf2aa.util.Ls_from_same_chain_2d(indep.same_chain)
 
     # Figure out which timesteps we are going to output
-    write_ts = []
-    for extra_t in sampler._conf.inference.write_extra_ts:
-        assert extra_t in ts, f'inference.write_extra_ts: t:{t} was not part of the ts: {ts}'
-        write_ts.append(extra_t)
-    write_ts.append(None) # Make sure the default is last so that the variables all end up correct after the loop
+    write_ts = list(addtl_write_its)
+    write_ts.append((final_it, '')) # Make sure the default is last so that the variables all end up correct after the loop
 
-    for write_t in write_ts:
+    for stack_idx, t_suffix in write_ts:
 
-        t_suffix = '' if write_t is None else f'_t{write_t}'
-        stack_idx = 0 if write_t is None else list(ts).index(write_t)
         # ic(seq_design)
 
         # Make copies of sampler outputs for final modifications
@@ -609,7 +639,7 @@ def save_outputs(sampler, out_prefix, indep, contig_map, atomizer, t_step_input,
         # If using guideposts, infer their placement from the final pX0 prediction.
         if sampler._conf.inference.contig_as_guidepost:
             # Use final denoised_xyz for inference unless we aren't at final_step
-            match_xyz = denoised_xyz_stack[stack_idx] if write_t is None else px0_xyz_stack[stack_idx]
+            match_xyz = denoised_xyz_stack[stack_idx] if stack_idx == final_it else px0_xyz_stack[stack_idx]
             match_idx, gp_idx, gp_contig_mappings = gp.match_guideposts_and_generate_mappings(indep, is_diffused, contig_map, match_xyz)
 
             # Copy guidepost sequence and idx to output if desired
@@ -684,7 +714,7 @@ def save_outputs(sampler, out_prefix, indep, contig_map, atomizer, t_step_input,
         aa_model.write_traj(out_unidealized, xyz_design[None,...], seq_design, indep.bond_feats, ligand_name_arr=contig_map.ligand_names, chain_Ls=chain_Ls, idx_pdb=indep.idx)
 
     # Setup stack_mask for writing smaller trajectories
-    t_int = np.arange(int(t_step_input), sampler.inf_conf.final_step-1, -1)[::-1]
+    t_int = ts.clone() #np.arange(int(t_step_input), sampler.inf_conf.final_step-1, -1)[::-1]
     stack_mask = torch.ones(len(denoised_xyz_stack), dtype=bool)
     if len(sampler._conf.inference.write_trajectory_only_t) > 0:
         assert sampler._conf.inference.write_trajectory or sampler._conf.inference.write_trb_trajectory, ('If inference.write_trajectory_only_t is enabled'
