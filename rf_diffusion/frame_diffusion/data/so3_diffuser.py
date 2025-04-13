@@ -356,7 +356,10 @@ class SO3Diffuser:
         Returns:
             [..., 3] rotation vector at next step.
         """
-        if not np.isscalar(t): raise ValueError(f'{t} must be a scalar.')
+        if torch.is_tensor(t):
+            t = t.item()
+        if not np.isscalar(t): 
+            raise ValueError(f'{t} must be a scalar.')
 
         g_t = self.diffusion_coef(t)
         z = noise_scale * np.random.normal(size=score_t.shape)

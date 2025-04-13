@@ -125,6 +125,8 @@ class R3Diffuser:
         Returns:
             [..., 3] positions at next step t-1.
         """
+        if torch.is_tensor(t):
+            t = t.item()
         if not np.isscalar(t):
             raise ValueError(f'{t} must be a scalar.')
         x_t = self._scale(x_t)
