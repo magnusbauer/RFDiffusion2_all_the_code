@@ -239,8 +239,7 @@ class NRBStyleSelfCond(Sampler):
             tors_t_1: (L, ?) The updated torsion angles of the next  step.
             plddt: (L, 1) Predicted lDDT of x0.
         '''
-        print('SAMPLING STEP') 
-        print('*'*100)
+
         if self._conf.inference.get('recenter_xt'):
             indep_cond = copy.deepcopy(indep)
             indep_uncond_com = indep.xyz[:,1,:].mean(dim=0)

@@ -205,10 +205,6 @@ class Indep:
         if hasattr(self, 'origin'):
             indep_copy.origin = _deepcopy_detached(self.origin)
 
-        if hasattr(self, 'extra_t2d'):
-            # indep_copy.extra_t2d = copy.deepcopy(self.extra_t2d.detach())
-            indep_copy.extra_t2d = _deepcopy_detached(self.extra_t2d)
-
         return indep_copy
 
 

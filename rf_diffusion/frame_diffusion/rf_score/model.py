@@ -171,56 +171,6 @@ def rfi_from_input_feats(input_feats):
     indep.seq[is_seq_masked] = ChemData().MASKINDEX
     return aa_model_converter.prepro(indep, input_feats['t'].to('cpu') * T, is_diffused.to('cpu'))
 
-# def multi_cycle_forward(model, rfi, N_cycle, **kwargs): 
-#     """
-#     Function for performing a forward pass with RF recycles. 
-#     """
-#     model.eval()
-#     assert N_cycle > 0
-
-#     if N_cycle == 1: 
-#         rfi_dict = dataclasses.asdict(rfi)
-#         return rf_diffusion.aa_model.RFO(*model(**{**rfi_dict, **kwargs}))
-    
-#     else: 
-#         for i in range(N_cycle-1):
-
-#             if i == 0:
-#                 # First cycle - initialize 'prev' inputs 
-#                 rfi_dict = dataclasses.asdict(rfi)
-#                 input = {**rfi_dict, **kwargs}
-#                 input['msa_prev'] = None
-#                 input['pair_prev'] = None
-#                 input['state_prev'] = None
-#                 input['return_raw'] = True
-#                 out = model(**input)
-
-#             else:
-#                 _______,xyz_allatom, _, msa_prev, pair_prev, state, _= out
-#                 rfi_dict = dataclasses.asdict(rfi)
-#                 rfi_dict['msa_prev']    = msa_prev
-#                 rfi_dict['pair_prev']   = pair_prev
-#                 rfi_dict['xyz']         = xyz_prev
-#                 rfi_dict['state_prev']  = state
-
-#                 input = {**rfi_dict, **kwargs}
-#                 input['return_raw'] = True
-#                 out = model(**input)
-
-#             # Do the last recycle, and return RFO 
-#             msa_prev, pair_prev, xyz_prev, state, alpha_prev, _ = out
-#             rfi_dict = dataclasses.asdict(rfi)
-#             rfi_dict['msa_prev']    = msa_prev
-#             rfi_dict['pair_prev']   = pair_prev
-#             rfi_dict['xyz']         = xyz_prev
-#             rfi_dict['state_prev']  = state
-
-#             input = {**rfi_dict, **kwargs}
-#             input['return_raw'] = False
-
-#             # with grad 
-#             return rf_diffusion.aa_model.RFO(*model(**input))
-
 
 def unpack_out_raw_yesquats(o:tuple):
     """Unpack 'raw' outputs the RF forward pass outputs
