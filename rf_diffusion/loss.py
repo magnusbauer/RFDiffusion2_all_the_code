@@ -18,7 +18,6 @@ if TYPE_CHECKING:
     from rf_diffusion.aa_model import Indep
     from omegaconf import OmegaConf
 
-import pdb 
 
 def weighted_decay_sum(losses, gamma=0.99):
     assert len(losses.shape) == 1
