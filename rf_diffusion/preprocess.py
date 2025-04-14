@@ -2,7 +2,7 @@ import torch
 from rf_diffusion.aa_model import RFI
 from rf_diffusion.chemical import ChemicalData as ChemData
 
-def add_motif_template(rfi: RFI, motif_template: dict, masks_1d: dict) -> RFI:
+def add_motif_template(rfi: RFI, t2d_motif: torch.Tensor, xyz_t_motif: torch.Tensor, masks_1d: dict) -> RFI:
     """
     Adds on a third template to the RoseTTAFold input features containing
     the motif structure.
@@ -22,12 +22,9 @@ def add_motif_template(rfi: RFI, motif_template: dict, masks_1d: dict) -> RFI:
     alpha_t = rfi.alpha_t
     xyz_t   = rfi.xyz_t
 
-    # is_motif    = masks_1d['input_str_mask']
     is_motif = masks_1d['is_templated_motif']
     is_motif_2d = masks_1d['is_motif_2d']
 
-    t2d_motif   = motif_template['t2d']
-    xyz_t_motif = motif_template['xyz_t']
     """
     NOTE: Need to slice in noised crds into motif template xyz for two reasons:
     1. Although it is seemingly arbitrary, this enables us to match the golden
@@ -115,18 +112,25 @@ def wrap_featurize( indep_t,
                     is_diffused,
                     model_adaptor,
                     masks_1d,
+                    template_t2d:torch.tensor=None,
+                    template_xyz:torch.tensor=None,
                     **kwargs):
     """
     Wrapper to handle extra tXd, prepro, and adding extra templates.
+
+    Args:
+        template_t2d: templated motif, as 6D disto/anglo input 
+        template_xyz: templated motif, ca coordinates 
     """
 
     # create RosettaFold input features
     rfi = model_adaptor.prepro(indep_t, t, is_diffused)
 
     # add the templated motif information/features
-    if kwargs.get('motif_template', None) is not None:
+    if template_t2d is not None:
+        assert template_xyz is not None, "If using 2D template, need xyz for template."
         # Have to change the frames before computing the template
-        rfi = add_motif_template(rfi, kwargs['motif_template'], masks_1d)
+        rfi = add_motif_template(rfi, template_t2d, template_xyz, masks_1d)
         
         # Make sure motif isn't frozen
         rfi.is_motif = torch.zeros_like(rfi.is_motif)

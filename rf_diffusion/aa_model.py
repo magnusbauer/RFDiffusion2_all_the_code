@@ -585,13 +585,13 @@ class SymAdaptRFO(ipd.sym.SymAdaptDataClass):
     adapts = RFO
 
 
-def get_refinement_metadata(meta:dict, conf:DictConfig):
+def get_refinement_metadata(conditions:dict, conf:DictConfig):
     """
     Retrives information about the original diffusion run for refinement. 
     E.g., grab original motif coordinates, ij_visible info, etc. 
 
     Args: 
-        meta: metadata from the original diffusion run
+        conditions: dicionary of extra conditions for run
         conf: run config
     """
     pdb = conf.inference.input_pdb
@@ -613,7 +613,7 @@ def get_refinement_metadata(meta:dict, conf:DictConfig):
     motif_indep = make_indep(motif_pdb, motif_ligand, return_metadata=False)
 
     ref_dict['motif_indep'] = motif_indep
-    meta['ref_dict'] = ref_dict
+    conditions['ref_dict'] = ref_dict
 
     # Make a contig string which encodes a contig map that 
     # has motifs in the same location that diffusion run had them. 

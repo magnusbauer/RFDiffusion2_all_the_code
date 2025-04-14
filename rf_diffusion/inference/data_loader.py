@@ -63,8 +63,9 @@ class PDBLoaderDataset(torch.utils.data.Dataset):
         spy({'indep_getitem_inner_point_A':copy.deepcopy(indep_orig)})
         
         # If doing refinement, add OG motif coordinates to metadata for later templating
+        conditions_dict = {}
         if conf.inference.refine:
-            aa_model.get_refinement_metadata(metadata, conf)
+            aa_model.get_refinement_metadata(conditions_dict, conf)
 
         contig_map = ContigMap(self.target_feats, **(contig_conf or conf.contigmap))
 
@@ -95,7 +96,7 @@ class PDBLoaderDataset(torch.utils.data.Dataset):
 
         feats = {'contig_map': contig_map, 'indep': indep, 'metadata': metadata, 
                  'masks_1d': masks_1d, 'L': L, 'conf': conf,
-                 'origin': origin, 'conditions_dict': {}}
+                 'origin': origin, 'conditions_dict': conditions_dict}
 
         spy({'indep_getitem_inner_point_B':copy.deepcopy(indep)})
         return feats

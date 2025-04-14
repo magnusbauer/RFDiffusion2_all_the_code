@@ -255,8 +255,9 @@ class NRBStyleSelfCond(Sampler):
                             't'                 : t,
                             'is_diffused'       : self.is_diffused,
                             'model_adaptor'     : self.model_adaptor,
-                            'masks_1d'          : self.metadata.get('masks_1d', None), 
-                            'motif_template'    : self.metadata.get('motif_template', None)
+                            'masks_1d'          : self.masks_1d, 
+                            'template_t2d'      : self.conditions_dict.get('template_t2d', None),
+                            'template_xyz'      : self.conditions_dict.get('template_xyz', None)
                             }
 
         rfi = wrap_featurize(**featurize_kwargs)

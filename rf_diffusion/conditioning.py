@@ -26,7 +26,7 @@ from rf_diffusion import run_inference
 from rf_diffusion import mask_generator
 from rf_diffusion import ppi
 from rf_diffusion.conditions.util import expand_1d_atomized_ok_gp_not, pop_conditions_dict
-
+import pdb 
 ######## Group all imported transforms together ###########
 
 from rf_diffusion.conditions.ss_adj.sec_struct_adjacency import (LoadTargetSSADJTransform, AutogenerateTargetSSADJTransform, GenerateSSADJTrainingTransform,  # noqa: F401
@@ -192,13 +192,13 @@ class GetTemplatedMotifMasks:
                  indep: Indep, 
                  contig_map: ContigMap, 
                  masks_1d: dict, 
-                 metadata: dict, 
+                 conditions_dict: dict, 
                  **kwargs):
-        
+
         if self.ij_visible is None:
             # we must be doing refinement and need to compute ij_visible from loaded .trb
-            assert metadata.get('ref_dict', False), 'Did not recieve refinement dictionary in metadata. Did you set the inference.refine flag?'
-            ref_dict = metadata['ref_dict']
+            assert conditions_dict.get('ref_dict', False), 'Did not recieve refinement dictionary in conditions_dict. Did you set the inference.refine flag?'
+            ref_dict = conditions_dict['ref_dict']
             self.ij_visible = ref_dict['ij_visible']
             assert (isinstance(self.ij_visible, str)) and (len(self.ij_visible) > 0), f'Got invalid ij_visible from .trb: {self.ij_visible}'
         else:
@@ -226,12 +226,11 @@ class GetTemplatedMotifMasks:
 
         masks_1d['input_str_mask'] = is_motif
         masks_1d['is_motif_2d'] = token_pair_is_revealed
-        metadata['masks_1d'] = masks_1d 
 
-        return {'indep'     : indep, 
-                'masks_1d'  : masks_1d,
-                'metadata'  : metadata, 
-                'contig_map': contig_map, 
+        return {'indep'             : indep, 
+                'masks_1d'          : masks_1d,
+                'conditions_dict'   : conditions_dict, 
+                'contig_map'        : contig_map, 
                 **kwargs}
 
 class ComputeMotifTemplate: 
@@ -244,9 +243,9 @@ class ComputeMotifTemplate:
         self.omit_frame_permutation = omit_frame_permutation
 
     def __call__(self, 
-                 indep      : Indep,
-                 masks_1d   : dict,
-                 metadata   : dict,
+                 indep           : Indep,
+                 masks_1d        : dict,
+                 conditions_dict : dict,
                  **kwargs): 
         
         """
@@ -272,23 +271,19 @@ class ComputeMotifTemplate:
                                                  indep.get_atom_frames(self.omit_frame_permutation),  
                                                  use_cb    = self.use_cb,
                                                  mask_t_2d = is_motif_2d[None])
-        
-
-        # t2d_out = torch.cat((t2d_motif, is_motif_2d[None,...,None]), dim=-1) # concatenate indicators 
 
         ### xyz_t ###
         xyz_t_out = motif_xyz_t[:,1] # CA's of motif residues 
 
-        motif_template = {'t2d': t2d_motif, 'xyz_t': xyz_t_out}
-        metadata['motif_template'] = motif_template
+        conditions_dict['template_t2d'] = t2d_motif
+        conditions_dict['template_xyz'] = xyz_t_out
 
         masks_1d['input_str_mask'] = torch.zeros_like(is_motif) # ensure it gets diffused in 3D 
         masks_1d['is_templated_motif'] = is_motif # use this later inside of preprocess.add_motif_template
 
-        return {'indep'         : indep,
-                'masks_1d'      : masks_1d,
-                'motif_template': motif_template,
-                'metadata'      : metadata,
+        return {'indep'             : indep,
+                'masks_1d'          : masks_1d,
+                'conditions_dict'   : conditions_dict,
                 **kwargs}
 
 
@@ -306,7 +301,7 @@ class ComputeMotifTemplateRefine:
 
     def __call__(self, 
                  indep: Indep, 
-                 metadata: dict,
+                 conditions_dict: dict,
                  masks_1d: dict,
                  **kwargs): 
         """
@@ -314,10 +309,10 @@ class ComputeMotifTemplateRefine:
             indep (aa_model.Indep): Should be unnoised version of backbone,
                 potentially with ligand, to be noised and refined.
             
-            metadata (dict): Metadata dict, but we will use it for access
-                to original contig info and original motif structure.
+            conditions_dict (dict): For storing/accessing the 
+                original contig info and original motif structure.
         """
-        ref_dict = metadata['ref_dict']
+        ref_dict = conditions_dict['ref_dict']
         motif_indep  = ref_dict['motif_indep']
         ij_visible   = ref_dict['ij_visible']
         con_hal_idx0 = torch.from_numpy(ref_dict['con_hal_idx0'])
@@ -348,7 +343,6 @@ class ComputeMotifTemplateRefine:
 
         masks_1d['input_str_mask'] = is_motif
         masks_1d['is_motif_2d'] = token_pair_is_revealed
-        metadata['masks_1d'] = masks_1d 
 
         ### Compute motif template ###
         ##############################
@@ -366,16 +360,16 @@ class ComputeMotifTemplateRefine:
                                                  mask_t_2d  = token_pair_is_revealed[None])
 
         xyz_t_out = hal_motif_template_xyz[:,1] # CA's of motif residues
-        motif_template = {'t2d': t2d_motif, 'xyz_t': xyz_t_out}
-        metadata['motif_template'] = motif_template
+
+        conditions_dict['template_t2d'] = t2d_motif
+        conditions_dict['template_xyz'] = xyz_t_out
 
         masks_1d['input_str_mask'] = torch.zeros_like(is_motif) # ensure it gets diffused in 3D
         masks_1d['is_templated_motif'] = is_motif
 
-        return {'indep'     : indep,
-                'masks_1d'  : masks_1d,
-                'metadata'  : metadata,
-                'motif_template': motif_template,
+        return {'indep'           : indep,
+                'masks_1d'        : masks_1d,
+                'conditions_dict' : conditions_dict,
                 **kwargs}
 
 class GenerateMasks:

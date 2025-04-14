@@ -442,7 +442,7 @@ def sample_one(sampler, i_des=0, simple_logging=False):
 
 
         if sampler._conf.inference.get('refine', False):
-            px0 = add_carfd_sidechains(px0, sampler.metadata['ref_dict'])
+            px0 = add_carfd_sidechains(px0, sampler.conditions_dict['ref_dict'])
 
         px0_xyz_stack.append(px0)
         denoised_xyz_stack.append(x_t)
