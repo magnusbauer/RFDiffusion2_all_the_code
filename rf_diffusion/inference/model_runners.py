@@ -26,7 +26,7 @@ import os
 import rf_diffusion.inference.data_loader
 from rf_diffusion.preprocess import wrap_featurize 
 import sys
-
+import pdb 
 # When you import this it causes a circular import due to the changes made in apply masks for self conditioning
 # This import is only used for SeqToStr Sampling though so can be fixed later - NRB
 # import data_loader 
@@ -275,24 +275,17 @@ class NRBStyleSelfCond(Sampler):
             idx_pdb, self.chain_idx = self.old_symmetry.res_idx_procesing(res_idx=idx_pdb)
 
         with torch.no_grad():
-            if self.recycle_schedule[t-1] > 1:
-                raise Exception('not implemented')
-            for _ in range(self.recycle_schedule[t-1]):
-                # This is the assertion we should be able to use, but the
-                # network's ComputeAllAtom requires even atoms to have N and C coords.
-                # aa_model.assert_has_coords(rfi.xyz[0], indep)
-                assert not rfi.xyz[0,:,:3,:].isnan().any(), f'{t}: {rfi.xyz[0,:,:3,:]}'
-                # Model does not have side chain outputs
 
-                if not self._conf.inference.refine:
-                    N_cycle = 1
-                else:
-                    N_cycle = self._conf.inference.refine_recycles
-
-                model_out = self.model.forward_from_rfi(rfi, 
-                                                        torch.tensor([t/self._conf.diffuser.T]).to(rfi.xyz.device), 
-                                                        use_checkpoint=False,
-                                                        N_cycle=N_cycle)
+            N_cycle = self.recycle_schedule[t-1]
+            # This is the assertion we should be able to use, but the
+            # network's ComputeAllAtom requires even atoms to have N and C coords.
+            # aa_model.assert_has_coords(rfi.xyz[0], indep)
+            assert not rfi.xyz[0,:,:3,:].isnan().any(), f'{t}: {rfi.xyz[0,:,:3,:]}'
+            # Model does not have side chain outputs
+            model_out = self.model.forward_from_rfi(rfi, 
+                                                    torch.tensor([t/self._conf.diffuser.T]).to(rfi.xyz.device), 
+                                                    use_checkpoint=False,
+                                                    N_cycle=N_cycle)
 
         # self._log.info(
         #         f'{current_time}: Timestep {t}')

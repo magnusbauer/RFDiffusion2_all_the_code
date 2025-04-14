@@ -306,7 +306,7 @@ def sample(sampler):
                 if suffix:
                     out_prefix_suffixed += f'-{suffix}'
                 if sampler._conf.inference.get('refine', False):
-                out_prefix_suffixed = f'{sampler._conf.inference.output_prefix}_{i_des}'
+                    out_prefix_suffixed = f'{sampler._conf.inference.output_prefix}_{i_des}'
                 print(f'{out_prefix_suffixed=}, {conf.inference.guidepost_xyz_as_design_bb=}')
                 # TODO: See what is being altered here, so we don't have to copy sampler_out
                 save_outputs(sampler, out_prefix_suffixed, *(copy.deepcopy(o) for o in sampler_out))

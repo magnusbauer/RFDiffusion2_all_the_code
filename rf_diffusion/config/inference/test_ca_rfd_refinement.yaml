@@ -10,6 +10,7 @@ inference:
   refine_recycles: 4
   ij_visible: null # has to be overriden from defaults to null/None
   num_designs: 2 # usually 2 is enough for refinement
+  recycle_schedule: "1:4" # at step 1, do 4 recycles. Quotations required...
 
 
 diffuser:
