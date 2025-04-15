@@ -196,7 +196,7 @@ class GetTemplatedMotifMasks:
 
         if self.ij_visible is None:
             # we must be doing refinement and need to compute ij_visible from loaded .trb
-            assert conditions_dict.get('ref_dict', False), 'Did not recieve refinement dictionary in conditions_dict. Did you set the inference.refine flag?'
+            assert conditions_dict.get('ref_dict', False), 'Did not recieve refinement dictionary in conditions_dict. Did you set the inference.ca_rfd_refine flag?'
             ref_dict = conditions_dict['ref_dict']
             self.ij_visible = ref_dict['ij_visible']
             assert (isinstance(self.ij_visible, str)) and (len(self.ij_visible) > 0), f'Got invalid ij_visible from .trb: {self.ij_visible}'

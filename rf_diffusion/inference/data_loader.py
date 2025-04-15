@@ -64,13 +64,13 @@ class PDBLoaderDataset(torch.utils.data.Dataset):
         
         # If doing refinement, add OG motif coordinates to metadata for later templating
         conditions_dict = {}
-        if conf.inference.refine:
+        if conf.inference.get('ca_rfd_refine'):
             aa_model.get_refinement_metadata(conditions_dict, conf)
 
         contig_map = ContigMap(self.target_feats, **(contig_conf or conf.contigmap))
 
         
-        if conf.inference.refine:
+        if conf.inference.get('ca_rfd_refine'):
             # refinement sanity check - is built contigs identical in length to input pdb? 
             assert indep_orig.is_sm.sum() + len(contig_map.ref) == len(indep_orig.xyz)
         
@@ -86,7 +86,7 @@ class PDBLoaderDataset(torch.utils.data.Dataset):
         indep, masks_1d = model_adaptor.insert_contig_pre_atomization(indep_orig, 
                                                                       contig_map, 
                                                                       metadata, 
-                                                                      for_partial_diffusion(conf) or conf.inference.refine)
+                                                                      for_partial_diffusion(conf) or conf.inference.get('ca_rfd_refine'))
 
         # Validate strategies
         centering.validate_centering_strategy(origin, for_partial_diffusion(conf), conf)    

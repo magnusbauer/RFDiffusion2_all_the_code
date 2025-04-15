@@ -305,7 +305,7 @@ def sample(sampler):
                 out_prefix_suffixed = out_prefix
                 if suffix:
                     out_prefix_suffixed += f'-{suffix}'
-                if sampler._conf.inference.get('refine', False):
+                if sampler._conf.inference.get('ca_rfd_refine', False):
                     out_prefix_suffixed = f'{sampler._conf.inference.output_prefix}_{i_des}'
                 print(f'{out_prefix_suffixed=}, {conf.inference.guidepost_xyz_as_design_bb=}')
                 # TODO: See what is being altered here, so we don't have to copy sampler_out
@@ -441,7 +441,7 @@ def sample_one(sampler, i_des=0, simple_logging=False):
         #     ipdb.set_trace()
 
 
-        if sampler._conf.inference.get('refine', False):
+        if sampler._conf.inference.get('ca_rfd_refine', False):
             px0 = add_carfd_sidechains(px0, sampler.conditions_dict['ref_dict'])
 
         px0_xyz_stack.append(px0)

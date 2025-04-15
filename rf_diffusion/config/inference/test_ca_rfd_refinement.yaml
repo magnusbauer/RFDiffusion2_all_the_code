@@ -3,7 +3,7 @@ defaults:
 
 inference: 
   ckpt_path: 'goldens/tiny_bff3_ckpt' 
-  refine: true
+  ca_rfd_refine: true
   input_pdb: ./test_data/to_refine.pdb
   cautious: false
   ligand: mu1
