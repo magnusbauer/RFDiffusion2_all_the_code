@@ -15,6 +15,7 @@ import rf2aa
 import rf_diffusion.aa_model
 from functools import partial 
 from pathlib import Path
+import os 
 
 # Custom tolerance for coordinates with torch.testing.assert_close
 th_assertclose_for_xyz = partial(torch.testing.assert_close, atol=5e-5, rtol=0.002)
@@ -152,7 +153,7 @@ class TestFeaturization(unittest.TestCase):
         cls.conf = get_ca_config()
         cls.trainer = train_multi_deep.make_trainer(cls.conf)
         cls.load_goldens()
-
+        os.environ['MASTER_PORT'] = '19283'
         try:
             cls.trainer.run_model_training(torch.cuda.device_count())
         except ExitMockCall:
