@@ -141,7 +141,8 @@ class TestFeaturization(unittest.TestCase):
         cls.trainer = train_multi_deep.make_trainer(cls.conf)
         cls.load_goldens()
         os.environ['MASTER_PORT'] = '12009'
-        
+        os.environ['MASTER_ADDR'] = 'localhost'
+
         if torch.distributed.is_initialized():
             torch.distributed.destroy_process_group()
 
