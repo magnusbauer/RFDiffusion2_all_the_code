@@ -57,6 +57,7 @@ from rf_diffusion.inference.filters import init_filters, FilterFailedException, 
 from rf_diffusion.inference.t_setup import setup_t_arrays
 from rf_diffusion.inference.mid_run_modifiers import apply_mid_run_modifiers
 ic.configureOutput(includeContext=True)
+
 import rf_diffusion.nucleic_compatibility_utils as nucl_utils
 from rf_diffusion.kinematics import th_kabsch
 
@@ -272,7 +273,6 @@ def checkpoint_i_des(sampler, i_des, nothing_written=False):
             with open(f'{individual_prefix}.trb','wb') as f_out:
                 pickle.dump({}, f_out)
 
-
 def sample(sampler):
     log = logging.getLogger(__name__)
 
@@ -296,7 +296,6 @@ def sample(sampler):
         print(f'making design {i_des} of {i_des_start}:{i_des_end}', flush=True)
         sampler_out = sample_one_w_retry(sampler, i_des)
         log.info(f'Finished design in {(time.time()-start_time)/60:.2f} minutes')
-
         if sampler_out is not None:
             original_conf = copy.deepcopy(sampler._conf)
             confs = expand_config(sampler._conf)
@@ -411,7 +410,6 @@ def sample_one(sampler, i_des=0, simple_logging=False):
             indep.xyz = aa_model.eye_frames(indep.xyz, recenter=True)
         else:
             pass
-
         extra['n_steps'] = n_steps[it]
         extra['self_cond'] = self_cond[it]
         px0, x_t, seq_t, rfo, extra = sampler.sample_step(
@@ -439,11 +437,8 @@ def sample_one(sampler, i_des=0, simple_logging=False):
         #     print(e)
         #     import ipdb
         #     ipdb.set_trace()
-
-
         if sampler._conf.inference.get('ca_rfd_refine', False):
             px0 = add_carfd_sidechains(px0, sampler.conditions_dict['ref_dict'])
-
         px0_xyz_stack.append(px0)
         denoised_xyz_stack.append(x_t)
         seq_stack.append(seq_t)
@@ -524,7 +519,6 @@ def sample_one(sampler, i_des=0, simple_logging=False):
             xyz=v[..., :ChemData().NHEAVY, :],
             xyz_with_sc=sampler.indep_orig.xyz[..., :ChemData().NHEAVY, :],
         )
-
 
     # Idealize protein backbone
     is_protein = rf2aa.util.is_protein(indep.seq)
@@ -818,12 +812,9 @@ def save_outputs(sampler, out_prefix, indep, contig_map, atomizer, t_step_input,
             con_ref_idx0=contig_map.get_mappings()['con_ref_idx0'],
             contigmap_ref=contig_map.ref, 
             contigmap_hal=contig_map.hal,
-
         )
-
         if len(scores) > 0 and sampler._conf.inference.write_scores_to_trb:
             trb['scores'] = scores
-
         # The trajectory and the indep are big and contributed to the /net/scratch crisis of 2024
         if sampler._conf.inference.write_trb_trajectory:
             trb['px0_xyz_stack'] = raw[0].detach().cpu()[stack_mask].numpy()

@@ -4,7 +4,7 @@ inference:
   input_pdb: rf_diffusion/test_data/1qys.pdb
   num_designs: 10
   design_startnum: 0
-  refine: false
+  ca_rfd_refine: false
   seed_offset: 0
   ckpt_path: /net/scratch/ahern/se3_diffusion/training/fm_tip_resume_24/fm_tip_resume_242023-12-03_14:20:34.490797/rank_0/models/RFD_44.pt
   autogenerate_contigs: False

@@ -68,7 +68,6 @@ rf_conf.preprocess.sidechain_input = False
 rf_conf.preprocess.d_t1d = 99999
 rf_conf.inference.contig_as_guidepost = True
 
-# aa_model_converter = rf_diffusion.aa_model.Model(rf_conf)
 
 from dataclasses import fields
 
@@ -169,6 +168,7 @@ def rfi_from_input_feats(input_feats):
     # TODO: change this when atomization comes into play
     is_seq_masked = is_diffused
     indep.seq[is_seq_masked] = ChemData().MASKINDEX
+    aa_model_converter = rf_diffusion.aa_model.Model(rf_conf)
     return aa_model_converter.prepro(indep, input_feats['t'].to('cpu') * T, is_diffused.to('cpu'))
 
 
@@ -234,10 +234,6 @@ def multi_recycle_prediction(rfi, N_cycle, model, use_checkpoint, return_raw):
         model_input['return_raw'] = return_raw
 
         return rf_diffusion.aa_model.RFO(*model(**model_input))
-
-
-    
-
 
 class RFScore(nn.Module):
     def __init__(self, model_conf, diffuser, device, stopgrad_rotations=True):
@@ -339,10 +335,6 @@ class RFScore(nn.Module):
                                            use_checkpoint=use_checkpoint, 
                                            return_raw=return_raw
                                         )
-
-            
-            
-
         # # Traj writing
         # rfo_cpy = tensor_util.apply_to_tensors(rfo, lambda x:x.detach().cpu())
         # os.makedirs(self.log_dir, exist_ok=True)

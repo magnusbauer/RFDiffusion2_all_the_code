@@ -10,7 +10,6 @@ import rf2aa.kinematics
 import rf2aa.util
 import networkx as nx 
 
-
 def any_a_in_b(a: list, b: list): 
     # check if any element in a is in b
     return any([x in b for x in a])
@@ -32,7 +31,6 @@ def get_sm_lengths(is_sm: np.array, is_same_chain: np.array):
     is_sm_clique = [any_a_in_b(a, where_is_sm) for a in cliques]
     sm_cliques = [c for c, is_sm_c in zip(cliques, is_sm_clique) if is_sm_c]
     return [len(c) for c in sm_cliques]
-    
 
 def generate_Cbeta(N,Ca,C):
     # recreate Cb given N,Ca,C

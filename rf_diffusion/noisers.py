@@ -7,7 +7,6 @@ from openfold.utils import rigid_utils as ru
 from rf_diffusion.frame_diffusion.data import se3_diffuser
 from rf_diffusion.frame_diffusion.data import legacy_diffuser
 FwdMargYieldsTMinusOne = legacy_diffuser.FwdMargYieldsTMinusOne
-
 from se3_flow_matching.data import interpolant
 from se3_flow_matching.data import so3_utils
 

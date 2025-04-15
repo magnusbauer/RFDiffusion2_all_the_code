@@ -83,7 +83,6 @@ experiment:
   i_fm_kernel_width: 7.5  # Kernel width
   i_fm_kernel_activation_thresh: 0.0   # Activation threhold bias to allow all values below this to have the same width
   i_fm_kernel_exponent: 1  # Kernel exponent (exponential gaussian etc)
-
 sm_loss_weight: 0.0
 rf:
   model:

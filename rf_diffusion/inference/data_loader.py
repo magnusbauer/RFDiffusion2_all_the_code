@@ -15,6 +15,7 @@ import torch
 import numpy as np
 import torch.utils.data
 from rf_diffusion.inference import utils as iu
+
 from typing import Tuple
 
 logger = logging.getLogger(__name__)
@@ -92,7 +93,6 @@ class PDBLoaderDataset(torch.utils.data.Dataset):
         centering.validate_centering_strategy(origin, for_partial_diffusion(conf), conf)    
         guide_posts.validate_guideposting_strategy(conf)
         sec_struct_adj.validate_ss_adj_strategy(conf)
-
 
         feats = {'contig_map': contig_map, 'indep': indep, 'metadata': metadata, 
                  'masks_1d': masks_1d, 'L': L, 'conf': conf,

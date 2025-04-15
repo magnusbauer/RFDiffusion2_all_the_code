@@ -105,8 +105,6 @@ def add_motif_template(rfi: RFI, t2d_motif: torch.Tensor, xyz_t_motif: torch.Ten
 
     return rfi
 
-
-
 def wrap_featurize( indep_t,
                     t,
                     is_diffused,

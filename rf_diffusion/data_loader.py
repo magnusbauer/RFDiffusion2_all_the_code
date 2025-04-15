@@ -17,12 +17,12 @@ import numpy as np
 from rf_diffusion.parsers import parse_a3m, parse_pdb
 from rf_diffusion.kinematics import xyz_to_t2d
 from rf_diffusion.preprocess import wrap_featurize 
-
 import rf2aa.data.compose_dataset
 import rf2aa.util
 import rf2aa.tensor_util
 import rf2aa.kinematics
 from rf_diffusion.chemical import ChemicalData as ChemData
+
 # for diffusion training
 from icecream import ic
 import pickle
@@ -1875,7 +1875,6 @@ class TransformedDataset(data.Dataset):
         
     def getitem_inner(self, index: int, **kwargs):
         # Entry point for dataset iteration
-
         if hasattr(self.dataset, 'getitem_inner'):
             feats = self.dataset.getitem_inner(index, **kwargs)
         else:

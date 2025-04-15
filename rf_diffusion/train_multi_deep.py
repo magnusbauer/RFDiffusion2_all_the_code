@@ -51,9 +51,11 @@ from rf_diffusion import test_utils
 from openfold.utils import rigid_utils as ru
 from rf_diffusion.frame_diffusion.data import all_atom
 from se3_flow_matching.data import all_atom as all_atom_fm
+
 #added for inpainting training
 from icecream import ic
 import random
+
 # added for logging git diff
 import subprocess
 
@@ -492,8 +494,6 @@ class Trainer():
             loss_dict[f'c6d_{label}'] = loss.clone()
 
 
-        
-        
         # FAPE losses
         if self.conf.loss.use_fapes:
             # find out the small molecule lengths 
@@ -974,7 +974,6 @@ class Trainer():
             'ligand_intra_fape': self._exp_conf.get('ligand_intra_fape_weight'),
             'prot_lig_inter_fape': self._exp_conf.get('prot_lig_inter_fape_weight')
         }
-
 
         print('Entering self.train_cycle')
         # Turn on training mode

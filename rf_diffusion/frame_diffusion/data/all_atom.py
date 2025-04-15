@@ -4,6 +4,7 @@ from rf_diffusion.frame_diffusion.data import residue_constants
 from openfold.utils import rigid_utils as ru
 from openfold.utils import feats
 
+
 Rigid = ru.Rigid
 Rotation = ru.Rotation
 

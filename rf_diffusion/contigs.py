@@ -4,8 +4,6 @@ from collections import defaultdict
 
 from itertools import zip_longest 
 from typing import List
-
-
 import numpy as np
 import torch
 

@@ -400,7 +400,6 @@ class GenerateMasks:
 
         # Mask the independent inputs.
         run_inference.seed_all(mask_gen_seed) # Reseed the RNGs for test stability.
-        
         masks_1d = mask_generator.generate_masks(
             indep=indep, 
             task=task, 
@@ -411,7 +410,6 @@ class GenerateMasks:
             metadata=metadata,  # holds e.g. `covale_bonds`
             datahub_config=self.datahub_config
         )
-
         # Pop masks_1d if exists since it is being overwritten
         if 'masks_1d' in kwargs: 
             logger.warning('`masks_1d` is being overwritten by GenerateMasks. Was: %s', kwargs['masks_1d'])
@@ -777,7 +775,6 @@ class Center:
         motif_atom_name_by_res_idx |= is_atom_str_shown
         is_motif14 = aa_model.make_is_motif14(indep.seq, motif_atom_name_by_res_idx)
         center_of_mass_mask = is_motif14
-
         if not center_of_mass_mask.any():
             # Unconditional case
             center_of_mass_mask[:, 1] = True
@@ -960,7 +957,6 @@ class AddConditionalInputs:
         #  This may for instance happen when there are covalent modifications on residues that are not part 
         #  of the guideposts, because a covalently modified residue is always atomized, but not necessarily motif.
         aa_model.assert_valid_seq_mask(indep, is_masked_seq)
-
         
         return kwargs | dict(
             indep=indep,

@@ -4,6 +4,7 @@ import torch
 import numpy as np
 from omegaconf import DictConfig, OmegaConf
 from icecream import ic
+
 from rf_diffusion.chemical import ChemicalData as ChemData
 import rf2aa.util
 import rf2aa.data.data_loader
@@ -23,9 +24,12 @@ from rf_diffusion import noisers
 from rf_diffusion.config import config_format
 from pathlib import Path
 import os
+
 import rf_diffusion.inference.data_loader
+
 from rf_diffusion.preprocess import wrap_featurize 
 import sys
+
 # When you import this it causes a circular import due to the changes made in apply masks for self conditioning
 # This import is only used for SeqToStr Sampling though so can be fixed later - NRB
 # import data_loader 
@@ -115,8 +119,10 @@ class Sampler:
             self.device = torch.device('cuda')
         else:
             self.device = torch.device('cpu')
+
         # Assign config to Sampler
         self._conf = conf
+
         # self.initialize_sampler(conf)
         self.initialized=True
         self.load_model()
@@ -196,10 +202,7 @@ class Sampler:
         """
         assert self.initialized, 'sampler.initialize() has not been called yet'
         indep_uncond, self.indep_orig, self.indep_cond, metadata, self.is_diffused, self.atomizer, contig_map, t_step_input, self.conditions_dict, self.masks_1d, self.extra_transform_kwargs = self.dataset.getitem_inner(i_des % len(self.dataset), **extra)
-
         indep = self.indep_cond.clone()
-
-        self.metadata = metadata
 
         spy(indep, contig_map, self.atomizer, t_step_input)
 
@@ -350,7 +353,6 @@ def get_x_t_1(rigids_t, xyz, is_diffused):
     x_t_1 = all_atom.atom37_from_rigid(rigids_t)
     if x_t_1.shape[0] != 1:
         x_t_1 = x_t_1[None]
-
     x_t_1 = x_t_1[0,:,:ChemData().NTOTAL]  # Conversion from 37 style to 36 style
     # Replace the xyzs of the motif
     x_t_1[~is_diffused.bool(), :ChemData().NHEAVY] = xyz[~is_diffused.bool(), :ChemData().NHEAVY]

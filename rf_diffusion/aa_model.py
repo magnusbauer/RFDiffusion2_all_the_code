@@ -33,13 +33,10 @@ import rf_diffusion.rotation_conversions as rotation_conversions
 import rf_diffusion.atomize as atomize
 from rf_diffusion import write_file
 from rf_diffusion.contigs import ContigMap
-
-
 from rf_diffusion.atomization_primitives import AtomizedLabel, AtomizerSpec  # noqa: F401
 from rf_diffusion import build_coords
 
 import rf_diffusion.contigs as contigs
-
 import rf_diffusion.frame_diffusion.data.utils as du
 from rf_diffusion.frame_diffusion.data import all_atom
 
@@ -178,7 +175,6 @@ class Indep:
         if skipped:     print(spacer)
         print('='*23, flush=True)
 
-
     def clone(self):
         '''
         Make of copy of the object. Needed because 
@@ -206,7 +202,6 @@ class Indep:
             indep_copy.origin = _deepcopy_detached(self.origin)
 
         return indep_copy
-
 
     @property
     def device(self):
@@ -579,11 +574,9 @@ class RFO:
     def get_xyz(self):
         return self.xyz_allatom[0]
 
-
 class SymAdaptRFO(ipd.sym.SymAdaptDataClass):
     "Symmetrize RFO with the default dataclass SymAdaptor; uses add_tensor_dim_names"
     adapts = RFO
-
 
 def get_refinement_metadata(conditions:dict, conf:DictConfig):
     """
@@ -627,7 +620,6 @@ def get_refinement_metadata(conditions:dict, conf:DictConfig):
 
     # reset ij_visible to whatever it was in diffusion 
     conf.inference.ij_visible = og_conf['inference']['ij_visible']
-
 
 def get_ligands(pdb_lines):
     ligands = set()
@@ -1042,7 +1034,6 @@ def make_indep(pdb, ligand='', return_metadata=False, pdb_stream=None):
         same_chain=same_chain,
         terminus_type=terminus_type,
     )
-
     if return_metadata:
         ligand_name_arr = []
         for l, name in zip(Ls, N_poly * [''] + ligands):
@@ -1057,7 +1048,6 @@ def make_indep(pdb, ligand='', return_metadata=False, pdb_stream=None):
             'ligand_atom_names': np.array(ligand_atom_names_arr,  dtype='<U4'),
         }
         return indep, metadata
-    
     return indep
 
 def add_fake_frame_legs(xyz, is_atom, generator=None):
@@ -1999,7 +1989,6 @@ def diffuse(conf, diffuser, indep, is_diffused, t):
     """
     
     indep = copy.deepcopy(indep)
-    
     indep.xyz = add_fake_frame_legs(indep.xyz, indep.is_sm)
     rigids_0 = du.rigid_frames_from_atom_14(indep.xyz)  # [L, 23, 3] # not 14?
     diffuser_out = diffuser.forward_marginal(
