@@ -26,7 +26,6 @@ from rf_diffusion import run_inference
 from rf_diffusion import mask_generator
 from rf_diffusion import ppi
 from rf_diffusion.conditions.util import expand_1d_atomized_ok_gp_not, pop_conditions_dict
-import pdb 
 ######## Group all imported transforms together ###########
 
 from rf_diffusion.conditions.ss_adj.sec_struct_adjacency import (LoadTargetSSADJTransform, AutogenerateTargetSSADJTransform, GenerateSSADJTrainingTransform,  # noqa: F401

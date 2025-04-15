@@ -35,11 +35,12 @@ def spy_side_effect(*args):
 PATCH_SAVE = {} # place to save intercepted objects
 
 add_motif_template_saved = add_motif_template
-def add_motif_tmplt_side_effect(rfi, motif_template, masks_1d):   
+def add_motif_tmplt_side_effect(rfi, t2d_motif, xyz_t_motif, masks_1d):   
     PATCH_SAVE['AMT_rfi'] = copy.deepcopy(rfi)
-    PATCH_SAVE['AMT_motif_template'] = copy.deepcopy(motif_template)
+    motif_template = {'t2d':copy.deepcopy(t2d_motif), 'xyz_t':copy.deepcopy(xyz_t_motif)}
+    PATCH_SAVE['AMT_motif_template'] = motif_template
     PATCH_SAVE['AMT_masks_1d'] = copy.deepcopy(masks_1d)
-    return add_motif_template_saved(rfi, motif_template, masks_1d)
+    return add_motif_template_saved(rfi, t2d_motif, xyz_t_motif, masks_1d)
 
 
 class TestCARFDInference(unittest.TestCase):

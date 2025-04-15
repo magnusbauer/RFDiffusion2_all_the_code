@@ -113,8 +113,8 @@ def wrap_featurize( indep_t,
                     model_adaptor,
                     masks_1d,
                     template_t2d:torch.tensor=None,
-                    template_xyz:torch.tensor=None,
-                    **kwargs):
+                    template_xyz:torch.tensor=None
+                   ):
     """
     Wrapper to handle extra tXd, prepro, and adding extra templates.
 

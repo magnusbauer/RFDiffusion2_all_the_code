@@ -1993,7 +1993,9 @@ class DistilledDataset(data.Dataset):
                                 'is_diffused'       : is_diffused, 
                                 'model_adaptor'     : self.model_adaptor,
                                 'masks_1d'          : masks_1d,
-                                **kwargs}
+                                'template_t2d'      : conditions_dict.get('template_t2d'),
+                                'template_xyz'      : conditions_dict.get('template_xyz')
+                            }
         
             rfi = wrap_featurize(**featurize_kwargs)
 
