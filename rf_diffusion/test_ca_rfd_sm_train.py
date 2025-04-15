@@ -154,6 +154,7 @@ class TestFeaturization(unittest.TestCase):
         cls.trainer = train_multi_deep.make_trainer(cls.conf)
         cls.load_goldens()
         os.environ['MASTER_ADDR'] = '19283'
+        os.environ['MASTER_PORT'] = '12010'
         try:
             cls.trainer.run_model_training(torch.cuda.device_count())
         except ExitMockCall:
