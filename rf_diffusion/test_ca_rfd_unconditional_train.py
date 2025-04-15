@@ -140,8 +140,11 @@ class TestFeaturization(unittest.TestCase):
         cls.conf = get_ca_config()
         cls.trainer = train_multi_deep.make_trainer(cls.conf)
         cls.load_goldens()
-        os.environ['MASTER_ADDR'] = '19281'
         os.environ['MASTER_PORT'] = '12009'
+        
+        if torch.distributed.is_initialized():
+            torch.distributed.destroy_process_group()
+
         try:
             cls.trainer.run_model_training(torch.cuda.device_count())
         except ExitMockCall:
