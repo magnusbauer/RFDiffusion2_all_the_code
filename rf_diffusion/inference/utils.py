@@ -879,8 +879,14 @@ def conf_select_px0(model_out, px0_source='atom37'):
         px0 = getattr(model_out[model_key], model_attr)
     elif len(px0_source_spec)==1:
         model_key = px0_source_spec[0]
-        assert model_key in model_out, f"specified conf.inference.px0_source is '{model_key}', but must be one of: {model_out.keys()}."
-        px0 = model_out[model_key]
+        if model_key != 'refine':
+            assert model_key in model_out, f"specified conf.inference.px0_source is '{model_key}', but must be one of: {model_out.keys()}."
+            px0 = model_out[model_key]
+        else:
+            assert len(model_out['rfo'].xyz_allatom.shape) == 4
+            L = model_out['rfo'].xyz_allatom.shape[1]
+            px0 = torch.zeros(L,36,3)
+            px0[:,:5,:] = model_out['rfo'].xyz_allatom[0,:,:5,:]
     else:
         px0 = model_out['atom37'][-1, -1]
         
