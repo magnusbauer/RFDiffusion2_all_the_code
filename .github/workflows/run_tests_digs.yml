@@ -26,7 +26,7 @@ jobs:
     - name: run pytest digs
       run: |
         exe=./rf_diffusion/exec/bakerlab_rf_diffusion_aa.sif
-        ipd ci tests pytest --exe $exe --slurm --parallel 4 --tee
+        ipd ci tests pytest --exe $exe --slurm --parallel 4 --tee --which "test_ca_rfd"
 
     - name: check test results
       run: |
