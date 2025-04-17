@@ -9,6 +9,7 @@ from rf_diffusion.frame_diffusion.data import all_atom
 import rf2aa.util
 from dataclasses import dataclass
 import dataclasses
+from contextlib import nullcontext 
 
 import rf2aa.model.RoseTTAFoldModel
 from rf2aa.chemical import ChemicalData as ChemData
@@ -184,7 +185,7 @@ def unpack_out_raw_yesquats(o:tuple):
     return msa_prev, pair_prev, xyz_last, state_prev, alpha_s[-1]
 
 
-def multi_recycle_prediction(rfi, N_cycle, model, use_checkpoint, return_raw):
+def multi_recycle_prediction(rfi, N_cycle, model, use_checkpoint, return_raw, training=False):
     """Perform a forward pass with multiple recycles
     
     Args:
@@ -193,6 +194,9 @@ def multi_recycle_prediction(rfi, N_cycle, model, use_checkpoint, return_raw):
         model (rf2aa.RoseTTAFoldModule.LegacyRoseTTAFoldModule): RFdiffusion model
         use_checkpoint (bool): whether to use checkpointing in forward pass 
         return_raw (bool): whether to have final output be 'raw' return from LegacyRoseTTAFoldModule
+        training: (bool): whether or not this call is during training.
+                          If False, will torch.no_grad() for everything 
+                          If True, will torch.no_grad() for N-1 recycles, then use grad.
     """
     with torch.no_grad():
 
@@ -220,7 +224,13 @@ def multi_recycle_prediction(rfi, N_cycle, model, use_checkpoint, return_raw):
                 model_input = {**rfi_dict}
                 model_input['return_raw'] = False
                 out = model(**model_input)
+    
+    if training:
+        context = nullcontext()
+    else:
+        context = torch.no_grad()
 
+    with context:
         # Do the last recycle, and return RFO
         msa_prev, pair_prev, xyz_prev, state, alpha_prev = unpack_out_raw_yesquats(out)
 
@@ -231,6 +241,7 @@ def multi_recycle_prediction(rfi, N_cycle, model, use_checkpoint, return_raw):
         rfi_dict['state_prev']  = state
 
         model_input = {**rfi_dict}
+        model_input['use_checkpoint'] = use_checkpoint
         model_input['return_raw'] = return_raw
 
         return rf_diffusion.aa_model.RFO(*model(**model_input))
@@ -318,7 +329,7 @@ class RFScore(nn.Module):
         model_out['trans_score'] = model_out['trans_score'] * node_mask[:,None,:,None]
         return model_out
 
-    def forward_from_rfi(self, rfi, t, use_checkpoint=True, return_raw=False, N_cycle=1):
+    def forward_from_rfi(self, rfi, t, use_checkpoint=True, return_raw=False, N_cycle=1, training=False):
         device = self.device()
         rf2aa.tensor_util.to_device(rfi, device)
         rigids_t = du.rigid_frames_from_atom_14(rfi.xyz)
@@ -333,7 +344,8 @@ class RFScore(nn.Module):
                                            N_cycle=N_cycle, 
                                            model=self.model, 
                                            use_checkpoint=use_checkpoint, 
-                                           return_raw=return_raw
+                                           return_raw=return_raw,
+                                           training=training
                                         )
         # # Traj writing
         # rfo_cpy = tensor_util.apply_to_tensors(rfo, lambda x:x.detach().cpu())

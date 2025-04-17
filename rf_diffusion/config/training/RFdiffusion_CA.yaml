@@ -3,7 +3,7 @@
 defaults:
   - new_base 
 
-ckpt_load_path: /mnt/home/davidcj/from/rohith/models/rf2a_25c_414_t1d_81_t2d_69.pt 
+ckpt_load_path: /mnt/projects/ml/ca_rfd/rf2a_25c_414_t1d_81_t2d_69.pt 
 
 wandb: false
 

@@ -13,14 +13,14 @@ diffuser:
     coordinate_scaling: 0.25
     T: ${..T}
     schedule_kwargs: {}
-    var_scale: 0.05
+    var_scale: ${diffuser.r3.noise_scale}
     noise_scale: 0.05 
 
   step_back_via_noiser: true
 
 inference: 
   output_prefix: ./experiments/caRFD_test
-  ckpt_path: '/mnt/home/davidcj/projects/merge/rf_diffusion_repo/rf_diffusion/tmp_models/trained/BFF_7_w_new_conf.pt'
+  ckpt_path: '/mnt/projects/ml/ca_rfd/BFF_7_w_new_conf.pt'
   input_pdb: ./test_data/siteC.pdb
   str_self_cond: 1
   ij_visible: 'abcde' # e is the ligand

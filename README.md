@@ -262,3 +262,99 @@ To visualize the trajectories created during the "sweep" step in PYMOL:
 
 To visualize the designs as cartoons once the MPNN step is complete in PYMOL:
 `./dev/show_bench.py --clear=1 'YOUR_OUTPUT_DIR_HERE/*.trb' --key=name --ppi=1 --mpnn_packed=1 --des=0 --cartoon=1 --structs='{}'`
+
+## CA RFdiffusion
+
+Example shell scripts for running inference with CA RFdiffusion (diffusion + refinement) are in
+```
+# inference
+rf_diffusion/examples/inference/ca_rfd_diffuse.sh
+rf_diffusion/examples/inference/ca_rfd_refine.sh
+# training
+rf_diffusion/examples/train/train_ca_rfd.sh
+```
+Below is reccomended reading for better understanding inference. 
+
+### CA RFdiffusion -- inference
+The following are some general notes and things to look out for when running inference with CA RFdiffusion.
+
+Here's an example .sh script for submitting a CA RFdiffusion diffusion run:
+```
+output_pref="./experiments/out"
+
+apptainer exec --nv ./exec/bakerlab_rf_diffusion_aa.sif python run_inference.py \
+    --config-name="RFdiffusion_CA_inference" \
+    inference.output_prefix=${output_pref} \
+    inference.num_designs=30
+```
+
+Lets look at the `RFdiffusion_CA_inference.yaml` file. 
+
+We first see some stuff related to running diffusion:
+```
+diffuser: 
+  type: 'legacy'
+  T: 50
+  
+  r3: 
+    min_b: 0.01
+    max_b: 0.07
+    coordinate_scaling: 0.25
+    T: ${..T}
+    schedule_kwargs: {}
+    var_scale: 0.05
+    noise_scale: 0.05 
+```
+
+Things you can touch here are `T` (although 50 is reccomended) and `noise_scale` (Linna An showed 0.05 is best for compute efficiency). 
+
+There's nothing fancy about contigs strings with CA RFdiffusion, but we will reference this one below:
+```
+contigmap:  
+  contigs: ['30,A1-4,40,A5-5,40,A6-6,40,A7-7,40']
+```
+
+Now, look at these inference parameters:
+```
+inference: 
+  output_prefix: ./experiments/caRFD_test
+  ckpt_path: '/mnt/projects/ml/ca_rfd/BFF_7_w_new_conf.pt'
+  input_pdb: ./test_data/siteC.pdb
+  str_self_cond: 1
+  ij_visible: 'abcde' # e is the ligand
+  length: 90-125
+  ligand: mu2
+  write_trajectory: true
+  recenter_xt: true 
+  num_designs: 15
+  cautious: true 
+  guidepost_xyz_as_design: false
+```
+
+The most important flag to understand here is `ij_visible`. `ij_visible` specifies which motif chunks within the contigs string are going to be constrained with respect to each other rigidly. The syntax for writing `ij_visible` is to group together motif chunks you want constrained rigidly together, and separate groups with dashes. In the above example, all motif chunks including the ligand are constrained with respect to each other, which is why there's only one group and no dashes. If you wanted the first two motif chunks constrained w.r.t each other, and then the next two + the ligand constrained rigidly together, your flag would be `ij_visible: 'ab-cde'`. If you want each chunk free to move w.r.t to all the other chunks, you could do `ij_visible: 'a-b-c-d-e'`. If you're curious about pushing this to the limits, ask Alexis Courbet about constraining 26+ individual amino acid chunks for funnels. 
+
+#### More on ij_visible letters
+Each letter in `ij_visible` corresponds to a motif chunk in the contigs string. Specifically, the left-most contig chunk in the contigs string corresponds to letter `a` (in this example, `A1-4` is chunk `a`). The next chunk over corresponds to `b` (`A5-5` in this example). The `ij_visible` letters corresponding to other chunks in the contigs string just increases one letter at a time in the alphabet for each position further in the contigs string. **IF YOU HAVE A LIGAND IN YOUR DESIGN** (e.g., enzymes, small molecule binding, etc), you should include an extra letter in `ij_visible` which corresponds to the ligand, and that letter should be the letter in the alphabet just after the letter corresponding to the last contig chunk in the contigs string. In the example here, the ligand letter is `e` because there are 4 contig chunks in the contigs string corresponding to `a,b,c` and `d`. 
+
+### CA RFdiffusion -- refinement
+After you run the diffusion step of CA RFdiffusion, you have created a good "CA trace", in which only the CA positions matter and the N,C,O positions are nonsense. So, you run the "refinement" step. 
+
+In this step, you just need to specify; 
+1. The path to the .pdb file you want to refine 
+2. The number of refinement outputs you'd like to do per input. 2 is reccomended, but you can do as many as you want. They are really quick to run, and the outputs differ slightly (1-3 RMSD) from each other.
+3. The ligand (if you had one).
+
+See `test_ca_rfd_refinement` config yaml. Here is an example submission in a bash script:
+```
+#bin/bash
+
+pdb='path/to/some_pdb_with_trb_file_next_to_it.pdb'
+CKPT='/mnt/projects/ml/ca_rfd/BFF_3_w_new_conf.pt'
+
+apptainer exec --nv ./exec/bakerlab_rf_diffusion_aa.sif python run_inference.py \
+    --config-name=test_ca_rfd_refinement \
+    inference.num_designs=2 \
+    inference.input_pdb=$pdb \
+    inference.ligand='mu2' \
+    inference.ckpt_path=$CKPT
+```

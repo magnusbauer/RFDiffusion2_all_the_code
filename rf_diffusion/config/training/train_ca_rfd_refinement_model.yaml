@@ -4,6 +4,7 @@ defaults:
   - RFdiffusion_CA
 
 model_name: caBFF_refine
+maxcycle: 4
 
 loss:
   use_fapes: true

@@ -1000,8 +1000,8 @@ class Trainer():
 
                 # Defensive assertions
                 assert little_t > 0
-                assert N_cycle == 1, 'cycling not implemented'
-                N_cycle-1
+                
+                
                 if self.conf.inference['str_self_cond']:
                     assert self.conf['prob_self_cond'] > 0, 'prob_self_cond must be > 0 for str_self_cond to be active'
 
@@ -1057,7 +1057,9 @@ class Trainer():
                         model_out = ddp_model.forward(
                                         rfi,
                                         torch.tensor([little_t/self.conf.diffuser.T]),
-                                        use_checkpoint=True)
+                                        use_checkpoint=True,
+                                        N_cycle=N_cycle,
+                                        training=True)
                         model_out['rigids'].retain_grad()
 
                         timer.checkpoint('model forward')
