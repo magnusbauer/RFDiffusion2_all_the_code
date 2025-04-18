@@ -86,7 +86,7 @@ inference:
   fast_partial_trajectories: null # List of lists like [[1,20,3],[5,25,3]]. Specifies that original t-steps (here 1 and 5) should be partially diffused to 20 then 3 (or 25 then 3) and output
   fpt_drop_guideposts: False # bool -- Do you want to get rid of guideposting when we switch to the fast_partial_trajectories?
   fpt_diffuse_chains: null # null | str. Which chains should we override the diffusion mask for. Could look like 0, or 0,1, or 'all'
-  ORI_guess: False # bool. Use the provided ORI setup to perform 1 diffusion step. Then use that new CoM as the ORI
+  ORI_guess: False # bool or int. Use the provided ORI setup to perform 1 diffusion step. Then use that new CoM as the ORI. Set this to an int to do that multiple times
   t_setups:
     names:
       - CustomTRangeTSetup  # This one pretty much needs to be first (if active)

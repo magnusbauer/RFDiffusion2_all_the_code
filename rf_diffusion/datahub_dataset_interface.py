@@ -73,13 +73,10 @@ class BackwardCompatibleDataLoaderProcessOut(Transform):
             torch.tensor(encoded['xyz']),
             torch.arange(len(encoded['seq'])),
             data['rf2aa_bond_features_matrix'].to(torch.int64),
-            torch.zeros((0,5)),
+            data['chiral_feats'],
             is_same_molecule_iid,
             terminus_type
         )
-
-        if indep.is_sm.any():
-            print("WARNING! Your example has atoms but the datahub loader doesn't support chirals yet! You can be the one to fix this!")
 
         # Build the idx of the indep using the standard diffusion notation of +33 for chainbreaks
         # This code will respect gaps in the input numbering
@@ -278,11 +275,16 @@ class SimplePathParser(MetadataRowParser):
         # Put the full row in the extra info dictionary
         extra_info = row.to_dict()
 
+        if 'assembly_id' in row:
+            assembly_id = row['assembly_id']
+        else:
+            assembly_id = "1"
+
         return {
             "example_id": row["example_id"],
             "path": Path(row['path']),
             "extra_info": extra_info,
-            "assembly_id": "1"
+            "assembly_id": assembly_id
         }
 
 

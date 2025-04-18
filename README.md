@@ -167,6 +167,25 @@ verbose: # A bool (default false) as to whether or not this filter should print 
 
 This list will almost certainly be out of date at some point. `rf_diffusion/rf_diffusion/filters.py` will always be up-to-date.
 
+### InterchainClashFilter filter
+
+Look for overlapping protein backbones between chains
+
+Configs:
+```
+
+chainA -- Which is the first chain we'll look at. None for all
+chainB -- Which is the second chain we'll look at. None for all
+max_bb_clashes -- How many backbone clashes are acceptable between two chains
+clash_dist -- At what distance do we consider CAs to be clashing
+use_px0 -- Default True. Use px0 as the structure to look for clashes in
+```
+
+Reports:
+```
+max_clashes -- The most backbone clashes we found between two chains
+```
+
 ### ChainBreak filter
 
 Finds the largest C->N atom gap in your protein

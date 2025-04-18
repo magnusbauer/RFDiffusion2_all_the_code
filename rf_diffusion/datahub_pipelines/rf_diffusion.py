@@ -26,6 +26,11 @@ from datahub.transforms.filters import (
     RemoveUnresolvedPNUnits,
     RemoveUnsupportedChainTypes
 )
+from datahub.transforms.openbabel_utils import (
+    AddOpenBabelMoleculesForAtomizedMolecules,
+    GetChiralCentersFromOpenBabel,
+)
+from datahub.transforms.chirals import AddRF2AAChiralFeatures
 
 from datahub.transforms.symmetry import AddPostCropMoleculeEntityToFreeFloatingLigands
 from rf_diffusion.datahub_dataset_interface import BackwardCompatibleDataLoaderProcessOut
@@ -143,6 +148,10 @@ def build_rf_diffusion_transform_pipeline(
         ),
         SortLikeRF2AA(),
         AddGlobalTokenIdAnnotation(),
+
+        # These two are needed for chirals
+        AddOpenBabelMoleculesForAtomizedMolecules(),
+        GetChiralCentersFromOpenBabel(),
     ]
 
     for name, transform in extra_pre_crop_transforms.items():
@@ -172,6 +181,7 @@ def build_rf_diffusion_transform_pipeline(
     transforms += [
         AddPostCropMoleculeEntityToFreeFloatingLigands(),
         EncodeAtomArray(encoding),
+        AddRF2AAChiralFeatures(),
         AddTokenBondAdjacency(),
         AddRF2AABondFeaturesMatrix(),
         # ============================================

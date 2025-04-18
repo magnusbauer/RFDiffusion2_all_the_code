@@ -8,6 +8,7 @@ import hydra
 import numpy as np
 import torch
 import copy
+import pandas as pd
 
 from dev import analyze
 from rf_diffusion.data_loader import get_fallback_dataset_and_dataloader
@@ -15,6 +16,7 @@ from rf_diffusion import test_utils
 from rf2aa import tensor_util
 from rf_diffusion.frame_diffusion.data import se3_diffuser
 import show
+from rf_diffusion import aa_model
 
 from rf_diffusion.chemical import ChemicalData as ChemData
 
@@ -747,6 +749,63 @@ class Dataloader(unittest.TestCase):
 
 
         test_utils.assert_matches_golden(self, golden_name, indep, rewrite=REWRITE, custom_comparator=self.cmp)
+
+
+
+
+    def test_dhub_chirals(self):
+        '''
+        This tests that datahub correctly loads chirals
+        '''
+
+
+        dataset = 'sm_compl_asmb'
+        mask = 'get_unconditional_diffusion_mask'
+        loader_out = self.indep_for_dataset(dataset, mask, overrides=[
+            'dataloader.DATAPKL_AA=aa_dataset_256_subsampled_10.pkl',
+            'dataloader.CROP=1000',
+            f'spoof_item="{multiligand_item}"',
+            '+dataloader.DIFF_MASK_PROBS={get_diffusion_mask_simple:1}',
+            '++transforms.configs.AddConditionalInputs.p_is_guidepost_example=0',
+            ])
+        indep_old, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context, conditions_dict = loader_out
+
+        # I can't make datahub load the peg no matter how hard I try
+        peg_mask = torch.zeros(indep_old.length(), dtype=bool)
+        for mask in [torch.tensor(x) for x in indep_old.chain_masks()]:
+            if mask.sum() == 7:
+                peg_mask |= mask
+        indep_old, _ = aa_model.slice_indep(indep_old, ~peg_mask)
+        indep_old.xyz -= torch.mean(indep_old.xyz[:,1], axis=0)
+
+        pq_name = 'test_dhub_chirals.parquet'
+        pq = pd.DataFrame({
+            'example_id':['0'],
+            'cluster':[0],
+            'path':'test_data/6fp1.cif',
+            'assembly_id':['2'], #  this line isn't needed if you copy/paste this
+            })
+        pq.to_parquet(pq_name)
+
+
+        dataset = None
+        mask = 'get_diffusion_mask_simple'
+        loader_out = self.indep_for_dataset(dataset, mask, overrides=[
+            f'++datahub.test_dhub_dataset.dataset.dataset.data={pq_name}',
+            '++datahub.test_dhub_dataset.dataset.dataset.columns_to_load=[example_id,cluster,path,assembly_id]', # you don't need this line if you are copy/pasting
+            'dataloader.CROP=1000',
+            '+dataloader.DIFF_MASK_PROBS={get_diffusion_mask_simple:1}',
+            '++transforms.configs.AddConditionalInputs.p_is_guidepost_example=0',
+            ], config_name='debug_dhub_simple')
+        indep_dhub, rfi, chosen_dataset, item, little_t, is_diffused, chosen_task, atomizer, masks_1d, diffuser_out, item_context, conditions_dict = loader_out
+
+        indep_dhub.xyz -= torch.mean(indep_dhub.xyz[:,1], axis=0)
+
+        os.remove(pq_name)
+
+        assert torch.allclose(indep_old.xyz[:,1], indep_dhub.xyz[:,1], atol=0.1)
+        assert torch.allclose(indep_old.chirals, indep_dhub.chirals)
+
 
 
     def test_target_hbond_satisfaction(self):

@@ -380,15 +380,17 @@ class ORIGuessTSetup(TSetup):
 
         if conf.inference.ORI_guess:
 
-            # Add an additional timestep to the front
-            ts = torch.cat((torch.full((1,), ts[0], dtype=ts.dtype), ts))
-            n_steps = torch.cat((torch.full((1,), 1, dtype=n_steps.dtype), n_steps)) # Add a 1 but this won't get used
-            self_cond = torch.cat((torch.full((1,), False, dtype=self_cond.dtype), self_cond)) # We can't self condition this
-            final_it += 1 # final_it gets bumped up by 1
-            addtl_write_its = [(x+1,y) for (x,y) in addtl_write_its] # Increase the indexes of the additional writes
+            for i in range(int(conf.inference.ORI_guess)):
 
-            # Add our magic MidRunModifier to the first frame
-            mid_run_modifiers = [[ReinitializeWithCOMOri()]] + mid_run_modifiers
+                # Add an additional timestep to the front
+                ts = torch.cat((torch.full((1,), ts[0], dtype=ts.dtype), ts))
+                n_steps = torch.cat((torch.full((1,), 1, dtype=n_steps.dtype), n_steps)) # Add a 1 but this won't get used
+                self_cond = torch.cat((torch.full((1,), False, dtype=self_cond.dtype), self_cond)) # We can't self condition this
+                final_it += 1 # final_it gets bumped up by 1
+                addtl_write_its = [(x+1,y) for (x,y) in addtl_write_its] # Increase the indexes of the additional writes
+
+                # Add our magic MidRunModifier to the first frame
+                mid_run_modifiers = [[ReinitializeWithCOMOri()]] + mid_run_modifiers
 
 
         return dict(ts=ts, n_steps=n_steps, self_cond=self_cond, final_it=final_it, addtl_write_its=addtl_write_its,

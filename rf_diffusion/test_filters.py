@@ -93,6 +93,39 @@ class TestFilters(unittest.TestCase):
     def tearDown(self):
         hydra.core.global_hydra.GlobalHydra.instance().clear()
 
+    def test_InterchainClashFilter_filter(self):
+        '''
+        Tests that the chain_break filter works
+        '''
+        indep, extra_args = filter_prepare_indep([
+                'diffuser.T=1',
+                'inference.input_pdb=test_data/two_chain.pdb',
+                "contigmap.contigs=['A1-10_B121-130']",
+                'filters.names=["InterchainClashFilter"]',
+                '+filters.configs.InterchainClashFilter.t=1',
+                '+filters.configs.ChainBreak.max_bb_clashes=2',
+                '+filters.configs.ChainBreak.clash_dist=3',
+                'contigmap.has_termini=[True,True]'
+            ])
+
+        mask0, mask1 = [torch.tensor(x) for x in indep.chain_masks()]
+
+        indep.xyz[mask0] -= torch.mean(indep.xyz[mask0,1], axis=0)
+        indep.xyz[mask1] -= torch.mean(indep.xyz[mask1,1], axis=0)
+
+        dists = torch.linalg.norm(indep.xyz[mask0,:3].reshape(-1,3)[:,None] - indep.xyz[mask1,:3].reshape(-1,3)[None,:], axis=-1)
+        clashes = (dists < 3).sum()
+
+        expected_passing = clashes <= 2
+
+
+        passing, scores, filters = filter_evaluate(indep, **extra_args)
+
+
+        assert expected_passing == passing
+        assert torch.isclose( scores['t-1_max_clashes'], clashes)
+
+
     def test_ChainBreak_filter(self):
         '''
         Tests that the chain_break filter works

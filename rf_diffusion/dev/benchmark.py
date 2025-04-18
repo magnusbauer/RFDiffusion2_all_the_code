@@ -24,10 +24,15 @@ from rf_diffusion.dev import show_tip_pa
 import tree
 import torch
 
-try:
-   api = wandb.Api(timeout=150)
-except Exception as e:
-   print(f'Warning: wandb API failed to instantiate: {e}')
+_api = None
+def api():
+    global _api
+    if _api is None:
+        try:
+           _api = wandb.Api(timeout=150)
+        except Exception as e:
+           print(f'Warning: wandb API failed to instantiate: {e}')
+    return _api
 
 def get_history(run_id, api, n_samples):
     run = api.run(f"bakerlab/fancy-pants/{run_id}")
@@ -220,7 +225,7 @@ def drop_nan_string_columns(df):
 def get_training_metrics(wandb_id, n=9999, floor_every = 1/2000):
     TRAINING_T = 200
     N_EPOCH = 25600
-    hist = get_history(wandb_id, api, n)
+    hist = get_history(wandb_id, api(), n)
     hist = drop_nan_string_columns(hist)
     hist['t_cont'] = hist['t'] / TRAINING_T
     hist['t_cont_binned'] = hist['t_cont'].map(lambda x: (x // floor_every) * floor_every)
@@ -281,7 +286,7 @@ def bin_metric(df, metric, bin_width):
 
 def get_runid_by_name(group):
     runid_by_group = {}
-    for run in api.runs("bakerlab/fancy-pants", filters={'group':group}):
+    for run in api().runs("bakerlab/fancy-pants", filters={'group':group}):
         runid_by_group[run.name] = run.id
     print(f'{group=}, {runid_by_group=}')
     return runid_by_group

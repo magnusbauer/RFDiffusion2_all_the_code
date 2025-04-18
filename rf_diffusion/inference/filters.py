@@ -313,6 +313,75 @@ class BBGPSatisfaction(FilterBase):
 
 
 
+class InterchainClashFilter(FilterBase):
+    '''
+    A filter to find interchain clashes and stop runs if they appear
+    '''
+
+    def __init__(self, chainA=None, chainB=None, max_bb_clashes=5, clash_dist=3, use_px0=True, **kwargs):
+        '''
+        Args:
+            chainA (int): Which is the first chain we'll look at. None for all
+            chainB (int): Which is the second chain we'll look at. None for all
+            max_bb_clashes (int): How many backbone clashes are acceptable between two chains
+            clash_dist (float): At what distance do we consider CAs to be clashing
+            use_px0 (bool): Use px0 as the structure to look for clashes in
+        '''
+        super().__init__(**kwargs)
+
+        if chainA is not None:
+            self.chainA = int(chainA)
+        else:
+            self.chainA = None
+
+        if chainB is not None:
+            self.chainB = int(chainB)
+        else:
+            self.chainB = None
+
+        self.max_bb_clashes = max_bb_clashes
+        self.clash_dist = clash_dist
+        self.use_px0 = use_px0
+        self.verbose = kwargs.get('verbose', False)
+
+    def inner_do_filter(self, indep, px0_indep, **kwargs):
+        '''
+        Figure out how many clashes there are
+        '''
+
+        if self.use_px0:
+            indep = px0_indep
+
+        scores = {}
+        scores['max_clashes'] = 0
+
+        N_CA_C_O = indep.xyz[:,:3]
+        clash_map = torch.sum( torch.square( N_CA_C_O[:,None,:,None] - N_CA_C_O[None,:,None,:] ), axis=-1) < self.clash_dist**2
+
+        chain_masks = [torch.tensor(x) for x in indep.chain_masks()]
+
+        for achain in range(len(chain_masks)):
+            if self.chainA is not None and achain != self.chainA:
+                continue
+
+            for bchain in range(len(chain_masks)):
+                if self.chainB is not None and bchain != self.chainB:
+                    continue
+                if achain == bchain:
+                    continue
+
+                mask_a = chain_masks[achain]
+                mask_b = chain_masks[bchain]
+                clashes = clash_map[mask_a][:,mask_b].sum()
+
+                if self.verbose:
+                    print(f'InterchainClashFilter: chain{achain}-chain{bchain}: {clashes} clashes')
+
+                scores['max_clashes'] = max(clashes, scores['max_clashes'])
+
+        passing = scores['max_clashes'] <= self.max_bb_clashes
+
+        return passing, scores
 
 
 class TestFilter(FilterBase):
