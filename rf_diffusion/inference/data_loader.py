@@ -121,6 +121,9 @@ class ScaffoldPDBLoaderDataset(PDBLoaderDataset):
 
     def getitem_inner(self, idx, **kwargs):
         contig_conf, ss_adj = self.scaffold_loader[idx]
+        if 'contig_conf' in kwargs:
+            print('ScaffoldPDBLoaderDataset: contig_conf specified by both runner and scaffold_loader. Using runner')
+            contig_conf = kwargs.pop('contig_conf')
         feats = super().getitem_inner(idx, contig_conf=contig_conf, **kwargs)
         feats['conditions_dict']['ss_adj'] = ss_adj
 

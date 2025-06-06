@@ -6,6 +6,7 @@ from itertools import zip_longest
 from typing import List
 import numpy as np
 import torch
+from omegaconf import open_dict
 
 import ipd
 from rf_diffusion.chemical import ChemicalData as ChemData
@@ -74,6 +75,8 @@ class ContigMap():
         elif shuffle_and_random_partition:
             assert len(contigs) == 1, f"Can only shuffle one contig string {contigs=}"
             contig_list = np.array(contigs[0].strip().split(','))
+            if len(contig_list) > 0:
+                self.deterministic = False
             assert length is not None
             length_min, length_max = parse_length(length)
             contig_list, _ = shuffle_contig_string(contig_list, length_min, length_max)
@@ -152,6 +155,23 @@ class ContigMap():
         self.con_ref_pdb_idx=[i for i in self.ref if i != ('_','_')]
         self.mol_classes = self.get_contig_mol_classes()
 
+    def make_conf_deterministic(self, contig_conf):
+        '''
+        Modify the contig_conf such that it will always generate exactly this contig
+
+        Args:
+            contig_conf: (OmegaConf) conf.contigmap
+
+        Returns:
+            contig_conf: (OmegaConf) A copy of contig_conf that will exactly generate this contigmap
+        '''
+        contig_conf = contig_conf.copy()
+        with open_dict(contig_conf):
+            contig_conf.contigs = ['_'.join(self.sampled_mask)]
+            contig_conf.shuffle = False
+            contig_conf.shuffle_and_random_partition = False
+
+        return contig_conf
 
     def get_sampled_mask(self):
         '''

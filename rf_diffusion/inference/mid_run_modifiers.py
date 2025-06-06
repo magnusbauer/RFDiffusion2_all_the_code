@@ -209,7 +209,9 @@ class ReinitializeWithCOMOri(MidRunModifier):
             new_com = px0_com
         print("ReinitializeWithCOMOri: Found", px0_com, "in centered indep. New ORI will be:", new_com)
 
-        indep, contig_map, _, _ = sampler.sample_init(i_des, extra=dict(origin_override=new_com))
+        deterministic_contig_conf = contig_map.make_conf_deterministic(sampler._conf.contigmap)
+
+        indep, contig_map, _, _ = sampler.sample_init(i_des, extra=dict(origin_override=new_com, contig_conf=deterministic_contig_conf))
 
         return dict(indep=indep, sampler=sampler, px0_xyz_stack=px0_xyz_stack, contig_map=contig_map, i_des=i_des, **kwargs)
 
