@@ -87,7 +87,7 @@ def add_dict_to_silent(struct, d):
     d = format_scores(d)
 
     for key in d:
-        struct.add_string_value(key, value)
+        struct.add_string_value(key, d[key])
 
 
 def load_silent_checkpoint(run_prefix):
