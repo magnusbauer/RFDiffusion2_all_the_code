@@ -11,7 +11,7 @@ datahub:
   test_dhub_dataset:
     probability: 1.0
     dataset:
-      _target_: datahub.datasets.datasets.StructuralDatasetWrapper
+      _target_: atomworks.ml.datasets.datasets.StructuralDatasetWrapper
       save_failed_examples_to_dir: null
       cif_parser_args:
         load_from_cache: False
@@ -19,7 +19,7 @@ datahub:
       dataset_parser:
         _target_: rf_diffusion.datahub_dataset_interface.SimplePathParser
       dataset:
-        _target_: datahub.datasets.datasets.PandasDataset
+        _target_: atomworks.ml.datasets.datasets.PandasDataset
         name: debug_dataset
         id_column: example_id
         data: test_data/test_dataset/test_dataset.parquet
@@ -36,7 +36,6 @@ datahub:
         crop_contiguous_probability: 0.9
         crop_spatial_probability: 0.1
     weights:
-      _target_: datahub.samplers.calculate_weights_by_inverse_cluster_size
-
+      _target_: atomworks.ml.samplers.calculate_weights_by_inverse_cluster_size
 
 

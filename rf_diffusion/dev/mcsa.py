@@ -20,10 +20,6 @@ from rf_diffusion import move_ORI
 from rf_diffusion.inference import utils as inference_utils
 import biotite.structure.io.pdb as biotite_pdb
 
-import sys
-sys.path.append('/home/ahern/third_party/cifutils')
-
-
 max_span = 180
 
 aa_123 = {val:key for key,val in ChemData().aa_321.items()}

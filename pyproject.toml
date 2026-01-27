@@ -20,8 +20,7 @@ arithmetic_precedence_indication = true
 include = [
 	"rf_diffusion", 
 	"lib/rf2aa/rf2aa", 
-	"lib/cifutil/cifutils", 
-	"lib/datahub/datahub",
+	"lib/atomworks/src/atomworks",
 	"lib/rf2aa/lib/ipd/ipd", 
 	]
 exclude = [

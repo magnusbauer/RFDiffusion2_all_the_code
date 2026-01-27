@@ -59,7 +59,7 @@ def main(conf: HydraConfig) -> list[int]:
             with open(tmp_fn,'w') as outf:
                 for j in np.arange(i,min(i+conf.chunk, len(filenames))):
                     print(filenames[j], file=outf)
-            print(f'/usr/bin/apptainer run --nv --bind /software/mlfold/alphafold:/software/mlfold/alphafold --bind /net/databases/alphafold/params/params_model_4_ptm.npz:/software/mlfold/alphafold-data/params/params_model_4_ptm.npz /software/containers/mlfold.sif {script_dir}/util/af2_metrics.py --use_ptm '\
+            print(f'/usr/bin/apptainer run --nv --bind /software/mlfold/alphafold:/software/mlfold/alphafold --bind /net/databases/alphafold/params/params_model_4_ptm.npz:/software/mlfold/alphafold-data/params/params_model_4_ptm.npz --bind /net:/net /software/containers/mlfold.sif {script_dir}/util/af2_metrics.py --use_ptm '\
                   f'--outcsv {conf.datadir}/protein_metrics.csv.{i} '\
                   f'--trb_dir {conf.trb_dir} '\
                   f'{tmp_fn}', file=job_list_file)
@@ -90,7 +90,7 @@ def main(conf: HydraConfig) -> list[int]:
                     input_filenames.append(filenames[j])
                     print(filenames[j], file=outf)
             outcsv = f'{conf.datadir}/af2_metrics.csv.{i}'
-            job = (f'/usr/bin/apptainer run --nv --bind /software/mlfold/alphafold:/software/mlfold/alphafold --bind /net/databases/alphafold/params/params_model_4_ptm.npz:/software/mlfold/alphafold-data/params/params_model_4_ptm.npz /software/containers/mlfold.sif {script_dir}/util/af2_metrics.py --use_ptm '\
+            job = (f'/usr/bin/apptainer run --nv --bind /software/mlfold/alphafold:/software/mlfold/alphafold --bind /net/databases/alphafold/params/params_model_4_ptm.npz:/software/mlfold/alphafold-data/params/params_model_4_ptm.npz --bind /net:/net /software/containers/mlfold.sif {script_dir}/util/af2_metrics.py --use_ptm '\
                   f'--outcsv {outcsv} '\
                   f'--trb_dir {conf.trb_dir} '\
                   f'{tmp_fn}')

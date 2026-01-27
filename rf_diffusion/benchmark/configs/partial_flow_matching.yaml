@@ -6,7 +6,7 @@ sweep:
     --config-name=aa
     (
       inference.ckpt_path=
-        /net/scratch/ahern/se3_diffusion/training/center_all_from_scratch_enz_finetune_stage_2a/center_all_from_scratch_enz_finetune_stage_2a2024-07-03_02:34:09.651142/rank_0/models/RFD_140.pt
+        /net/databases/lab/aa-diffusion/models/RFD_140_ORI_tipatom.pt
       ++transforms.configs.CenterPostTransform.center_type='all'
     )
     inference.contig_as_guidepost=True 

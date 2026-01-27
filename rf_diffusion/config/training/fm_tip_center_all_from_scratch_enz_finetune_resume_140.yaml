@@ -7,7 +7,7 @@ wandb_prefix: 'center_all_from_scratch_enz_finetune_resume_140'
 pseudobatch: 144
 
 resume: True
-ckpt_load_path: /net/scratch/ahern/se3_diffusion/training/center_all_from_scratch_enz_finetune_stage_2a/center_all_from_scratch_enz_finetune_stage_2a2024-07-03_02:34:09.651142/rank_0/models/RFD_140.pt
+ckpt_load_path: /net/databases/lab/aa-diffusion/models/RFD_140_ORI_tipatom.pt
 zero_weights: False
 resume_scheduler: True
 wandb_project: "fancy-pants "

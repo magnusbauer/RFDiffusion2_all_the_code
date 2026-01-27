@@ -5,23 +5,23 @@ import pandas as pd
 from typing import Any
 from pathlib import Path
 
-from datahub.transforms.base import Transform
-from datahub.transforms.atomize import AtomizeByCCDName, FlagNonPolymersForAtomization
-from datahub.transforms.bonds import AddTokenBondAdjacency, AddRF2AABondFeaturesMatrix
-from datahub.utils.token import get_token_starts
-from datahub.transforms.encoding import atom_array_to_encoding
-from datahub.encoding_definitions import RF2AA_ATOM36_ENCODING
-from datahub.transforms.atom_array import AddProteinTerminiAnnotation
-from datahub.transforms._checks import (
+from atomworks.ml.datasets.parsers.base import MetadataRowParser
+from atomworks.ml.encoding_definitions import RF2AA_ATOM36_ENCODING
+from atomworks.ml.transforms._checks import (
     check_atom_array_annotation,
     check_contains_keys,
     check_is_instance,
 )
-from datahub.utils.token import spread_token_wise
-from datahub.datasets.parsers.base import MetadataRowParser
-from rf_diffusion.conditions.util import pop_conditions_dict
+from atomworks.ml.transforms.atom_array import AddProteinTerminiAnnotation
+from atomworks.ml.transforms.atomize import AtomizeByCCDName, FlagNonPolymersForAtomization
+from atomworks.ml.transforms.base import Transform
+from atomworks.ml.transforms.bonds import AddRF2AABondFeaturesMatrix, AddTokenBondAdjacency
+from atomworks.ml.transforms.encoding import atom_array_to_encoding
+from atomworks.ml.utils.token import get_token_starts, spread_token_wise
 
 from rf_diffusion.aa_model import Indep, N_TERMINUS, C_TERMINUS, is_occupied, pop_mask, deatomize_covales
+from rf_diffusion.conditions.util import pop_conditions_dict
+
 class BackwardCompatibleDataLoaderProcessOut(Transform):
     requires_previous_transforms = [
         FlagNonPolymersForAtomization,
@@ -286,5 +286,3 @@ class SimplePathParser(MetadataRowParser):
             "extra_info": extra_info,
             "assembly_id": assembly_id
         }
-
-

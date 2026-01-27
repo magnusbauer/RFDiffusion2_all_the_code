@@ -26,7 +26,7 @@ from collections import defaultdict
 import time
 import pickle
 import dataclasses
-import torch 
+import torch
 from omegaconf import OmegaConf
 import hydra
 import logging

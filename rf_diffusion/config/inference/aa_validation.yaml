@@ -9,7 +9,7 @@ inference:
   str_self_cond: False
   state_dict_to_use: model_state_dict
   deterministic: True
-  ckpt_path: /net/scratch/ahern/se3_diffusion/training/center_all_from_scratch_enz_finetune_stage_2a/center_all_from_scratch_enz_finetune_stage_2a2024-07-03_02:34:09.651142/rank_0/models/RFD_140.pt
+  ckpt_path: /net/databases/lab/aa-diffusion/models/RFD_140_ORI_tipatom.pt
   idealize_sidechain_outputs: True
   write_trb_indep: True
   inference.guidepost_xyz_as_design_bb: [True]

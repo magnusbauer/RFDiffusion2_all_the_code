@@ -7,15 +7,12 @@
 [submodule "lib/fused_mpnn/fused_mpnn"]
 	path = lib/fused_mpnn/fused_mpnn
 	url = git@github.com:baker-laboratory/fused_mpnn.git
-[submodule "lib/datahub"]
-	path = lib/datahub
-	url = git@github.com:baker-laboratory/datahub.git
-[submodule "lib/cifutils"]
-	path = lib/cifutils
-	url = git@github.com:baker-laboratory/cifutils.git
 [submodule "lib/ipd"]
 	path = lib/ipd
 	url = https://github.com/baker-laboratory/ipd.git
 [submodule "lib/chai"]
 	path = lib/chai
 	url = git@git.ipd.uw.edu:ai/chai.git
+[submodule "lib/atomworks"]
+	path = lib/atomworks
+	url = git@github.com:RosettaCommons/atomworks.git

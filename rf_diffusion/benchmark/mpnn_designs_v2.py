@@ -20,7 +20,20 @@ from rf_diffusion.benchmark.util import slurm_tools
 import rf_diffusion
 PKG_DIR = rf_diffusion.__path__[0]
 REPO_DIR = os.path.dirname(PKG_DIR)
-mpnn_script = os.path.join(REPO_DIR, 'fused_mpnn/run.py')
+
+
+def _locate_mpnn_script() -> str:
+    candidates = [
+        os.path.join(REPO_DIR, 'lib', 'fused_mpnn', 'fused_mpnn', 'run.py'),
+        os.path.join(REPO_DIR, 'fused_mpnn', 'run.py'),
+    ]
+    for path in candidates:
+        if os.path.exists(path):
+            return path
+    raise FileNotFoundError(f'Unable to locate fused_mpnn run.py. Looked in: {candidates}')
+
+
+mpnn_script = _locate_mpnn_script()
 
 def memoize_to_disk(file_name):
     file_name = file_name + '.memo'
@@ -101,7 +114,14 @@ def main(conf: HydraConfig) -> list[int]:
 
 
 def get_binary(in_proc):
-    return '/usr/bin/apptainer exec --nv --bind /databases:/databases --bind /net/software/:/net/software/ --bind /projects:/projects /software/containers/mlfold.sif python -u'
+    return (
+        '/usr/bin/apptainer exec --nv'
+        ' --bind /databases:/databases'
+        ' --bind /net/software/:/net/software/'
+        ' --bind /projects:/projects'
+        ' --bind /net:/net'
+        ' /software/containers/mlfold.sif python -u'
+    )
 
 def run_mpnn(conf, filenames):
     '''

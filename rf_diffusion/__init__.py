@@ -1,5 +1,55 @@
 import contextlib
 import os
+import sys
+
+
+def _ensure_atomworks_in_path() -> None:
+    """Allow in-repo atomworks sources to be imported without manual PYTHONPATH tweaks."""
+    repo_root = os.path.dirname(os.path.dirname(__file__))
+    atomworks_src = os.path.realpath(os.path.join(repo_root, 'lib', 'atomworks', 'src'))
+    if not os.path.isdir(atomworks_src):
+        return
+
+    for existing in sys.path:
+        try:
+            if os.path.realpath(existing) == atomworks_src:
+                return
+        except (OSError, TypeError):  # some entries may be non-path values
+            continue
+
+    sys.path.append(atomworks_src)
+
+
+_ensure_atomworks_in_path()
+
+
+def _patch_ipd_safe_eval() -> None:
+    """Fallback for ipd.dev.safe_eval when RestrictedPython isn't installed."""
+    try:
+        from importlib.util import find_spec
+        from ipd.dev import safe_eval as ipd_safe_eval  # type: ignore
+    except ImportError:
+        return
+
+    if find_spec('RestrictedPython') is not None:
+        return
+
+    import ast
+
+    def _literal_eval(code: str, **kw):
+        try:
+            return ast.literal_eval(code)
+        except Exception:
+            return eval(code, {}, kw)  # noqa: S307
+
+    def _literal_exec(code: str, **kw):
+        exec(code, kw)
+
+    ipd_safe_eval.safe_eval = _literal_eval  # type: ignore[attr-defined]
+    ipd_safe_eval.safe_exec = _literal_exec  # type: ignore[attr-defined]
+
+
+_patch_ipd_safe_eval()
 
 import rf2aa as _  # noqa needed for registration
 from ipd.dev import install_ipd_pre_commit_hook, lazyimport

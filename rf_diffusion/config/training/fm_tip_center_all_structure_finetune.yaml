@@ -44,16 +44,16 @@ datahub:
   pdb:
     probability: 0.5
     dataset:
-      _target_: datahub.datasets.datasets.StructuralDatasetWrapper
+      _target_: atomworks.ml.datasets.datasets.StructuralDatasetWrapper
       save_failed_examples_to_dir: null
       cif_parser_args:
         load_from_cache: True
         save_to_cache: True
         cache_dir: /net/scratch/ptkim/datahub_pn_units_cache
       dataset_parser:
-        _target_: datahub.datasets.parsers.default_metadata_row_parsers.PNUnitsDFParser
+        _target_: atomworks.ml.datasets.parsers.default_metadata_row_parsers.PNUnitsDFParser
       dataset:
-        _target_: datahub.datasets.datasets.PandasDataset
+        _target_: atomworks.ml.datasets.datasets.PandasDataset
         name: pn_unit
         id_column: example_id
         data: /projects/ml/RF2_allatom/datasets/pdb/2024_09_10/pn_units_df.parquet
@@ -61,7 +61,7 @@ datahub:
           - "resolution < 9.0 and ~method.str.contains('NMR')"
           - "num_polymer_pn_units <= 300" 
           - "cluster.notnull()"
-          # - "~(q_pn_unit_non_polymer_res_names.notnull() and q_pn_unit_non_polymer_res_names.str.contains('${resolve_import:cifutils.constants.AF3_EXCLUDED_LIGANDS_REGEX}', regex=True))"
+          # - "~(q_pn_unit_non_polymer_res_names.notnull() and q_pn_unit_non_polymer_res_names.str.contains('${resolve_import:atomworks.constants.AF3_EXCLUDED_LIGANDS_REGEX}', regex=True))"
         columns_to_load:
           # columns required for identification, filtering & weighting
           - example_id
@@ -83,22 +83,22 @@ datahub:
         crop_contiguous_probability: 0.9
         crop_spatial_probability: 0.1
     weights:
-      _target_: datahub.samplers.calculate_weights_by_inverse_cluster_size
+      _target_: atomworks.ml.samplers.calculate_weights_by_inverse_cluster_size
 
 
   pdb_interface:
     probability: 0.5
     dataset:
-      _target_: datahub.datasets.datasets.StructuralDatasetWrapper
+      _target_: atomworks.ml.datasets.datasets.StructuralDatasetWrapper
       save_failed_examples_to_dir: null
       cif_parser_args:
         load_from_cache: True
         save_to_cache: True
         cache_dir: /net/scratch/ptkim/datahub_interface_cache
       dataset_parser:
-        _target_: datahub.datasets.parsers.default_metadata_row_parsers.InterfacesDFParser
+        _target_: atomworks.ml.datasets.parsers.default_metadata_row_parsers.InterfacesDFParser
       dataset:
-        _target_: datahub.datasets.datasets.PandasDataset
+        _target_: atomworks.ml.datasets.datasets.PandasDataset
         name: interface
         id_column: example_id
         data: /projects/ml/RF2_allatom/datasets/pdb/2024_09_10/interfaces_df.parquet
@@ -106,8 +106,8 @@ datahub:
           - "resolution < 9.0 and ~method.str.contains('NMR')"
           - "num_polymer_pn_units <= 300" 
           - "cluster.notnull()"
-          # - "~(pn_unit_1_non_polymer_res_names.notnull() and pn_unit_1_non_polymer_res_names.str.contains('${resolve_import:cifutils.constants.AF3_EXCLUDED_LIGANDS_REGEX}', regex=True))"
-          # - "~(pn_unit_2_non_polymer_res_names.notnull() and pn_unit_2_non_polymer_res_names.str.contains('${resolve_import:cifutils.constants.AF3_EXCLUDED_LIGANDS_REGEX}', regex=True))"
+          # - "~(pn_unit_1_non_polymer_res_names.notnull() and pn_unit_1_non_polymer_res_names.str.contains('${resolve_import:atomworks.constants.AF3_EXCLUDED_LIGANDS_REGEX}', regex=True))"
+          # - "~(pn_unit_2_non_polymer_res_names.notnull() and pn_unit_2_non_polymer_res_names.str.contains('${resolve_import:atomworks.constants.AF3_EXCLUDED_LIGANDS_REGEX}', regex=True))"
           - "is_inter_molecule"
         columns_to_load:
           # columns required for identification, filtering & weighting
@@ -133,14 +133,14 @@ datahub:
         crop_contiguous_probability: 0.0
         crop_spatial_probability: 1.0
     weights:
-      _target_: datahub.samplers.calculate_weights_by_inverse_cluster_size
+      _target_: atomworks.ml.samplers.calculate_weights_by_inverse_cluster_size
 
     # monomer_distillation: TODO figure out how to make this work - turn off atomization here
     #   probability: 0.5
     #   sub_datasets:
     #     af2fb_distillation:
     #       dataset:
-    #         _target_: datahub.datasets.base.StructuralDatasetWrapper
+    #         _target_: atomworks.ml.datasets.datasets.StructuralDatasetWrapper
     #         save_failed_examples_to_dir: null
 
     #         # cif parser
@@ -154,11 +154,11 @@ datahub:
 
     #         # metadata parser
     #         dataset_parser:
-    #           _target_: datahub.datasets.dataframe_parsers.AF2FB_DistillationParser
+    #           _target_: atomworks.ml.datasets.parsers.default_metadata_row_parsers.AF2FB_DistillationParser
 
     #         # metadata dataset
     #         dataset:
-    #           _target_: datahub.datasets.base.PandasDataset
+    #           _target_: atomworks.ml.datasets.datasets.PandasDataset
     #           name: af2fb_distillation
     #           id_column: example_id
     #           data: /squash/af2_distillation_facebook/af2_distillation_facebook.parquet
@@ -167,7 +167,7 @@ datahub:
     #             - sequence_hash
     #         return_key: feats
     #         transform:
-    #           _target_: datahub.pipelines.rf2aa.build_rf2aa_transform_pipeline
+    #           _target_: atomworks.ml.pipelines.rf2aa.build_rf2aa_transform_pipeline
     #           protein_msa_dirs: [{"dir": "/squash/af2_distillation_facebook/msa", "extension": ".a3m", "directory_depth": 2}]
     #           rna_msa_dirs: []
     #           n_recycles: ${loader_params.maxcycle}
