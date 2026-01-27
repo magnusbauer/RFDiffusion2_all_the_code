@@ -1,3 +1,10 @@
+# Info
+
+You caught us in an early state. Brian C literally just pushed this out to the internet because we've spent far too long cleaning it up for release.
+
+In theory you can get this code to run, but there might be some hiccups until we get this all looking good.
+
+
 # Setup
 
 ## Dependencies
