@@ -55,6 +55,11 @@ if [ -z "$APPTAINER_NAME" ]; then
         echo "Default apptainer not found (you can build it from exec/rf_diffusion_aa.spec): $SIF_PATH"
         SIF_PATH=""
 
+        # If a bakerlab SIF exists locally, use it even when not at IPD.
+        if [ -f "$SCRIPT_DIR/bakerlab_rf_diffusion_aa.sif" ]; then
+            SIF_PATH=$(readlink -f "$SCRIPT_DIR/bakerlab_rf_diffusion_aa.sif")
+        fi
+
         if [ -f $IPD_FILE ]; then
             SIF_PATH=$(readlink -f "$SCRIPT_DIR/bakerlab_rf_diffusion_aa.sif" )
             if [ -z $SIF_PATH ] || [ ! -f $SIF_PATH ]; then
@@ -77,7 +82,7 @@ if [ ! -z $SIF_PATH ]; then
     echo "Running $PYTHON_SCRIPT with $SIF_PATH."
     echo '################## End shebang info ####################'
     echo
-    /usr/bin/apptainer run --nv --slurm --env PYTHONPATH="\$PYTHONPATH:$PYTHONPATH" $SIF_PATH "$PYTHON_SCRIPT" "$@"
+    /usr/bin/apptainer run --nv --env PYTHONPATH="\$PYTHONPATH:$PYTHONPATH" $SIF_PATH "$PYTHON_SCRIPT" "$@"
 else
     echo '################## End shebang info ####################'
     echo
