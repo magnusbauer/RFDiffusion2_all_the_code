@@ -1281,13 +1281,33 @@ def get_origin_normal_to_target_hotspot(indep, conditions_dict, is_diffused, nor
     Cb = Cb_or_atom(indep)
     hotspot_cb_com = Cb[is_hotspot].mean(axis=0)
     target_ca = indep.xyz[~is_diffused,1]
-    
+
     target_ca_near_hotspot = target_ca[(target_ca - hotspot_cb_com).norm(dim=1) < 10]
-    # target_ca_near_hotspot_com = np.mean(target_ca_near_hotspot, axis=0)
+
+    if target_ca_near_hotspot.shape[0] == 0:
+        # Fallback: include diffused residues on hotspot chains (e.g., inpaint_str residues),
+        # using their pre-diffusion coordinates from the input structure.
+        if hasattr(indep, 'same_chain') and indep.same_chain is not None:
+            is_hotspot_chain = indep.same_chain[:, is_hotspot].any(dim=1)
+            target_ca_with_diffused = indep.xyz[is_hotspot_chain, 1]
+        else:
+            target_ca_with_diffused = indep.xyz[:, 1]
+
+        target_ca_near_hotspot = target_ca_with_diffused[(target_ca_with_diffused - hotspot_cb_com).norm(dim=1) < 10]
+
+    assert target_ca_near_hotspot.shape[0] > 0, (
+        'center_type=normal_to_target_hotspot found no CA within 10A of hotspot. '
+        'This usually means hotspot selection only neighbors residues that were removed from the target context.'
+    )
     target_ca_near_hotspot_com = target_ca_near_hotspot.mean(axis=0)
 
     from_core_to_hotspot = hotspot_cb_com - target_ca_near_hotspot_com
-    from_core_to_hotspot = from_core_to_hotspot / from_core_to_hotspot.norm()
+    direction_norm = from_core_to_hotspot.norm().item()
+    assert np.isfinite(direction_norm) and direction_norm > 1e-8, (
+        'center_type=normal_to_target_hotspot produced a degenerate normal vector. '
+        'Hotspot COM and nearby target CA COM are likely identical.'
+    )
+    from_core_to_hotspot = from_core_to_hotspot / direction_norm
     
     return hotspot_cb_com + normal_extension * from_core_to_hotspot
 
