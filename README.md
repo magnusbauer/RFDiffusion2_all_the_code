@@ -21,13 +21,22 @@ Now clone the repo.
 git clone -b aa git@github.com:baker-laboratory/rf_diffusion.git $REPO_NAME
 cd $REPO_DIR
 git submodule init
-git submodule update --init
+git submodule update --init --recursive
 ```
+## Build the Apptainer image
+The default container path used by scripts and examples is `rf_diffusion/exec/rf_diffusion_aa.sif`. Build it with:
+```
+cd $REPO_DIR/rf_diffusion
+exec/build_rf_diffusion_aa_apptainer.sh
+```
+
+By default, the image contains the RFdiffusion-AA runtime dependencies but does not embed this repository or model weights. The default image filename is `rf_diffusion_aa.sif`; use `--name` for a different filename in `rf_diffusion/exec` or `--output` for a custom path. For a more self-contained image, use `exec/build_rf_diffusion_aa_apptainer.sh --with-repo --with-weights`. Run `exec/build_rf_diffusion_aa_apptainer.sh --help` for all options.
+
 ## Verify tests pass
 ```
 export PYTHONPATH="${PYTHONPATH}:$REPO_DIR"
 cd $REPO_DIR/rf_diffusion
-apptainer exec exec/bakerlab_rf_diffusion_aa.sif pytest --disable-warnings -s -m "not nondeterministic"
+apptainer exec exec/rf_diffusion_aa.sif pytest --disable-warnings -s -m "not nondeterministic"
 ```
 ## A note about running scripts in this repo
 Many of the python scripts in this repo are executable. That is, you don't need to do `python some_script.py` or `my_container.sif some_script.py`. The are several environmental variables and flags that need to be set properly for the scripts to run. Rather than asking the user to set these correctly each time (which is error prone), we have a script to do this prep work under the hood for you! 
@@ -35,7 +44,7 @@ Many of the python scripts in this repo are executable. That is, you don't need 
 Any scripts (like `rf_diffusion/benchmark/pipeline.py` and `rf_diffusion/run_inference.py`) that have the shebang line `#!/usr/bin/env -S /bin/sh -c '"$(dirname "$0")/exec/rf_diffusion_aa_shebang.sh" "$0" "$@"'` can be executed directly. If you need to run a script without that line, you need to do
 ```
 export PYTHONPATH="${PYTHONPATH}:$REPO_DIR"
-/usr/bin/apptainer run --nv --slurm --env PYTHONPATH="\$PYTHONPATH:$PYTHONPATH" path/to/rf_diffusion/exec/bakerlab_rf_diffusion_aa.sif path/to/script.py ...
+/usr/bin/apptainer run --nv --slurm --env PYTHONPATH="\$PYTHONPATH:$PYTHONPATH" path/to/rf_diffusion/exec/rf_diffusion_aa.sif path/to/script.py ...
 ```
 
 # Simple inference pipeline run
@@ -100,7 +109,7 @@ This will produce a metrics dataframe: $METRICS_DATAFRAME_PATH
 
 Use $METRICS_DATAFRAME_PATH in the provided analysis notebook `notebooks/analyze_catalytic_constraints.ipynb` to analyze success on the various catalytic constraints.
 
-If you do not have the dependencies to run this notebook in your default kernel, use this sif as a kernel `rf_diffusion/exec/bakerlab_rf_diffusion_aa.sif` following instructions in https://wiki.ipd.uw.edu/it/digs/apptainer#jupyter
+If you do not have the dependencies to run this notebook in your default kernel, use this sif as a kernel `rf_diffusion/exec/rf_diffusion_aa.sif` following instructions in https://wiki.ipd.uw.edu/it/digs/apptainer#jupyter
 
 ## Running catalytic constraint design + benchmarking
 `$REPO_DIR/rf_diffusion/benchmark/pipeline.py --config-name=sh_benchmark_1_tip-true_selfcond-false_seqposition_truefalse_T150`
@@ -308,7 +317,7 @@ Here's an example .sh script for submitting a CA RFdiffusion diffusion run:
 ```
 output_pref="./experiments/out"
 
-apptainer exec --nv ./exec/bakerlab_rf_diffusion_aa.sif python run_inference.py \
+apptainer exec --nv ./exec/rf_diffusion_aa.sif python run_inference.py \
     --config-name="RFdiffusion_CA_inference" \
     inference.output_prefix=${output_pref} \
     inference.num_designs=30
@@ -377,7 +386,7 @@ See `test_ca_rfd_refinement` config yaml. Here is an example submission in a bas
 pdb='path/to/some_pdb_with_trb_file_next_to_it.pdb'
 CKPT='/mnt/projects/ml/ca_rfd/BFF_3_w_new_conf.pt'
 
-apptainer exec --nv ./exec/bakerlab_rf_diffusion_aa.sif python run_inference.py \
+apptainer exec --nv ./exec/rf_diffusion_aa.sif python run_inference.py \
     --config-name=test_ca_rfd_refinement \
     inference.num_designs=2 \
     inference.input_pdb=$pdb \

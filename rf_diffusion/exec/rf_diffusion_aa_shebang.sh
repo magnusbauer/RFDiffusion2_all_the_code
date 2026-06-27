@@ -41,48 +41,28 @@ else
     exit 1
 fi
 
-# check if we are at the IPD
-IPD_FILE="/software/containers/versions/rf_diffusion_aa/ipd.txt"
-
 SIF_PATH=""
 
 if [ -z "$APPTAINER_NAME" ]; then
 
-    # This is the default apptainer that you can build from exec/rf_diffusion_aa.spec
+    # This is the default apptainer that you can build from exec/build_rf_diffusion_aa_apptainer.sh
     SIF_PATH="$SCRIPT_DIR/rf_diffusion_aa.sif"
 
-    if [ ! -f $SIF_PATH ]; then
-        echo "Default apptainer not found (you can build it from exec/rf_diffusion_aa.spec): $SIF_PATH"
+    if [ ! -f "$SIF_PATH" ]; then
+        echo "Default apptainer not found: $SIF_PATH"
+        echo "Build it with: $SCRIPT_DIR/build_rf_diffusion_aa_apptainer.sh"
         SIF_PATH=""
-
-        # If a bakerlab SIF exists locally, use it even when not at IPD.
-        if [ -f "$SCRIPT_DIR/bakerlab_rf_diffusion_aa.sif" ]; then
-            SIF_PATH=$(readlink -f "$SCRIPT_DIR/bakerlab_rf_diffusion_aa.sif")
-        fi
-
-        if [ -f $IPD_FILE ]; then
-            SIF_PATH=$(readlink -f "$SCRIPT_DIR/bakerlab_rf_diffusion_aa.sif" )
-            if [ -z $SIF_PATH ] || [ ! -f $SIF_PATH ]; then
-                SIF_PATH=""
-                echo "You're at the IPD and something is wrong. The target of this symlink doesn't exist: $SCRIPT_DIR/bakerlab_rf_diffusion_aa.sif"
-            else
-                echo "You're at the IPD and we found this sif: $SIF_PATH"
-            fi
-        fi
-
-        if [ -z $SIF_PATH ]; then
-            echo "No apptainer found. Attempting to run $PYTHON_SCRIPT with $(which python)"
-        fi
+        echo "No apptainer found. Attempting to run $PYTHON_SCRIPT with $(which python)"
     fi
 else
     echo "Already running inside container $APPTAINER_NAME. Executing $PYTHON_SCRIPT with $(which python) in the existing container."
 fi
 
-if [ ! -z $SIF_PATH ]; then
+if [ -n "$SIF_PATH" ]; then
     echo "Running $PYTHON_SCRIPT with $SIF_PATH."
     echo '################## End shebang info ####################'
     echo
-    /usr/bin/apptainer run --nv --env PYTHONPATH="\$PYTHONPATH:$PYTHONPATH" $SIF_PATH "$PYTHON_SCRIPT" "$@"
+    /usr/bin/apptainer run --nv --env PYTHONPATH="\$PYTHONPATH:$PYTHONPATH" "$SIF_PATH" "$PYTHON_SCRIPT" "$@"
 else
     echo '################## End shebang info ####################'
     echo
