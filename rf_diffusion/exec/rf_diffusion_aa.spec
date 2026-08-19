@@ -44,10 +44,15 @@ apt-get install -y --no-install-recommends \
     ninja-build \
     pkg-config \
     rsync \
+    software-properties-common \
     wget
 update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-11 50
 update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-11 50
 update-alternatives --install /usr/bin/c++ c++ /usr/bin/g++-11 50
+
+add-apt-repository -y ppa:apptainer/ppa
+apt-get update
+apt-get install -y --no-install-recommends apptainer
 
 # Runtime bind points only. Databases, checkpoints, repositories, and user
 # files remain external to the image.

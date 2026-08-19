@@ -1,57 +1,78 @@
-# Info
+# RFdiffusion2 for Molecular Interfaces
 
-You caught us in an early state. Brian C literally just pushed this out to the internet because we've spent far too long cleaning it up for release.
+Open source code for RFdiffusion2 for Molecular Interfaces, an extension of [RFD2](https://www.nature.com/articles/s41592-025-02975-x), as described in the following [bioRxiv pre-print](https://www.biorxiv.org/content/10.1101/2025.09.29.678898v2).
 
-In theory you can get this code to run, but there might be some hiccups until we get this all looking good.
+# Quick start
 
+You need Git, `curl`, an NVIDIA GPU, and [Apptainer](https://apptainer.org/docs/admin/main/installation.html).
 
-# Setup
+1. Clone the repository and its submodules:
 
-## Dependencies
-rf_diffusion now includes a pre-commit hook that runs ruff and yapf to autoformat files. If you run into an error, just run "pip install ruff yapf," or otherwise install the two packages. Most existing files are, for now, grandfathered out of autoformatting via inclusion in the .yapf_exclude file. If you really don't want your new files autoformatted, you can add them to that file. Linting and formatting will be applied before each commit. After the initial run, which may take ten seconds or so, formatting will be done incrementally and shouldn't slow you down.
+   ```bash
+   git clone https://github.com/RosettaCommons/RFDiffusion2_all_the_code.git
+   cd RFDiffusion2_all_the_code
+   git submodule update --init --recursive
+   export REPO_DIR="$PWD"
+   ```
 
-## Paths
-Let's define some paths. Begin by `cd`ing to any directory you like.
-```
-REPO_NAME="rf_diffusion_repo"  # Set REPO_NAME to be anything you like.
-REPO_DIR="$PWD/$REPO_NAME"
-```
-Now clone the repo.
-```
-git clone -b aa git@github.com:baker-laboratory/rf_diffusion.git $REPO_NAME
-cd $REPO_DIR
-git submodule init
-git submodule update --init --recursive
-```
-## Build the Apptainer image
-The default container path used by scripts and examples is `rf_diffusion/exec/rf_diffusion_aa.sif`. Build it with:
-```
-cd $REPO_DIR/rf_diffusion
-exec/build_rf_diffusion_aa_apptainer.sh
+2. Pull the prebuilt container from [Docker Hub](https://hub.docker.com/r/magnusbauer/rfdiffusion2-apptainer):
+
+   ```bash
+   apptainer pull \
+       rf_diffusion/exec/rf_diffusion_aa.sif \
+       oras://docker.io/magnusbauer/rfdiffusion2-apptainer:cuda12.8-torch2.8.0-20260818
+   ```
+
+   The SIF SHA-256 is `f8bdfd4e9570fe4091931512a2570b71729a110efdb7b908c7f2c67cfbb9b025`. Use the `latest` tag instead if you want the newest published image.
+
+3. Download the model weights:
+
+   ```bash
+   ./rf_diffusion/exec/download_model_weights.sh
+   export RFDIFFUSION2_WEIGHTS_DIR="$REPO_DIR/rf_diffusion/model_weights"
+   ```
+
+   This downloads the RFdiffusion2 weights (`RFD_173.pt` and `RFD_140.pt`) and the RFdiffusion2-MI weight (`ppi_robust_struct.pt`) into `rf_diffusion/model_weights`. Existing files are skipped; use `--force` to replace them. If you use `--output-dir DIR`, set `RFDIFFUSION2_WEIGHTS_DIR` to the absolute path of that directory.
+
+4. Confirm the container starts:
+
+   ```bash
+   apptainer exec rf_diffusion/exec/rf_diffusion_aa.sif \
+       python -c 'import torch; print("PyTorch", torch.__version__, "CUDA", torch.version.cuda)'
+   ```
+
+## Build the container locally instead
+
+To build the image from `rf_diffusion/exec/rf_diffusion_aa.spec` rather than downloading it:
+
+```bash
+./rf_diffusion/exec/build_rf_diffusion_aa_apptainer.sh
 ```
 
-By default, the image contains the RFdiffusion-AA runtime dependencies but does not embed this repository or model weights. The default image filename is `rf_diffusion_aa.sif`; use `--name` for a different filename in `rf_diffusion/exec` or `--output` for a custom path. For a more self-contained image, use `exec/build_rf_diffusion_aa_apptainer.sh --with-repo --with-weights`. Run `exec/build_rf_diffusion_aa_apptainer.sh --help` for all options.
+The default build contains the runtime dependencies but not this repository or the model weights. Run with `--with-repo --with-weights` for a self-contained image, or `--help` for all options.
 
-## Verify tests pass
-```
-export PYTHONPATH="${PYTHONPATH}:$REPO_DIR"
-cd $REPO_DIR/rf_diffusion
-apptainer exec exec/rf_diffusion_aa.sif pytest --disable-warnings -s -m "not nondeterministic"
-```
-## A note about running scripts in this repo
-Many of the python scripts in this repo are executable. That is, you don't need to do `python some_script.py` or `my_container.sif some_script.py`. The are several environmental variables and flags that need to be set properly for the scripts to run. Rather than asking the user to set these correctly each time (which is error prone), we have a script to do this prep work under the hood for you! 
+## Running repository scripts
 
-Any scripts (like `rf_diffusion/benchmark/pipeline.py` and `rf_diffusion/run_inference.py`) that have the shebang line `#!/usr/bin/env -S /bin/sh -c '"$(dirname "$0")/exec/rf_diffusion_aa_shebang.sh" "$0" "$@"'` can be executed directly. If you need to run a script without that line, you need to do
+Executable scripts such as `rf_diffusion/run_inference.py` and `rf_diffusion/benchmark/pipeline.py` automatically launch the container, set `PYTHONPATH`, and default `RFDIFFUSION2_WEIGHTS_DIR` to `rf_diffusion/model_weights`. If the SIF is missing, the wrapper offers to download it. For scripts without the container shebang, run:
+
+```bash
+apptainer exec --nv \
+    --env PYTHONPATH="$REPO_DIR" \
+    --env RFDIFFUSION2_WEIGHTS_DIR="$REPO_DIR/rf_diffusion/model_weights" \
+    rf_diffusion/exec/rf_diffusion_aa.sif python path/to/script.py ...
 ```
-export PYTHONPATH="${PYTHONPATH}:$REPO_DIR"
-/usr/bin/apptainer run --nv --slurm --env PYTHONPATH="\$PYTHONPATH:$PYTHONPATH" path/to/rf_diffusion/exec/rf_diffusion_aa.sif path/to/script.py ...
-```
+
+Set `RFDIFFUSION2_SIF_PATH` to use another SIF or `RFDIFFUSION2_APPTAINER_URI` to pull from another OCI URI.
+
+The examples below are wired to the downloaded checkpoints: small demos use `RFD_173.pt`, the full enzyme benchmark uses `RFD_140.pt`, and the protein-interface benchmark uses `ppi_robust_struct.pt`.
 
 # Simple inference pipeline run
 ## Running inference
 To run a demo of some of the inference capabilities, including enzyme design from tip atoms, enzyme design from tip atoms of unknown sequence position, ligand binder design, traditional contiguous motif scaffolding, and molecular glue design (binder to protein:small_molecule complex).  (See `$REPO_DIR/rf_diffusion/benchmark/demo.json` for how these tasks are declared)
 
 `$REPO_DIR/rf_diffusion/benchmark/pipeline.py --config-name=demo_only_design`
+
+This configuration loads `$RFDIFFUSION2_WEIGHTS_DIR/RFD_173.pt`.
 
 This will print the directory the designs are created in:
 ic| conf.outdir: OUTDIR
@@ -81,6 +102,8 @@ To run a simple pipeline with no mpnn/scoring for the tip atom case:
 
 `$REPO_DIR/rf_diffusion/benchmark/pipeline.py --config-name=retroaldolase_demo_nodigs`
 
+This configuration also loads `$RFDIFFUSION2_WEIGHTS_DIR/RFD_173.pt`.
+
 ## Running catalytic constraint benchmarking
 
 Put your un-mpnned designs in a folder, call it $MY_FOLDER
@@ -96,7 +119,7 @@ The trb file is expected to contain a pickle that has the following structure:
  'config': {
 	'contigmap': {'contig_atoms': "{'A1':'C','A2':'N,CA,CB,OG','A3':'NE2,CE1,ND1,CG,CD2'}"},
   	'inference': {
-		'input_pdb': '/net/scratch/ahern/se3_diffusion/benchmarks/2023-12-13_02-40-19_sh_benchmark_1_bb_both/input/siteC.pdb',
+		'input_pdb': '/path/to/input/siteC.pdb',
    		'ligand': 'mu2'
 		}
 	}
@@ -113,6 +136,8 @@ If you do not have the dependencies to run this notebook in your default kernel,
 
 ## Running catalytic constraint design + benchmarking
 `$REPO_DIR/rf_diffusion/benchmark/pipeline.py --config-name=sh_benchmark_1_tip-true_selfcond-false_seqposition_truefalse_T150`
+
+This configuration loads `$RFDIFFUSION2_WEIGHTS_DIR/RFD_173.pt`.
 
 This will make 50 * 2 [+/- sequence position] * 6 [6 different active site descriptions] = 600 designs = 600 * 8 (MPNN runs/design) = 4800 sequences
 
@@ -279,117 +304,57 @@ We crawled M-CSA for 41 enzymes where all reactants and products are present to 
 
 Run it with:
 
-`./benchmark/pipeline.py --config-name=enzyme_bench_n41`
+`$REPO_DIR/rf_diffusion/benchmark/pipeline.py --config-name=enzyme_bench_n41`
+
+This configuration loads `$RFDIFFUSION2_WEIGHTS_DIR/RFD_140.pt`.
 
 # Debugging
 
 ## pipeline.py
 If your outdir is `/a/b/c/` then slurm logs appear at: `/a/b/SLURMJOBID_SLURMJOBARRAYINDEX_jobtype.log`
 
-# PPI
+# Protein-interface design
 
-You can compare protein-protein binder design between RFDAM and RFDiffusion by generating length 100 binders against the 5 binder design benchmark cases described in the RFDiffusion paper, by running this command:
+Generate length-100 binders against the five protein-interface benchmark targets with the published RFdiffusion2-MI checkpoint:
 
-`./benchmark/pipeline.py -cn ppi_comparison_pilot`
+`$REPO_DIR/rf_diffusion/benchmark/pipeline.py --config-name=ppi_rf_bench`
+
+This configuration loads `$RFDIFFUSION2_WEIGHTS_DIR/ppi_robust_struct.pt`.
 
 To visualize the trajectories created during the "sweep" step in PYMOL:
-`./dev/show_bench.py --clear=1 'YOUR_OUTPUT_DIR_HERE/*.trb' --key=name --ppi=1 --des=0`
+`$REPO_DIR/rf_diffusion/dev/show_bench.py --clear=1 'YOUR_OUTPUT_DIR_HERE/*.trb' --key=name --ppi=1 --des=0`
 
 To visualize the designs as cartoons once the MPNN step is complete in PYMOL:
-`./dev/show_bench.py --clear=1 'YOUR_OUTPUT_DIR_HERE/*.trb' --key=name --ppi=1 --mpnn_packed=1 --des=0 --cartoon=1 --structs='{}'`
+`$REPO_DIR/rf_diffusion/dev/show_bench.py --clear=1 'YOUR_OUTPUT_DIR_HERE/*.trb' --key=name --ppi=1 --mpnn_packed=1 --des=0 --cartoon=1 --structs='{}'`
 
-## CA RFdiffusion
+## Legacy CA RFdiffusion
 
-Example shell scripts for running inference with CA RFdiffusion (diffusion + refinement) are in
-```
-# inference
-rf_diffusion/examples/inference/ca_rfd_diffuse.sh
-rf_diffusion/examples/inference/ca_rfd_refine.sh
-# training
-rf_diffusion/examples/train/train_ca_rfd.sh
-```
-Below is reccomended reading for better understanding inference. 
+The CA diffusion and refinement scripts require the separate `BFF_7` and `BFF_3` checkpoint architectures. Those checkpoints are not interchangeable with the published RFdiffusion2 and RFdiffusion2-MI weights downloaded above, so the legacy CA workflow is not part of this quick start.
 
-### CA RFdiffusion -- inference
-The following are some general notes and things to look out for when running inference with CA RFdiffusion.
+## Citations
 
-Here's an example .sh script for submitting a CA RFdiffusion diffusion run:
-```
-output_pref="./experiments/out"
+Please cite the RFdiffusion2 for Molecular Interfaces pre-print:
 
-apptainer exec --nv ./exec/rf_diffusion_aa.sif python run_inference.py \
-    --config-name="RFdiffusion_CA_inference" \
-    inference.output_prefix=${output_pref} \
-    inference.num_designs=30
+```bibtex
+@article{Bauer2025.09.29.678898,
+  author={Bauer, Magnus S and Zhang, Jason Z and Wu, Kejia and Lee, Gyu Rie and Coventry, Brian and Silvestri, Isabella M and Klupt, Kody A and Shi, Jiuhan and Brent, Rafael I and Li, Xinting and Moller, Carolina and Roullier, Nicole and Vafeados, Dionne K and Kalvet, Indrek and Skotheim, Rebecca K and Zhu, Siyu and Motmaen, Amir and Herrmann, Luca C and Sturmfels, Pascal and Tischer, Doug and Altae-Tran, Han and Juergens, David and Krishna, Rohith and Ahern, Woody and Yim, Jason and Bera, Asim K and Kang, Alex and Joyce, Emily and Lu, Andrew and Stewart, Lance and DiMaio, Frank and Mudumbi, Krishna C and Baker, David},
+  title={De novo design of phosphotyrosine peptide binders},
+  elocation-id={2025.09.29.678898},
+  year={2026},
+  doi={10.1101/2025.09.29.678898},
+  publisher={Cold Spring Harbor Laboratory}
+}
 ```
 
-Lets look at the `RFdiffusion_CA_inference.yaml` file. 
+This code extends RFdiffusion2; please also cite its pre-print:
 
-We first see some stuff related to running diffusion:
-```
-diffuser: 
-  type: 'legacy'
-  T: 50
-  
-  r3: 
-    min_b: 0.01
-    max_b: 0.07
-    coordinate_scaling: 0.25
-    T: ${..T}
-    schedule_kwargs: {}
-    var_scale: 0.05
-    noise_scale: 0.05 
-```
-
-Things you can touch here are `T` (although 50 is reccomended) and `noise_scale` (Linna An showed 0.05 is best for compute efficiency). 
-
-There's nothing fancy about contigs strings with CA RFdiffusion, but we will reference this one below:
-```
-contigmap:  
-  contigs: ['30,A1-4,40,A5-5,40,A6-6,40,A7-7,40']
-```
-
-Now, look at these inference parameters:
-```
-inference: 
-  output_prefix: ./experiments/caRFD_test
-  ckpt_path: '/mnt/projects/ml/ca_rfd/BFF_7_w_new_conf.pt'
-  input_pdb: ./test_data/siteC.pdb
-  str_self_cond: 1
-  ij_visible: 'abcde' # e is the ligand
-  length: 90-125
-  ligand: mu2
-  write_trajectory: true
-  recenter_xt: true 
-  num_designs: 15
-  cautious: true 
-  guidepost_xyz_as_design: false
-```
-
-The most important flag to understand here is `ij_visible`. `ij_visible` specifies which motif chunks within the contigs string are going to be constrained with respect to each other rigidly. The syntax for writing `ij_visible` is to group together motif chunks you want constrained rigidly together, and separate groups with dashes. In the above example, all motif chunks including the ligand are constrained with respect to each other, which is why there's only one group and no dashes. If you wanted the first two motif chunks constrained w.r.t each other, and then the next two + the ligand constrained rigidly together, your flag would be `ij_visible: 'ab-cde'`. If you want each chunk free to move w.r.t to all the other chunks, you could do `ij_visible: 'a-b-c-d-e'`. If you're curious about pushing this to the limits, ask Alexis Courbet about constraining 26+ individual amino acid chunks for funnels. 
-
-#### More on ij_visible letters
-Each letter in `ij_visible` corresponds to a motif chunk in the contigs string. Specifically, the left-most contig chunk in the contigs string corresponds to letter `a` (in this example, `A1-4` is chunk `a`). The next chunk over corresponds to `b` (`A5-5` in this example). The `ij_visible` letters corresponding to other chunks in the contigs string just increases one letter at a time in the alphabet for each position further in the contigs string. **IF YOU HAVE A LIGAND IN YOUR DESIGN** (e.g., enzymes, small molecule binding, etc), you should include an extra letter in `ij_visible` which corresponds to the ligand, and that letter should be the letter in the alphabet just after the letter corresponding to the last contig chunk in the contigs string. In the example here, the ligand letter is `e` because there are 4 contig chunks in the contigs string corresponding to `a,b,c` and `d`. 
-
-### CA RFdiffusion -- refinement
-After you run the diffusion step of CA RFdiffusion, you have created a good "CA trace", in which only the CA positions matter and the N,C,O positions are nonsense. So, you run the "refinement" step. 
-
-In this step, you just need to specify; 
-1. The path to the .pdb file you want to refine 
-2. The number of refinement outputs you'd like to do per input. 2 is reccomended, but you can do as many as you want. They are really quick to run, and the outputs differ slightly (1-3 RMSD) from each other.
-3. The ligand (if you had one).
-
-See `test_ca_rfd_refinement` config yaml. Here is an example submission in a bash script:
-```
-#bin/bash
-
-pdb='path/to/some_pdb_with_trb_file_next_to_it.pdb'
-CKPT='/mnt/projects/ml/ca_rfd/BFF_3_w_new_conf.pt'
-
-apptainer exec --nv ./exec/rf_diffusion_aa.sif python run_inference.py \
-    --config-name=test_ca_rfd_refinement \
-    inference.num_designs=2 \
-    inference.input_pdb=$pdb \
-    inference.ligand='mu2' \
-    inference.ckpt_path=$CKPT
+```bibtex
+@article{ahern2025atom,
+  title={Atom level enzyme active site scaffolding using RFdiffusion2},
+  author={Ahern, Woody and Yim, Jason and Tischer, Doug and Salike, Saman and Woodbury, Seth M and Kim, Donghyo and Kalvet, Indrek and Kipnis, Yakov and Coventry, Brian and Altae-Tran, Han Raut and others},
+  journal={bioRxiv},
+  pages={2025--04},
+  year={2025},
+  publisher={Cold Spring Harbor Laboratory}
+}
 ```

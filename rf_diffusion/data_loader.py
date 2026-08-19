@@ -1884,6 +1884,13 @@ class TransformedDataset(data.Dataset):
 
         logger.debug(f'Transform root inputs: {set(feats.keys()) if isinstance(feats, dict) else type(feats)}')
 
+        # Raw dataset loaders and the transform stack are separate stochastic
+        # stages. Reset the transform RNG state from the example seed so that
+        # a change in an upstream sampling kernel cannot silently select a
+        # different crop, mask, or conditioning example downstream.
+        if isinstance(feats, dict) and 'mask_gen_seed' in feats:
+            run_inference.seed_all(feats['mask_gen_seed'])
+
         # Iterate through all transforms in order and update the features
         with error.context(feats.get('item_context', 'no item context')):
             for T in self.transforms:
