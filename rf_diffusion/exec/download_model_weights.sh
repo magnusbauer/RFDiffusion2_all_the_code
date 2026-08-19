@@ -12,12 +12,14 @@ DRY_RUN=0
 WEIGHT_NAMES=(
     RFD_173.pt
     RFD_140.pt
+    RFD_45.pt
     ppi_robust_struct.pt
 )
 
 WEIGHT_URLS=(
     https://files.ipd.uw.edu/pub/rfdiffusion2/model_weights/RFD_173.pt
     https://files.ipd.uw.edu/pub/rfdiffusion2/model_weights/RFD_140.pt
+    https://files.ipd.uw.edu/pub/rfdiffusion2-mi/model_weights/RFD_45.pt
     https://files.ipd.uw.edu/pub/rfdiffusion2-mi/model_weights/ppi_robust_struct.pt
 )
 
@@ -36,6 +38,7 @@ Options:
 
 Files:
   RFdiffusion2:     RFD_173.pt, RFD_140.pt
+  Regression tests: RFD_45.pt
   RFdiffusion2-MI:  ppi_robust_struct.pt
 
 Interrupted downloads are kept as NAME.partial and resumed on the next run.

@@ -6,10 +6,20 @@ BASE_SPEC="${SCRIPT_DIR}/rf_diffusion_aa.spec"
 DEFAULT_IMAGE_NAME="rf_diffusion_aa.sif"
 DEFAULT_OUTPUT="${SCRIPT_DIR}/${DEFAULT_IMAGE_NAME}"
 
-REPO_URL="git@github.com:RosettaCommons/RFDiffusion2_all_the_code.git"
+REPO_URL="https://github.com/RosettaCommons/RFDiffusion2_all_the_code.git"
 REPO_CONTAINER_DIR="/opt/RFDiffusion2_all_the_code"
-WEIGHTS_BASE_URL="https://files.ipd.uw.edu/pub/rfdiffusion2/model_weights"
-WEIGHTS=(RFD_173.pt RFD_140.pt)
+WEIGHT_NAMES=(
+    RFD_173.pt
+    RFD_140.pt
+    RFD_45.pt
+    ppi_robust_struct.pt
+)
+WEIGHT_URLS=(
+    https://files.ipd.uw.edu/pub/rfdiffusion2/model_weights/RFD_173.pt
+    https://files.ipd.uw.edu/pub/rfdiffusion2/model_weights/RFD_140.pt
+    https://files.ipd.uw.edu/pub/rfdiffusion2-mi/model_weights/RFD_45.pt
+    https://files.ipd.uw.edu/pub/rfdiffusion2-mi/model_weights/ppi_robust_struct.pt
+)
 
 OUTPUT="${DEFAULT_OUTPUT}"
 OUTPUT_EXPLICIT=0
@@ -33,7 +43,7 @@ Options:
                       Overrides --name.
   --with-repo         Clone ${REPO_URL} on the host and embed it at ${REPO_CONTAINER_DIR}.
   --repo-ref REF      Git ref to check out when --with-repo is used. Defaults to main.
-  --with-weights      Download and embed RFD_173.pt and RFD_140.pt model weights.
+  --with-weights      Download and embed all published model weights.
   --keep-build-dir    Keep the temporary derived spec and payload directory.
   -h, --help          Show this help message.
 
@@ -175,9 +185,10 @@ if [[ "${WITH_REPO}" -eq 1 || "${WITH_WEIGHTS}" -eq 1 ]]; then
         WEIGHTS_DIR="${PAYLOAD_REPO_DIR}/rf_diffusion/model_weights"
         mkdir -p -- "${WEIGHTS_DIR}"
 
-        for weight in "${WEIGHTS[@]}"; do
+        for index in "${!WEIGHT_NAMES[@]}"; do
+            weight="${WEIGHT_NAMES[index]}"
             info "Downloading ${weight}"
-            download_file "${WEIGHTS_BASE_URL}/${weight}" "${WEIGHTS_DIR}/${weight}"
+            download_file "${WEIGHT_URLS[index]}" "${WEIGHTS_DIR}/${weight}"
         done
     fi
 
