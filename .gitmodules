@@ -1,6 +1,6 @@
 [submodule "lib/atomworks"]
 	path = lib/atomworks
-	url = git@github.com:RosettaCommons/atomworks.git
+	url = https://github.com/RosettaCommons/atomworks.git
 [submodule "lib/RFdiffusion2"]
 	path = lib/RFdiffusion2
 	url = https://github.com/RosettaCommons/RFdiffusion2
