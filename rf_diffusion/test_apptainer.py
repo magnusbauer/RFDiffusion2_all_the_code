@@ -42,7 +42,7 @@ class TestApptainer(unittest.TestCase):
 
         assert sif_path == our_apptainer, (f'You are not running this test from {sif_file}. '
             f'{sif_file}: {sif_path} Current apptainer: {our_apptainer}. '
-            f'Your command should look something like this `apptainer exec exec/rf_diffusion_aa.sif pytest --disable-warnings -s -m "not nondeterministic"`')
+            f'Your command should look something like this `apptainer exec --nv exec/rf_diffusion_aa.sif pytest --disable-warnings -s -m "not nondeterministic"`')
 
         assert os.path.exists(internal_spec), 'This test may be broken. Ask bcov or Luki'
         apptainer_spec = open(internal_spec).read()

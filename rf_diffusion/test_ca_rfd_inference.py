@@ -236,6 +236,8 @@ class TestCARFDInference(unittest.TestCase):
     def get_key(self, key):
         want = self.rfi_golden[key]
         got = self.kall.kwargs[key]
+        if isinstance(want, torch.Tensor) and isinstance(got, torch.Tensor):
+            got = got.to(want.device)
         return want, got
 
 
@@ -290,7 +292,7 @@ class TestCARFDInference(unittest.TestCase):
 
     def test_t2d_motif_only(self):
         want = self.rfi_golden['t2d'][0,2] # [0,2] is motif template only 
-        got = self.kall.kwargs['t2d'][0,2]
+        got = self.kall.kwargs['t2d'][0,2].to(want.device)
 
         is_angle_entry = torch.zeros(69).bool()
         is_angle_entry[61:67] = True # 61,62,63,64,65,66 only
@@ -314,7 +316,7 @@ class TestCARFDInference(unittest.TestCase):
 
     def test_xyz_t_motif(self):
         want = self.rfi_golden['xyz_t'][0,2]
-        got = self.kall.kwargs['xyz_t'][0,2]
+        got = self.kall.kwargs['xyz_t'][0,2].to(want.device)
         
         want_indep = self.load_golden_indep_after_insert()
         ismotif = want_indep['indep.seq'] != 21

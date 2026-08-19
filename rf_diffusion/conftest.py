@@ -1,7 +1,5 @@
 import os
 
-os.environ['CUDA_VISIBLE_DEVICES'] = ''
-
 import pytest
 
 import ipd
