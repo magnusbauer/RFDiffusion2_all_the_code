@@ -136,8 +136,6 @@ All three configs default to `inference.num_designs=1` and use the downloaded `p
     inference.output_prefix="$REPO_DIR/outputs/cd3epsilon_ptr_campaign/design"
 ```
 
-The published checkpoint replaces the unavailable private `RFD_13.pt` and `RFD_49.pt` checkpoints used in the original internal commands. These examples are runnable reproductions of the input specifications, but their sampled outputs are not expected to be bitwise reproductions of the private-model runs.
-
 # Portable inference regression tests
 
 The deterministic inference tests use the downloaded `RFD_45.pt` checkpoint. From the repository root, run:
