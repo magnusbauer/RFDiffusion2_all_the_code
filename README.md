@@ -34,11 +34,14 @@ You need Git, `curl`, an x86-64 Linux system with a supported NVIDIA GPU and CUD
 
    This downloads `RFD_173.pt`, `RFD_140.pt`, the `RFD_45.pt` regression-test checkpoint, and the RFdiffusion2-MI checkpoint `ppi_robust_struct.pt`. Existing files are skipped; use `--force` to replace them. If you use `--output-dir DIR`, set `RFDIFFUSION2_WEIGHTS_DIR` to the absolute path of that directory.
 
-4. Confirm that the container can use the GPU:
+4. Run the deterministic test suite:
 
    ```bash
-   apptainer exec --nv rf_diffusion/exec/rf_diffusion_aa.sif \
-       python -c 'import torch; assert torch.cuda.is_available(); print("PyTorch", torch.__version__, "GPU", torch.cuda.get_device_name(0))'
+   (
+       cd "$REPO_DIR/rf_diffusion"
+       apptainer exec --nv exec/rf_diffusion_aa.sif \
+           pytest --disable-warnings -s -m "not nondeterministic"
+   )
    ```
 
 ## Build the container locally instead
@@ -65,24 +68,15 @@ apptainer exec --nv \
 
 Set `RFDIFFUSION2_SIF_PATH` to use another SIF or `RFDIFFUSION2_APPTAINER_URI` to pull from another OCI URI.
 
-# Protein-interface binder design
+# Protein binder design
 
-This example designs one length-100 binder against PD-L1 using the tracked target structure and the published `ppi_robust_struct.pt` checkpoint. It runs inference directly and does not invoke Slurm, MPNN, structure prediction, or cluster-local databases.
+This example designs a 65–120-residue protein binder against the human neonatal Fc receptor (FcRn). It uses the 151-residue, AlphaFold2-derived target from the paper's FCRNBind_fnE000 campaign and the same FcRn hotspots: B44, B49, B50, B56, and B58. The config also retains the campaign's helix sprinkling, late self-conditioning, custom timestep schedule, and extra timestep outputs.
 
 ```bash
-mkdir -p "$REPO_DIR/outputs/pdl1_binder"
-
-./rf_diffusion/run_inference.py \
-    --config-name=aa_ppi \
-    inference.input_pdb="$REPO_DIR/rf_diffusion/benchmark/input/ppi/5o45_pdl1.pdb" \
-    "contigmap.contigs=['100-100,0_B1-115']" \
-    "ppi.hotspot_res='B40,B99,B107'" \
-    inference.output_prefix="$REPO_DIR/outputs/pdl1_binder/design" \
-    inference.num_designs=1 \
-    diffuser.T=50
+./rf_diffusion/run_inference.py --config-name=fcrn_binder
 ```
 
-The output PDB, trajectory, and metadata files are written under `outputs/pdl1_binder/`.
+The default one-design run writes its PDB and TRB under `outputs/fcrn_binder/`, together with pX0 snapshots at timesteps 30, 20, and 10. The tracked target is `rf_diffusion/examples/inputs/fcrn_human_af_B.pdb`.
 
 # Cysteine protease design
 
@@ -128,36 +122,12 @@ This example designs a 160-residue binder against the STAT5 pY694 peptide `TPVLA
 
 The default run writes `outputs/stat5_ptr/design_0-atomized-bb-False.pdb` and the corresponding `.trb`, containing the designed chain and retained PTR-containing peptide. The TRB stores the atomized inference state and covalent graph.
 
-All three configs default to `inference.num_designs=1` and use the downloaded `ppi_robust_struct.pt` checkpoint. To run a larger campaign, override the count and, if desired, the output prefix; for example:
+All four example configs default to `inference.num_designs=1` and use the downloaded `ppi_robust_struct.pt` checkpoint. To run a larger campaign, override the count and, if desired, the output prefix; for example:
 
 ```bash
 ./rf_diffusion/run_inference.py --config-name=cd3epsilon_ptr \
     inference.num_designs=100 \
     inference.output_prefix="$REPO_DIR/outputs/cd3epsilon_ptr_campaign/design"
-```
-
-# Portable inference regression tests
-
-The deterministic inference tests use the downloaded `RFD_45.pt` checkpoint. From the repository root, run:
-
-```bash
-cd "$REPO_DIR/rf_diffusion"
-
-apptainer exec --cleanenv --nv \
-    --pwd "$PWD" \
-    --bind "$REPO_DIR:$REPO_DIR" \
-    --env USER="${USER:-user}" \
-    --env PYTHONPATH="$REPO_DIR:$REPO_DIR/rf_diffusion" \
-    --env RFDIFFUSION2_WEIGHTS_DIR="$RFDIFFUSION2_WEIGHTS_DIR" \
-    --env CUBLAS_WORKSPACE_CONFIG=:4096:8 \
-    exec/rf_diffusion_aa.sif \
-    python -m pytest --confcutdir=. -q --disable-warnings \
-        test_inference.py::TestRegression::test_ori_cm \
-        test_inference.py::TestRegression::test_ori_partial_diffusion \
-        test_inference.py::TestRegression::test_partial_sidechain \
-        test_inference_mini.py::TestInferenceOutputPDB::test_t1 \
-        test_inference_mini.py::TestInferenceOutputPDB::test_t2 \
-        test_inference_mini.py::TestInferenceOutputPDB::test_t10
 ```
 
 # Citations
