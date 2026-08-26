@@ -84,6 +84,60 @@ mkdir -p "$REPO_DIR/outputs/pdl1_binder"
 
 The output PDB, trajectory, and metadata files are written under `outputs/pdl1_binder/`.
 
+# Cysteine protease design
+
+This example scaffolds the ULP1-like catalytic residues His A113, Asp A130, and Cys A179 while designing a 180–200-residue protein against target residues B96–99. B96 is the interface hotspot. The config preserves the original custom timestep schedule and also writes pX0 snapshots at timesteps 30, 20, and 10.
+
+From the repository root, run:
+
+```bash
+./rf_diffusion/run_inference.py --config-name=cysteine_protease
+```
+
+The default one-design run writes `outputs/cysteine_protease/design_0-atomized-bb-False.pdb`, the corresponding `.trb`, and the extra `_t{30,20,10}.pdb` snapshots. The input motif and target structure are tracked at `rf_diffusion/examples/inputs/ulp1_moitf_5.pdb`.
+
+This example accompanies [De novo design of cysteine proteases](https://www.biorxiv.org/content/10.1101/2025.11.21.689808v2).
+
+# Preparing the phosphotyrosine inputs
+
+To regenerate the CD3epsilon and STAT5 peptide structures, run:
+
+```bash
+./rf_diffusion/examples/prepare_ptr_inputs.py
+```
+
+This trimmed PyRosetta script builds only the two annotated phosphotyrosine sequences, removes hydrogens, assigns chain B, and checks that PTR retains both native peptide bonds. Use `--output-dir DIR` to write copies somewhere other than `rf_diffusion/examples/inputs/`.
+
+# CD3epsilon phosphotyrosine binder design
+
+This example designs a 160-residue binder against the CD3epsilon peptide `PVPNPD-pY-EPIRKG`. PTR B7 is a flexible phosphotyrosine ligand, and its native peptide bonds to Asp B6 and Glu B8 are encoded by `CONECT` records in the tracked PDB. The two flanking residues are atomized and used as PPI hotspots because flexible ligand atoms cannot be selected with `ppi.hotspot_res`.
+
+```bash
+./rf_diffusion/run_inference.py --config-name=cd3epsilon_ptr
+```
+
+The default run writes `outputs/cd3epsilon_ptr/design_0-atomized-bb-False.pdb` and the corresponding `.trb`. The PDB contains the 160-residue designed chain, the `PVPNPD`-containing peptide residues, and PTR; the TRB also stores the atomized inference state with the two covalent peptide–PTR bonds.
+
+# STAT5-pY694 binder design
+
+This example designs a 160-residue binder against the STAT5 pY694 peptide `TPVLAKAVDG-pY-VKPQIKQVVP`. PTR B11 and its peptide bonds to Gly B10 and Val B12 are represented in the same way as the CD3epsilon example, with the two flanking residues used as PPI hotspots.
+
+```bash
+./rf_diffusion/run_inference.py --config-name=stat5_ptr
+```
+
+The default run writes `outputs/stat5_ptr/design_0-atomized-bb-False.pdb` and the corresponding `.trb`, containing the designed chain and retained PTR-containing peptide. The TRB stores the atomized inference state and covalent graph.
+
+All three configs default to `inference.num_designs=1` and use the downloaded `ppi_robust_struct.pt` checkpoint. To run a larger campaign, override the count and, if desired, the output prefix; for example:
+
+```bash
+./rf_diffusion/run_inference.py --config-name=cd3epsilon_ptr \
+    inference.num_designs=100 \
+    inference.output_prefix="$REPO_DIR/outputs/cd3epsilon_ptr_campaign/design"
+```
+
+The published checkpoint replaces the unavailable private `RFD_13.pt` and `RFD_49.pt` checkpoints used in the original internal commands. These examples are runnable reproductions of the input specifications, but their sampled outputs are not expected to be bitwise reproductions of the private-model runs.
+
 # Portable inference regression tests
 
 The deterministic inference tests use the downloaded `RFD_45.pt` checkpoint. From the repository root, run:
