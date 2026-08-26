@@ -1,4 +1,4 @@
-REMARK  99 STAT5 pY694 peptide; PTR B 11 is phosphotyrosine 694.
+REMARK  99 STAT5 TPVLAKAVDG-pY-VKPQIKQVVP peptide (pY694); generated with PyRosetta.
 ATOM      1  N   THR B   1       0.000   0.000   0.000  1.00  0.00           N
 ATOM      2  CA  THR B   1       1.458   0.000   0.000  1.00  0.00           C
 ATOM      3  C   THR B   1       2.009   1.420   0.000  1.00  0.00           C
@@ -166,8 +166,9 @@ TER
 CONECT   66   68
 CONECT   68   69
 CONECT   69   70
-CONECT   70   71
 CONECT   69   72
+CONECT   70   71
+CONECT   70   84
 CONECT   72   73
 CONECT   73   74
 CONECT   73   75
@@ -180,5 +181,4 @@ CONECT   79   80
 CONECT   80   81
 CONECT   80   82
 CONECT   80   83
-CONECT   70   84
 END

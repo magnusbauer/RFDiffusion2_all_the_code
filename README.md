@@ -98,6 +98,16 @@ The default one-design run writes `outputs/cysteine_protease/design_0-atomized-b
 
 This example accompanies [De novo design of cysteine proteases](https://www.biorxiv.org/content/10.1101/2025.11.21.689808v2).
 
+# Preparing the phosphotyrosine inputs
+
+To regenerate the CD3epsilon and STAT5 peptide structures, run:
+
+```bash
+./rf_diffusion/examples/prepare_ptr_inputs.py
+```
+
+This trimmed PyRosetta script builds only the two annotated phosphotyrosine sequences, removes hydrogens, assigns chain B, and checks that PTR retains both native peptide bonds. Use `--output-dir DIR` to write copies somewhere other than `rf_diffusion/examples/inputs/`.
+
 # CD3epsilon phosphotyrosine binder design
 
 This example designs a 160-residue binder against the CD3epsilon peptide `PVPNPD-pY-EPIRKG`. PTR B7 is a flexible phosphotyrosine ligand, and its native peptide bonds to Asp B6 and Glu B8 are encoded by `CONECT` records in the tracked PDB. The two flanking residues are atomized and used as PPI hotspots because flexible ligand atoms cannot be selected with `ppi.hotspot_res`.
