@@ -70,7 +70,7 @@ Set `RFDIFFUSION2_SIF_PATH` to use another SIF or `RFDIFFUSION2_APPTAINER_URI` t
 
 # Protein binder design
 
-This example designs a 65–120-residue protein binder against the human neonatal Fc receptor (FcRn). It uses the 151-residue, AlphaFold2-derived target from the paper's FcRn_1 campaign and the same FcRn hotspots: B44, B49, B50, B56, and B58. The config also retains the campaign's helix sprinkling, late self-conditioning, custom timestep schedule, and extra timestep outputs.
+This example designs a 65–120-residue protein binder against the human neonatal Fc receptor (FcRn). It uses the 151-residue, AlphaFold2-derived target from the paper's FcRn campaign and the same FcRn hotspots: B44, B49, B50, B56, and B58. The config also retains the campaign's helix sprinkling, late self-conditioning, custom timestep schedule, and extra timestep outputs.
 
 ```bash
 ./rf_diffusion/run_inference.py --config-name=fcrn_binder
