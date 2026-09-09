@@ -15,12 +15,10 @@ You need Git, `curl`, an x86-64 Linux system with a supported NVIDIA GPU and CUD
    export REPO_DIR="$PWD"
    ```
 
-2. Pull the prebuilt container:
+2. Download and verify the prebuilt container:
 
    ```bash
-   apptainer pull \
-       rf_diffusion/exec/rf_diffusion_aa.sif \
-       oras://docker.io/magnusbauer/rfdiffusion2-apptainer:portable
+   ./rf_diffusion/exec/download.sh apptainer
    ```
 
    The SIF SHA-256 is `f8bdfd4e9570fe4091931512a2570b71729a110efdb7b908c7f2c67cfbb9b025`.
@@ -28,11 +26,13 @@ You need Git, `curl`, an x86-64 Linux system with a supported NVIDIA GPU and CUD
 3. Download the published model weights:
 
    ```bash
-   ./rf_diffusion/exec/download_model_weights.sh
+   ./rf_diffusion/exec/download.sh weights
    export RFDIFFUSION2_WEIGHTS_DIR="$REPO_DIR/rf_diffusion/model_weights"
    ```
 
    This downloads `RFD_173.pt`, `RFD_140.pt`, the `RFD_45.pt` regression-test checkpoint, and the RFdiffusion2-MI checkpoint `ppi_robust_struct.pt`. Existing files are skipped; use `--force` to replace them. If you use `--output-dir DIR`, set `RFDIFFUSION2_WEIGHTS_DIR` to the absolute path of that directory.
+
+   To download both the container and weights in one command, run `./rf_diffusion/exec/download.sh all`.
 
 4. Run the portable GPU smoke test. It uses only the public checkout, bundled test data, and downloaded weights:
 
