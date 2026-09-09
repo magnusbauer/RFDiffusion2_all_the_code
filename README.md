@@ -34,13 +34,12 @@ You need Git, `curl`, an x86-64 Linux system with a supported NVIDIA GPU and CUD
 
    This downloads `RFD_173.pt`, `RFD_140.pt`, the `RFD_45.pt` regression-test checkpoint, and the RFdiffusion2-MI checkpoint `ppi_robust_struct.pt`. Existing files are skipped; use `--force` to replace them. If you use `--output-dir DIR`, set `RFDIFFUSION2_WEIGHTS_DIR` to the absolute path of that directory.
 
-4. Run the deterministic test suite:
+4. Run the portable GPU smoke test. It uses only the public checkout, bundled test data, and downloaded weights:
 
    ```bash
    (
        cd "$REPO_DIR/rf_diffusion"
-       apptainer exec --nv exec/rf_diffusion_aa.sif \
-           pytest --disable-warnings -s -m "not nondeterministic"
+       apptainer exec --nv exec/rf_diffusion_aa.sif pytest -q test_portable_smoke.py
    )
    ```
 

@@ -1,5 +1,6 @@
 # tests for ca RFdiffusion inference
 import torch 
+import pytest
 import unittest 
 import pickle 
 import hydra 
@@ -15,6 +16,8 @@ from test_ca_rfd_sm_train import ExitMockCall
 from rf2aa.model.RoseTTAFoldModel import LegacyRoseTTAFoldModule
 
 relative_to_absolute = lambda rel: str(Path(__file__).parent / rel)
+
+pytestmark = pytest.mark.gpu
 
 def get_ca_config(overrides=[]):
     """
