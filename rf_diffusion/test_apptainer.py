@@ -1,10 +1,13 @@
 import os
 import subprocess
 import unittest
+import pytest
 
 from icecream import ic
 
 import rf_diffusion as rfd
+
+pytestmark = pytest.mark.requires_internal_data
 
 class TestApptainer(unittest.TestCase):
 

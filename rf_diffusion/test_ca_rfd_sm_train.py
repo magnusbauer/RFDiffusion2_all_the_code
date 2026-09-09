@@ -1,7 +1,8 @@
 """
 Tests for CA rfdiffusion and 2d motif templating etc.. Written by DJ 
 """
-import torch 
+import torch
+import pytest
 import unittest 
 import pickle 
 import hydra 
@@ -23,6 +24,8 @@ import os
 th_assertclose_for_xyz = partial(torch.testing.assert_close, atol=5e-5, rtol=0.002)
 
 relative_to_absolute = lambda rel: str(Path(__file__).parent / rel)
+
+pytestmark = pytest.mark.cpu_only
 
 class ExitMockCall(Exception):
     # an exception we can look out for during mocking 

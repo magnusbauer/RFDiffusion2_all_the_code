@@ -9,6 +9,8 @@ from omegaconf import OmegaConf
 from rf_diffusion.benchmark import score_designs
 from rf_diffusion.benchmark.util.af2_cache import cached_af2_prediction_is_reusable
 
+pytestmark = pytest.mark.benchmark
+
 
 def test_af2_binary_uses_resolved_runtime_paths():
     runtime = score_designs.Af2Runtime(
