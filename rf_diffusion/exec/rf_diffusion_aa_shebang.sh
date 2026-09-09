@@ -12,7 +12,7 @@
 SCRIPT_PATH=$(realpath "$0")
 SCRIPT_DIR=$(dirname "$SCRIPT_PATH")
 DEFAULT_SIF_PATH="$SCRIPT_DIR/rf_diffusion_aa.sif"
-DEFAULT_SIF_URI="oras://docker.io/magnusbauer/rfdiffusion2-apptainer:pr1-portable-tests"
+DEFAULT_SIF_URI="oras://docker.io/magnusbauer/rfdiffusion2-apptainer:portable"
 SIF_PATH="${RFDIFFUSION2_SIF_PATH:-$DEFAULT_SIF_PATH}"
 SIF_URI="${RFDIFFUSION2_APPTAINER_URI:-$DEFAULT_SIF_URI}"
 echo '################## Start shebang info ##################'

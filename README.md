@@ -20,7 +20,7 @@ You need Git, `curl`, an x86-64 Linux system with a supported NVIDIA GPU and CUD
    ```bash
    apptainer pull \
        rf_diffusion/exec/rf_diffusion_aa.sif \
-       oras://docker.io/magnusbauer/rfdiffusion2-apptainer:pr1-portable-tests
+       oras://docker.io/magnusbauer/rfdiffusion2-apptainer:portable
    ```
 
    The SIF SHA-256 is `f8bdfd4e9570fe4091931512a2570b71729a110efdb7b908c7f2c67cfbb9b025`.
